@@ -18,8 +18,8 @@ use egakareta_lib::bench_support::{
 fn build_editor_playback_start_state() -> State {
     pollster::block_on(async {
         let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("Flowerfield");
-        state.dispatch_editor(EditorCommand::LoadLevel("Flowerfield".to_string()));
+        state.enter_editor_phase_for_test("Ambition");
+        state.dispatch_editor(EditorCommand::LoadLevel("Ambition".to_string()));
         state.dispatch_editor(EditorCommand::SetMode(EditorMode::Place));
         state.dispatch_editor(EditorCommand::SetTimelineDuration(120.0));
         state

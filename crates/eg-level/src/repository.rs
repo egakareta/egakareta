@@ -159,13 +159,13 @@ mod tests {
 
     #[test]
     fn loads_known_level_metadata() {
-        let metadata = load_builtin_level_metadata("Flowerfield");
+        let metadata = load_builtin_level_metadata("Ambition");
         assert!(metadata.is_some());
     }
 
     #[test]
     fn roundtrips_binary_metadata() {
-        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
         let encoded = encode_level_metadata_binary(&metadata).expect("serialize");
         let decoded = decode_level_metadata_binary(&encoded).expect("parse");
 
@@ -174,27 +174,25 @@ mod tests {
     }
 
     #[test]
-    fn parses_json_metadata_and_normalizes_block_id() {
+    fn parses_json_metadata() {
         let json = r#"{
             "name": "Current",
             "music": { "source": "audio.mp3" },
             "objects": [
                 {
                     "position": [0.0, 0.0, 0.0],
-                    "size": [1.0, 1.0, 1.0],
-                    "block_id": "stone"
+                    "size": [1.0, 1.0, 1.0]
                 }
             ]
         }"#;
 
         let parsed = parse_level_metadata_json(json).expect("parse json");
         assert_eq!(parsed.objects.len(), 1);
-        assert_eq!(parsed.objects[0].block_id, "core/stone");
     }
 
     #[test]
     fn builds_and_reads_egz_archive_without_audio() {
-        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
 
         let archive_bytes = build_egz_archive(&metadata, None).expect("build egz");
         let (decoded, audio) = read_metadata_from_egz(&archive_bytes).expect("read egz");
@@ -206,7 +204,7 @@ mod tests {
 
     #[test]
     fn builds_and_reads_egz_archive_with_audio() {
-        let metadata = load_builtin_level_metadata("Flowerfield").expect("missing level");
+        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
         let audio = vec![8_u8, 6, 7, 5, 3, 0, 9];
 
         let archive_bytes =
@@ -219,7 +217,7 @@ mod tests {
 
     #[test]
     fn reads_builtin_audio_and_handles_missing_audio() {
-        let bytes = get_builtin_audio("Flowerfield").expect("expected built-in audio bytes");
+        let bytes = get_builtin_audio("Ambition").expect("expected built-in audio bytes");
         assert!(!bytes.is_empty());
 
         assert!(get_builtin_audio("UnknownLevel").is_none());

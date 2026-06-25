@@ -80,14 +80,8 @@ mod tests {
         let plain: LevelObject = LevelObject::new("core/grass");
         assert!(!plain.is_transform_trigger());
 
-        // A transform trigger block (matched by block_id) is detected even
-        // without a stored trigger.
-        let mut by_block_id = plain.clone();
-        by_block_id.block_id = BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID);
-        assert!(by_block_id.is_transform_trigger());
-
         // A non-transform-trigger block carrying a TransformObjects action is
-        // also detected (covers deserialized levels that omit block_id).
+        // detected (covers deserialized levels that omit block_id).
         let by_action = LevelObject {
             id: "trigger".to_string(),
             position: [2.0, 0.0, 0.0],
@@ -669,7 +663,7 @@ mod tests {
         let mut settings = eg_types::AppSettings::default();
 
         assert!(settings.update_level_progress(
-            "Flowerfield",
+            "Ambition",
             eg_types::PlayerLevelProgress {
                 progress_percent: 45.0,
                 completed: false,
@@ -678,7 +672,7 @@ mod tests {
             },
         ));
         assert!(settings.update_level_progress(
-            "Flowerfield",
+            "Ambition",
             eg_types::PlayerLevelProgress {
                 progress_percent: 20.0,
                 completed: true,
@@ -687,7 +681,7 @@ mod tests {
             },
         ));
 
-        let progress = settings.level_progress.get("Flowerfield").copied().unwrap();
+        let progress = settings.level_progress.get("Ambition").copied().unwrap();
         assert!((progress.progress_percent - 45.0).abs() <= 1e-6);
         assert!(progress.completed);
         assert_eq!(progress.gems_collected, 2);

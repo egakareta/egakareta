@@ -413,7 +413,7 @@ impl State {
 
                     if let Some(bytes) = bytes {
                         // We cache builtin bytes in runtime_preload instead of local_audio_cache
-                        // to avoid filename collisions (e.g., both Flowerfield and Golden Haze using "audio.mp3")
+                        // to avoid filename collisions (e.g., both Ambition and Golden Haze using "audio.mp3")
                         self.audio
                             .state
                             .runtime_preload
@@ -553,22 +553,22 @@ mod tests {
     #[test]
     fn queues_runtime_audio_preload_by_level_and_source() {
         let mut state = AudioState::new(HashMap::new());
-        state.preload_runtime_audio("Flowerfield", "music.mp3");
+        state.preload_runtime_audio("Ambition", "music.mp3");
 
         assert!(
             state
                 .runtime_preload
                 .preloading_source_keys
-                .contains(&runtime_asset_source_key("Flowerfield", "music.mp3"))
+                .contains(&runtime_asset_source_key("Ambition", "music.mp3"))
         );
     }
 
     #[test]
     fn preload_runtime_audio_deduplicates_and_skips_preloaded_entries() {
         let mut state = AudioState::new(HashMap::new());
-        let preload_key = runtime_asset_source_key("Flowerfield", "music.mp3");
-        state.preload_runtime_audio("Flowerfield", "music.mp3");
-        state.preload_runtime_audio("Flowerfield", "music.mp3");
+        let preload_key = runtime_asset_source_key("Ambition", "music.mp3");
+        state.preload_runtime_audio("Ambition", "music.mp3");
+        state.preload_runtime_audio("Ambition", "music.mp3");
 
         assert_eq!(state.runtime_preload.preloading_source_keys.len(), 1);
         assert!(
@@ -595,8 +595,8 @@ mod tests {
     #[tokio::test]
     async fn update_runtime_audio_preloads_moves_channel_results_into_cache() {
         let mut state = new_editor_state().await;
-        let loaded_key = runtime_asset_source_key("Flowerfield", "audio.mp3");
-        let missing_key = runtime_asset_source_key("Flowerfield", "missing.mp3");
+        let loaded_key = runtime_asset_source_key("Ambition", "audio.mp3");
+        let missing_key = runtime_asset_source_key("Ambition", "missing.mp3");
 
         state
             .audio

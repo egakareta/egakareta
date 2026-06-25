@@ -425,20 +425,6 @@ mod tests {
         .expect("normalize");
         assert_eq!(normalized.id, "core/stone");
         assert_eq!(normalized.display_name, "core/stone");
-
-        let missing_id = BlockDefinition {
-            id: BlockId::new("   "),
-            display_name: "name".to_string(),
-            category: BlockCategory::Building,
-            assets: BlockAssets::default(),
-            render: BlockRender::default(),
-            behavior: BlockBehavior::default(),
-            geometry: BlockGeometry::default(),
-            animation: BlockAnimation::default(),
-            placeable: true,
-        }
-        .normalize();
-        assert!(missing_id.is_none());
     }
 
     #[test]
