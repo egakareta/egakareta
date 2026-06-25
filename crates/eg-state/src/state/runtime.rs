@@ -197,6 +197,7 @@ impl EditorDirtyFlags {
     }
 }
 
+#[derive(Default)]
 pub struct EditorGizmoState {
     pub rebuild_accumulator: f32,
     pub last_pan: [f32; 2],

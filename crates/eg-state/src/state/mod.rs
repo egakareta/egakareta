@@ -53,7 +53,7 @@ pub use editor_timeline::EditorTimelineState;
 pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
 pub use history::EditorHistoryState;
-pub use perf::EditorPerfState;
+pub use perf::PerfState;
 pub use render::RenderSubsystem;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use view_model::UiViewModel;
@@ -132,7 +132,7 @@ pub struct EditorSubsystem {
     pub triggers: EditorTriggerState,
     pub timeline: EditorTimelineState,
     pub runtime: EditorRuntimeState,
-    pub perf: EditorPerfState,
+    pub perf: PerfState,
     pub timing: EditorTimingState,
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
@@ -179,7 +179,7 @@ impl EditorSubsystem {
                     redo: Vec::new(),
                 },
             },
-            perf: EditorPerfState::new(),
+            perf: PerfState::default(),
             timing: EditorTimingState::new(),
             selected_mask_cache: None,
             block_static_vertex_cache: MeshGeometry::default(),

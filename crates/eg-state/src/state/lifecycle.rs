@@ -11,9 +11,9 @@ use super::runtime::{
 };
 use super::{
     AudioState, AudioSubsystem, AuthSubsystem, EditorCameraState, EditorConfigState,
-    EditorHistoryState, EditorInteractionState, EditorPerfState, EditorPickSpatialIndex,
-    EditorSubsystem, EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem,
-    MenuSubsystem, SessionSubsystem, State,
+    EditorHistoryState, EditorInteractionState, EditorPickSpatialIndex, EditorSubsystem,
+    EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem,
+    PerfState, SessionSubsystem, State,
 };
 use crate::state::RenderSubsystem;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
@@ -685,7 +685,7 @@ impl State {
                         redo: Vec::new(),
                     },
                 },
-                perf: EditorPerfState::new(),
+                perf: PerfState::default(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
                 block_static_vertex_cache: MeshGeometry::default(),
@@ -1600,13 +1600,7 @@ impl State {
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
                     pending_block_mesh_appends: Vec::new(),
-                    gizmo: EditorGizmoState {
-                        rebuild_accumulator: 0.0,
-                        last_pan: [0.0, 0.0],
-                        last_target_z: 0.0,
-                        last_rotation: 0.0,
-                        last_pitch: 0.0,
-                    },
+                    gizmo: EditorGizmoState::default(),
                     drag_heavy_rebuild_accumulator: 0.0,
                     interaction: EditorInteractionState::new(),
                     history: EditorHistoryState {
@@ -1614,7 +1608,7 @@ impl State {
                         redo: Vec::new(),
                     },
                 },
-                perf: EditorPerfState::new(),
+                perf: PerfState::default(),
                 timing: EditorTimingState::new(),
                 selected_mask_cache: None,
                 block_static_vertex_cache: MeshGeometry::default(),
