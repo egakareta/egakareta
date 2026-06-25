@@ -69,6 +69,7 @@ pub struct EditorClipboard {
     pub anchor: [f32; 3],
 }
 
+#[derive(Default)]
 pub struct EditorInteractionState {
     pub gizmo_drag: Option<EditorGizmoDrag>,
     pub hovered_gizmo: Option<(GizmoDragKind, GizmoAxis)>,
@@ -84,25 +85,4 @@ pub struct EditorInteractionState {
 pub struct EditorPendingTapClick {
     pub screen: [f64; 2],
     pub pick: EditorTapDivisionPick,
-}
-
-impl EditorInteractionState {
-    pub fn new() -> Self {
-        Self {
-            gizmo_drag: None,
-            hovered_gizmo: None,
-            hovered_tap_index: None,
-            hovered_tap_division: None,
-            pending_tap_click: None,
-            block_drag: None,
-            clipboard: None,
-            last_mode: None,
-        }
-    }
-}
-
-impl Default for EditorInteractionState {
-    fn default() -> Self {
-        Self::new()
-    }
 }

@@ -12,6 +12,7 @@ use eg_types::{
     default_camera_trigger_target_position,
 };
 
+#[derive(Default)]
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
 }
@@ -38,20 +39,6 @@ pub(super) fn camera_trigger_object_pose(camera: &CameraTrigger) -> ([f32; 3], [
         camera_trigger_object_position_from_eye(eye, size),
         camera_trigger_rotation_degrees(camera.yaw, camera.pitch),
     )
-}
-
-impl EditorTriggerState {
-    pub fn new() -> Self {
-        Self {
-            selected_index: None,
-        }
-    }
-}
-
-impl Default for EditorTriggerState {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl EditorSubsystem {

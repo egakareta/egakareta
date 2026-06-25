@@ -6,14 +6,11 @@
 
 */
 use super::runtime::{
-    EditorDirtyFlags, EditorFrameState, EditorGizmoState, EditorRuntimeState, FrameRuntimeState,
-    PlayerRenderState,
+    EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState, PlayerRenderState,
 };
 use super::{
-    AudioState, AudioSubsystem, AuthSubsystem, EditorCameraState, EditorConfigState,
-    EditorHistoryState, EditorInteractionState, EditorPickSpatialIndex, EditorSubsystem,
-    EditorTimelineState, EditorTimingState, EditorTriggerState, GameplaySubsystem, MenuSubsystem,
-    PerfState, SessionSubsystem, State,
+    AudioState, AudioSubsystem, AuthSubsystem, EditorConfigState, EditorSubsystem,
+    GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
 };
 use crate::state::RenderSubsystem;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
@@ -26,8 +23,7 @@ use eg_blocks::BlockTextureAtlas;
 use eg_game::GameState;
 use eg_level::builtin_level_names;
 use eg_mesh::{
-    BlockInstance, MeshGeometry, Vertex, build_block_geometry, build_floor_vertices,
-    build_grid_vertices,
+    BlockInstance, Vertex, build_block_geometry, build_floor_vertices, build_grid_vertices,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
@@ -36,9 +32,8 @@ use eg_platform::state_host::SurfaceHost;
 use eg_platform::state_host::WasmCanvas;
 use eg_types::{
     AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform,
-    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorInputState,
-    GridUniform, LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
-    SpawnMetadata,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, GridUniform,
+    LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -654,43 +649,18 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                input: EditorInputState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
-                    selected_block_rotation_degrees: [0.0, 0.0, 0.0],
                     ..EditorConfigState::default()
                 },
-                objects: Vec::new(),
-                spawn: SpawnMetadata::default(),
-                camera: EditorCameraState::default(),
-                triggers: EditorTriggerState::new(),
-                timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
-                    pending_block_mesh_appends: Vec::new(),
-                    gizmo: EditorGizmoState {
-                        rebuild_accumulator: 0.0,
-                        last_pan: [0.0, 0.0],
-                        last_target_z: 0.0,
-                        last_rotation: 0.0,
-                        last_pitch: 0.0,
-                    },
-                    drag_heavy_rebuild_accumulator: 0.0,
-                    interaction: EditorInteractionState::new(),
-                    history: EditorHistoryState {
-                        undo: Vec::new(),
-                        redo: Vec::new(),
-                    },
+                    ..EditorRuntimeState::default()
                 },
-                perf: PerfState::default(),
-                timing: EditorTimingState::new(),
-                selected_mask_cache: None,
-                block_static_vertex_cache: MeshGeometry::default(),
-                block_static_vertex_cache_complete_len: None,
-                pick_spatial_index: EditorPickSpatialIndex::default(),
+                ..EditorSubsystem::default()
             },
         }
     }
@@ -1583,37 +1553,18 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                input: EditorInputState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
                     snap_rotation: app_settings.editor_rotation_snap,
                     snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
-                    selected_block_rotation_degrees: [0.0, 0.0, 0.0],
                     ..EditorConfigState::default()
                 },
-                objects: Vec::new(),
-                spawn: SpawnMetadata::default(),
-                camera: EditorCameraState::default(),
-                triggers: EditorTriggerState::new(),
-                timeline: EditorTimelineState::new(),
                 runtime: EditorRuntimeState {
                     dirty: EditorDirtyFlags::from_object_sync(),
-                    pending_block_mesh_appends: Vec::new(),
-                    gizmo: EditorGizmoState::default(),
-                    drag_heavy_rebuild_accumulator: 0.0,
-                    interaction: EditorInteractionState::new(),
-                    history: EditorHistoryState {
-                        undo: Vec::new(),
-                        redo: Vec::new(),
-                    },
+                    ..EditorRuntimeState::default()
                 },
-                perf: PerfState::default(),
-                timing: EditorTimingState::new(),
-                selected_mask_cache: None,
-                block_static_vertex_cache: MeshGeometry::default(),
-                block_static_vertex_cache_complete_len: None,
-                pick_spatial_index: EditorPickSpatialIndex::default(),
+                ..EditorSubsystem::default()
             },
         })
     }

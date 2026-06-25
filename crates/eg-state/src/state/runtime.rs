@@ -206,6 +206,7 @@ pub struct EditorGizmoState {
     pub last_pitch: f32,
 }
 
+#[derive(Default)]
 pub struct EditorRuntimeState {
     pub dirty: EditorDirtyFlags,
     pub pending_block_mesh_appends: Vec<usize>,

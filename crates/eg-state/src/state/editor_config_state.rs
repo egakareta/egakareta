@@ -6,16 +6,21 @@
 
 */
 use eg_blocks::BlockId;
+use smart_default::SmartDefault;
 
 const RECENT_BLOCK_LIMIT: usize = 10;
 
-#[derive(Default)]
+#[derive(SmartDefault)]
 pub struct EditorConfigState {
     pub selected_block_id: BlockId,
     pub recent_block_ids: Vec<BlockId>,
+    #[default = true]
     pub snap_to_grid: bool,
+    #[default = 1.0]
     pub snap_step: f32,
+    #[default = true]
     pub snap_rotation: bool,
+    #[default = 15.0]
     pub snap_rotation_step_degrees: f32,
     pub selected_block_rotation_degrees: [f32; 3],
 }

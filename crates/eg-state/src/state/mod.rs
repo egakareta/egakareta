@@ -123,6 +123,7 @@ pub struct PracticeCheckpoint {
 
 /// Bundles all editor-related state into a single subsystem.
 /// Separates editor concern from the top-level application state.
+#[derive(Default)]
 pub struct EditorSubsystem {
     pub input: EditorInputState,
     pub config: EditorConfigState,
@@ -144,48 +145,7 @@ pub struct EditorSubsystem {
 impl EditorSubsystem {
     /// Construct a standalone `EditorSubsystem` for domain tests — no GPU required.
     pub fn new_test() -> Self {
-        use eg_blocks::BlockId;
-
-        Self {
-            input: EditorInputState::default(),
-            config: EditorConfigState {
-                selected_block_id: BlockId::default(),
-                recent_block_ids: vec![BlockId::default()],
-                snap_to_grid: true,
-                snap_step: 1.0,
-                snap_rotation: true,
-                snap_rotation_step_degrees: 15.0,
-                selected_block_rotation_degrees: [0.0, 0.0, 0.0],
-            },
-            objects: Vec::new(),
-            spawn: SpawnMetadata::default(),
-            camera: EditorCameraState::default(),
-            triggers: EditorTriggerState::new(),
-            timeline: EditorTimelineState::new(),
-            runtime: EditorRuntimeState {
-                dirty: EditorDirtyFlags::default(),
-                pending_block_mesh_appends: Vec::new(),
-                gizmo: runtime::EditorGizmoState {
-                    rebuild_accumulator: 0.0,
-                    last_pan: [0.0, 0.0],
-                    last_target_z: 0.0,
-                    last_rotation: 0.0,
-                    last_pitch: 0.0,
-                },
-                drag_heavy_rebuild_accumulator: 0.0,
-                interaction: EditorInteractionState::new(),
-                history: EditorHistoryState {
-                    undo: Vec::new(),
-                    redo: Vec::new(),
-                },
-            },
-            perf: PerfState::default(),
-            timing: EditorTimingState::new(),
-            selected_mask_cache: None,
-            block_static_vertex_cache: MeshGeometry::default(),
-            block_static_vertex_cache_complete_len: None,
-            pick_spatial_index: EditorPickSpatialIndex::default(),
-        }
+        EditorSubsystem::default()
     }
 }
 
