@@ -11,18 +11,18 @@ use eg_types::{AppPhase, EditorMode, LevelObject};
 
 impl EditorSubsystem {
     pub fn clear_pan_keys(&mut self) {
-        self.ui.pan_up_held = false;
-        self.ui.pan_down_held = false;
-        self.ui.pan_left_held = false;
-        self.ui.pan_right_held = false;
-        self.ui.shift_held = false;
-        self.ui.ctrl_held = false;
+        self.input.pan_up_held = false;
+        self.input.pan_down_held = false;
+        self.input.pan_left_held = false;
+        self.input.pan_right_held = false;
+        self.input.shift_held = false;
+        self.input.ctrl_held = false;
     }
 
     fn normalized_block_selection_indices(&self) -> Vec<usize> {
         let object_count = self.objects.len();
         let mut indices: Vec<usize> = self
-            .ui
+            .input
             .selected_block_indices
             .iter()
             .copied()
@@ -30,7 +30,7 @@ impl EditorSubsystem {
             .collect();
 
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < object_count)
         {
@@ -59,55 +59,55 @@ impl EditorSubsystem {
 
     pub fn normalize_block_selection(&mut self) {
         let indices = self.normalized_block_selection_indices();
-        self.ui.selected_block_index = self
-            .ui
+        self.input.selected_block_index = self
+            .input
             .selected_block_index
             .filter(|index| indices.binary_search(index).is_ok())
             .or_else(|| indices.first().copied());
-        self.ui.selected_block_indices = indices;
+        self.input.selected_block_indices = indices;
 
         if self
-            .ui
+            .input
             .hovered_block_index
             .is_some_and(|index| index >= self.objects.len())
         {
-            self.ui.hovered_block_index = None;
+            self.input.hovered_block_index = None;
         }
         self.selected_mask_cache = None;
     }
 
     pub fn clear_block_selection(&mut self) {
-        let had_selection = self.ui.selected_block_index.is_some()
-            || !self.ui.selected_block_indices.is_empty()
-            || self.ui.hovered_block_index.is_some();
-        self.ui.selected_block_index = None;
-        self.ui.selected_block_indices.clear();
-        self.ui.hovered_block_index = None;
+        let had_selection = self.input.selected_block_index.is_some()
+            || !self.input.selected_block_indices.is_empty()
+            || self.input.hovered_block_index.is_some();
+        self.input.selected_block_index = None;
+        self.input.selected_block_indices.clear();
+        self.input.hovered_block_index = None;
         if had_selection {
             self.selected_mask_cache = None;
         }
     }
 
     pub fn replace_block_selection(&mut self, indices: Vec<usize>) {
-        self.ui.selected_block_index = indices.first().copied();
-        self.ui.selected_block_indices = indices;
+        self.input.selected_block_index = indices.first().copied();
+        self.input.selected_block_indices = indices;
         self.normalize_block_selection();
     }
 
     pub fn add_block_to_selection(&mut self, index: usize) {
-        self.ui.selected_block_indices.push(index);
+        self.input.selected_block_indices.push(index);
         self.normalize_block_selection();
     }
 
     pub fn remove_block_from_selection(&mut self, index: usize) {
-        self.ui
+        self.input
             .selected_block_indices
             .retain(|selected| *selected != index);
-        if self.ui.selected_block_index == Some(index) {
-            self.ui.selected_block_index = None;
+        if self.input.selected_block_index == Some(index) {
+            self.input.selected_block_index = None;
         }
         self.normalize_block_selection();
-        if self.ui.selected_block_indices.is_empty() {
+        if self.input.selected_block_indices.is_empty() {
             self.clear_block_selection();
         }
     }
@@ -117,8 +117,8 @@ impl EditorSubsystem {
     }
 
     pub fn selection_contains(&self, index: usize) -> bool {
-        self.ui.selected_block_indices.contains(&index)
-            || self.ui.selected_block_index == Some(index)
+        self.input.selected_block_indices.contains(&index)
+            || self.input.selected_block_index == Some(index)
     }
 
     pub fn selected_mask_for_len(&self, len: usize) -> Vec<bool> {
@@ -202,7 +202,7 @@ impl EditorSubsystem {
         obj.size = [size[0].max(0.01), size[1].max(0.01), size[2].max(0.01)];
         obj.rotation = rotation;
 
-        self.ui.cursor = [
+        self.input.cursor = [
             clamped_position[0],
             clamped_position[1].max(0.0),
             clamped_position[2],
@@ -270,11 +270,11 @@ impl State {
         self.rebuild_practice_checkpoint_vertices();
         self.clear_pending_gameplay_inputs();
         self.session.editor_menu_preview_camera = None;
-        self.editor.ui.right_dragging = false;
-        self.editor.ui.mode = EditorMode::Null;
+        self.editor.input.right_dragging = false;
+        self.editor.input.mode = EditorMode::Null;
         self.editor.clear_block_selection();
-        self.editor.ui.marquee_start_screen = None;
-        self.editor.ui.marquee_current_screen = None;
+        self.editor.input.marquee_start_screen = None;
+        self.editor.input.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
         self.editor.runtime.history.undo.clear();
@@ -307,12 +307,12 @@ impl State {
         self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
         self.session.editor_sky_color = eg_types::default_sky_color();
         self.editor.clear_block_selection();
-        self.editor.ui.marquee_start_screen = None;
-        self.editor.ui.marquee_current_screen = None;
+        self.editor.input.marquee_start_screen = None;
+        self.editor.input.marquee_current_screen = None;
         self.editor.runtime.interaction.gizmo_drag = None;
         self.editor.runtime.interaction.block_drag = None;
         self.session.playing_level_name = None;
-        self.editor.ui.right_dragging = false;
+        self.editor.input.right_dragging = false;
         self.clear_editor_pan_keys();
         self.menu.state.preview_level_index = None;
         self.phase = AppPhase::Menu;
@@ -343,16 +343,16 @@ mod tests {
             block([1.0, 0.0, 0.0]),
             block([2.0, 0.0, 0.0]),
         ];
-        state.editor.ui.selected_block_index = Some(1);
-        state.editor.ui.selected_block_indices = vec![2, 99, 2];
-        state.editor.ui.hovered_block_index = Some(42);
+        state.editor.input.selected_block_index = Some(1);
+        state.editor.input.selected_block_indices = vec![2, 99, 2];
+        state.editor.input.hovered_block_index = Some(42);
         state.editor.selected_mask_cache = Some(vec![false, true, true]);
 
         state.editor.normalize_block_selection();
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(1));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![1, 2]);
-        assert_eq!(state.editor.ui.hovered_block_index, None);
+        assert_eq!(state.editor.input.selected_block_index, Some(1));
+        assert_eq!(state.editor.input.selected_block_indices, vec![1, 2]);
+        assert_eq!(state.editor.input.hovered_block_index, None);
         assert!(state.editor.selected_mask_cache.is_none());
     }
 }

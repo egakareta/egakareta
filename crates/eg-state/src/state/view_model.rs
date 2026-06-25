@@ -157,7 +157,7 @@ impl State {
             snap_rotation: self.editor_snap_rotation(),
             snap_rotation_step_degrees: self.editor_snap_rotation_step_degrees(),
             selected_block_id: self.editor_selected_block_id(),
-            place_preview_position: self.editor.ui.cursor,
+            place_preview_position: self.editor.input.cursor,
             place_preview_size: self.editor.selected_block_default_size(),
             recent_block_ids: &self.editor.config.recent_block_ids,
             selected_block: self.editor_selected_block(),

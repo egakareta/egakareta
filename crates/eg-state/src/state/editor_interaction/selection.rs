@@ -53,48 +53,48 @@ fn drag_anchor_position(drag: &EditorBlockDrag) -> [f32; 3] {
 
 impl EditorSubsystem {
     fn marquee_has_dragged_far_enough(&self) -> bool {
-        let Some(start) = self.ui.marquee_start_screen else {
+        let Some(start) = self.input.marquee_start_screen else {
             return false;
         };
-        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        let current = self.input.marquee_current_screen.unwrap_or(start);
         let dx = current[0] - start[0];
         let dy = current[1] - start[1];
         (dx * dx + dy * dy) >= MARQUEE_DRAG_THRESHOLD_PX * MARQUEE_DRAG_THRESHOLD_PX
     }
 
     pub fn marquee_selection_rect_screen(&self) -> Option<([f64; 2], [f64; 2], bool)> {
-        let start = self.ui.marquee_start_screen?;
-        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        let start = self.input.marquee_start_screen?;
+        let current = self.input.marquee_current_screen.unwrap_or(start);
         Some((start, current, self.marquee_has_dragged_far_enough()))
     }
 
     pub fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee = self.ui.mode.is_transform_mode();
-        if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
+        let allows_marquee = self.input.mode.is_transform_mode();
+        if phase != AppPhase::Editor || self.input.right_dragging || !allows_marquee {
             return false;
         }
-        self.ui.marquee_start_screen = Some([x, y]);
-        self.ui.marquee_current_screen = Some([x, y]);
+        self.input.marquee_start_screen = Some([x, y]);
+        self.input.marquee_current_screen = Some([x, y]);
         true
     }
 
     pub fn update_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
-        let allows_marquee = self.ui.mode.is_transform_mode();
-        if phase != AppPhase::Editor || self.ui.right_dragging || !allows_marquee {
+        let allows_marquee = self.input.mode.is_transform_mode();
+        if phase != AppPhase::Editor || self.input.right_dragging || !allows_marquee {
             return false;
         }
-        if self.ui.marquee_start_screen.is_none() {
+        if self.input.marquee_start_screen.is_none() {
             return false;
         }
-        self.ui.marquee_current_screen = Some([x, y]);
+        self.input.marquee_current_screen = Some([x, y]);
         true
     }
 
     pub fn marquee_overlapping_blocks(&self, viewport: Vec2) -> Vec<usize> {
-        let Some(start) = self.ui.marquee_start_screen else {
+        let Some(start) = self.input.marquee_start_screen else {
             return Vec::new();
         };
-        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        let current = self.input.marquee_current_screen.unwrap_or(start);
 
         let rect_min = Vec2::new(
             start[0].min(current[0]) as f32,
@@ -193,10 +193,10 @@ impl EditorSubsystem {
     }
 
     fn apply_marquee_selection(&mut self, viewport: Vec2, additive: bool) {
-        let Some(start) = self.ui.marquee_start_screen else {
+        let Some(start) = self.input.marquee_start_screen else {
             return;
         };
-        let current = self.ui.marquee_current_screen.unwrap_or(start);
+        let current = self.input.marquee_current_screen.unwrap_or(start);
 
         let rect_min = Vec2::new(
             start[0].min(current[0]) as f32,
@@ -207,7 +207,7 @@ impl EditorSubsystem {
             start[1].max(current[1]) as f32,
         );
 
-        if self.ui.mode.is_transform_mode() {
+        if self.input.mode.is_transform_mode() {
             let hits = self.marquee_overlapping_blocks(viewport);
 
             if additive {
@@ -238,16 +238,16 @@ impl EditorSubsystem {
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
 
-        self.ui.hovered_block_index = self.ui.selected_block_index;
+        self.input.hovered_block_index = self.input.selected_block_index;
 
-        if let Some(index) = self.ui.selected_block_index
+        if let Some(index) = self.input.selected_block_index
             && let Some(obj) = self.objects.get(index)
         {
-            self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
+            self.input.cursor = [obj.position[0], obj.position[1], obj.position[2]];
         }
 
         self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(
-            self.ui.selected_block_index.is_some(),
+            self.input.selected_block_index.is_some(),
         ));
     }
 
@@ -258,35 +258,35 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        let allows_marquee = self.ui.mode.is_transform_mode();
+        let allows_marquee = self.input.mode.is_transform_mode();
         if phase != AppPhase::Editor || !allows_marquee {
-            self.ui.marquee_start_screen = None;
-            self.ui.marquee_current_screen = None;
+            self.input.marquee_start_screen = None;
+            self.input.marquee_current_screen = None;
             return false;
         }
 
-        let had_marquee = self.ui.marquee_start_screen.is_some();
+        let had_marquee = self.input.marquee_start_screen.is_some();
         if !had_marquee {
             return false;
         }
 
-        self.ui.marquee_current_screen = Some([x, y]);
-        let additive = self.ui.shift_held;
+        self.input.marquee_current_screen = Some([x, y]);
+        let additive = self.input.shift_held;
 
         if self.marquee_has_dragged_far_enough() {
             self.apply_marquee_selection(viewport, additive);
-            self.ui.marquee_start_screen = None;
-            self.ui.marquee_current_screen = None;
+            self.input.marquee_start_screen = None;
+            self.input.marquee_current_screen = None;
             return true;
         }
 
-        self.ui.marquee_start_screen = None;
-        self.ui.marquee_current_screen = None;
+        self.input.marquee_start_screen = None;
+        self.input.marquee_current_screen = None;
         false
     }
 
     pub fn drag_selection(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
-        self.ui.pointer_screen = Some([x, y]);
+        self.input.pointer_screen = Some([x, y]);
 
         let Some(drag) = self.runtime.interaction.block_drag.clone() else {
             return false;
@@ -413,7 +413,7 @@ impl EditorSubsystem {
         self.pick_spatial_index.invalidate();
 
         if let Some(next_position) = first_cursor {
-            self.ui.cursor = [
+            self.input.cursor = [
                 next_position[0],
                 next_position[1].max(0.0),
                 next_position[2],
@@ -424,7 +424,7 @@ impl EditorSubsystem {
     }
 
     pub fn begin_block_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {
-        if !self.ui.mode.is_transform_mode() {
+        if !self.input.mode.is_transform_mode() {
             return false;
         }
 
@@ -500,7 +500,9 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> bool {
-        if phase != AppPhase::Editor || self.ui.right_dragging || !self.ui.mode.is_transform_mode()
+        if phase != AppPhase::Editor
+            || self.input.right_dragging
+            || !self.input.mode.is_transform_mode()
         {
             return false;
         }
@@ -571,11 +573,11 @@ impl EditorSubsystem {
         phase: AppPhase,
     ) -> EditorInteractionChange {
         puffin::profile_scope!("SelectClick");
-        if phase != AppPhase::Editor || self.ui.right_dragging {
+        if phase != AppPhase::Editor || self.input.right_dragging {
             return EditorInteractionChange::None;
         }
 
-        let additive = self.ui.shift_held;
+        let additive = self.input.shift_held;
 
         let pick = {
             puffin::profile_scope!("SelectPick");
@@ -608,7 +610,7 @@ impl EditorSubsystem {
                     self.set_trigger_selected(None);
                 }
                 if additive {
-                    if self.ui.selected_block_indices.contains(&hit_index) {
+                    if self.input.selected_block_indices.contains(&hit_index) {
                         self.remove_block_from_selection(hit_index);
                     } else {
                         self.add_block_to_selection(hit_index);
@@ -616,7 +618,7 @@ impl EditorSubsystem {
                 } else {
                     self.replace_block_selection(vec![hit_index]);
                 }
-                self.ui.hovered_block_index = Some(hit_index);
+                self.input.hovered_block_index = Some(hit_index);
                 changed = EditorInteractionChange::Hover;
             } else if !additive {
                 self.clear_block_selection();
@@ -629,13 +631,13 @@ impl EditorSubsystem {
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
 
-            if let Some(index) = self.ui.selected_block_index {
+            if let Some(index) = self.input.selected_block_index {
                 if let Some(obj) = self.objects.get(index) {
-                    self.ui.cursor = [obj.position[0], obj.position[1], obj.position[2]];
+                    self.input.cursor = [obj.position[0], obj.position[1], obj.position[2]];
                     changed = EditorInteractionChange::Cursor;
                 }
-            } else if pick.cursor != self.ui.cursor {
-                self.ui.cursor = pick.cursor;
+            } else if pick.cursor != self.input.cursor {
+                self.input.cursor = pick.cursor;
                 changed = EditorInteractionChange::Cursor;
             }
         }
@@ -670,7 +672,7 @@ impl State {
                     self.render.gpu.config.width as f32,
                     self.render.gpu.config.height as f32,
                 );
-                let additive = self.editor.ui.shift_held;
+                let additive = self.editor.input.shift_held;
                 self.editor.apply_marquee_selection(viewport_size, additive);
             }
             self.editor
@@ -684,7 +686,7 @@ impl State {
             self.render.gpu.config.width as f32,
             self.render.gpu.config.height as f32,
         );
-        let had_marquee = self.editor.ui.marquee_start_screen.is_some();
+        let had_marquee = self.editor.input.marquee_start_screen.is_some();
         if !had_marquee {
             return false;
         }
@@ -952,15 +954,15 @@ mod tests {
     async fn marquee_threshold_activates_only_after_minimum_drag() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
-        state.editor.ui.marquee_current_screen = Some([102.0, 102.0]);
+        state.editor.input.marquee_start_screen = Some([100.0, 100.0]);
+        state.editor.input.marquee_current_screen = Some([102.0, 102.0]);
         let (_, _, active) = state
             .editor
             .marquee_selection_rect_screen()
             .expect("marquee rect");
         assert!(!active);
 
-        state.editor.ui.marquee_current_screen = Some([120.0, 120.0]);
+        state.editor.input.marquee_current_screen = Some([120.0, 120.0]);
         let (_, _, active) = state
             .editor
             .marquee_selection_rect_screen()
@@ -972,14 +974,14 @@ mod tests {
     async fn begin_marquee_requires_editor_phase_and_supported_mode() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         assert!(
             !state
                 .editor
                 .begin_marquee_selection(50.0, 50.0, AppPhase::Editor)
         );
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         assert!(
             !state
                 .editor
@@ -991,15 +993,15 @@ mod tests {
                 .editor
                 .begin_marquee_selection(50.0, 50.0, AppPhase::Editor)
         );
-        assert!(state.editor.ui.marquee_start_screen.is_some());
-        assert!(state.editor.ui.marquee_current_screen.is_some());
+        assert!(state.editor.input.marquee_start_screen.is_some());
+        assert!(state.editor.input.marquee_current_screen.is_some());
     }
 
     #[tokio::test]
     async fn finish_marquee_clears_state_when_not_dragged_far_enough() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         assert!(
             state
                 .editor
@@ -1018,8 +1020,8 @@ mod tests {
             AppPhase::Editor,
         );
         assert!(!changed);
-        assert!(state.editor.ui.marquee_start_screen.is_none());
-        assert!(state.editor.ui.marquee_current_screen.is_none());
+        assert!(state.editor.input.marquee_start_screen.is_none());
+        assert!(state.editor.input.marquee_current_screen.is_none());
     }
 
     #[tokio::test]
@@ -1027,7 +1029,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
         assert!(
@@ -1049,8 +1051,8 @@ mod tests {
         );
 
         assert!(changed);
-        assert!(state.editor.ui.selected_block_indices.contains(&0));
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        assert!(state.editor.input.selected_block_indices.contains(&0));
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
     }
 
     #[tokio::test]
@@ -1058,11 +1060,11 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
-        state.editor.ui.shift_held = true;
+        state.editor.input.mode = EditorMode::Select;
+        state.editor.input.shift_held = true;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
 
         assert!(
             state
@@ -1083,8 +1085,8 @@ mod tests {
         );
 
         assert!(changed);
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0, 1]);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0, 1]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
     }
 
     #[tokio::test]
@@ -1092,7 +1094,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
         state.render.meshes.editor_hover_outline.clear();
 
@@ -1141,15 +1143,15 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
         assert!(state.begin_editor_marquee_selection(0.0, 0.0));
         assert!(state.update_editor_marquee_selection(2000.0, 2000.0));
 
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.hovered_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.hovered_block_index, Some(0));
     }
 
     #[tokio::test]
@@ -1190,8 +1192,8 @@ mod tests {
 
         let (rect_min, rect_max) =
             empty_rect.expect("large projected bounds should include empty marquee space");
-        state.editor.ui.marquee_start_screen = Some([rect_min.x as f64, rect_min.y as f64]);
-        state.editor.ui.marquee_current_screen = Some([rect_max.x as f64, rect_max.y as f64]);
+        state.editor.input.marquee_start_screen = Some([rect_min.x as f64, rect_min.y as f64]);
+        state.editor.input.marquee_current_screen = Some([rect_max.x as f64, rect_max.y as f64]);
 
         assert!(state.editor.marquee_overlapping_blocks(viewport).is_empty());
     }
@@ -1200,22 +1202,22 @@ mod tests {
     async fn update_marquee_requires_existing_start_and_valid_phase() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         assert!(
             !state
                 .editor
                 .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
         );
 
-        state.editor.ui.marquee_start_screen = Some([0.0, 0.0]);
-        state.editor.ui.right_dragging = true;
+        state.editor.input.marquee_start_screen = Some([0.0, 0.0]);
+        state.editor.input.right_dragging = true;
         assert!(
             !state
                 .editor
                 .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
         );
 
-        state.editor.ui.right_dragging = false;
+        state.editor.input.right_dragging = false;
         assert!(
             !state
                 .editor
@@ -1227,7 +1229,10 @@ mod tests {
                 .editor
                 .update_marquee_selection(10.0, 10.0, AppPhase::Editor)
         );
-        assert_eq!(state.editor.ui.marquee_current_screen, Some([10.0, 10.0]));
+        assert_eq!(
+            state.editor.input.marquee_current_screen,
+            Some([10.0, 10.0])
+        );
     }
 
     #[tokio::test]
@@ -1236,10 +1241,10 @@ mod tests {
         let viewport = default_viewport();
         let block_center = Vec3::new(0.5, 0.5, 0.5);
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
 
         let click = state
             .editor
@@ -1313,7 +1318,7 @@ mod tests {
         let mut state = State::new_test().await;
         let viewport = default_viewport();
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.config.snap_to_grid = false;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 
@@ -1355,7 +1360,7 @@ mod tests {
             AppPhase::Menu,
         ));
 
-        state.editor.ui.right_dragging = true;
+        state.editor.input.right_dragging = true;
         assert!(!state.editor.drag_selection_from_screen(
             origin_screen.x as f64,
             origin_screen.y as f64,
@@ -1369,7 +1374,7 @@ mod tests {
         let mut state = State::new_test().await;
         let viewport = default_viewport();
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.config.snap_to_grid = false;
         state.editor.config.snap_step = 1.0;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
@@ -1411,7 +1416,7 @@ mod tests {
 
         assert!(small_drift_y > 0.0);
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], 0.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], 0.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(state.editor.input.cursor[1], 0.0, epsilon = 1e-6);
 
         let (lift_screen, lift_y) = screen_for_positive_y_delta(
             &state,
@@ -1441,7 +1446,7 @@ mod tests {
         );
 
         approx::assert_abs_diff_eq!(state.editor.objects[0].position[1], lift_y, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], lift_y, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(state.editor.input.cursor[1], lift_y, epsilon = 1e-5);
     }
 
     #[tokio::test]
@@ -1453,12 +1458,12 @@ mod tests {
         support.size = [8.0, 1.0, 8.0];
         let floating = test_block([0.0, 5.0, 0.0]);
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
         state.editor.objects = vec![support, floating];
-        state.editor.ui.selected_block_indices = vec![1];
-        state.editor.ui.selected_block_index = Some(1);
+        state.editor.input.selected_block_indices = vec![1];
+        state.editor.input.selected_block_index = Some(1);
 
         let floating_center = Vec3::new(0.5, 5.5, 0.5);
         let origin_screen = state
@@ -1490,7 +1495,7 @@ mod tests {
         ));
 
         approx::assert_abs_diff_eq!(state.editor.objects[1].position[1], 1.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(state.editor.ui.cursor[1], 1.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(state.editor.input.cursor[1], 1.0, epsilon = 1e-6);
     }
 
     #[tokio::test]
@@ -1502,12 +1507,12 @@ mod tests {
         support.size = [8.0, 1.0, 8.0];
         let floating = test_block([0.0, 5.0, 0.0]); // block at [0, 5, 0] center is [0.5, 5.5, 0.5]
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.config.snap_to_grid = false;
         state.editor.config.snap_step = 1.0;
         state.editor.objects = vec![support, floating];
-        state.editor.ui.selected_block_indices = vec![1];
-        state.editor.ui.selected_block_index = Some(1);
+        state.editor.input.selected_block_indices = vec![1];
+        state.editor.input.selected_block_index = Some(1);
 
         let grab_world = Vec3::new(0.75, 5.5, 0.25); // Grab at an offset near a corner
         let grab_screen = state
@@ -1557,7 +1562,7 @@ mod tests {
         let viewport = default_viewport();
         let block_center = Vec3::new(0.5, 0.5, 0.5);
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
         state.editor.runtime.dirty = EditorDirtyFlags::default();
 
@@ -1573,12 +1578,12 @@ mod tests {
             AppPhase::Editor,
         );
         assert_eq!(select_result, EditorInteractionChange::Cursor);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
         assert!(!state.editor.runtime.dirty.rebuild_block_mesh);
         assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
         assert!(state.editor.runtime.dirty.rebuild_cursor);
 
-        state.editor.ui.shift_held = true;
+        state.editor.input.shift_held = true;
         let toggle_result = state.editor.select_block_from_screen(
             click.x as f64,
             click.y as f64,
@@ -1592,12 +1597,12 @@ mod tests {
             ),
             "expected a visible interaction change when toggling additive selection"
         );
-        assert!(state.editor.ui.selected_block_indices.is_empty());
-        assert_eq!(state.editor.ui.selected_block_index, None);
+        assert!(state.editor.input.selected_block_indices.is_empty());
+        assert_eq!(state.editor.input.selected_block_index, None);
 
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.shift_held = false;
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.shift_held = false;
         let miss_result = state.editor.select_block_from_screen(
             10.0,
             10.0,
@@ -1605,12 +1610,12 @@ mod tests {
             AppPhase::Editor,
         );
         assert_eq!(miss_result, EditorInteractionChange::None);
-        assert!(state.editor.ui.selected_block_indices.is_empty());
-        assert_eq!(state.editor.ui.selected_block_index, None);
+        assert!(state.editor.input.selected_block_indices.is_empty());
+        assert_eq!(state.editor.input.selected_block_index, None);
 
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.shift_held = true;
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.shift_held = true;
         let additive_miss_result = state.editor.select_block_from_screen(
             10.0,
             10.0,
@@ -1618,8 +1623,8 @@ mod tests {
             AppPhase::Editor,
         );
         assert_eq!(additive_miss_result, EditorInteractionChange::None);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
     }
 
     #[tokio::test]
@@ -1627,7 +1632,7 @@ mod tests {
         let mut state = State::new_test().await;
         let viewport = default_viewport();
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
 
         let first_click = state
@@ -1645,8 +1650,8 @@ mod tests {
             viewport,
             AppPhase::Editor,
         );
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
 
         state.editor.select_block_from_screen(
             second_click.x as f64,
@@ -1654,8 +1659,8 @@ mod tests {
             viewport,
             AppPhase::Editor,
         );
-        assert_eq!(state.editor.ui.selected_block_index, Some(1));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        assert_eq!(state.editor.input.selected_block_index, Some(1));
+        assert_eq!(state.editor.input.selected_block_indices, vec![1]);
     }
 
     #[tokio::test]
@@ -1663,7 +1668,7 @@ mod tests {
         let mut state = State::new_test().await;
         let viewport = default_viewport();
 
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.config.snap_to_grid = false;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
 

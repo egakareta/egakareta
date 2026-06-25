@@ -340,7 +340,7 @@ impl EditorSubsystem {
 
     #[cfg(test)]
     pub fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
-        let indicator_cell = self.ui.cursor;
+        let indicator_cell = self.input.cursor;
 
         if let Some(remove_index) = self
             .timeline
@@ -424,13 +424,13 @@ impl EditorSubsystem {
         }
 
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
             && let Some(obj) = self.objects.get(index)
         {
-            self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
+            self.input.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
         }
 
         self.invalidate_samples();
@@ -456,13 +456,13 @@ impl EditorSubsystem {
         }
 
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied())
             && let Some(obj) = self.objects.get(index)
         {
-            self.ui.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
+            self.input.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
         }
 
         if changed {
@@ -489,10 +489,10 @@ impl EditorSubsystem {
             return true;
         }
 
-        if let Some(index) = topmost_block_index_at_cursor(&self.objects, self.ui.cursor) {
+        if let Some(index) = topmost_block_index_at_cursor(&self.objects, self.input.cursor) {
             let removed_object_ids = object_ids_for_removed_indices(&self.objects, &[index]);
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
-            remove_topmost_block_at_cursor(&mut self.objects, self.ui.cursor);
+            remove_topmost_block_at_cursor(&mut self.objects, self.input.cursor);
             self.invalidate_samples();
             self.pick_spatial_index.invalidate();
             self.sync_trigger_selection_from_objects();
@@ -503,7 +503,7 @@ impl EditorSubsystem {
     }
 
     pub fn set_spawn_here(&mut self) {
-        self.spawn.position = self.ui.cursor;
+        self.spawn.position = self.input.cursor;
         self.sync_tap_indicators_to_spawn();
         self.invalidate_samples();
     }
@@ -520,8 +520,8 @@ impl EditorSubsystem {
         } else {
             1.0
         };
-        self.ui.cursor[0] += dx as f32 * step;
-        self.ui.cursor[2] += dy as f32 * step;
+        self.input.cursor[0] += dx as f32 * step;
+        self.input.cursor[2] += dy as f32 * step;
     }
 }
 
@@ -543,7 +543,7 @@ impl State {
         self.set_editor_timeline_time_seconds_preserving_editor_camera(current_time);
         self.resync_editor_timeline_playback_audio();
         if let Some(cursor) = cursor_override {
-            self.editor.ui.cursor = cursor;
+            self.editor.input.cursor = cursor;
             self.rebuild_editor_cursor_vertices();
         }
         self.mark_editor_dirty(EditorDirtyFlags::tap_preview_changed(
@@ -552,7 +552,7 @@ impl State {
     }
 
     pub(super) fn editor_handle_tapping_click_from_screen(&mut self, x: f64, y: f64) -> bool {
-        if self.phase != AppPhase::Editor || self.editor.ui.mode != EditorMode::Tapping {
+        if self.phase != AppPhase::Editor || self.editor.input.mode != EditorMode::Tapping {
             return false;
         }
 
@@ -573,7 +573,7 @@ impl State {
             self.editor.set_selected_tap_index(Some(tap_index));
             self.editor.runtime.interaction.hovered_tap_index = Some(tap_index);
             self.set_editor_timeline_time_seconds_preserving_editor_camera(time_seconds);
-            self.editor.ui.cursor = pick.cursor;
+            self.editor.input.cursor = pick.cursor;
             self.rebuild_tap_indicator_vertices();
             self.rebuild_editor_cursor_vertices();
             return true;
@@ -613,7 +613,7 @@ impl State {
             self.set_editor_timeline_time_seconds_preserving_editor_camera(
                 target_pick.time_seconds,
             );
-            self.editor.ui.cursor = target_pick.indicator_position;
+            self.editor.input.cursor = target_pick.indicator_position;
             self.rebuild_tap_indicator_vertices();
             self.rebuild_editor_cursor_vertices();
             return true;
@@ -813,7 +813,7 @@ impl State {
             .tap_indicator_positions
             .insert(next_index, snapped_position);
         self.editor.set_selected_tap_index(Some(next_index));
-        self.editor.ui.cursor = snapped_position;
+        self.editor.input.cursor = snapped_position;
         self.editor
             .invalidate_samples_from(old_time_seconds.min(next_time));
         self.set_editor_timeline_time_seconds_preserving_editor_camera(next_time);
@@ -866,7 +866,7 @@ impl State {
         self.set_editor_timeline_time_seconds_preserving_editor_camera(next_time);
         self.refresh_editor_after_tap_change(None);
         if let Some((_, _, selected_position)) = self.editor.selected_tap() {
-            self.editor.ui.cursor = selected_position;
+            self.editor.input.cursor = selected_position;
             self.rebuild_editor_cursor_vertices();
         }
         true
@@ -888,7 +888,7 @@ impl State {
         }
 
         if let Some((_, _, selected_position)) = self.editor.selected_tap() {
-            self.editor.ui.cursor = selected_position;
+            self.editor.input.cursor = selected_position;
             self.rebuild_editor_cursor_vertices();
         }
         self.rebuild_tap_indicator_vertices();
@@ -905,7 +905,7 @@ impl State {
 
         if self.editor.timeline.playback.playing {
             puffin::profile_scope!("TimelinePlaybackStart");
-            let last_mode = self.editor.ui.mode;
+            let last_mode = self.editor.input.mode;
             {
                 puffin::profile_scope!("TimelinePlaybackStartSetup");
                 self.editor.runtime.interaction.last_mode = Some(last_mode);
@@ -1032,7 +1032,7 @@ impl State {
         self.gameplay.state.elapsed_seconds = transition.playtest_audio_start_seconds;
         self.editor.camera.playing_rotation = transition.camera_rotation;
         self.editor.camera.playing_pitch = transition.camera_pitch;
-        self.editor.ui.right_dragging = false;
+        self.editor.input.right_dragging = false;
         self.rebuild_block_vertices();
     }
 
@@ -1164,7 +1164,7 @@ impl State {
         let selected_indices = self.editor.selected_indices_normalized();
         let block_index = self
             .editor
-            .ui
+            .input
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .or_else(|| selected_indices.first().copied());
@@ -1332,8 +1332,8 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.editor_remove_block();
         assert_eq!(state.editor.objects.len(), 1);
@@ -1362,8 +1362,8 @@ mod tests {
             .editor
             .objects
             .push(test_transform_trigger(vec!["object_2"]));
-        state.editor.ui.selected_block_index = Some(1);
-        state.editor.ui.selected_block_indices = vec![1];
+        state.editor.input.selected_block_index = Some(1);
+        state.editor.input.selected_block_indices = vec![1];
 
         state.editor_remove_block();
 
@@ -1395,8 +1395,8 @@ mod tests {
             .editor
             .objects
             .push(test_transform_trigger(vec!["object_4"]));
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.editor_remove_block();
 
@@ -1418,10 +1418,10 @@ mod tests {
     async fn remove_block_is_ignored_in_tapping_mode() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.editor_remove_block();
 
@@ -1444,7 +1444,7 @@ mod tests {
             &state.editor.timeline.taps.tap_times,
             &state.editor.objects,
         );
-        state.editor.ui.cursor = [4.0, 1.0, 3.0];
+        state.editor.input.cursor = [4.0, 1.0, 3.0];
 
         state.editor_set_spawn_here();
         assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
@@ -1482,7 +1482,7 @@ mod tests {
         state.phase = AppPhase::Editor;
         state.editor.timeline.clock.duration_seconds = 8.0;
         state.editor.timeline.clock.time_seconds = 2.0;
-        state.editor.ui.cursor = [1.0, 0.0, 2.0];
+        state.editor.input.cursor = [1.0, 0.0, 2.0];
         state.editor.timeline.preview.position = [1.5, 0.0, 2.5];
 
         let (added_time, added) = state.editor.toggle_tap_at_cursor();
@@ -1512,7 +1512,7 @@ mod tests {
         state.editor.timeline.clock.duration_seconds = 8.0;
         state.editor.timeline.clock.time_seconds = 3.0;
         state.editor.objects = vec![test_block([0.0, 0.0, 4.0])];
-        state.editor.ui.cursor = [0.0, 0.0, 3.0];
+        state.editor.input.cursor = [0.0, 0.0, 3.0];
 
         let mut runtime = TimelineSimulationRuntime::new(
             state.editor.spawn.position,
@@ -1542,22 +1542,22 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(0);
 
         assert!(state.editor.nudge_selected(2.0, -1.0));
         assert_eq!(state.editor.objects[0].position, [2.0, 0.0, -1.0]);
         assert_eq!(state.editor.objects[1].position, [5.0, 0.0, 2.0]);
 
-        state.editor.ui.selected_block_indices.clear();
-        state.editor.ui.selected_block_index = None;
+        state.editor.input.selected_block_indices.clear();
+        state.editor.input.selected_block_index = None;
         assert!(!state.editor.nudge_selected(1.0, 1.0));
 
-        state.editor.ui.cursor = [2.0, 0.0, -1.0];
+        state.editor.input.cursor = [2.0, 0.0, -1.0];
         assert!(state.editor.remove_selected());
         assert_eq!(state.editor.objects.len(), 1);
 
-        state.editor.ui.cursor = [999.0, 0.0, 999.0];
+        state.editor.input.cursor = [999.0, 0.0, 999.0];
         assert!(!state.editor.remove_selected());
     }
 
@@ -1571,22 +1571,22 @@ mod tests {
             test_block([1.76, 0.0, 2.24]),
             test_block([9.1, 0.0, 9.1]),
         ];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0, 1];
 
         assert!(state.editor_snap_selection_to_grid());
 
         assert_eq!(state.editor.objects[0].position, [0.0, 0.5, -0.5]);
         assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 2.0]);
         assert_eq!(state.editor.objects[2].position, [9.1, 0.0, 9.1]);
-        assert_eq!(state.editor.ui.cursor, [0.0, 0.5, -0.5]);
+        assert_eq!(state.editor.input.cursor, [0.0, 0.5, -0.5]);
     }
 
     #[tokio::test]
     async fn g_key_snaps_selected_tap_to_configured_grid_step() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.config.snap_step = 1.0;
         state.editor.timeline.clock.duration_seconds = 4.0;
         state.editor.timeline.clock.time_seconds = 0.2;
@@ -1606,7 +1606,7 @@ mod tests {
             state.editor.timeline.taps.tap_times[0]
         );
         assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
-        assert_eq!(state.editor.ui.cursor, [0.0, 0.0, 2.0]);
+        assert_eq!(state.editor.input.cursor, [0.0, 0.0, 2.0]);
         assert!(
             (state.editor.timeline.clock.time_seconds - state.editor.timeline.taps.tap_times[0])
                 .abs()
@@ -1628,7 +1628,7 @@ mod tests {
     async fn selected_tap_time_input_updates_time_and_preserves_selection() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.clock.duration_seconds = 4.0;
         state.editor.timeline.clock.time_seconds = 1.5;
         state.editor.timeline.taps.tap_times = vec![0.5, 1.5, 2.5];
@@ -1649,30 +1649,30 @@ mod tests {
         let selected_tap = state.editor.selected_tap().expect("selected tap");
         assert_eq!(selected_tap.0, 0);
         assert!((selected_tap.1 - 0.25).abs() < 0.001);
-        assert_eq!(state.editor.ui.cursor, selected_tap.2);
+        assert_eq!(state.editor.input.cursor, selected_tap.2);
     }
 
     #[tokio::test]
     async fn move_cursor_uses_snap_configuration() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.cursor = [0.0, 0.0, 0.0];
+        state.editor.input.cursor = [0.0, 0.0, 0.0];
 
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 0.25;
         state.editor.move_cursor(2, -1);
-        assert_eq!(state.editor.ui.cursor, [0.5, 0.0, -0.25]);
+        assert_eq!(state.editor.input.cursor, [0.5, 0.0, -0.25]);
 
         state.editor.config.snap_to_grid = false;
         state.editor.move_cursor(1, 1);
-        assert_eq!(state.editor.ui.cursor, [1.5, 0.0, 0.75]);
+        assert_eq!(state.editor.input.cursor, [1.5, 0.0, 0.75]);
     }
 
     #[tokio::test]
     async fn tapping_path_cursor_snaps_only_along_movement_axis() {
         let mut forward_state = State::new_test().await;
         forward_state.phase = AppPhase::Editor;
-        forward_state.editor.ui.mode = EditorMode::Tapping;
+        forward_state.editor.input.mode = EditorMode::Tapping;
         forward_state.editor.spawn.position = [1.0, 0.0, 0.0];
         forward_state.editor.spawn.direction = Direction::Forward;
         forward_state.editor.config.snap_to_grid = true;
@@ -1688,7 +1688,7 @@ mod tests {
 
         let mut right_state = State::new_test().await;
         right_state.phase = AppPhase::Editor;
-        right_state.editor.ui.mode = EditorMode::Tapping;
+        right_state.editor.input.mode = EditorMode::Tapping;
         right_state.editor.spawn.position = [0.0, 0.0, 1.0];
         right_state.editor.spawn.direction = Direction::Right;
         right_state.editor.config.snap_to_grid = true;
@@ -1707,7 +1707,7 @@ mod tests {
     async fn tapping_path_cursor_splits_turn_samples_without_diagonal_drift() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
         state.editor.timeline.clock.duration_seconds = 2.0;
@@ -1742,7 +1742,7 @@ mod tests {
     async fn timing_division_previews_include_distant_timeline_times() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.clock.duration_seconds = 60.0;
         state.editor.timeline.clock.time_seconds = 0.0;
         state.editor.timing.timing_points = vec![TimingPoint {
@@ -1764,12 +1764,12 @@ mod tests {
     async fn toggle_tap_at_cursor_can_add_distant_cached_path_tap() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 1.0;
         state.editor.timeline.clock.duration_seconds = 8.0;
         state.set_editor_timeline_time_seconds(0.1);
-        state.editor.ui.cursor = [0.0, 0.0, 32.0];
+        state.editor.input.cursor = [0.0, 0.0, 32.0];
 
         let (added_time, added) = state.editor.toggle_tap_at_cursor();
 
@@ -1812,10 +1812,10 @@ mod tests {
 
         state.toggle_editor_timeline_playback();
         assert!(state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.ui.mode, EditorMode::Null);
+        assert_eq!(state.editor.input.mode, EditorMode::Null);
 
         state.toggle_editor_timeline_playback();
         assert!(!state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.ui.mode, EditorMode::Place);
+        assert_eq!(state.editor.input.mode, EditorMode::Place);
     }
 }

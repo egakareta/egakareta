@@ -17,8 +17,8 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> EditorInteractionChange {
-        let previous_pointer = self.ui.pointer_screen;
-        self.ui.pointer_screen = Some([x, y]);
+        let previous_pointer = self.input.pointer_screen;
+        self.input.pointer_screen = Some([x, y]);
         if previous_pointer.is_none_or(|pointer| {
             (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
                 || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
@@ -30,8 +30,8 @@ impl EditorSubsystem {
             return EditorInteractionChange::None;
         };
 
-        if pick.cursor != self.ui.cursor {
-            self.ui.cursor = pick.cursor;
+        if pick.cursor != self.input.cursor {
+            self.input.cursor = pick.cursor;
             return EditorInteractionChange::Cursor;
         }
 
@@ -44,8 +44,8 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> EditorInteractionChange {
-        let previous_pointer = self.ui.pointer_screen;
-        self.ui.pointer_screen = Some([x, y]);
+        let previous_pointer = self.input.pointer_screen;
+        self.input.pointer_screen = Some([x, y]);
         if previous_pointer.is_none_or(|pointer| {
             (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
                 || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
@@ -56,14 +56,14 @@ impl EditorSubsystem {
         let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
             self.runtime.interaction.hovered_tap_index = None;
             self.runtime.interaction.hovered_tap_division = None;
-            if self.ui.mode.is_transform_mode() && self.ui.hovered_block_index.is_some() {
-                self.ui.hovered_block_index = None;
+            if self.input.mode.is_transform_mode() && self.input.hovered_block_index.is_some() {
+                self.input.hovered_block_index = None;
                 return EditorInteractionChange::Hover;
             }
             return EditorInteractionChange::None;
         };
 
-        if self.ui.mode.is_transform_mode() {
+        if self.input.mode.is_transform_mode() {
             self.runtime.interaction.hovered_tap_index = None;
             self.runtime.interaction.hovered_tap_division = None;
             let next_hover = if self.runtime.interaction.hovered_gizmo.is_some() {
@@ -72,24 +72,24 @@ impl EditorSubsystem {
                 pick.hit_block_index
             };
 
-            if self.ui.hovered_block_index != next_hover {
-                self.ui.hovered_block_index = next_hover;
+            if self.input.hovered_block_index != next_hover {
+                self.input.hovered_block_index = next_hover;
                 return EditorInteractionChange::Hover;
             }
             return EditorInteractionChange::None;
         }
 
-        self.runtime.interaction.hovered_tap_index = (self.ui.mode
+        self.runtime.interaction.hovered_tap_index = (self.input.mode
             == eg_types::EditorMode::Tapping)
             .then_some(pick.hit_tap_index)
             .flatten();
-        self.runtime.interaction.hovered_tap_division = (self.ui.mode
+        self.runtime.interaction.hovered_tap_division = (self.input.mode
             == eg_types::EditorMode::Tapping)
             .then_some(pick.hit_tap_division)
             .flatten();
 
-        if pick.cursor != self.ui.cursor {
-            self.ui.cursor = pick.cursor;
+        if pick.cursor != self.input.cursor {
+            self.input.cursor = pick.cursor;
             return EditorInteractionChange::Cursor;
         }
 
@@ -103,7 +103,7 @@ impl EditorSubsystem {
         viewport: Vec2,
         phase: AppPhase,
     ) -> EditorInteractionChange {
-        if phase != AppPhase::Editor || self.ui.right_dragging {
+        if phase != AppPhase::Editor || self.input.right_dragging {
             return EditorInteractionChange::None;
         }
 
@@ -113,7 +113,7 @@ impl EditorSubsystem {
 
 impl State {
     pub fn force_editor_cursor_from_pointer(&mut self) {
-        let Some(pointer) = self.editor.ui.pointer_screen else {
+        let Some(pointer) = self.editor.input.pointer_screen else {
             return;
         };
 

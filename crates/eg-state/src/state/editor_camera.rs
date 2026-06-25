@@ -194,16 +194,16 @@ impl EditorSubsystem {
 
     pub fn update_pan_from_keys(&mut self, frame_dt: f32) {
         let mut input = Vec2::ZERO;
-        if self.ui.pan_left_held {
+        if self.input.pan_left_held {
             input.x -= 1.0;
         }
-        if self.ui.pan_right_held {
+        if self.input.pan_right_held {
             input.x += 1.0;
         }
-        if self.ui.pan_up_held {
+        if self.input.pan_up_held {
             input.y += 1.0;
         }
-        if self.ui.pan_down_held {
+        if self.input.pan_down_held {
             input.y -= 1.0;
         }
 
@@ -213,7 +213,7 @@ impl EditorSubsystem {
 
         let input = input.normalize();
         let mut speed_multiplier = 1.0;
-        if self.ui.shift_held {
+        if self.input.shift_held {
             speed_multiplier = 0.3;
         }
 

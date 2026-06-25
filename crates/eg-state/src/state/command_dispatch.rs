@@ -185,9 +185,9 @@ impl State {
 
             let chord = KeyChord::new(
                 normalize_binding_key(key),
-                self.editor.ui.ctrl_held,
-                self.editor.ui.shift_held,
-                self.editor.ui.alt_held,
+                self.editor.input.ctrl_held,
+                self.editor.input.shift_held,
+                self.editor.input.alt_held,
             );
             self.dispatch_editor(EditorCommand::SetKeybind {
                 action,
@@ -230,8 +230,8 @@ impl State {
         }
 
         let normalized_key = eg_types::normalize_binding_key(key);
-        let ctrl = self.editor.ui.ctrl_held;
-        let alt = self.editor.ui.alt_held;
+        let ctrl = self.editor.input.ctrl_held;
+        let alt = self.editor.input.alt_held;
 
         let mut commands = Vec::new();
         for binding in &self.app_settings().keybinds {
@@ -304,9 +304,9 @@ impl State {
         }
 
         let normalized_key = normalize_binding_key(key);
-        let ctrl = self.editor.ui.ctrl_held;
-        let shift = self.editor.ui.shift_held;
-        let alt = self.editor.ui.alt_held;
+        let ctrl = self.editor.input.ctrl_held;
+        let shift = self.editor.input.shift_held;
+        let alt = self.editor.input.alt_held;
 
         let mut commands = Vec::new();
         for binding in &self.app_settings().keybinds {
@@ -758,43 +758,43 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Select,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Select);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Select);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Move,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Move);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Move);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Scale,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Scale);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Scale);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Rotate,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Rotate);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Rotate);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Timing,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Timing);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Timing);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Place,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Place);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Place);
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
             eg_types::EditorMode::Tapping,
         )));
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Tapping);
     }
 
     #[tokio::test]
     async fn entering_tapping_mode_invalidates_stale_tap_division_previews() {
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.timeline.tap_division_preview_cache_revision =
             state.editor.timeline.simulation_revision;
         state
@@ -812,7 +812,7 @@ mod tests {
             EditorMode::Tapping,
         )));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, EditorMode::Tapping);
         assert_eq!(state.editor.timeline.tap_division_preview_cache_revision, 0);
         assert_eq!(
             state
@@ -829,7 +829,7 @@ mod tests {
     #[tokio::test]
     async fn entering_tapping_mode_does_not_move_editor_camera() {
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.timeline.clock.time_seconds = 2.0;
         state.editor.timeline.preview.position = [12.0, 3.0, -7.0];
         state.editor.camera.editor_pan = [4.0, 8.0];
@@ -839,7 +839,7 @@ mod tests {
             EditorMode::Tapping,
         )));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, EditorMode::Tapping);
         assert_eq!(state.editor.camera.editor_pan, [4.0, 8.0]);
         assert_eq!(state.editor.camera.editor_target_z, 6.0);
     }
@@ -847,7 +847,7 @@ mod tests {
     #[tokio::test]
     async fn entering_tapping_mode_recomputes_stale_tap_positions_after_object_edit() {
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.spawn.position = [0.0, 0.0, 0.0];
         state.editor.spawn.direction = eg_types::Direction::Forward;
         state.editor.timeline.taps.tap_times = vec![0.5];
@@ -871,7 +871,7 @@ mod tests {
     #[tokio::test]
     async fn entering_tapping_mode_rebuilds_path_pick_samples_after_object_edit() {
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.spawn.position = [0.0, 0.0, 0.0];
         state.editor.spawn.direction = eg_types::Direction::Forward;
         state.editor.timeline.clock.duration_seconds = 2.0;
@@ -887,7 +887,7 @@ mod tests {
             EditorMode::Tapping,
         )));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, EditorMode::Tapping);
         assert!(!state.editor.timeline.snapshot_cache.is_empty());
         assert_eq!(
             state.editor.timeline.snapshot_cache_revision,
@@ -910,7 +910,7 @@ mod tests {
         )));
         state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
         assert!(state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.ui.mode, EditorMode::Null);
+        assert_eq!(state.editor.input.mode, EditorMode::Null);
         assert_eq!(
             state.editor.runtime.interaction.last_mode,
             Some(EditorMode::Timing)
@@ -921,7 +921,7 @@ mod tests {
         )));
 
         assert!(state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.ui.mode, EditorMode::Null);
+        assert_eq!(state.editor.input.mode, EditorMode::Null);
         assert_eq!(
             state.editor.runtime.interaction.last_mode,
             Some(EditorMode::Place)
@@ -934,7 +934,7 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
 
         assert!(!state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.ui.mode, EditorMode::Place);
+        assert_eq!(state.editor.input.mode, EditorMode::Place);
         assert!(state.editor.runtime.interaction.last_mode.is_none());
     }
 
@@ -942,7 +942,7 @@ mod tests {
     async fn editor_escape_deselects_blocks_and_taps_before_playback_or_timeline() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_indices = vec![0];
         state.editor.timeline.taps.tap_times = vec![1.25];
         state.editor.timeline.taps.tap_indicator_positions = vec![[0.25, 0.0, 0.75]];
         state.editor.timeline.taps.selected_index = Some(0);
@@ -951,8 +951,8 @@ mod tests {
 
         state.dispatch(AppCommand::Editor(EditorCommand::Escape));
 
-        assert!(state.editor.ui.selected_block_indices.is_empty());
-        assert!(state.editor.ui.selected_block_index.is_none());
+        assert!(state.editor.input.selected_block_indices.is_empty());
+        assert!(state.editor.input.selected_block_index.is_none());
         assert_eq!(state.editor.timeline.taps.selected_index, None);
         assert!(state.editor.timeline.playback.playing);
         assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
@@ -1088,24 +1088,24 @@ mod tests {
                 ..LevelObject::new("core/grass")
             },
         ];
-        state.editor.ui.mode = EditorMode::Move;
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.hovered_block_index = Some(1);
+        state.editor.input.mode = EditorMode::Move;
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.hovered_block_index = Some(1);
 
         state.dispatch(AppCommand::Editor(EditorCommand::PickSelectedBlock));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Place);
+        assert_eq!(state.editor.input.mode, EditorMode::Place);
         assert_eq!(state.editor.config.selected_block_id, "core/stone");
 
-        state.editor.ui.mode = EditorMode::Move;
-        state.editor.ui.selected_block_index = None;
-        state.editor.ui.selected_block_indices.clear();
-        state.editor.ui.hovered_block_index = Some(1);
+        state.editor.input.mode = EditorMode::Move;
+        state.editor.input.selected_block_index = None;
+        state.editor.input.selected_block_indices.clear();
+        state.editor.input.hovered_block_index = Some(1);
 
         state.dispatch(AppCommand::Editor(EditorCommand::PickSelectedBlock));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Move);
+        assert_eq!(state.editor.input.mode, EditorMode::Move);
         assert_eq!(state.editor.config.selected_block_id, "core/stone");
     }
 
@@ -1123,10 +1123,10 @@ mod tests {
         state.dispatch(AppCommand::TurnRight);
 
         assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.ui.mode, EditorMode::Scale);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
-        assert_eq!(state.editor.ui.hovered_block_index, Some(0));
+        assert_eq!(state.editor.input.mode, EditorMode::Scale);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.hovered_block_index, Some(0));
         assert_eq!(state.editor.objects[0].block_id, "core/lava");
         assert_eq!(state.editor.objects[0].rotation, [0.0, 90.0, 0.0]);
     }
@@ -1162,9 +1162,9 @@ mod tests {
         state.dispatch(AppCommand::TurnRight);
 
         assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.ui.mode, EditorMode::Place);
-        assert!(state.editor.ui.selected_block_index.is_none());
-        assert!(state.editor.ui.selected_block_indices.is_empty());
+        assert_eq!(state.editor.input.mode, EditorMode::Place);
+        assert!(state.editor.input.selected_block_index.is_none());
+        assert!(state.editor.input.selected_block_indices.is_empty());
     }
 
     #[tokio::test]
@@ -1190,7 +1190,7 @@ mod tests {
             y: screen.y as f64,
         }));
 
-        assert_eq!(state.editor.ui.mode, EditorMode::Place);
+        assert_eq!(state.editor.input.mode, EditorMode::Place);
         assert_eq!(state.editor.config.selected_block_id, "core/grass");
         assert_eq!(state.editor.config.recent_block_ids[0], "core/grass");
     }
@@ -1210,26 +1210,26 @@ mod tests {
                 ..LevelObject::new("core/grass")
             },
         ];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.hovered_block_index = Some(1);
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.hovered_block_index = Some(1);
 
         state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
         assert_eq!(state.editor.camera.editor_pan, [11.0, 33.0]);
         assert_eq!(state.editor.camera.editor_target_z, 4.0);
 
-        state.editor.ui.selected_block_index = None;
-        state.editor.ui.selected_block_indices.clear();
+        state.editor.input.selected_block_index = None;
+        state.editor.input.selected_block_indices.clear();
         state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
         state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
         assert_eq!(state.editor.camera.editor_pan, [7.0, 9.0]);
         assert_eq!(state.editor.camera.editor_target_z, 8.0);
 
-        state.editor.ui.mode = EditorMode::Tapping;
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.mode = EditorMode::Tapping;
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
         state.editor.timeline.taps.tap_times = vec![1.25];
         state.editor.timeline.taps.tap_indicator_positions = vec![[5.0, 1.0, 6.0]];
         state.editor.timeline.taps.selected_index = Some(0);
@@ -1238,12 +1238,12 @@ mod tests {
         assert_eq!(state.editor.camera.editor_pan, [5.5, 6.5]);
         assert_eq!(state.editor.camera.editor_target_z, 1.0);
 
-        state.editor.ui.mode = EditorMode::Place;
-        state.editor.ui.selected_block_index = None;
-        state.editor.ui.selected_block_indices.clear();
-        state.editor.ui.hovered_block_index = Some(1);
+        state.editor.input.mode = EditorMode::Place;
+        state.editor.input.selected_block_index = None;
+        state.editor.input.selected_block_indices.clear();
+        state.editor.input.hovered_block_index = Some(1);
         state.editor.timeline.taps.selected_index = None;
-        state.editor.ui.pointer_screen = None;
+        state.editor.input.pointer_screen = None;
         state.editor.timeline.preview.position = [7.0, 8.0, 9.0];
         state.dispatch(AppCommand::Editor(EditorCommand::FocusCameraTarget));
 
@@ -1280,21 +1280,21 @@ mod tests {
 
         // 1. Pointer move updates screen coordinates
         state.process_input_event(InputEvent::PointerMoved { x: 100.0, y: 200.0 });
-        assert_eq!(state.editor.ui.pointer_screen, Some([100.0, 200.0]));
+        assert_eq!(state.editor.input.pointer_screen, Some([100.0, 200.0]));
 
         // 2. Mouse down sets interaction state
         state.process_input_event(InputEvent::MouseButton {
             button: 0,
             pressed: true,
         });
-        assert!(state.editor.ui.left_mouse_down);
+        assert!(state.editor.input.left_mouse_down);
 
         // 3. Mouse up clears interaction state
         state.process_input_event(InputEvent::MouseButton {
             button: 0,
             pressed: false,
         });
-        assert!(!state.editor.ui.left_mouse_down);
+        assert!(!state.editor.input.left_mouse_down);
     }
 
     #[tokio::test]
@@ -1302,19 +1302,19 @@ mod tests {
         use crate::commands::InputEvent;
 
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.set_editor_ui_input_blocking_rects(vec![[10.0, 20.0, 110.0, 120.0]], 2.0);
 
         state.process_input_event(InputEvent::PrimaryClick { x: 100.0, y: 100.0 });
 
         assert!(state.editor.objects.is_empty());
-        assert!(state.editor.ui.left_mouse_down);
+        assert!(state.editor.input.left_mouse_down);
 
         state.process_input_event(InputEvent::MouseButton {
             button: 0,
             pressed: false,
         });
-        assert!(!state.editor.ui.left_mouse_down);
+        assert!(!state.editor.input.left_mouse_down);
     }
 
     #[tokio::test]
@@ -1322,7 +1322,7 @@ mod tests {
         use crate::commands::InputEvent;
 
         let mut state = new_editor_state().await;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.set_editor_ui_input_blocking_rects(vec![[10.0, 20.0, 110.0, 120.0]], 2.0);
 
         state.process_input_event(InputEvent::PrimaryClick { x: 250.0, y: 250.0 });
@@ -1360,28 +1360,28 @@ mod tests {
             pressed: true,
             just_pressed: true,
         });
-        assert!(state.editor.ui.ctrl_held);
+        assert!(state.editor.input.ctrl_held);
 
         state.process_input_event(InputEvent::Key {
             key: "ControlLeft".to_string(),
             pressed: false,
             just_pressed: false,
         });
-        assert!(!state.editor.ui.ctrl_held);
+        assert!(!state.editor.input.ctrl_held);
 
         state.process_input_event(InputEvent::Key {
             key: "AltRight".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert!(state.editor.ui.alt_held);
+        assert!(state.editor.input.alt_held);
 
         state.process_input_event(InputEvent::Key {
             key: "Alt".to_string(),
             pressed: false,
             just_pressed: false,
         });
-        assert!(!state.editor.ui.alt_held);
+        assert!(!state.editor.input.alt_held);
     }
 
     #[tokio::test]
@@ -1415,14 +1415,14 @@ mod tests {
             pressed: true,
             just_pressed: true,
         });
-        assert!(state.editor.ui.pan_up_held);
+        assert!(state.editor.input.pan_up_held);
 
         state.process_input_event(InputEvent::Key {
             key: "w".to_string(),
             pressed: false,
             just_pressed: false,
         });
-        assert!(!state.editor.ui.pan_up_held);
+        assert!(!state.editor.input.pan_up_held);
     }
 
     #[tokio::test]
@@ -1436,35 +1436,35 @@ mod tests {
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Select);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Select);
 
         state.process_input_event(InputEvent::Key {
             key: "2".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Move);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Move);
 
         state.process_input_event(InputEvent::Key {
             key: "3".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Scale);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Scale);
 
         state.process_input_event(InputEvent::Key {
             key: "4".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Rotate);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Rotate);
 
         state.process_input_event(InputEvent::Key {
             key: "5".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Rotate);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Rotate);
     }
 
     #[tokio::test]
@@ -1487,21 +1487,21 @@ mod tests {
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Place);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Place);
 
         state.process_input_event(InputEvent::Key {
             key: "2".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Timing);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Timing);
 
         state.process_input_event(InputEvent::Key {
             key: "3".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Tapping);
     }
 
     #[tokio::test]
@@ -1518,14 +1518,14 @@ mod tests {
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Scale);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Scale);
 
         state.process_input_event(InputEvent::Key {
             key: "e".to_string(),
             pressed: true,
             just_pressed: true,
         });
-        assert_eq!(state.editor.ui.mode, eg_types::EditorMode::Scale);
+        assert_eq!(state.editor.input.mode, eg_types::EditorMode::Scale);
     }
 
     #[tokio::test]
@@ -1559,14 +1559,17 @@ mod tests {
             web_style.editor.objects.len()
         );
         assert_eq!(
-            native_style.editor.ui.pointer_screen,
-            web_style.editor.ui.pointer_screen
+            native_style.editor.input.pointer_screen,
+            web_style.editor.input.pointer_screen
         );
         assert_eq!(
-            native_style.editor.ui.left_mouse_down,
-            web_style.editor.ui.left_mouse_down
+            native_style.editor.input.left_mouse_down,
+            web_style.editor.input.left_mouse_down
         );
-        assert_eq!(native_style.editor.ui.cursor, web_style.editor.ui.cursor);
+        assert_eq!(
+            native_style.editor.input.cursor,
+            web_style.editor.input.cursor
+        );
     }
 
     #[tokio::test]
@@ -1608,12 +1611,12 @@ mod tests {
         });
 
         assert_eq!(
-            native_style.editor.ui.right_dragging,
-            web_style.editor.ui.right_dragging
+            native_style.editor.input.right_dragging,
+            web_style.editor.input.right_dragging
         );
         assert_eq!(
-            native_style.editor.ui.pointer_screen,
-            web_style.editor.ui.pointer_screen
+            native_style.editor.input.pointer_screen,
+            web_style.editor.input.pointer_screen
         );
         assert_eq!(
             native_style.editor.camera.editor_pan,
@@ -1661,9 +1664,9 @@ mod tests {
             pressed: false,
         });
 
-        assert_eq!(state.editor.ui.selected_block_indices.len(), 2);
-        assert!(state.editor.ui.selected_block_indices.contains(&0));
-        assert!(state.editor.ui.selected_block_indices.contains(&1));
+        assert_eq!(state.editor.input.selected_block_indices.len(), 2);
+        assert!(state.editor.input.selected_block_indices.contains(&0));
+        assert!(state.editor.input.selected_block_indices.contains(&1));
     }
 
     #[tokio::test]
@@ -1679,7 +1682,7 @@ mod tests {
         state.editor.objects = vec![eg_types::LevelObject::default()];
 
         // Ensure we are not hovering anything initially
-        state.editor.ui.hovered_block_index = None;
+        state.editor.input.hovered_block_index = None;
         state.rebuild_editor_hover_outline_vertices();
         assert!(
             state
@@ -1708,7 +1711,7 @@ mod tests {
         // Process dirty flags to trigger the deferred selection outline rebuild
         state.process_editor_dirty(1.0 / 60.0);
 
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
         assert!(
             state
                 .render
@@ -1778,9 +1781,9 @@ mod tests {
             pressed: true,
         });
 
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert!(state.editor.ui.marquee_start_screen.is_none());
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert!(state.editor.input.marquee_start_screen.is_none());
 
         state.process_editor_dirty(1.0 / 60.0);
         assert!(
@@ -1842,7 +1845,7 @@ mod tests {
         assert_eq!(state.editor.timeline.taps.tap_times, vec![1.25]);
         assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
         assert_eq!(state.editor.timeline.clock.time_seconds, 1.25);
-        assert_eq!(state.editor.ui.cursor, [0.25, 0.0, 0.75]);
+        assert_eq!(state.editor.input.cursor, [0.25, 0.0, 0.75]);
         assert_eq!(state.editor.camera.editor_pan, original_pan);
         assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
@@ -1920,7 +1923,7 @@ mod tests {
 
         assert_eq!(state.editor.timeline.taps.selected_index, Some(1));
         assert!((state.editor.timeline.clock.time_seconds - 0.25).abs() < 0.001);
-        assert_eq!(state.editor.ui.cursor, second_tap_position);
+        assert_eq!(state.editor.input.cursor, second_tap_position);
 
         let selected_tap = state
             .ui_view_model()
@@ -1998,7 +2001,7 @@ mod tests {
 
         assert!(state.editor.timeline.taps.tap_times.is_empty());
         assert!((state.editor.timeline.clock.time_seconds - 0.1).abs() < 0.001);
-        assert_eq!(state.editor.ui.cursor, division.indicator_position);
+        assert_eq!(state.editor.input.cursor, division.indicator_position);
         assert_eq!(state.editor.camera.editor_pan, original_pan);
         assert_eq!(state.editor.camera.editor_target_z, original_target_z);
 
@@ -2015,7 +2018,7 @@ mod tests {
             division.indicator_position
         );
         assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
-        assert_eq!(state.editor.ui.cursor, division.indicator_position);
+        assert_eq!(state.editor.input.cursor, division.indicator_position);
         assert_eq!(state.editor.camera.editor_pan, original_pan);
         assert_eq!(state.editor.camera.editor_target_z, original_target_z);
     }
@@ -2051,11 +2054,11 @@ mod tests {
         });
 
         assert!(
-            state.editor.ui.cursor[0].abs() < 0.05,
+            state.editor.input.cursor[0].abs() < 0.05,
             "cursor should be constrained to the forward snake lane, got {:?}",
-            state.editor.ui.cursor
+            state.editor.input.cursor
         );
-        assert!(state.editor.ui.cursor[2].is_finite());
+        assert!(state.editor.input.cursor[2].is_finite());
     }
 
     #[tokio::test]
@@ -2123,8 +2126,11 @@ mod tests {
             pressed: false,
         });
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+        assert_eq!(state.editor.input.selected_block_index, Some(trigger_index));
+        assert_eq!(
+            state.editor.input.selected_block_indices,
+            vec![trigger_index]
+        );
         assert_eq!(state.editor.selected_trigger_index(), None);
     }
 
@@ -2199,8 +2205,11 @@ mod tests {
             pressed: false,
         });
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+        assert_eq!(state.editor.input.selected_block_index, Some(trigger_index));
+        assert_eq!(
+            state.editor.input.selected_block_indices,
+            vec![trigger_index]
+        );
         assert_eq!(state.editor.selected_trigger_index(), None);
     }
 
@@ -2251,8 +2260,11 @@ mod tests {
             pressed: false,
         });
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(trigger_index));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![trigger_index]);
+        assert_eq!(state.editor.input.selected_block_index, Some(trigger_index));
+        assert_eq!(
+            state.editor.input.selected_block_indices,
+            vec![trigger_index]
+        );
         assert_eq!(state.editor.selected_trigger_index(), None);
     }
 
@@ -2374,8 +2386,8 @@ mod tests {
 
         let mut state = new_editor_state().await;
         state.dispatch(AppCommand::TurnRight);
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
         state.editor.runtime.interaction.clipboard = None;
 
         state.dispatch(AppCommand::Editor(EditorCommand::SetKeybind {
@@ -2429,23 +2441,23 @@ mod tests {
 
         assert!(!state.has_block_selection());
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_index = Some(0);
         assert!(state.has_block_selection());
-        state.editor.ui.selected_block_index = None;
-        state.editor.ui.selected_block_indices.clear();
+        state.editor.input.selected_block_index = None;
+        state.editor.input.selected_block_indices.clear();
 
         state.phase = AppPhase::Menu;
         assert!(state.map_pan_key_to_commands("w", true).is_empty());
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.ctrl_held = false;
-        state.editor.ui.alt_held = false;
+        state.editor.input.ctrl_held = false;
+        state.editor.input.alt_held = false;
         assert_eq!(
             state.map_pan_key_to_commands("w", true),
             vec![AppCommand::Editor(EditorCommand::SetPanUpHeld(true))]
         );
 
-        state.editor.ui.ctrl_held = true;
+        state.editor.input.ctrl_held = true;
         assert!(state.map_pan_key_to_commands("w", true).is_empty());
 
         let released_pan = state.map_pan_key_to_commands("w", false);
@@ -2476,7 +2488,7 @@ mod tests {
             state.command_for_keybind_action("remove_block", true),
             Some(AppCommand::Editor(EditorCommand::RemoveBlock))
         );
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.taps.tap_times = vec![1.25];
         state.editor.timeline.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0]];
         state.editor.timeline.taps.selected_index = Some(0);
@@ -2484,7 +2496,7 @@ mod tests {
             state.command_for_keybind_action("remove_block", true),
             Some(AppCommand::Editor(EditorCommand::RemoveTapAt(1.25)))
         );
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         assert_eq!(
             state.command_for_keybind_action("copy", true),
             Some(AppCommand::Editor(EditorCommand::CopyBlock))
@@ -2625,7 +2637,7 @@ mod tests {
             Some(AppCommand::Editor(EditorCommand::RotatePlacementPreview))
         );
 
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.mode = EditorMode::Move;
         assert_eq!(
             state.command_for_keybind_action("spawn_rotate", true),
             Some(AppCommand::Editor(EditorCommand::RotateSpawnDirection))
@@ -2731,8 +2743,8 @@ mod tests {
         assert_eq!(state.editor.config.snap_rotation_step_degrees, 30.0);
 
         state.dispatch(AppCommand::TurnRight);
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         let updated = LevelObject {
             position: [2.0, 1.0, 3.0],
@@ -2797,7 +2809,7 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::BpmTap));
         state.dispatch(AppCommand::Editor(EditorCommand::BpmTapReset));
 
-        state.editor.ui.cursor = [7.0, 0.0, 9.0];
+        state.editor.input.cursor = [7.0, 0.0, 9.0];
         state.dispatch(AppCommand::Editor(EditorCommand::SetSpawnHere));
         assert_eq!(state.editor.spawn.position, [7.0, 0.0, 9.0]);
         let old_dir = state.editor.spawn.direction;
@@ -2859,13 +2871,13 @@ mod tests {
         state.dispatch(AppCommand::Editor(EditorCommand::SetPanDownHeld(true)));
         state.dispatch(AppCommand::Editor(EditorCommand::SetPanLeftHeld(true)));
         state.dispatch(AppCommand::Editor(EditorCommand::SetPanRightHeld(true)));
-        assert!(state.editor.ui.shift_held);
-        assert!(state.editor.ui.ctrl_held);
-        assert!(state.editor.ui.alt_held);
-        assert!(state.editor.ui.pan_up_held);
-        assert!(state.editor.ui.pan_down_held);
-        assert!(state.editor.ui.pan_left_held);
-        assert!(state.editor.ui.pan_right_held);
+        assert!(state.editor.input.shift_held);
+        assert!(state.editor.input.ctrl_held);
+        assert!(state.editor.input.alt_held);
+        assert!(state.editor.input.pan_up_held);
+        assert!(state.editor.input.pan_down_held);
+        assert!(state.editor.input.pan_left_held);
+        assert!(state.editor.input.pan_right_held);
 
         state.dispatch(AppCommand::ResizeSurface {
             width: 1024,

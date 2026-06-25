@@ -106,7 +106,7 @@ impl EditorSubsystem {
         phase: AppPhase,
         is_game_active: bool,
     ) {
-        if !self.ui.right_dragging {
+        if !self.input.right_dragging {
             return;
         }
 

@@ -73,7 +73,7 @@ fn camera_trigger_object(time_seconds: f32) -> LevelObject {
 async fn test_marquee_no_redundant_selections_before_drag_started() {
     let mut state = State::new_test().await;
     state.phase = AppPhase::Editor;
-    state.editor.ui.mode = EditorMode::Select;
+    state.editor.input.mode = EditorMode::Select;
     state.editor.objects.push(LevelObject::default());
     state.editor.objects.push(LevelObject {
         position: [5.0, 0.0, 0.0],
@@ -81,7 +81,7 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     });
 
     // 1. Just hovering over the first block (no mouse down)
-    state.editor.ui.hovered_block_index = Some(0);
+    state.editor.input.hovered_block_index = Some(0);
     state.rebuild_editor_hover_outline_vertices();
 
     let count = state
@@ -106,9 +106,9 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     );
 
     // 2. Mouse down - starts marquee but drag hasn't started (moved only 1 pixel)
-    state.editor.ui.left_mouse_down = true;
-    state.editor.ui.marquee_start_screen = Some([100.0, 100.0]);
-    state.editor.ui.marquee_current_screen = Some([101.0, 101.0]);
+    state.editor.input.left_mouse_down = true;
+    state.editor.input.marquee_start_screen = Some([100.0, 100.0]);
+    state.editor.input.marquee_current_screen = Some([101.0, 101.0]);
 
     // Verify marquee is not active yet
     let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
@@ -130,7 +130,7 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     );
 
     // 3. Drag far enough for marquee to be active
-    state.editor.ui.marquee_current_screen = Some([200.0, 200.0]);
+    state.editor.input.marquee_current_screen = Some([200.0, 200.0]);
     let (_, _, is_active) = state.editor.marquee_selection_rect_screen().unwrap();
     assert!(is_active, "Marquee SHOULD be active now");
 }
@@ -139,15 +139,15 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
 async fn selection_outline_builds_instances_per_selected_block() {
     let mut state = State::new_test().await;
     state.phase = AppPhase::Editor;
-    state.editor.ui.mode = EditorMode::Select;
+    state.editor.input.mode = EditorMode::Select;
     state.editor.objects.push(LevelObject::default());
     state.editor.objects.push(LevelObject {
         position: [2.0, 0.0, 0.0],
         ..LevelObject::default()
     });
 
-    state.editor.ui.selected_block_index = Some(0);
-    state.editor.ui.selected_block_indices = vec![0, 1];
+    state.editor.input.selected_block_index = Some(0);
+    state.editor.input.selected_block_indices = vec![0, 1];
 
     state.rebuild_editor_selection_outline_vertices();
 
@@ -190,7 +190,7 @@ async fn selection_outline_builds_instances_per_selected_block() {
 async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     let mut state = State::new_test().await;
     state.phase = AppPhase::Editor;
-    state.editor.ui.mode = EditorMode::Select;
+    state.editor.input.mode = EditorMode::Select;
 
     for index in 0..701 {
         state.editor.objects.push(LevelObject {
@@ -198,8 +198,8 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
             ..LevelObject::default()
         });
     }
-    state.editor.ui.selected_block_index = Some(0);
-    state.editor.ui.selected_block_indices = (0..701).collect();
+    state.editor.input.selected_block_index = Some(0);
+    state.editor.input.selected_block_indices = (0..701).collect();
 
     state.rebuild_editor_selection_outline_vertices();
 
@@ -571,7 +571,7 @@ async fn test_state_input_routing() {
 #[tokio::test]
 async fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_drag() {
     let mut state = new_editor_state().await;
-    state.editor.ui.mode = EditorMode::Move;
+    state.editor.input.mode = EditorMode::Move;
 
     state.editor.objects = vec![
         LevelObject::default(),
@@ -580,7 +580,7 @@ async fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_dra
             ..LevelObject::default()
         },
     ];
-    state.editor.ui.selected_block_indices = vec![0, 1];
+    state.editor.input.selected_block_indices = vec![0, 1];
     state.sync_primary_selection_from_indices();
 
     let viewport = Vec2::new(
@@ -793,7 +793,7 @@ async fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
         .cloned()
         .expect("test requires at least two built-in levels");
 
-    state.editor.ui.mode = EditorMode::Timing;
+    state.editor.input.mode = EditorMode::Timing;
     state.editor.timing.waveform_samples = vec![0.25, -0.5, 0.75];
     state.editor.timing.waveform_sample_rate = 44_100;
 
@@ -833,14 +833,14 @@ async fn editor_clipboard_survives_builtin_level_switch() {
         position: [2.0, 1.0, 3.0],
         ..LevelObject::default()
     }];
-    state.editor.ui.selected_block_index = Some(0);
-    state.editor.ui.selected_block_indices = vec![0];
+    state.editor.input.selected_block_index = Some(0);
+    state.editor.input.selected_block_indices = vec![0];
     state.editor_copy_block();
 
     state.load_builtin_level_into_editor(&next_level);
 
     assert!(state.editor.runtime.interaction.clipboard.is_some());
-    state.editor.ui.cursor = [8.0, 2.0, 9.0];
+    state.editor.input.cursor = [8.0, 2.0, 9.0];
     let before_paste = state.editor.objects.len();
     state.editor_paste_block();
 
@@ -856,15 +856,15 @@ async fn editor_clipboard_survives_exit_and_reentry() {
         position: [1.0, 0.0, 1.0],
         ..LevelObject::default()
     }];
-    state.editor.ui.selected_block_index = Some(0);
-    state.editor.ui.selected_block_indices = vec![0];
+    state.editor.input.selected_block_index = Some(0);
+    state.editor.input.selected_block_indices = vec![0];
     state.editor_copy_block();
 
     state.back_to_menu();
     state.start_editor(0);
 
     assert!(state.editor.runtime.interaction.clipboard.is_some());
-    state.editor.ui.cursor = [4.0, 0.0, 5.0];
+    state.editor.input.cursor = [4.0, 0.0, 5.0];
     let before_paste = state.editor.objects.len();
     state.editor_paste_block();
 
@@ -902,7 +902,7 @@ async fn setting_spawn_recomputes_tap_indicator_positions() {
         &state.editor.objects,
     );
 
-    state.editor.ui.cursor = [5.0, 2.0, 0.0];
+    state.editor.input.cursor = [5.0, 2.0, 0.0];
     state.editor_set_spawn_here();
 
     let expected = derive_tap_indicator_positions(
@@ -920,9 +920,9 @@ async fn setting_spawn_recomputes_tap_indicator_positions() {
 async fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging() {
     let mut state = new_editor_state().await;
     state.editor.objects.clear();
-    state.editor.ui.mode = EditorMode::Select;
-    state.editor.ui.right_dragging = true;
-    state.editor.ui.cursor = [99.0, 99.0, 99.0];
+    state.editor.input.mode = EditorMode::Select;
+    state.editor.input.right_dragging = true;
+    state.editor.input.cursor = [99.0, 99.0, 99.0];
 
     let viewport = Vec2::new(
         state.render.gpu.config.width as f32,
@@ -935,22 +935,22 @@ async fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging
         .pick_from_screen(screen_x, screen_y, viewport)
         .expect("expected context pick")
         .cursor;
-    state.editor.ui.cursor = [99.0, 99.0, 99.0];
+    state.editor.input.cursor = [99.0, 99.0, 99.0];
 
     state.dispatch(AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
         x: screen_x,
         y: screen_y,
     }));
 
-    assert_eq!(state.editor.ui.cursor, expected_cursor);
+    assert_eq!(state.editor.input.cursor, expected_cursor);
 }
 
 #[tokio::test]
 async fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
     let mut state = new_editor_state().await;
     state.editor.objects.clear();
-    state.editor.ui.mode = EditorMode::Select;
-    state.editor.ui.cursor = [99.0, 99.0, 99.0];
+    state.editor.input.mode = EditorMode::Select;
+    state.editor.input.cursor = [99.0, 99.0, 99.0];
 
     let viewport = Vec2::new(
         state.render.gpu.config.width as f32,
@@ -963,8 +963,8 @@ async fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
         .pick_from_screen(screen_x, screen_y, viewport)
         .expect("expected pointer pick")
         .cursor;
-    state.editor.ui.cursor = [99.0, 99.0, 99.0];
-    state.editor.ui.pointer_screen = Some([screen_x, screen_y]);
+    state.editor.input.cursor = [99.0, 99.0, 99.0];
+    state.editor.input.pointer_screen = Some([screen_x, screen_y]);
 
     state.dispatch(AppCommand::Editor(EditorCommand::SetSpawnHere));
 
@@ -976,10 +976,10 @@ async fn test_handle_primary_click_shift_priority() {
     let mut state = State::new_test().await;
 
     state.phase = AppPhase::Editor;
-    state.editor.ui.mode = EditorMode::Select;
+    state.editor.input.mode = EditorMode::Select;
 
     // Scenario 1: Shift is held. Marquee should start even if we are over a selected block.
-    state.editor.ui.shift_held = true;
+    state.editor.input.shift_held = true;
 
     // Add a block and select it
     state.editor.objects.push(LevelObject {
@@ -987,7 +987,7 @@ async fn test_handle_primary_click_shift_priority() {
         size: [10.0, 10.0, 10.0],
         ..LevelObject::default()
     });
-    state.editor.ui.selected_block_indices.push(0);
+    state.editor.input.selected_block_indices.push(0);
 
     // Set camera to look at origin from above
     state.editor.camera.editor_pan = [0.0, 0.0];
@@ -999,7 +999,7 @@ async fn test_handle_primary_click_shift_priority() {
     state.handle_primary_click(400.0, 300.0);
 
     assert!(
-        state.editor.ui.marquee_start_screen.is_some(),
+        state.editor.input.marquee_start_screen.is_some(),
         "Marquee should have started when Shift is held"
     );
     assert!(
@@ -1008,9 +1008,9 @@ async fn test_handle_primary_click_shift_priority() {
     );
 
     // Scenario 2: Shift is NOT held. Block drag should start.
-    state.editor.ui.marquee_start_screen = None;
+    state.editor.input.marquee_start_screen = None;
     state.editor.set_left_mouse_down(false);
-    state.editor.ui.shift_held = false;
+    state.editor.input.shift_held = false;
 
     state.handle_primary_click(400.0, 300.0);
 
@@ -1040,7 +1040,7 @@ async fn editor_playback_mode_switching() {
     // Start playback
     state.toggle_editor_timeline_playback();
     assert!(state.editor.is_playing());
-    assert_eq!(state.editor.ui.mode, EditorMode::Null);
+    assert_eq!(state.editor.input.mode, EditorMode::Null);
     assert_eq!(
         state.editor.runtime.interaction.last_mode,
         Some(EditorMode::Place)
@@ -1049,7 +1049,7 @@ async fn editor_playback_mode_switching() {
     // Stop playback
     state.toggle_editor_timeline_playback();
     assert!(!state.editor.is_playing());
-    assert_eq!(state.editor.ui.mode, EditorMode::Place);
+    assert_eq!(state.editor.input.mode, EditorMode::Place);
     assert!(state.editor.runtime.interaction.last_mode.is_none());
 }
 
@@ -1058,13 +1058,13 @@ async fn editor_null_mode_clears_selection() {
     let mut state = State::new_test().await;
     state.phase = AppPhase::Editor;
     state.editor.objects.push(LevelObject::default());
-    state.editor.ui.selected_block_index = Some(0);
+    state.editor.input.selected_block_index = Some(0);
     state.editor.set_mode(EditorMode::Place);
-    assert_eq!(state.editor.ui.selected_block_index, Some(0));
+    assert_eq!(state.editor.input.selected_block_index, Some(0));
 
     // Switching to Null should clear selection
     state.editor.set_mode(EditorMode::Null);
-    assert!(state.editor.ui.selected_block_index.is_none());
+    assert!(state.editor.input.selected_block_index.is_none());
 }
 
 #[tokio::test]
@@ -1074,13 +1074,13 @@ async fn test_timing_mode_persistence_during_playback() {
 
     // 1. Enter Timing Mode
     state.editor.set_mode(EditorMode::Timing);
-    assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+    assert_eq!(state.editor.input.mode, EditorMode::Timing);
 
     // 2. Toggle playback
     state.toggle_editor_timeline_playback();
 
     // Mode should be Null for playback safety
-    assert_eq!(state.editor.ui.mode, EditorMode::Null);
+    assert_eq!(state.editor.input.mode, EditorMode::Null);
     // last_mode should be Timing
     assert_eq!(
         state.editor.runtime.interaction.last_mode,
@@ -1100,7 +1100,7 @@ async fn test_timing_mode_persistence_during_playback() {
     state.toggle_editor_timeline_playback();
 
     // Should return to Timing mode
-    assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+    assert_eq!(state.editor.input.mode, EditorMode::Timing);
     assert!(state.editor.runtime.interaction.last_mode.is_none());
 }
 
@@ -1119,7 +1119,7 @@ async fn timing_origin_playback_seek_resync_keeps_runtime_disabled() {
 
     state.toggle_editor_timeline_playback();
     assert!(state.editor.timeline.playback.playing);
-    assert_eq!(state.editor.ui.mode, EditorMode::Null);
+    assert_eq!(state.editor.input.mode, EditorMode::Null);
     assert_eq!(
         state.editor.runtime.interaction.last_mode,
         Some(EditorMode::Timing)
@@ -1186,7 +1186,7 @@ async fn test_gizmo_move_shaft_is_pickable() {
     state.editor.set_mode(EditorMode::Move);
 
     state.editor.objects.push(LevelObject::default());
-    state.editor.ui.selected_block_indices.push(0);
+    state.editor.input.selected_block_indices.push(0);
     state.sync_editor_objects();
 
     let viewport = Vec2::new(
@@ -1254,7 +1254,7 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
 
     // 1. Add a primary block and select it to show the gizmo
     state.editor.objects.push(LevelObject::default());
-    state.editor.ui.selected_block_indices.push(0);
+    state.editor.input.selected_block_indices.push(0);
     state.sync_editor_objects();
 
     let viewport = Vec2::new(
@@ -1313,7 +1313,7 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
         "expected gizmo handle to be hovered"
     );
     assert!(
-        state.editor.ui.hovered_block_index.is_none(),
+        state.editor.input.hovered_block_index.is_none(),
         "expected block hover to be suppressed while gizmo handle is hovered, even though a block is behind it"
     );
 }
@@ -1424,11 +1424,11 @@ async fn state_navigation_resize_and_phase_queries_cover_core_branches() {
     assert_eq!(state.menu.state.selected_level, 0);
 
     state.enter_editor_phase("Navigation Branches".to_string());
-    state.editor.ui.cursor = [0.0, 2.0, 0.0];
+    state.editor.input.cursor = [0.0, 2.0, 0.0];
     state.next_level();
-    assert_eq!(state.editor.ui.cursor, [1.0, 2.0, 0.0]);
+    assert_eq!(state.editor.input.cursor, [1.0, 2.0, 0.0]);
     state.prev_level();
-    assert_eq!(state.editor.ui.cursor, [0.0, 2.0, 0.0]);
+    assert_eq!(state.editor.input.cursor, [0.0, 2.0, 0.0]);
 
     assert!(state.is_editor());
     assert!(!state.is_menu());
@@ -1460,7 +1460,7 @@ async fn turn_right_covers_menu_playing_editor_and_game_over_paths() {
 
     state.phase = AppPhase::Editor;
     state.editor.set_mode(EditorMode::Place);
-    state.editor.ui.cursor = [2.0, 0.0, 2.0];
+    state.editor.input.cursor = [2.0, 0.0, 2.0];
     let before = state.editor.objects.len();
     state.turn_right();
     assert_eq!(state.editor.objects.len(), before + 1);
@@ -1494,16 +1494,16 @@ async fn toggle_editor_and_mouse_paths_cover_playtest_and_release_guards() {
     assert_eq!(state.phase, AppPhase::Playing);
 
     state.phase = AppPhase::Editor;
-    state.editor.ui.marquee_start_screen = Some([32.0, 64.0]);
-    state.editor.ui.marquee_current_screen = Some([48.0, 80.0]);
+    state.editor.input.marquee_start_screen = Some([32.0, 64.0]);
+    state.editor.input.marquee_current_screen = Some([48.0, 80.0]);
     state.handle_mouse_button(0, false);
-    assert!(state.editor.ui.marquee_start_screen.is_none());
-    assert!(state.editor.ui.marquee_current_screen.is_none());
+    assert!(state.editor.input.marquee_start_screen.is_none());
+    assert!(state.editor.input.marquee_current_screen.is_none());
 
     state.handle_mouse_button(2, true);
-    assert!(state.editor.ui.right_dragging);
+    assert!(state.editor.input.right_dragging);
     state.handle_mouse_button(2, false);
-    assert!(!state.editor.ui.right_dragging);
+    assert!(!state.editor.input.right_dragging);
 
     state.phase = AppPhase::Menu;
     state.handle_mouse_button(0, true);
@@ -1517,9 +1517,9 @@ async fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
 
     state.editor.set_mode(EditorMode::Timing);
     state.handle_primary_click(220.0, 180.0);
-    assert_eq!(state.editor.ui.pointer_screen, Some([220.0, 180.0]));
-    assert!(state.editor.ui.left_mouse_down);
-    assert!(state.editor.ui.marquee_start_screen.is_none());
+    assert_eq!(state.editor.input.pointer_screen, Some([220.0, 180.0]));
+    assert!(state.editor.input.left_mouse_down);
+    assert!(state.editor.input.marquee_start_screen.is_none());
 
     state.editor.set_left_mouse_down(false);
     state.editor.set_mode(EditorMode::Tapping);
@@ -1536,7 +1536,7 @@ async fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
     assert!(state.editor_tap_times().is_empty());
     state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
     assert_eq!(
-        state.editor.ui.pointer_screen,
+        state.editor.input.pointer_screen,
         Some([future_tap_screen.x as f64, future_tap_screen.y as f64])
     );
     assert!(state.editor_tap_times().is_empty());
@@ -1545,7 +1545,7 @@ async fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
     state.handle_primary_click(future_tap_screen.x as f64, future_tap_screen.y as f64);
     assert_eq!(state.editor_tap_times().len(), 1);
     assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
-    assert!(state.editor.ui.marquee_start_screen.is_none());
+    assert!(state.editor.input.marquee_start_screen.is_none());
 
     state.editor.set_left_mouse_down(false);
     let selected_tap_position = state.editor.timeline.taps.tap_indicator_positions[0];

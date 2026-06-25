@@ -152,7 +152,7 @@ impl EditorSubsystem {
     }
 
     pub fn drag_gizmo(&mut self, x: f64, y: f64, viewport: Vec2) -> bool {
-        self.ui.pointer_screen = Some([x, y]);
+        self.input.pointer_screen = Some([x, y]);
 
         let Some(drag) = self.runtime.interaction.gizmo_drag.clone() else {
             return false;
@@ -254,7 +254,7 @@ impl EditorSubsystem {
                     }
                 }
                 if let Some(next_position) = first_cursor {
-                    self.ui.cursor = [
+                    self.input.cursor = [
                         next_position[0],
                         next_position[1].max(0.0),
                         next_position[2],
@@ -390,7 +390,7 @@ impl EditorSubsystem {
         y: f64,
         viewport_size: Vec2,
     ) -> Option<(GizmoDragKind, GizmoAxis)> {
-        let mode = self.ui.mode;
+        let mode = self.input.mode;
         let visible_handles = self.visible_gizmo_handles();
         let allow_move = mode.shows_move_gizmo() && visible_handles.position;
         let allow_scale = mode.shows_scale_gizmo() && visible_handles.size;
@@ -615,7 +615,7 @@ impl EditorSubsystem {
     }
 
     pub fn begin_gizmo_drag(&mut self, x: f64, y: f64, viewport_size: Vec2) -> bool {
-        if !self.ui.mode.shows_gizmo() {
+        if !self.input.mode.shows_gizmo() {
             return false;
         }
 
@@ -841,9 +841,9 @@ mod tests {
     async fn pick_gizmo_handle_returns_none_when_mode_has_no_gizmo() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_index = Some(0);
 
         let viewport = Vec2::new(1280.0, 720.0);
         let hit = state.editor.pick_gizmo_handle(640.0, 360.0, viewport);
@@ -892,10 +892,10 @@ mod tests {
         let mut selected = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
         selected.trigger = Some(camera_pose);
         state.editor.objects = vec![selected];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
-        state.editor.ui.mode = EditorMode::Scale;
+        state.editor.input.mode = EditorMode::Scale;
         let scale_lengths = state.editor.gizmo_axis_lengths_world(center, 9.0, viewport);
         let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
         let scale_screen = state
@@ -910,7 +910,7 @@ mod tests {
             "camera pose blocks hide size fields, so resize gizmos should be hidden"
         );
 
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.mode = EditorMode::Move;
         assert!(matches!(
             state.editor.pick_gizmo_handle(
                 center_screen.x as f64,
@@ -922,7 +922,7 @@ mod tests {
 
         state.editor.objects[0].trigger = Some(camera_follow);
         for mode in [EditorMode::Move, EditorMode::Scale, EditorMode::Rotate] {
-            state.editor.ui.mode = mode;
+            state.editor.input.mode = mode;
             assert_eq!(
                 state.editor.pick_gizmo_handle(
                     center_screen.x as f64,
@@ -1071,7 +1071,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.mode = EditorMode::Move;
         state.editor.objects = vec![LevelObject {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
@@ -1351,13 +1351,13 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
 
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.mode = EditorMode::Move;
         let center_screen = state
             .editor
             .world_to_screen_v(center, viewport)
@@ -1375,7 +1375,7 @@ mod tests {
         ));
 
         state.editor.runtime.interaction.gizmo_drag = None;
-        state.editor.ui.mode = EditorMode::Scale;
+        state.editor.input.mode = EditorMode::Scale;
         let scale_lengths = state.editor.gizmo_axis_lengths_world(center, 9.0, viewport);
         let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
         let scale_screen = state
@@ -1388,7 +1388,7 @@ mod tests {
                 .pick_gizmo_handle(scale_screen.x as f64, scale_screen.y as f64, viewport);
         assert!(matches!(scale_hit, Some((GizmoDragKind::Resize, _))));
 
-        state.editor.ui.mode = EditorMode::Rotate;
+        state.editor.input.mode = EditorMode::Rotate;
         let ring_radius = state
             .editor
             .gizmo_axis_lengths_world(center, 100.0, viewport)[0]
@@ -1476,9 +1476,9 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.mode = EditorMode::Move;
 
         let viewport = Vec2::new(1280.0, 720.0);
         let center_screen = state
@@ -1530,7 +1530,7 @@ mod tests {
         let mut high = LevelObject::default();
         high.position = [0.0, 3.0, 0.0];
         state.editor.objects = vec![low, high];
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.editor.replace_block_selection(vec![0, 1]);
 
         let center = Vec3::new(0.5, 2.0, 0.5);
@@ -1966,7 +1966,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.config.snap_to_grid = false;
-        state.editor.ui.mode = EditorMode::Move;
+        state.editor.input.mode = EditorMode::Move;
         // Create a regular block that will be the source of a transform trigger
         state.editor.objects = vec![LevelObject {
             id: "object_0_0_0".to_string(),

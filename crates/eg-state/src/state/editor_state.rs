@@ -52,48 +52,48 @@ fn remove_replaced_transform_trigger_targets(
 
 impl EditorSubsystem {
     pub fn set_pan_up_held(&mut self, held: bool) {
-        self.ui.pan_up_held = held;
+        self.input.pan_up_held = held;
     }
 
     pub fn set_pan_down_held(&mut self, held: bool) {
-        self.ui.pan_down_held = held;
+        self.input.pan_down_held = held;
     }
 
     pub fn set_pan_left_held(&mut self, held: bool) {
-        self.ui.pan_left_held = held;
+        self.input.pan_left_held = held;
     }
 
     pub fn set_pan_right_held(&mut self, held: bool) {
-        self.ui.pan_right_held = held;
+        self.input.pan_right_held = held;
     }
 
     pub fn set_shift_held(&mut self, held: bool) {
-        self.ui.shift_held = held;
+        self.input.shift_held = held;
     }
 
     pub fn set_ctrl_held(&mut self, held: bool) {
-        self.ui.ctrl_held = held;
+        self.input.ctrl_held = held;
     }
 
     pub fn set_alt_held(&mut self, held: bool) {
-        self.ui.alt_held = held;
+        self.input.alt_held = held;
     }
 
     pub fn set_right_dragging(&mut self, dragging: bool) {
-        self.ui.right_dragging = dragging;
+        self.input.right_dragging = dragging;
     }
 
     pub fn set_left_mouse_down(&mut self, pressed: bool) {
-        self.ui.left_mouse_down = pressed;
+        self.input.left_mouse_down = pressed;
     }
 
     pub fn set_pointer_screen(&mut self, position: Option<[f64; 2]>) {
-        self.ui.pointer_screen = position;
+        self.input.pointer_screen = position;
     }
 
     pub fn set_ui_input_blocking_rects(&mut self, rects: Vec<[f32; 4]>, pixels_per_point: f32) {
-        self.ui.ui_input_blocking_rects = rects;
-        self.ui.ui_input_pixels_per_point =
+        self.input.ui_input_blocking_rects = rects;
+        self.input.ui_input_pixels_per_point =
             if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
                 pixels_per_point
             } else {
@@ -102,16 +102,16 @@ impl EditorSubsystem {
     }
 
     pub fn clear_ui_input_blocking_rects(&mut self) {
-        self.ui.ui_input_blocking_rects.clear();
-        self.ui.ui_input_pixels_per_point = 1.0;
+        self.input.ui_input_blocking_rects.clear();
+        self.input.ui_input_pixels_per_point = 1.0;
     }
 
     pub fn pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
-        let pixels_per_point = self.ui.ui_input_pixels_per_point as f64;
+        let pixels_per_point = self.input.ui_input_pixels_per_point as f64;
         let point_x = x / pixels_per_point;
         let point_y = y / pixels_per_point;
 
-        self.ui.ui_input_blocking_rects.iter().any(|rect| {
+        self.input.ui_input_blocking_rects.iter().any(|rect| {
             point_x >= rect[0] as f64
                 && point_x <= rect[2] as f64
                 && point_y >= rect[1] as f64
@@ -125,7 +125,7 @@ impl EditorSubsystem {
     }
 
     pub fn left_mouse_down(&self) -> bool {
-        self.ui.left_mouse_down
+        self.input.left_mouse_down
     }
 
     pub fn has_gizmo_drag(&self) -> bool {
@@ -151,18 +151,18 @@ impl EditorSubsystem {
     }
 
     pub fn set_mode(&mut self, mode: EditorMode) {
-        self.ui.mode = mode;
+        self.input.mode = mode;
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
-        self.ui.marquee_start_screen = None;
-        self.ui.marquee_current_screen = None;
+        self.input.marquee_start_screen = None;
+        self.input.marquee_current_screen = None;
         if !mode.can_select() {
             self.clear_block_selection();
         }
     }
 
     pub fn mode(&self) -> EditorMode {
-        self.ui.mode
+        self.input.mode
     }
 
     pub fn snap_to_grid(&self) -> bool {
@@ -170,7 +170,7 @@ impl EditorSubsystem {
     }
 
     pub fn effective_snap_to_grid(&self) -> bool {
-        self.config.snap_to_grid && !self.ui.ctrl_held
+        self.config.snap_to_grid && !self.input.ctrl_held
     }
 
     pub fn snap_step(&self) -> f32 {
@@ -182,7 +182,7 @@ impl EditorSubsystem {
     }
 
     pub fn effective_snap_rotation(&self) -> bool {
-        self.config.snap_rotation && !self.ui.ctrl_held
+        self.config.snap_rotation && !self.input.ctrl_held
     }
 
     pub fn snap_rotation_step_degrees(&self) -> f32 {
@@ -214,7 +214,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_position(&mut self, position: [f32; 3]) {
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
@@ -225,7 +225,7 @@ impl EditorSubsystem {
                 [position[0], position[1].max(0.0), position[2]]
             };
             self.objects[index].position = next_position;
-            self.ui.cursor = [
+            self.input.cursor = [
                 next_position[0],
                 next_position[1].max(0.0),
                 next_position[2],
@@ -235,7 +235,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_size(&mut self, size: [f32; 3]) {
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
@@ -260,7 +260,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_id(&mut self, block_id: BlockId) {
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
@@ -270,7 +270,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_rotation(&mut self, rotation: [f32; 3]) {
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
@@ -291,7 +291,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
         if let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         {
@@ -598,14 +598,14 @@ impl EditorSubsystem {
 
 impl State {
     pub(super) fn editor_effective_mode_for_playback(&self) -> EditorMode {
-        if self.editor.timeline.playback.playing && self.editor.ui.mode == EditorMode::Null {
+        if self.editor.timeline.playback.playing && self.editor.input.mode == EditorMode::Null {
             self.editor
                 .runtime
                 .interaction
                 .last_mode
-                .unwrap_or(self.editor.ui.mode)
+                .unwrap_or(self.editor.input.mode)
         } else {
-            self.editor.ui.mode
+            self.editor.input.mode
         }
     }
 
@@ -736,7 +736,7 @@ impl State {
         self.editor.set_snap_to_grid(snap);
         self.session.app_settings.editor_snap_to_grid = self.editor.config.snap_to_grid;
         self.persist_app_settings();
-        if self.editor.ui.selected_block_index.is_some()
+        if self.editor.input.selected_block_index.is_some()
             && let Some(obj) = self.editor_selected_block()
         {
             self.set_editor_selected_block_position(obj.position);
@@ -749,7 +749,7 @@ impl State {
         self.session.app_settings.editor_snap_step = self.editor.config.snap_step;
         self.persist_app_settings();
         if self.editor.config.snap_to_grid
-            && self.editor.ui.selected_block_index.is_some()
+            && self.editor.input.selected_block_index.is_some()
             && let Some(obj) = self.editor_selected_block()
         {
             self.set_editor_selected_block_position(obj.position);
@@ -761,7 +761,7 @@ impl State {
         self.editor.set_snap_rotation(snap);
         self.session.app_settings.editor_rotation_snap = self.editor.config.snap_rotation;
         self.persist_app_settings();
-        if self.editor.ui.selected_block_index.is_some()
+        if self.editor.input.selected_block_index.is_some()
             && let Some(obj) = self.editor_selected_block()
         {
             self.set_editor_selected_block_rotation(obj.rotation);
@@ -774,7 +774,7 @@ impl State {
             self.editor.config.snap_rotation_step_degrees;
         self.persist_app_settings();
         if self.editor.config.snap_rotation
-            && self.editor.ui.selected_block_index.is_some()
+            && self.editor.input.selected_block_index.is_some()
             && let Some(obj) = self.editor_selected_block()
         {
             self.set_editor_selected_block_rotation(obj.rotation);
@@ -800,7 +800,7 @@ impl State {
 
         self.editor.set_selected_block_position(position);
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_cursor_vertices();
             self.rebuild_editor_gizmo_vertices();
@@ -826,7 +826,7 @@ impl State {
 
         self.editor.set_selected_block_size(size);
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -847,7 +847,7 @@ impl State {
 
         self.editor.set_selected_block_id(block_id);
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -868,7 +868,7 @@ impl State {
 
         self.editor.set_selected_block_rotation(rotation);
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -898,7 +898,7 @@ impl State {
 
         self.editor.set_selected_block_color_tint(color_tint);
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -915,7 +915,7 @@ impl State {
         self.editor.set_selected_block_trigger(trigger);
         self.sync_editor_camera_follow_trigger_object_poses();
 
-        if self.editor.ui.selected_block_index.is_some() {
+        if self.editor.input.selected_block_index.is_some() {
             self.sync_editor_objects();
             self.rebuild_editor_gizmo_vertices();
             self.rebuild_editor_selection_outline_vertices();
@@ -1034,7 +1034,7 @@ impl State {
             self.editor.set_timeline_time_seconds(time_seconds)
         };
         let preserve_editor_camera =
-            self.phase == AppPhase::Editor && !is_effectively_timing && self.editor.ui.ctrl_held;
+            self.phase == AppPhase::Editor && !is_effectively_timing && self.editor.input.ctrl_held;
         let editor_camera = preserve_editor_camera.then_some((
             self.editor.camera.editor_pan,
             self.editor.camera.editor_target_z,
@@ -1449,7 +1449,7 @@ impl State {
         }
 
         self.editor.replace_block_selection(created_trigger_indices);
-        self.editor.ui.hovered_block_index = self.editor.ui.selected_block_index;
+        self.editor.input.hovered_block_index = self.editor.input.selected_block_index;
         self.sync_primary_selection_from_indices();
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
@@ -1476,7 +1476,7 @@ impl State {
 
     #[cfg(test)]
     pub fn editor_hitbox_visualization_enabled(&self) -> bool {
-        self.editor.ui.show_hitbox_visualization
+        self.editor.input.show_hitbox_visualization
     }
 
     pub fn toggle_editor_hitbox_visualization(&mut self) {
@@ -1484,7 +1484,7 @@ impl State {
             return;
         }
 
-        self.editor.ui.show_hitbox_visualization = !self.editor.ui.show_hitbox_visualization;
+        self.editor.input.show_hitbox_visualization = !self.editor.input.show_hitbox_visualization;
         self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
@@ -1500,7 +1500,7 @@ impl State {
                     .trigger_object_index_for_trigger_index(trigger_index)
             }) {
                 self.editor.replace_block_selection(vec![object_index]);
-                self.editor.ui.hovered_block_index = Some(object_index);
+                self.editor.input.hovered_block_index = Some(object_index);
                 self.sync_primary_selection_from_indices();
             }
             self.mark_editor_dirty(EditorDirtyFlags::trigger_selection_changed());
@@ -1680,8 +1680,8 @@ mod tests {
         state.phase = AppPhase::Editor;
         state.editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
         state.editor.sync_trigger_selection_from_objects();
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
 
         assert!(!state.add_editor_transform_trigger());
         assert_eq!(state.editor.objects.len(), 1);
@@ -1699,12 +1699,12 @@ mod tests {
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.mode = EditorMode::Rotate;
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.mode = EditorMode::Rotate;
 
         assert!(state.add_editor_transform_trigger());
-        assert_eq!(state.editor.ui.mode, EditorMode::Rotate);
+        assert_eq!(state.editor.input.mode, EditorMode::Rotate);
         assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_eq!(state.editor.objects.len(), 4);
@@ -1714,8 +1714,8 @@ mod tests {
         assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
         assert_object_pose(&state.editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_eq!(state.editor.objects[3].rotation, [0.0, 0.0, 0.0]);
-        assert_eq!(state.editor.ui.selected_block_index, Some(2));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        assert_eq!(state.editor.input.selected_block_index, Some(2));
+        assert_eq!(state.editor.input.selected_block_indices, vec![2, 3]);
 
         let mut triggers = state.editor.trigger_objects();
         triggers.sort_by_key(|object| match &object.trigger.as_ref().unwrap().target {
@@ -1758,15 +1758,15 @@ mod tests {
             test_level_object([4.0, 0.0, 0.0]),
         ];
         state.editor.sync_trigger_selection_from_objects();
-        state.editor.ui.selected_block_indices = vec![2];
-        state.editor.ui.selected_block_index = Some(2);
+        state.editor.input.selected_block_indices = vec![2];
+        state.editor.input.selected_block_index = Some(2);
 
         assert!(state.add_editor_transform_trigger());
 
         assert_eq!(state.editor.objects.len(), 4);
         assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.ui.selected_block_index, Some(3));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![3]);
+        assert_eq!(state.editor.input.selected_block_index, Some(3));
+        assert_eq!(state.editor.input.selected_block_indices, vec![3]);
 
         let mut found_retargeted_capture = false;
         for trigger_object in &state.editor.trigger_objects() {
@@ -1807,8 +1807,8 @@ mod tests {
         state.editor.objects[2].position = [12.0, 1.0, 3.0];
         state.editor.objects[2].size = [2.0, 3.0, 4.0];
         state.editor.objects[2].rotation = [10.0, 20.0, 30.0];
-        state.editor.ui.selected_block_indices = vec![1];
-        state.editor.ui.selected_block_index = Some(1);
+        state.editor.input.selected_block_indices = vec![1];
+        state.editor.input.selected_block_index = Some(1);
 
         assert!(state.add_editor_transform_trigger());
 
@@ -1839,8 +1839,8 @@ mod tests {
             test_level_object([4.0, 0.0, 0.0]),
             test_level_object([8.0, 0.0, 0.0]),
         ];
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(0);
         state.editor.objects.extend(vec![
             transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
@@ -1911,8 +1911,8 @@ mod tests {
         state.editor.timeline.clock.time_seconds = 2.5;
         state.editor.timeline.clock.duration_seconds = 8.0;
         state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
         state
             .editor
             .objects
@@ -1956,13 +1956,13 @@ mod tests {
 
         state.phase = AppPhase::Editor;
         state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        state.editor.ui.selected_block_indices = vec![0];
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
 
         state.process_keyboard_input("t", true, true);
         assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_eq!(state.editor.trigger_objects().len(), 1);
-        assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        assert_eq!(state.editor.input.selected_block_indices, vec![1]);
         assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
     }
 
@@ -2014,11 +2014,11 @@ mod tests {
     async fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
         let mut state = State::new_test().await;
 
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.hovered_block_index = Some(1);
-        state.editor.ui.marquee_start_screen = Some([10.0, 20.0]);
-        state.editor.ui.marquee_current_screen = Some([30.0, 40.0]);
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.hovered_block_index = Some(1);
+        state.editor.input.marquee_start_screen = Some([10.0, 20.0]);
+        state.editor.input.marquee_current_screen = Some([30.0, 40.0]);
         state.editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
@@ -2040,11 +2040,11 @@ mod tests {
         assert_eq!(state.editor.mode(), EditorMode::Null);
         assert!(state.editor.runtime.interaction.gizmo_drag.is_none());
         assert!(state.editor.runtime.interaction.block_drag.is_none());
-        assert!(state.editor.ui.selected_block_index.is_none());
-        assert!(state.editor.ui.selected_block_indices.is_empty());
-        assert!(state.editor.ui.hovered_block_index.is_none());
-        assert!(state.editor.ui.marquee_start_screen.is_none());
-        assert!(state.editor.ui.marquee_current_screen.is_none());
+        assert!(state.editor.input.selected_block_index.is_none());
+        assert!(state.editor.input.selected_block_indices.is_empty());
+        assert!(state.editor.input.hovered_block_index.is_none());
+        assert!(state.editor.input.marquee_start_screen.is_none());
+        assert!(state.editor.input.marquee_current_screen.is_none());
     }
 
     #[tokio::test]
@@ -2052,16 +2052,16 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.objects.push(LevelObject::default());
-        state.editor.ui.selected_block_index = Some(0);
+        state.editor.input.selected_block_index = Some(0);
         state.editor.config.snap_to_grid = true;
         state.editor.config.snap_step = 0.5;
         state.editor.config.snap_rotation = true;
         state.editor.config.snap_rotation_step_degrees = 15.0;
-        state.editor.ui.ctrl_held = false;
+        state.editor.input.ctrl_held = false;
 
         state.editor.set_selected_block_position([1.24, -1.0, 2.26]);
         assert_eq!(state.editor.objects[0].position, [1.0, 0.0, 2.5]);
-        assert_eq!(state.editor.ui.cursor, [1.0, 0.0, 2.5]);
+        assert_eq!(state.editor.input.cursor, [1.0, 0.0, 2.5]);
 
         state.editor.set_selected_block_size([0.1, 0.4, 0.62]);
         assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
@@ -2266,7 +2266,7 @@ mod tests {
         state.editor.timeline.clock.duration_seconds = 1.0;
         state.editor.camera.editor_pan = [8.0, -6.0];
         state.editor.camera.editor_target_z = 3.0;
-        state.editor.ui.ctrl_held = true;
+        state.editor.input.ctrl_held = true;
         let original_pan = state.editor.camera.editor_pan;
         let original_target_z = state.editor.camera.editor_target_z;
 
@@ -2281,7 +2281,7 @@ mod tests {
     async fn adding_tap_recomputes_all_indicator_positions() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.objects.clear();
         state.editor.spawn.position = [0.0, 0.0, 0.0];
         state.editor.spawn.direction = Direction::Forward;
@@ -2317,13 +2317,13 @@ mod tests {
         state.set_editor_ctrl_held(true);
         state.set_editor_alt_held(true);
 
-        assert!(!state.editor.ui.pan_up_held);
-        assert!(!state.editor.ui.pan_down_held);
-        assert!(!state.editor.ui.pan_left_held);
-        assert!(!state.editor.ui.pan_right_held);
-        assert!(state.editor.ui.shift_held);
-        assert!(state.editor.ui.ctrl_held);
-        assert!(state.editor.ui.alt_held);
+        assert!(!state.editor.input.pan_up_held);
+        assert!(!state.editor.input.pan_down_held);
+        assert!(!state.editor.input.pan_left_held);
+        assert!(!state.editor.input.pan_right_held);
+        assert!(state.editor.input.shift_held);
+        assert!(state.editor.input.ctrl_held);
+        assert!(state.editor.input.alt_held);
 
         state.set_editor_shift_held(false);
         state.set_editor_ctrl_held(false);
@@ -2338,13 +2338,13 @@ mod tests {
         state.set_editor_ctrl_held(true);
         state.set_editor_alt_held(true);
 
-        assert!(state.editor.ui.pan_up_held);
-        assert!(state.editor.ui.pan_down_held);
-        assert!(state.editor.ui.pan_left_held);
-        assert!(state.editor.ui.pan_right_held);
-        assert!(state.editor.ui.shift_held);
-        assert!(state.editor.ui.ctrl_held);
-        assert!(state.editor.ui.alt_held);
+        assert!(state.editor.input.pan_up_held);
+        assert!(state.editor.input.pan_down_held);
+        assert!(state.editor.input.pan_left_held);
+        assert!(state.editor.input.pan_right_held);
+        assert!(state.editor.input.shift_held);
+        assert!(state.editor.input.ctrl_held);
+        assert!(state.editor.input.alt_held);
     }
 
     #[tokio::test]
@@ -2352,7 +2352,7 @@ mod tests {
         let mut state = State::new_test().await;
 
         state.editor.timeline.playback.playing = true;
-        state.editor.ui.mode = EditorMode::Null;
+        state.editor.input.mode = EditorMode::Null;
         state.editor.runtime.interaction.last_mode = Some(EditorMode::Timing);
         assert_eq!(
             state.editor_effective_mode_for_playback(),
@@ -2365,7 +2365,7 @@ mod tests {
         assert!(!state.editor_is_effectively_timing_mode());
 
         state.editor.timeline.playback.playing = false;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         assert_eq!(
             state.editor_effective_mode_for_playback(),
             EditorMode::Place
@@ -2415,8 +2415,8 @@ mod tests {
         state.phase = AppPhase::Editor;
 
         state.editor.objects.push(LevelObject::default());
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.set_editor_block_id(BlockId::new("core/lava"));
         assert_eq!(state.editor_selected_block_id().to_string(), "core/lava");

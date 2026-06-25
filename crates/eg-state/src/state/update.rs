@@ -745,7 +745,7 @@ impl State {
                     }
                     self.stop_audio();
                 }
-            } else if self.editor.ui.mode != EditorMode::Timing {
+            } else if self.editor.input.mode != EditorMode::Timing {
                 self.frame_runtime.player_render.gem_shatter_effects.clear();
                 self.render.meshes.gem_shatter_effects.clear();
                 self.update_editor_scrub_trail_mesh();
@@ -761,7 +761,7 @@ impl State {
             }
             if (self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some())
-                && let Some(pointer) = self.editor.ui.pointer_screen
+                && let Some(pointer) = self.editor.input.pointer_screen
             {
                 puffin::profile_scope!("DragSelection");
                 self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
@@ -781,12 +781,12 @@ impl State {
                 || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
                     > 1e-4;
 
-            let has_selection = self.editor.ui.selected_block_index.is_some()
-                || !self.editor.ui.selected_block_indices.is_empty();
+            let has_selection = self.editor.input.selected_block_index.is_some()
+                || !self.editor.input.selected_block_indices.is_empty();
             let is_dragging = self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some();
 
-            if has_selection && self.editor.ui.mode.shows_gizmo() {
+            if has_selection && self.editor.input.mode.shows_gizmo() {
                 if is_dragging {
                     puffin::profile_scope!("GizmoRebuild");
                     self.rebuild_editor_gizmo_vertices();
@@ -1457,7 +1457,7 @@ mod tests {
     async fn update_editor_playback_in_timing_mode_keeps_runtime_none_and_handles_pending_seek() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         state.editor.timeline.clock.duration_seconds = 4.0;
         state.editor.timeline.clock.time_seconds = 0.5;
         state.editor.timeline.playback.playing = true;
@@ -1474,7 +1474,7 @@ mod tests {
     async fn update_editor_playback_stops_when_audio_not_playing() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.timeline.clock.duration_seconds = 10.0;
         state.editor.timeline.clock.time_seconds = 2.0;
         state.editor.timeline.playback.playing = true;
@@ -1591,7 +1591,7 @@ mod tests {
     async fn update_editor_timing_playback_advances_with_pending_seek_and_timing_points() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         state.editor.timeline.playback.playing = true;
         state.editor.timeline.clock.time_seconds = 0.1;
         state.editor.timeline.clock.duration_seconds = 8.0;

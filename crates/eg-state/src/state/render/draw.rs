@@ -293,7 +293,7 @@ impl State {
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
         puffin::profile_scope!("RenderWorld");
-        let editor_mode = self.editor.ui.mode;
+        let editor_mode = self.editor.input.mode;
         let sky_color = match self.phase {
             AppPhase::Menu => self.menu.state.preview_sky_color,
             AppPhase::Editor => self.session.editor_sky_color,
@@ -997,7 +997,7 @@ mod tests {
 
     fn prepare_outline_occlusion_test_state(state: &mut State) {
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.render.meshes.floor = MeshSlot::Empty;
         state.render.meshes.grid = MeshSlot::Empty;
         state.render.meshes.trail = MeshSlot::Empty;
@@ -1382,11 +1382,11 @@ mod tests {
 
         // 1. Test Editor Phase + Place Mode
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
 
         // Populate some meshes
         state.editor.objects.push(eg_types::LevelObject::default());
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_indices = vec![0];
         state.sync_editor_objects();
         state.rebuild_editor_cursor_vertices();
         state.rebuild_spawn_marker_vertices();
@@ -1401,7 +1401,7 @@ mod tests {
 
         // 3. Test Timing Mode (skip world)
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
 
         // 4. Test with gamma correction enabled
@@ -1475,13 +1475,13 @@ mod tests {
         let overlay_calls = Cell::new(0_u32);
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {
             overlay_calls.set(overlay_calls.get() + 1);
         });
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {
             overlay_calls.set(overlay_calls.get() + 1);
         });
@@ -1499,7 +1499,7 @@ mod tests {
         });
 
         state.phase = AppPhase::Menu;
-        state.editor.ui.mode = EditorMode::Select;
+        state.editor.input.mode = EditorMode::Select;
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {
             overlay_calls.set(overlay_calls.get() + 1);
         });

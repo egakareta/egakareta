@@ -223,7 +223,7 @@ impl EditorSubsystem {
 
     pub fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
         let Some(index) = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| *index < self.objects.len())
         else {

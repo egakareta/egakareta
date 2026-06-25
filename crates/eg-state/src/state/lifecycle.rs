@@ -36,7 +36,7 @@ use eg_platform::state_host::SurfaceHost;
 use eg_platform::state_host::WasmCanvas;
 use eg_types::{
     AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform,
-    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorState,
+    DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorInputState,
     GridUniform, LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -654,7 +654,7 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                ui: EditorState::default(),
+                input: EditorInputState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
@@ -1583,7 +1583,7 @@ impl State {
                 practice_checkpoints: Vec::new(),
             },
             editor: EditorSubsystem {
-                ui: EditorState::default(),
+                input: EditorInputState::default(),
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
                     snap_step: app_settings.editor_snap_step.max(0.05),
@@ -1783,8 +1783,8 @@ mod tests {
 
         // 1. Setup: Enter editor and copy a block
         state.dispatch(AppCommand::TurnRight); // Place block
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
         state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
@@ -1803,8 +1803,8 @@ mod tests {
         state.enter_editor_phase("Test Level".to_string());
 
         state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
         state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
         assert!(!state.editor.runtime.history.undo.is_empty());
         assert!(state.editor.runtime.interaction.clipboard.is_some());

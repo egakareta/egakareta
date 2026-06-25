@@ -346,7 +346,7 @@ impl EditorSubsystem {
 
     pub fn add_block_at_cursor(&mut self, place_mode: EditorPlaceMode) -> usize {
         let new_block = create_block_at_cursor(
-            self.ui.cursor,
+            self.input.cursor,
             &self.config.selected_block_id,
             self.selected_block_default_size(),
             self.config.selected_block_rotation_degrees,
@@ -361,7 +361,7 @@ impl EditorSubsystem {
         self.pick_spatial_index.invalidate();
         if place_mode == EditorPlaceMode::SelectPlaced {
             self.replace_block_selection(vec![placed_index]);
-            self.ui.hovered_block_index = Some(placed_index);
+            self.input.hovered_block_index = Some(placed_index);
         } else {
             self.clear_block_selection();
         }
@@ -382,8 +382,8 @@ impl EditorSubsystem {
     }
 
     fn can_append_block_mesh_after_placement(&self) -> bool {
-        self.ui.selected_block_index.is_none()
-            && self.ui.selected_block_indices.is_empty()
+        self.input.selected_block_index.is_none()
+            && self.input.selected_block_indices.is_empty()
             && self.block_static_vertex_cache_complete_len == Some(self.objects.len())
             && !(self.timeline.playback.playing && self.has_object_transform_triggers())
     }
@@ -426,7 +426,7 @@ impl State {
     }
 
     fn editor_runtime_objects_for_render(&self) -> Option<Vec<LevelObject>> {
-        if self.phase != AppPhase::Editor || self.editor.ui.mode == EditorMode::Timing {
+        if self.phase != AppPhase::Editor || self.editor.input.mode == EditorMode::Timing {
             return None;
         }
 
@@ -591,7 +591,7 @@ impl State {
     }
 
     pub(super) fn place_editor_block(&mut self) {
-        let place_mode = if self.editor.ui.shift_held {
+        let place_mode = if self.editor.input.shift_held {
             EditorPlaceMode::Stamp
         } else {
             EditorPlaceMode::SelectPlaced
@@ -650,7 +650,7 @@ impl State {
                 .taps
                 .tap_indicator_positions
                 .get(*index)
-                .is_some_and(|position| positions_match(*position, self.editor.ui.cursor))
+                .is_some_and(|position| positions_match(*position, self.editor.input.cursor))
         })
     }
 
@@ -663,12 +663,12 @@ impl State {
         self.editor.timeline.preview.direction = direction;
 
         if !self.editor.timeline.playback.playing {
-            self.editor.ui.cursor = [
+            self.editor.input.cursor = [
                 position[0].round(),
                 position[1].round(),
                 position[2].round(),
             ];
-            self.editor.ui.cursor[1] = self.editor.ui.cursor[1].max(0.0);
+            self.editor.input.cursor[1] = self.editor.input.cursor[1].max(0.0);
 
             self.rebuild_editor_cursor_vertices();
         }
@@ -682,15 +682,15 @@ impl State {
 
     pub(super) fn rebuild_editor_cursor_vertices(&mut self) {
         puffin::profile_scope!("EditorCursorMesh");
-        let vertices = if self.editor.ui.mode == EditorMode::Tapping {
+        let vertices = if self.editor.input.mode == EditorMode::Tapping {
             if self.editor_tap_cursor_overlap_index().is_some() {
                 self.render.meshes.editor_cursor.clear();
                 return;
             }
-            build_editor_tap_cursor_vertices(self.editor.ui.cursor)
+            build_editor_tap_cursor_vertices(self.editor.input.cursor)
         } else {
             build_editor_cursor_vertices(
-                self.editor.ui.cursor,
+                self.editor.input.cursor,
                 self.editor.selected_block_default_size(),
                 &self.editor.config.selected_block_id,
                 self.editor.config.selected_block_rotation_degrees,
@@ -705,7 +705,7 @@ impl State {
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorHoverOutlineMesh");
-        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_transform_mode() {
+        if self.phase != AppPhase::Editor || !self.editor.input.mode.is_transform_mode() {
             self.render.meshes.editor_hover_stencil.clear();
             self.render.meshes.editor_hover_outline.clear();
             return;
@@ -718,7 +718,7 @@ impl State {
         let mut outline_mask = vec![false; object_count];
         let hovered_block_index = self
             .editor
-            .ui
+            .input
             .hovered_block_index
             .filter(|index| *index < self.editor.objects.len());
 
@@ -779,7 +779,7 @@ impl State {
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
         puffin::profile_scope!("EditorGizmoMesh");
-        let mode = self.editor.ui.mode;
+        let mode = self.editor.input.mode;
         let visible_handles = self.editor.visible_gizmo_handles();
         let show_move_handles = mode.shows_move_gizmo() && visible_handles.position;
         let show_scale_handles = mode.shows_scale_gizmo() && visible_handles.size;
@@ -857,7 +857,7 @@ impl State {
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorSelectionOutlineMesh");
-        if self.phase != AppPhase::Editor || !self.editor.ui.mode.is_transform_mode() {
+        if self.phase != AppPhase::Editor || !self.editor.input.mode.is_transform_mode() {
             self.render.meshes.editor_selection_stencil.clear();
             self.render.meshes.editor_selection_outline.clear();
             self.render
@@ -1387,7 +1387,7 @@ impl State {
         let effective_mode = self.editor_effective_mode_for_playback();
         if self.phase != AppPhase::Editor
             || effective_mode == EditorMode::Timing
-            || !self.editor.ui.show_hitbox_visualization
+            || !self.editor.input.show_hitbox_visualization
         {
             self.render.meshes.editor_hitbox_visualization.clear();
             return;
@@ -1633,16 +1633,16 @@ mod tests {
     async fn sync_objects_filters_invalid_selection_and_marks_full_dirty() {
         let mut state = State::new_test().await;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-        state.editor.ui.selected_block_index = Some(99);
-        state.editor.ui.selected_block_indices = vec![0, 99];
-        state.editor.ui.hovered_block_index = Some(42);
+        state.editor.input.selected_block_index = Some(99);
+        state.editor.input.selected_block_indices = vec![0, 99];
+        state.editor.input.hovered_block_index = Some(42);
         state.editor.selected_mask_cache = Some(vec![true]);
 
         state.editor.sync_objects();
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
-        assert_eq!(state.editor.ui.hovered_block_index, None);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.hovered_block_index, None);
         assert!(state.editor.runtime.dirty.sync_game_objects);
         assert!(state.editor.runtime.dirty.rebuild_block_mesh);
         assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
@@ -1688,17 +1688,17 @@ mod tests {
 
         state.phase = AppPhase::Editor;
         state.editor.timeline.playback.playing = false;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         let transformed = state
             .editor_runtime_objects_for_render()
             .expect("expected stopped editor transform preview objects");
         assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
 
         state.editor.timeline.playback.playing = true;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         assert!(state.editor_runtime_objects_for_render().is_none());
 
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         let transformed = state
             .editor_runtime_objects_for_render()
             .expect("expected transformed render objects");
@@ -1709,7 +1709,7 @@ mod tests {
     async fn editor_runtime_objects_for_render_keeps_object_triggers_during_playback_runtime() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
         state.editor.objects.push(object_move_trigger());
         state.editor.timeline.clock.time_seconds = 0.5;
@@ -1804,12 +1804,12 @@ mod tests {
         assert!(state.render.meshes.tap_indicators.draw_data().is_none());
 
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
         state.rebuild_tap_indicator_vertices();
         assert!(state.render.meshes.tap_indicators.draw_data().is_some());
 
-        state.editor.ui.mode = EditorMode::Place;
+        state.editor.input.mode = EditorMode::Place;
         state.rebuild_tap_indicator_vertices();
         let compose_draw_data = state
             .render
@@ -1827,7 +1827,7 @@ mod tests {
         );
 
         // During playback from Tapping tab (mode=Null, last_mode=Tapping), taps should remain visible
-        state.editor.ui.mode = EditorMode::Null;
+        state.editor.input.mode = EditorMode::Null;
         state.editor.runtime.interaction.last_mode = Some(EditorMode::Tapping);
         state.rebuild_tap_indicator_vertices();
         assert!(state.render.meshes.tap_indicators.draw_data().is_some());
@@ -1838,7 +1838,7 @@ mod tests {
         assert!(state.render.meshes.tap_indicators.draw_data().is_some());
 
         state.editor.runtime.interaction.last_mode = None;
-        state.editor.ui.mode = EditorMode::Timing;
+        state.editor.input.mode = EditorMode::Timing;
         state.rebuild_tap_indicator_vertices();
         assert!(state.render.meshes.tap_indicators.draw_data().is_none());
     }
@@ -1942,9 +1942,9 @@ mod tests {
     async fn tapping_cursor_hides_only_when_overlapping_hovered_or_selected_tap() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.mode = EditorMode::Tapping;
+        state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0]];
-        state.editor.ui.cursor = [1.0, 0.0, 1.0];
+        state.editor.input.cursor = [1.0, 0.0, 1.0];
 
         state.rebuild_editor_cursor_vertices();
         assert!(state.render.meshes.editor_cursor.draw_data().is_some());
@@ -1958,7 +1958,7 @@ mod tests {
         state.rebuild_editor_cursor_vertices();
         assert!(state.render.meshes.editor_cursor.draw_data().is_none());
 
-        state.editor.ui.cursor = [2.0, 0.0, 2.0];
+        state.editor.input.cursor = [2.0, 0.0, 2.0];
         state.rebuild_editor_cursor_vertices();
         assert!(state.render.meshes.editor_cursor.draw_data().is_some());
     }
@@ -1970,8 +1970,8 @@ mod tests {
             block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
             block([2.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
         ];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.phase = AppPhase::Editor;
         state.rebuild_block_vertices();
@@ -1998,7 +1998,7 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.objects = vec![block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])];
-        state.editor.ui.cursor = [2.0, 0.0, 0.0];
+        state.editor.input.cursor = [2.0, 0.0, 0.0];
 
         state.rebuild_block_vertices();
         let before_count = state.editor.block_static_vertex_cache.draw_count();
@@ -2030,7 +2030,7 @@ mod tests {
         state.phase = AppPhase::Editor;
         state.editor.config.selected_block_id = BlockId::new("core/speedportal");
         state.editor.config.selected_block_rotation_degrees = [0.0, 90.0, 0.0];
-        state.editor.ui.cursor = [2.0, 0.0, 4.0];
+        state.editor.input.cursor = [2.0, 0.0, 4.0];
 
         state
             .editor
@@ -2048,7 +2048,7 @@ mod tests {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
         state.editor.config.selected_block_id = BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID);
-        state.editor.ui.cursor = [2.0, 0.0, 4.0];
+        state.editor.input.cursor = [2.0, 0.0, 4.0];
         state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
 
         state
@@ -2064,18 +2064,18 @@ mod tests {
     async fn apply_editor_timeline_preview_state_updates_cursor_only_when_not_playing() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.cursor = [0.0, 0.0, 0.0];
+        state.editor.input.cursor = [0.0, 0.0, 0.0];
 
         state.editor.timeline.playback.playing = false;
         state.apply_editor_timeline_preview_state([1.2, 2.1, 3.8], eg_types::Direction::Right);
-        assert_eq!(state.editor.ui.cursor, [1.0, 2.0, 4.0]);
+        assert_eq!(state.editor.input.cursor, [1.0, 2.0, 4.0]);
         assert_eq!(state.editor.camera.editor_pan, [1.7, 4.3]);
         assert_eq!(state.editor.camera.editor_target_z, 2.1);
 
         state.editor.timeline.playback.playing = true;
-        state.editor.ui.cursor = [9.0, 9.0, 9.0];
+        state.editor.input.cursor = [9.0, 9.0, 9.0];
         state.apply_editor_timeline_preview_state([4.2, 1.0, 2.2], eg_types::Direction::Forward);
-        assert_eq!(state.editor.ui.cursor, [9.0, 9.0, 9.0]);
+        assert_eq!(state.editor.input.cursor, [9.0, 9.0, 9.0]);
         assert_eq!(state.editor.camera.editor_pan, [4.7, 2.7]);
         assert_eq!(state.editor.camera.editor_target_z, 1.0);
     }

@@ -18,9 +18,9 @@ impl EditorSubsystem {
     fn history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
             objects: self.objects.clone(),
-            selected_block_index: self.ui.selected_block_index,
-            selected_block_indices: self.ui.selected_block_indices.clone(),
-            cursor: self.ui.cursor,
+            selected_block_index: self.input.selected_block_index,
+            selected_block_indices: self.input.selected_block_indices.clone(),
+            cursor: self.input.cursor,
             selected_block_id: self.config.selected_block_id.clone(),
             selected_block_rotation_degrees: self.config.selected_block_rotation_degrees,
             recent_block_ids: self.config.recent_block_ids.clone(),
@@ -51,11 +51,11 @@ impl EditorSubsystem {
 
     fn apply_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         self.objects = snapshot.objects;
-        self.ui.selected_block_index = snapshot.selected_block_index;
-        self.ui.selected_block_indices = snapshot.selected_block_indices;
+        self.input.selected_block_index = snapshot.selected_block_index;
+        self.input.selected_block_indices = snapshot.selected_block_indices;
         self.normalize_block_selection();
-        self.ui.hovered_block_index = self.ui.selected_block_index;
-        self.ui.cursor = snapshot.cursor;
+        self.input.hovered_block_index = self.input.selected_block_index;
+        self.input.cursor = snapshot.cursor;
         self.config.selected_block_id = snapshot.selected_block_id;
         self.config.selected_block_rotation_degrees = snapshot.selected_block_rotation_degrees;
         self.config.recent_block_ids = snapshot.recent_block_ids;
@@ -139,7 +139,7 @@ impl EditorSubsystem {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
             let anchor_index = self
-                .ui
+                .input
                 .selected_block_index
                 .filter(|index| selected_indices.contains(index))
                 .unwrap_or(selected_indices[0]);
@@ -152,7 +152,7 @@ impl EditorSubsystem {
             return;
         }
 
-        if let Some(index) = self.topmost_block_index_at_cursor(self.ui.cursor) {
+        if let Some(index) = self.topmost_block_index_at_cursor(self.input.cursor) {
             let block = self.objects[index].clone();
             self.runtime.interaction.clipboard = Some(EditorClipboard {
                 anchor: block.position,
@@ -172,7 +172,7 @@ impl EditorSubsystem {
 
         self.record_history_state();
 
-        let paste_anchor = self.ui.cursor;
+        let paste_anchor = self.input.cursor;
         let base_len = self.objects.len();
         let mut new_indices = Vec::with_capacity(clipboard.objects.len());
 
@@ -190,10 +190,10 @@ impl EditorSubsystem {
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.ui.selected_block_index = new_indices.first().copied();
-        self.ui.selected_block_indices = new_indices;
+        self.input.selected_block_index = new_indices.first().copied();
+        self.input.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.ui.hovered_block_index = self.ui.selected_block_index;
+        self.input.hovered_block_index = self.input.selected_block_index;
         self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
         self.pick_spatial_index.invalidate();
@@ -207,7 +207,7 @@ impl EditorSubsystem {
         }
 
         let anchor_index = self
-            .ui
+            .input
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .unwrap_or(selected_indices[0]);
@@ -232,10 +232,10 @@ impl EditorSubsystem {
             new_indices.push(base_len + new_indices.len());
         }
 
-        self.ui.selected_block_index = new_indices.first().copied();
-        self.ui.selected_block_indices = new_indices;
+        self.input.selected_block_index = new_indices.first().copied();
+        self.input.selected_block_indices = new_indices;
         self.sync_primary_selection_from_indices();
-        self.ui.hovered_block_index = self.ui.selected_block_index;
+        self.input.hovered_block_index = self.input.selected_block_index;
         self.sync_trigger_selection_from_objects();
         self.invalidate_samples();
         self.pick_spatial_index.invalidate();
@@ -347,7 +347,7 @@ mod tests {
 
         // Record more than 256 times
         for i in 0..300 {
-            state.editor.ui.cursor[0] = i as f32;
+            state.editor.input.cursor[0] = i as f32;
             state.record_editor_history_state();
         }
 
@@ -395,12 +395,12 @@ mod tests {
         state.phase = AppPhase::Editor;
 
         state.editor.objects = vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.selected_block_index = Some(0); // Anchor
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(0); // Anchor
 
         state.editor_copy_block();
 
-        state.editor.ui.cursor = [20.0, 5.0, 20.0];
+        state.editor.input.cursor = [20.0, 5.0, 20.0];
         state.editor_paste_block();
 
         assert_eq!(state.editor.objects.len(), 4);
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(state.editor.objects[3].position, [22.0, 6.0, 22.0]);
 
         // Selection should be the two new blocks
-        assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        assert_eq!(state.editor.input.selected_block_indices, vec![2, 3]);
     }
 
     #[tokio::test]
@@ -420,14 +420,14 @@ mod tests {
         state.phase = AppPhase::Editor;
 
         state.editor.objects = vec![test_block([10.0, 0.0, 10.0])];
-        state.editor.ui.selected_block_indices.clear();
-        state.editor.ui.selected_block_index = None;
-        state.editor.ui.cursor = [10.0, 0.0, 10.0];
+        state.editor.input.selected_block_indices.clear();
+        state.editor.input.selected_block_index = None;
+        state.editor.input.cursor = [10.0, 0.0, 10.0];
 
         state.editor_copy_block();
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
-        state.editor.ui.cursor = [30.0, 0.0, 30.0];
+        state.editor.input.cursor = [30.0, 0.0, 30.0];
         state.editor_paste_block();
         assert_eq!(state.editor.objects.len(), 2);
         assert_eq!(state.editor.objects[1].position, [30.0, 0.0, 30.0]);
@@ -439,8 +439,8 @@ mod tests {
         state.phase = AppPhase::Editor;
 
         state.editor.objects = vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
-        state.editor.ui.selected_block_indices = vec![0, 1];
-        state.editor.ui.selected_block_index = Some(1); // Anchor
+        state.editor.input.selected_block_indices = vec![0, 1];
+        state.editor.input.selected_block_index = Some(1); // Anchor
 
         state.editor_duplicate_selected_block_in_place();
 
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(state.editor.objects[3].position, [12.0, 1.0, 12.0]);
 
         // Selection should be the two new blocks
-        assert_eq!(state.editor.ui.selected_block_indices, vec![2, 3]);
+        assert_eq!(state.editor.input.selected_block_indices, vec![2, 3]);
     }
 
     #[tokio::test]
@@ -481,7 +481,7 @@ mod tests {
     async fn test_duplicate_empty_selection() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
-        state.editor.ui.selected_block_indices.clear();
+        state.editor.input.selected_block_indices.clear();
         assert!(!state.editor.duplicate_selected());
     }
 
@@ -498,8 +498,8 @@ mod tests {
 
         state.editor.apply_history_snapshot(snapshot);
 
-        assert_eq!(state.editor.ui.selected_block_index, Some(0));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![0]);
+        assert_eq!(state.editor.input.selected_block_index, Some(0));
+        assert_eq!(state.editor.input.selected_block_indices, vec![0]);
         assert!(state.editor.triggers.selected_index.is_none());
     }
 

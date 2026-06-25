@@ -15,7 +15,7 @@ async fn test_editor_snap_override_with_ctrl() {
     // 1. Initially enabled
     state.editor.config.snap_to_grid = true;
     state.editor.config.snap_rotation = true;
-    state.editor.ui.ctrl_held = false;
+    state.editor.input.ctrl_held = false;
 
     assert!(state.editor.snap_to_grid());
     assert!(state.editor.snap_rotation());
@@ -47,9 +47,9 @@ async fn test_editor_cursor_snapping_respects_ctrl_override() {
     state.editor.config.snap_to_grid = true;
     state.editor.config.snap_step = 1.0;
 
-    state.editor.ui.ctrl_held = false;
+    state.editor.input.ctrl_held = false;
     assert!(state.editor.effective_snap_to_grid());
 
-    state.editor.ui.ctrl_held = true;
+    state.editor.input.ctrl_held = true;
     assert!(!state.editor.effective_snap_to_grid());
 }

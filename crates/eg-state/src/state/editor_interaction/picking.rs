@@ -349,7 +349,7 @@ impl EditorSubsystem {
         {
             puffin::profile_scope!("PickRaycast");
 
-            if self.ui.mode == EditorMode::Tapping {
+            if self.input.mode == EditorMode::Tapping {
                 if let Some((tap_index, tap_t, tap_position)) =
                     self.ray_intersect_tap_indicator(ray_origin, ray_dir, min_t)
                 {
@@ -488,7 +488,7 @@ impl EditorSubsystem {
             return None;
         }
 
-        let next_cursor = if self.ui.mode == EditorMode::Tapping && cursor_override.is_none() {
+        let next_cursor = if self.input.mode == EditorMode::Tapping && cursor_override.is_none() {
             let target = ray_origin + ray_dir * min_t + best_hit_normal * 0.01;
             self.tap_path_cursor_near_world([target.x, target.y.max(0.0), target.z])
         } else {
@@ -607,7 +607,7 @@ impl EditorSubsystem {
         let snap_enabled = self.effective_snap_to_grid();
         let snap_step = self.config.snap_step.max(0.05);
         let footprint_centered =
-            self.ui.mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
+            self.input.mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
         let selected_size = self.selected_block_default_size();
         let cursor_target = if footprint_centered {
             Vec3::new(

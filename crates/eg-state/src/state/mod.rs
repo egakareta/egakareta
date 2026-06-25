@@ -64,7 +64,7 @@ use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorState, LevelObject,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorInputState, EditorMode, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -124,7 +124,7 @@ pub struct PracticeCheckpoint {
 /// Bundles all editor-related state into a single subsystem.
 /// Separates editor concern from the top-level application state.
 pub struct EditorSubsystem {
-    pub ui: EditorState,
+    pub input: EditorInputState,
     pub config: EditorConfigState,
     pub objects: Vec<LevelObject>,
     pub spawn: SpawnMetadata,
@@ -147,7 +147,7 @@ impl EditorSubsystem {
         use eg_blocks::BlockId;
 
         Self {
-            ui: EditorState::default(),
+            input: EditorInputState::default(),
             config: EditorConfigState {
                 selected_block_id: BlockId::default(),
                 recent_block_ids: vec![BlockId::default()],
@@ -446,11 +446,11 @@ impl State {
                 self.editor.set_left_mouse_down(pressed);
                 self.mark_editor_dirty(EditorDirtyFlags::selection_overlay_changed());
                 if !pressed {
-                    if let Some(pointer) = self.editor.ui.pointer_screen {
+                    if let Some(pointer) = self.editor.input.pointer_screen {
                         self.finish_editor_marquee_selection(pointer[0], pointer[1]);
                     } else {
-                        self.editor.ui.marquee_start_screen = None;
-                        self.editor.ui.marquee_current_screen = None;
+                        self.editor.input.marquee_start_screen = None;
+                        self.editor.input.marquee_current_screen = None;
                     }
                     let had_drag = self.editor.has_gizmo_drag() || self.editor.has_block_drag();
                     self.editor.clear_interaction_drags();
@@ -474,7 +474,7 @@ impl State {
     /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
     /// or selection operations.
     pub fn handle_primary_click(&mut self, x: f64, y: f64) {
-        let previous_pointer = self.editor.ui.pointer_screen;
+        let previous_pointer = self.editor.input.pointer_screen;
         let pointer_moved = previous_pointer.is_none_or(|pointer| {
             (pointer[0] - x).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
                 || (pointer[1] - y).abs() > TAP_CLICK_SCREEN_EPSILON_PIXELS
@@ -492,7 +492,7 @@ impl State {
                 return;
             }
 
-            if self.editor.ui.alt_held {
+            if self.editor.input.alt_held {
                 self.dispatch(crate::commands::AppCommand::Editor(
                     EditorCommand::PickBlockAt { x, y },
                 ));
@@ -509,7 +509,7 @@ impl State {
                 if self.begin_editor_gizmo_drag(x, y) {
                     return;
                 }
-                if !self.editor.ui.shift_held && self.begin_editor_selected_block_drag(x, y) {
+                if !self.editor.input.shift_held && self.begin_editor_selected_block_drag(x, y) {
                     return;
                 }
                 let viewport_size = glam::Vec2::new(
@@ -522,7 +522,7 @@ impl State {
                     .is_some_and(|pick| {
                         pick.hit_block_index.is_some() || pick.hit_trigger_index.is_some()
                     });
-                if !self.editor.ui.shift_held && hit_selectable {
+                if !self.editor.input.shift_held && hit_selectable {
                     self.editor
                         .select_block_from_screen(x, y, viewport_size, self.phase);
                     return;

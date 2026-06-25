@@ -29,8 +29,8 @@ fn nudge_moves_selected_blocks_by_world_delta() {
         position: [3.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
-    editor.ui.selected_block_indices = vec![0];
+    editor.input.selected_block_index = Some(0);
+    editor.input.selected_block_indices = vec![0];
 
     assert!(editor.nudge_selected(2.0, -1.0));
     assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, -1.0], 1e-6);
@@ -53,10 +53,10 @@ fn nudge_updates_cursor_to_selected_block_position() {
         position: [1.0, 2.0, 3.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
+    editor.input.selected_block_index = Some(0);
 
     editor.nudge_selected(5.0, -2.0);
-    assert_vec3_approx_eq(editor.ui.cursor, [6.0, 2.0, 1.0], 1e-6);
+    assert_vec3_approx_eq(editor.input.cursor, [6.0, 2.0, 1.0], 1e-6);
 }
 
 // ── Snap to grid ───────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ fn snap_moves_blocks_to_nearest_grid_cell() {
         position: [0.3, 0.0, 0.7],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
+    editor.input.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
     assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 1.0], 1e-6);
@@ -83,7 +83,7 @@ fn snap_respects_custom_step_size() {
         position: [1.3, 0.0, 3.8],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
+    editor.input.selected_block_index = Some(0);
 
     assert!(editor.snap_selected_blocks_to_grid());
     assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, 4.0], 1e-6);
@@ -97,7 +97,7 @@ fn snap_returns_false_when_already_snapped() {
         position: [3.0, 0.0, 5.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
+    editor.input.selected_block_index = Some(0);
 
     assert!(!editor.snap_selected_blocks_to_grid());
 }
@@ -116,8 +116,8 @@ fn remove_selected_deletes_marked_blocks() {
         position: [2.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(1);
-    editor.ui.selected_block_indices = vec![1];
+    editor.input.selected_block_index = Some(1);
+    editor.input.selected_block_indices = vec![1];
 
     assert!(editor.remove_selected());
     assert_eq!(editor.objects.len(), 2);
@@ -129,11 +129,11 @@ fn remove_selected_deletes_marked_blocks() {
 fn remove_selected_clears_selection() {
     let mut editor = EditorSubsystem::new_test();
     editor.objects.push(LevelObject::default());
-    editor.ui.selected_block_index = Some(0);
+    editor.input.selected_block_index = Some(0);
 
     editor.remove_selected();
-    assert!(editor.ui.selected_block_index.is_none());
-    assert!(editor.ui.selected_block_indices.is_empty());
+    assert!(editor.input.selected_block_index.is_none());
+    assert!(editor.input.selected_block_indices.is_empty());
 }
 
 // ── Spawn ──────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ fn remove_selected_clears_selection() {
 #[test]
 fn set_spawn_here_copies_cursor_position() {
     let mut editor = EditorSubsystem::new_test();
-    editor.ui.cursor = [5.0, 3.0, 7.0];
+    editor.input.cursor = [5.0, 3.0, 7.0];
 
     editor.set_spawn_here();
     assert_vec3_approx_eq(editor.spawn.position, [5.0, 3.0, 7.0], 1e-6);
@@ -169,12 +169,12 @@ fn clear_block_selection_resets_all_indices() {
         position: [1.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
-    editor.ui.selected_block_indices = vec![0, 1];
+    editor.input.selected_block_index = Some(0);
+    editor.input.selected_block_indices = vec![0, 1];
 
     editor.clear_block_selection();
-    assert!(editor.ui.selected_block_index.is_none());
-    assert!(editor.ui.selected_block_indices.is_empty());
+    assert!(editor.input.selected_block_index.is_none());
+    assert!(editor.input.selected_block_indices.is_empty());
 }
 
 #[test]
@@ -185,8 +185,8 @@ fn selected_indices_normalized_deduplicates() {
         position: [1.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
-    editor.ui.selected_block_indices = vec![0, 0, 1];
+    editor.input.selected_block_index = Some(0);
+    editor.input.selected_block_indices = vec![0, 0, 1];
 
     let indices = editor.selected_indices_normalized();
     assert_eq!(indices, vec![0, 1]);
@@ -205,11 +205,11 @@ fn set_mode_clears_drags_and_marquee() {
         start_center_world: [0.0, 0.0, 0.0],
         start_blocks: Vec::new(),
     });
-    editor.ui.marquee_start_screen = Some([10.0, 10.0]);
+    editor.input.marquee_start_screen = Some([10.0, 10.0]);
 
     editor.set_mode(eg_types::EditorMode::Select);
     assert!(editor.runtime.interaction.gizmo_drag.is_none());
-    assert!(editor.ui.marquee_start_screen.is_none());
+    assert!(editor.input.marquee_start_screen.is_none());
 }
 
 // ── Config ─────────────────────────────────────────────────────────────
@@ -218,10 +218,10 @@ fn set_mode_clears_drags_and_marquee() {
 fn effective_snap_overridden_by_ctrl() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_to_grid = true;
-    editor.ui.ctrl_held = false;
+    editor.input.ctrl_held = false;
     assert!(editor.effective_snap_to_grid());
 
-    editor.ui.ctrl_held = true;
+    editor.input.ctrl_held = true;
     assert!(!editor.effective_snap_to_grid());
 }
 
@@ -249,8 +249,8 @@ fn nudge_moves_all_selected_blocks() {
         position: [2.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(0);
-    editor.ui.selected_block_indices = vec![0, 2];
+    editor.input.selected_block_index = Some(0);
+    editor.input.selected_block_indices = vec![0, 2];
 
     assert!(editor.nudge_selected(3.0, -1.0));
     assert_vec3_approx_eq(editor.objects[0].position, [3.0, 0.0, -1.0], 1e-6);
@@ -279,7 +279,7 @@ fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
     let mut editor = EditorSubsystem::new_test();
     editor.objects.push(LevelObject::default());
     // Cursor far from any block so remove_topmost_block_at_cursor also fails
-    editor.ui.cursor = [100.0, 100.0, 100.0];
+    editor.input.cursor = [100.0, 100.0, 100.0];
 
     assert!(!editor.remove_selected());
     assert_eq!(editor.objects.len(), 1);
@@ -291,10 +291,10 @@ fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
 fn effective_snap_rotation_overridden_by_ctrl() {
     let mut editor = EditorSubsystem::new_test();
     editor.config.snap_rotation = true;
-    editor.ui.ctrl_held = false;
+    editor.input.ctrl_held = false;
     assert!(editor.effective_snap_rotation());
 
-    editor.ui.ctrl_held = true;
+    editor.input.ctrl_held = true;
     assert!(!editor.effective_snap_rotation());
 }
 
@@ -312,8 +312,8 @@ fn selected_indices_normalized_sorted() {
         position: [2.0, 0.0, 0.0],
         ..LevelObject::default()
     });
-    editor.ui.selected_block_index = Some(2);
-    editor.ui.selected_block_indices = vec![2, 0, 1];
+    editor.input.selected_block_index = Some(2);
+    editor.input.selected_block_indices = vec![2, 0, 1];
 
     let indices = editor.selected_indices_normalized();
     assert_eq!(indices, vec![0, 1, 2]);
@@ -340,11 +340,11 @@ fn set_mode_updates_mode_field() {
     let mut editor = EditorSubsystem::new_test();
 
     editor.set_mode(eg_types::EditorMode::Move);
-    assert_eq!(editor.ui.mode, eg_types::EditorMode::Move);
+    assert_eq!(editor.input.mode, eg_types::EditorMode::Move);
 
     editor.set_mode(eg_types::EditorMode::Scale);
-    assert_eq!(editor.ui.mode, eg_types::EditorMode::Scale);
+    assert_eq!(editor.input.mode, eg_types::EditorMode::Scale);
 
     editor.set_mode(eg_types::EditorMode::Rotate);
-    assert_eq!(editor.ui.mode, eg_types::EditorMode::Rotate);
+    assert_eq!(editor.input.mode, eg_types::EditorMode::Rotate);
 }

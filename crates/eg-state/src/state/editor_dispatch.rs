@@ -189,13 +189,13 @@ impl State {
 
             EditorCommand::MouseButton { button, pressed } => {
                 if button == 0 && pressed {
-                    if let Some(pos) = self.editor.ui.pointer_screen {
+                    if let Some(pos) = self.editor.input.pointer_screen {
                         self.handle_primary_click(pos[0], pos[1]);
                     } else {
                         self.handle_mouse_button(button, pressed);
                     }
                 } else if button == 1 && pressed {
-                    if let Some(pos) = self.editor.ui.pointer_screen {
+                    if let Some(pos) = self.editor.input.pointer_screen {
                         self.editor_pick_block_at_screen(pos[0], pos[1]);
                     }
                 } else {
@@ -325,13 +325,13 @@ mod tests {
         state.dispatch_editor(EditorCommand::SetPanLeftHeld(true));
         state.dispatch_editor(EditorCommand::SetPanRightHeld(true));
 
-        assert!(state.editor.ui.shift_held);
-        assert!(state.editor.ui.ctrl_held);
-        assert!(state.editor.ui.alt_held);
-        assert!(state.editor.ui.pan_up_held);
-        assert!(state.editor.ui.pan_down_held);
-        assert!(state.editor.ui.pan_left_held);
-        assert!(state.editor.ui.pan_right_held);
+        assert!(state.editor.input.shift_held);
+        assert!(state.editor.input.ctrl_held);
+        assert!(state.editor.input.alt_held);
+        assert!(state.editor.input.pan_up_held);
+        assert!(state.editor.input.pan_down_held);
+        assert!(state.editor.input.pan_left_held);
+        assert!(state.editor.input.pan_right_held);
 
         state.dispatch_editor(EditorCommand::MouseButton {
             button: 0,
@@ -346,8 +346,8 @@ mod tests {
     async fn dispatch_editor_routes_selection_timeline_and_escape_commands() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.dispatch_editor(EditorCommand::CopyBlock);
         assert!(state.editor.runtime.interaction.clipboard.is_some());
@@ -382,9 +382,9 @@ mod tests {
         state.dispatch_editor(EditorCommand::SetTimingPointTimeSignature(0, 3, 4));
         state.dispatch_editor(EditorCommand::RemoveTimingPoint(0));
 
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_indices = vec![0];
         state.dispatch_editor(EditorCommand::Escape);
-        assert!(state.editor.ui.selected_block_indices.is_empty());
+        assert!(state.editor.input.selected_block_indices.is_empty());
 
         state.editor.timeline.clock.time_seconds = 2.0;
         state.dispatch_editor(EditorCommand::Escape);
@@ -414,8 +414,8 @@ mod tests {
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
         }];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         let mut selected = state.editor.objects[0].clone();
         let trigger = selected
@@ -448,31 +448,31 @@ mod tests {
 
         state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(0)));
         assert_eq!(state.editor.selected_trigger_index(), Some(0));
-        assert_eq!(state.editor.ui.selected_block_index, Some(2));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![2]);
+        assert_eq!(state.editor.input.selected_block_index, Some(2));
+        assert_eq!(state.editor.input.selected_block_indices, vec![2]);
 
         state.dispatch_editor(EditorCommand::SetTriggerSelected(Some(1)));
         assert_eq!(state.editor.selected_trigger_index(), Some(1));
-        assert_eq!(state.editor.ui.selected_block_index, Some(1));
-        assert_eq!(state.editor.ui.selected_block_indices, vec![1]);
+        assert_eq!(state.editor.input.selected_block_index, Some(1));
+        assert_eq!(state.editor.input.selected_block_indices, vec![1]);
     }
 
     #[tokio::test]
     async fn dispatch_editor_routes_mode_and_pointer_pick_commands() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         state.dispatch_editor(EditorCommand::SetMode(EditorMode::Tapping));
-        assert_eq!(state.editor.ui.mode, EditorMode::Tapping);
+        assert_eq!(state.editor.input.mode, EditorMode::Tapping);
         state.dispatch_editor(EditorCommand::SetMode(EditorMode::Timing));
-        assert_eq!(state.editor.ui.mode, EditorMode::Timing);
+        assert_eq!(state.editor.input.mode, EditorMode::Timing);
         state.dispatch_editor(EditorCommand::SetMode(EditorMode::Select));
         state.dispatch_editor(EditorCommand::PickSelectedBlock);
-        assert_eq!(state.editor.ui.mode, EditorMode::Select);
+        assert_eq!(state.editor.input.mode, EditorMode::Select);
 
-        state.editor.ui.pointer_screen = Some([0.0, 0.0]);
+        state.editor.input.pointer_screen = Some([0.0, 0.0]);
         state.dispatch_editor(EditorCommand::MouseButton {
             button: 1,
             pressed: true,
@@ -484,8 +484,8 @@ mod tests {
     async fn dispatch_editor_routes_snap_block_history_and_misc_commands() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         // Snap settings
         state.dispatch_editor(EditorCommand::SetSnapToGrid(false));
@@ -507,8 +507,8 @@ mod tests {
         state.dispatch_editor(EditorCommand::RemoveBlock);
 
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
         state.dispatch_editor(EditorCommand::PasteBlock);
         state.dispatch_editor(EditorCommand::CopyBlock);
         assert!(state.editor.runtime.interaction.clipboard.is_some());
@@ -518,7 +518,7 @@ mod tests {
         state.dispatch_editor(EditorCommand::Redo);
 
         // Spawn
-        state.editor.ui.cursor = [3.0, 1.0, 5.0];
+        state.editor.input.cursor = [3.0, 1.0, 5.0];
         state.dispatch_editor(EditorCommand::SetSpawnHere);
         approx::assert_abs_diff_eq!(state.editor.spawn.position[0], 3.0, epsilon = 1e-6);
         state.dispatch_editor(EditorCommand::RotateSpawnDirection);
@@ -592,13 +592,13 @@ mod tests {
         state.dispatch_editor(EditorCommand::SetPanDownHeld(false));
         state.dispatch_editor(EditorCommand::SetPanLeftHeld(false));
         state.dispatch_editor(EditorCommand::SetPanRightHeld(false));
-        assert!(!state.editor.ui.shift_held);
-        assert!(!state.editor.ui.ctrl_held);
-        assert!(!state.editor.ui.alt_held);
-        assert!(!state.editor.ui.pan_up_held);
-        assert!(!state.editor.ui.pan_down_held);
-        assert!(!state.editor.ui.pan_left_held);
-        assert!(!state.editor.ui.pan_right_held);
+        assert!(!state.editor.input.shift_held);
+        assert!(!state.editor.input.ctrl_held);
+        assert!(!state.editor.input.alt_held);
+        assert!(!state.editor.input.pan_up_held);
+        assert!(!state.editor.input.pan_down_held);
+        assert!(!state.editor.input.pan_left_held);
+        assert!(!state.editor.input.pan_right_held);
 
         // Keybind capture
         state.dispatch_editor(EditorCommand::SetKeybindCapture(Some((
@@ -632,18 +632,18 @@ mod tests {
     async fn dispatch_editor_mouse_button_branches() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![LevelObject::default()];
-        state.editor.ui.selected_block_index = Some(0);
-        state.editor.ui.selected_block_indices = vec![0];
+        state.editor.input.selected_block_index = Some(0);
+        state.editor.input.selected_block_indices = vec![0];
 
         // button=0, pressed=true, pointer_screen set -> handle_primary_click
-        state.editor.ui.pointer_screen = Some([640.0, 360.0]);
+        state.editor.input.pointer_screen = Some([640.0, 360.0]);
         state.dispatch_editor(EditorCommand::MouseButton {
             button: 0,
             pressed: true,
         });
 
         // button=0, pressed=true, pointer_screen None -> handle_mouse_button
-        state.editor.ui.pointer_screen = None;
+        state.editor.input.pointer_screen = None;
         state.dispatch_editor(EditorCommand::MouseButton {
             button: 0,
             pressed: true,
