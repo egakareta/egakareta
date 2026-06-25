@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{EulerRot, Mat3, Mat4, Vec3};
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 
 use eg_block_geometry::visual_cuboids;
@@ -15,11 +15,10 @@ use eg_mesh::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_lay
 use eg_mesh::{
     CameraTriggerVisualStyle, MeshGeometry, TransformTriggerVisualStyle,
     append_camera_trigger_visual_vertices, append_transform_trigger_visual_vertices,
-    build_block_geometry,
 };
 use eg_types::{
-    BlockIconCamera, BlockRenderProfile, CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform,
-    LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+    BlockRenderProfile, CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform, LevelObject,
+    TRANSFORM_TRIGGER_BLOCK_ID,
 };
 
 use crate::{DEPTH_FORMAT, GpuContext};
@@ -28,7 +27,6 @@ const ICON_DIMETRIC_YAW_DEGREES: f32 = 45.0;
 const ICON_DIMETRIC_PITCH_DEGREES: f32 = 30.0;
 const ICON_CAMERA_DISTANCE: f32 = 4.0;
 const ICON_ORTHO_HALF_EXTENT: f32 = 0.9;
-const ICON_PERSPECTIVE_FOV_DEGREES: f32 = 35.0;
 const ICON_ORTHO_NEAR_PLANE: f32 = 0.1;
 const ICON_ORTHO_FAR_PLANE: f32 = 16.0;
 
@@ -38,24 +36,10 @@ struct IconCamera {
     up: Vec3,
     projection: Mat4,
 }
-
-fn uses_dimetric_icon_projection(block_id: &str) -> bool {
-    resolve_block_definition(block_id)
-        .render
-        .icon_dimetric_projection
-}
-
-fn configured_icon_camera(block_id: &str) -> BlockIconCamera {
-    resolve_block_definition(block_id)
-        .render
-        .icon_camera
-        .clone()
-}
-
-fn default_icon_camera(dimetric: bool) -> IconCamera {
-    let target = Vec3::new(0.5, 0.5, 0.5);
-    let up = Vec3::Y;
-    if dimetric {
+impl Default for IconCamera {
+    fn default() -> Self {
+        let target = Vec3::new(0.5, 0.5, 0.5);
+        let up = Vec3::Y;
         let yaw = ICON_DIMETRIC_YAW_DEGREES.to_radians();
         let pitch = ICON_DIMETRIC_PITCH_DEGREES.to_radians();
         let camera_direction = Vec3::new(
@@ -64,61 +48,13 @@ fn default_icon_camera(dimetric: bool) -> IconCamera {
             pitch.cos() * yaw.sin(),
         )
         .normalize();
-        return IconCamera {
+        IconCamera {
             eye: target + (camera_direction * ICON_CAMERA_DISTANCE),
             target,
             up,
             projection: orthographic_projection(ICON_ORTHO_HALF_EXTENT),
-        };
+        }
     }
-
-    IconCamera {
-        eye: Vec3::new(2.0, 2.0, 2.0),
-        target,
-        up,
-        projection: Mat4::perspective_rh_gl(
-            ICON_PERSPECTIVE_FOV_DEGREES.to_radians(),
-            1.0,
-            0.1,
-            100.0,
-        ),
-    }
-}
-
-fn resolve_icon_camera(block_id: &str, dimetric: bool) -> IconCamera {
-    let mut camera = default_icon_camera(dimetric);
-    let config = configured_icon_camera(block_id);
-
-    if let Some(position) = finite_vec3(config.position) {
-        camera.eye = position;
-    }
-
-    if let Some(rotation) = finite_vec3(config.rotation) {
-        let rotation = Mat3::from_euler(
-            EulerRot::XYZ,
-            rotation.x.to_radians(),
-            rotation.y.to_radians(),
-            rotation.z.to_radians(),
-        );
-        let forward = (rotation * Vec3::NEG_Z).normalize();
-        camera.target = camera.eye + forward;
-        camera.up = (rotation * Vec3::Y).normalize();
-    }
-
-    if let Some(half_extent) = config
-        .orthographic_half_extent
-        .filter(|half_extent| half_extent.is_finite() && *half_extent > 0.0)
-    {
-        camera.projection = orthographic_projection(half_extent);
-    }
-
-    camera
-}
-
-fn finite_vec3(value: Option<[f32; 3]>) -> Option<Vec3> {
-    value
-        .filter(|components| components.iter().all(|component| component.is_finite()))
-        .map(Vec3::from)
 }
 
 fn orthographic_projection(half_extent: f32) -> Mat4 {
@@ -132,13 +68,8 @@ fn orthographic_projection(half_extent: f32) -> Mat4 {
     )
 }
 
-fn build_block_icon_geometry(block_id: &str, dimetric: bool) -> MeshGeometry {
+fn build_block_icon_geometry(block_id: &str) -> MeshGeometry {
     const LIQUID_PROFILE_TAG: f32 = 1.0;
-
-    if !dimetric {
-        let block = LevelObject::new(block_id);
-        return build_block_geometry(std::slice::from_ref(&block));
-    }
 
     let block = resolve_block_definition(block_id);
     if block.id == CAMERA_TRIGGER_BLOCK_ID {
@@ -238,8 +169,7 @@ impl GpuContext {
     /// Renders a single block to an offscreen texture for use as an editor icon.
     pub fn render_block_icon_snapshot(&self, block_id: &str, size: u32) -> Option<wgpu::Texture> {
         let safe_size = size.max(1);
-        let dimetric = uses_dimetric_icon_projection(block_id);
-        let geometry = build_block_icon_geometry(block_id, dimetric);
+        let geometry = build_block_icon_geometry(block_id);
         if geometry.is_empty() {
             return None;
         }
@@ -292,7 +222,7 @@ impl GpuContext {
         });
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let camera = resolve_icon_camera(block_id, dimetric);
+        let camera = IconCamera::default();
         let view = Mat4::look_at_rh(camera.eye, camera.target, camera.up);
         let view_proj = camera.projection * view;
         let camera_uniform = CameraUniform {
@@ -403,38 +333,17 @@ impl GpuContext {
 }
 
 #[cfg(test)]
-fn build_block_icon_vertices(block_id: &str, dimetric: bool) -> Vec<eg_mesh::Vertex> {
-    build_block_icon_geometry(block_id, dimetric).to_triangle_vertices()
+fn build_block_icon_vertices(block_id: &str) -> Vec<eg_mesh::Vertex> {
+    build_block_icon_geometry(block_id).to_triangle_vertices()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_block_icon_vertices, resolve_icon_camera, uses_dimetric_icon_projection};
-
-    #[test]
-    fn dimetric_projection_configuration_is_read_from_block_render_json() {
-        assert!(uses_dimetric_icon_projection("core/stone"));
-        assert!(!uses_dimetric_icon_projection("core/speedportal"));
-    }
-
-    #[test]
-    fn custom_icon_camera_configuration_controls_speed_portal_view() {
-        let camera = resolve_icon_camera("core/speedportal", false);
-
-        approx::assert_abs_diff_eq!(camera.eye.x, 0.5, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(camera.eye.y, 4.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(camera.eye.z, 0.5, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(camera.target.x, 0.5, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(camera.target.y, 3.0, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(camera.target.z, 0.5, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(camera.up.x, 1.0, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(camera.up.y, 0.0, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(camera.up.z, 0.0, epsilon = 1e-5);
-    }
+    use super::build_block_icon_vertices;
 
     #[test]
     fn dimetric_liquid_block_icons_mark_vertices_as_liquid_profile() {
-        let liquid_vertices = build_block_icon_vertices("core/lava", true);
+        let liquid_vertices = build_block_icon_vertices("core/lava");
         assert!(
             !liquid_vertices.is_empty(),
             "expected liquid block icon vertices"
@@ -446,7 +355,7 @@ mod tests {
             "expected dimetric liquid icon vertices to use the liquid render profile tag"
         );
 
-        let solid_vertices = build_block_icon_vertices("core/stone", true);
+        let solid_vertices = build_block_icon_vertices("core/stone");
         assert!(
             solid_vertices
                 .iter()
@@ -457,13 +366,13 @@ mod tests {
 
     #[test]
     fn dimetric_cuboid_block_icon_uses_all_elements() {
-        let vertices = build_block_icon_vertices("core/wooden_fence", true);
+        let vertices = build_block_icon_vertices("core/wooden_fence");
         assert_eq!(vertices.len(), 3 * 36);
     }
 
     #[test]
     fn transform_trigger_dimetric_icon_uses_visible_marker_geometry() {
-        let vertices = build_block_icon_vertices("core/transform_trigger", true);
+        let vertices = build_block_icon_vertices("core/transform_trigger");
         assert!(
             vertices.len() > 36,
             "expected transform trigger icon to include visible marker geometry"

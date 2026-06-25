@@ -4,12 +4,6 @@
     "category": "tech",
     "render": {
         "profile": "neon",
-        "icon_dimetric_projection": false,
-        "icon_camera": {
-            "position": [0.5, 4, 0.5],
-            "rotation": [-90, 0, -90],
-            "orthographic_half_extent": 0.6
-        },
         "color_top": [1, 0.95, 0, 1],
         "default_size": [2, 1, 1]
     },

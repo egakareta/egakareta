@@ -9,7 +9,6 @@
     },
     "render": {
         "profile": "solid",
-        "icon_dimetric_projection": true,
         "color_outline": [0.06, 0.05, 0.08, 0.25]
     },
     "behavior": {

@@ -7,7 +7,6 @@
     },
     "render": {
         "profile": "solid",
-        "icon_dimetric_projection": true,
         "default_size": [0.45, 1.0, 0.85],
         "color_top": [1.0, 1.0, 1.0, 1.0],
         "color_side": [1.0, 1.0, 1.0, 1.0],

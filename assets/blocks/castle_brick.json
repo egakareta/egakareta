@@ -6,8 +6,7 @@
         "texture": "castle_brick.png"
     },
     "render": {
-        "profile": "solid",
-        "icon_dimetric_projection": true
+        "profile": "solid"
     },
     "behavior": {
         "collision": "solid",

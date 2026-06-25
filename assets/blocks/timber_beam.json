@@ -6,8 +6,7 @@
         "texture": "timber_beam.png"
     },
     "render": {
-        "profile": "solid",
-        "icon_dimetric_projection": true
+        "profile": "solid"
     },
     "behavior": {
         "collision": "solid",

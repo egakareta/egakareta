@@ -206,9 +206,7 @@ fn collect_builtin_blocks(dir: &Dir<'_>, definitions: &mut Vec<BlockDefinition>)
 
         match serde_json::from_str::<BlockDefinition>(contents) {
             Ok(definition) => {
-                if let Some(normalized) = definition.normalize() {
-                    definitions.push(normalized);
-                }
+                definitions.push(definition);
             }
             Err(error) => {
                 log::warn!(
@@ -356,17 +354,11 @@ pub fn resolve_block_definition(block_id: &str) -> &'static BlockDefinition {
 
 #[cfg(test)]
 mod tests {
-    use eg_types::{
-        BlockAnimation, BlockAssets, BlockBehavior, BlockGeometry, BlockId, BlockRender,
-    };
-
     use super::{
         all_placeable_blocks, block_texture_atlas, resolve_block_definition,
         resolve_block_texture_layers,
     };
-    use eg_types::{
-        BlockCategory, BlockCollision, BlockCuboid, BlockDefinition, BlockRenderProfile,
-    };
+    use eg_types::{BlockCategory, BlockCollision, BlockCuboid, BlockRenderProfile};
 
     #[test]
     fn configured_texture_assets_resolve_to_non_default_layers() {
@@ -406,25 +398,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn normalize_block_definition_trims_and_falls_back_display_name() {
-        let normalized = BlockDefinition {
-            id: BlockId::new("  CORE/STONE  "),
-            display_name: "   ".to_string(),
-            category: BlockCategory::Building,
-            assets: BlockAssets::default(),
-            render: BlockRender::default(),
-            behavior: BlockBehavior::default(),
-            geometry: BlockGeometry::default(),
-            animation: BlockAnimation::default(),
-            placeable: true,
-        }
-        .normalize()
-        .expect("normalize");
-        assert_eq!(normalized.id, "core/stone");
-        assert_eq!(normalized.display_name, "core/stone");
     }
 
     #[test]
@@ -482,27 +455,9 @@ mod tests {
     }
 
     #[test]
-    fn block_default_size_is_loaded_and_sanitized() {
+    fn block_default_size_is_loaded() {
         let speed_portal = resolve_block_definition("core/speedportal");
-        assert_eq!(speed_portal.default_size(), [2.0, 1.0, 1.0]);
-
-        let normalized = BlockDefinition {
-            id: BlockId::new("debug/flat"),
-            display_name: "Flat".to_string(),
-            category: BlockCategory::Building,
-            assets: BlockAssets::default(),
-            render: BlockRender {
-                default_size: [f32::NAN, -2.0, 3.0],
-                ..BlockRender::default()
-            },
-            behavior: BlockBehavior::default(),
-            geometry: BlockGeometry::default(),
-            animation: BlockAnimation::default(),
-            placeable: true,
-        }
-        .normalize()
-        .expect("normalize");
-        assert_eq!(normalized.default_size(), [1.0, 0.01, 3.0]);
+        assert_eq!(speed_portal.render.default_size, [2.0, 1.0, 1.0]);
     }
 
     #[test]
@@ -512,42 +467,6 @@ mod tests {
         assert_eq!(fence.geometry.hitboxes.len(), 0);
         assert_eq!(fence.geometry.elements[0].from, [6.0, 0.0, 6.0]);
         assert_eq!(fence.geometry.elements[0].to, [10.0, 16.0, 10.0]);
-
-        let normalized = BlockDefinition {
-            id: BlockId::new("debug/cuboids"),
-            display_name: "Cuboids".to_string(),
-            category: BlockCategory::Building,
-            assets: BlockAssets::default(),
-            render: BlockRender::default(),
-            behavior: BlockBehavior::default(),
-            geometry: BlockGeometry {
-                elements: vec![
-                    BlockCuboid {
-                        from: [20.0, 8.0, -4.0],
-                        to: [4.0, 8.0, 18.0],
-                        color_tint: None,
-                    },
-                    BlockCuboid {
-                        from: [16.0, 16.0, 16.0],
-                        to: [0.0, 0.0, 0.0],
-                        color_tint: Some([-0.5, 0.4, f32::NAN]),
-                    },
-                ],
-                hitboxes: Vec::new(),
-            },
-            animation: BlockAnimation::default(),
-            placeable: true,
-        }
-        .normalize()
-        .expect("normalize");
-
-        assert_eq!(normalized.geometry.elements.len(), 1);
-        assert_eq!(normalized.geometry.elements[0].from, [0.0, 0.0, 0.0]);
-        assert_eq!(normalized.geometry.elements[0].to, [16.0, 16.0, 16.0]);
-        assert_eq!(
-            normalized.geometry.elements[0].color_tint,
-            Some([0.0, 0.4, 1.0])
-        );
     }
 
     #[test]
@@ -582,25 +501,6 @@ mod tests {
         let consumed = gem.animation.on_consumed.expect("gem consumed effect");
         assert_eq!(consumed.shard_count, 14);
         approx::assert_abs_diff_eq!(consumed.duration_seconds, 0.48, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn block_icon_camera_configuration_is_loaded() {
-        let speed_portal = resolve_block_definition("core/speedportal");
-        let camera = &speed_portal.render.icon_camera;
-        let position = camera.position.expect("speed portal icon camera position");
-        let rotation = camera.rotation.expect("speed portal icon camera rotation");
-        let half_extent = camera
-            .orthographic_half_extent
-            .expect("speed portal icon camera extent");
-
-        approx::assert_abs_diff_eq!(position[0], 0.5, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(position[1], 4.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(position[2], 0.5, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(rotation[0], -90.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(rotation[1], 0.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(rotation[2], -90.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(half_extent, 0.6, epsilon = 1e-6);
     }
 
     #[test]

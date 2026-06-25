@@ -339,7 +339,9 @@ impl EditorSubsystem {
     }
 
     pub fn selected_block_default_size(&self) -> [f32; 3] {
-        resolve_block_definition(&self.config.selected_block_id).default_size()
+        resolve_block_definition(&self.config.selected_block_id)
+            .render
+            .default_size
     }
 
     pub fn add_block_at_cursor(&mut self, place_mode: EditorPlaceMode) -> usize {

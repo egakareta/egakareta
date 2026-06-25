@@ -6,8 +6,7 @@
         "texture": "wood_shingle_roof.png"
     },
     "render": {
-        "profile": "solid",
-        "icon_dimetric_projection": true
+        "profile": "solid"
     },
     "behavior": {
         "collision": "solid",

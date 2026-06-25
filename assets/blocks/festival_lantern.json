@@ -7,7 +7,6 @@
     },
     "render": {
         "profile": "liquid",
-        "icon_dimetric_projection": true,
         "color_top": [1.0, 0.92, 0.7, 1.0],
         "color_side": [1.0, 0.74, 0.38, 1.0],
         "color_bottom": [0.42, 0.22, 0.13, 1.0],
