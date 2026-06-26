@@ -561,15 +561,46 @@ pub struct TimedTrigger {
     pub camera: Option<CameraTrigger>,
 }
 
-/// The vector from the look-at target to the specified eye.
-/// Roll is not considered, so the camera is always upright.
-pub fn camera_offset_from_target(yaw: f32, pitch: f32, distance: f32) -> [f32; 3] {
-    let horizontal_distance = distance * pitch.cos();
-    [
-        -yaw.sin() * horizontal_distance,
-        pitch.sin() * distance,
-        -yaw.cos() * horizontal_distance,
-    ]
+impl TimedTrigger {
+    fn eased_alpha(easing: EasingDirection, alpha: f32) -> f32 {
+        let alpha = alpha.clamp(0.0, 1.0);
+        match easing {
+            EasingDirection::Linear => alpha,
+            EasingDirection::EaseIn => alpha * alpha,
+            EasingDirection::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
+            EasingDirection::EaseInOut => {
+                if alpha < 0.5 {
+                    2.0 * alpha * alpha
+                } else {
+                    1.0 - ((-2.0 * alpha + 2.0).powi(2) * 0.5)
+                }
+            }
+        }
+    }
+
+    pub fn progress(&self, time_seconds: f32) -> Option<f32> {
+        let time_seconds = time_seconds.max(0.0);
+        if !self.time_seconds.is_finite() {
+            return None;
+        }
+
+        if self.duration_seconds <= 1e-6 {
+            return (time_seconds + 1e-6 >= self.time_seconds).then_some(1.0);
+        }
+
+        let start = self.time_seconds;
+        let end = start + self.duration_seconds.max(0.0);
+        if time_seconds + 1e-6 < start {
+            return None;
+        }
+
+        if time_seconds >= end {
+            return Some(1.0);
+        }
+
+        let alpha = (time_seconds - start) / self.duration_seconds.max(1e-6);
+        Some(Self::eased_alpha(self.easing, alpha))
+    }
 }
 
 pub fn apply_timed_triggers_to_objects(
@@ -713,7 +744,7 @@ fn apply_timed_triggers_to_objects_in_place(
             continue;
         }
 
-        let Some(progress) = timed_trigger_progress(trigger, time_seconds) else {
+        let Some(progress) = trigger.progress(time_seconds) else {
             continue;
         };
         let object_count = objects.len();
@@ -735,46 +766,6 @@ fn apply_timed_triggers_to_objects_in_place(
             }
         }
     }
-}
-
-fn timed_trigger_eased_alpha(easing: EasingDirection, alpha: f32) -> f32 {
-    let alpha = alpha.clamp(0.0, 1.0);
-    match easing {
-        EasingDirection::Linear => alpha,
-        EasingDirection::EaseIn => alpha * alpha,
-        EasingDirection::EaseOut => 1.0 - (1.0 - alpha) * (1.0 - alpha),
-        EasingDirection::EaseInOut => {
-            if alpha < 0.5 {
-                2.0 * alpha * alpha
-            } else {
-                1.0 - ((-2.0 * alpha + 2.0).powi(2) * 0.5)
-            }
-        }
-    }
-}
-
-fn timed_trigger_progress(trigger: &TimedTrigger, time_seconds: f32) -> Option<f32> {
-    let time_seconds = time_seconds.max(0.0);
-    if !trigger.time_seconds.is_finite() {
-        return None;
-    }
-
-    if trigger.duration_seconds <= 1e-6 {
-        return (time_seconds + 1e-6 >= trigger.time_seconds).then_some(1.0);
-    }
-
-    let start = trigger.time_seconds;
-    let end = start + trigger.duration_seconds.max(0.0);
-    if time_seconds + 1e-6 < start {
-        return None;
-    }
-
-    if time_seconds >= end {
-        return Some(1.0);
-    }
-
-    let alpha = (time_seconds - start) / trigger.duration_seconds.max(1e-6);
-    Some(timed_trigger_eased_alpha(trigger.easing, alpha))
 }
 
 #[cfg(test)]
