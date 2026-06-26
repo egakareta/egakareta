@@ -22,7 +22,7 @@ use eg_types::{
 };
 use eg_types::{
     BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, default_sky_color,
+    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
 };
 use glam::Vec3;
 
@@ -420,7 +420,7 @@ impl State {
     fn reset_menu_preview_to_default_scene(&mut self) {
         self.gameplay.state.objects = vec![];
         self.gameplay.state.rebuild_behavior_cache();
-        self.menu.state.preview_sky_color = default_sky_color();
+        self.menu.state.preview_sky_color = LevelMetadata::default().sky_color;
         self.menu.state.preview_camera_position = DEFAULT_MENU_PREVIEW_CAMERA_POSITION;
         self.menu.state.preview_camera_target = DEFAULT_MENU_PREVIEW_CAMERA_TARGET;
         self.rebuild_block_vertices();
@@ -697,7 +697,7 @@ mod tests {
     };
     use eg_types::{
         BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
-        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, default_sky_color,
+        LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
     };
 
     struct ArtifactCleanup {
@@ -973,7 +973,10 @@ mod tests {
             state.menu.state.preview_camera_target,
             DEFAULT_MENU_PREVIEW_CAMERA_TARGET
         );
-        assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
+        assert_eq!(
+            state.menu.state.preview_sky_color,
+            LevelMetadata::default().sky_color
+        );
         assert!(state.gameplay.state.objects.is_empty());
 
         state.menu.state.levels = vec!["__missing_preview_level__".to_string()];
@@ -992,7 +995,10 @@ mod tests {
             state.menu.state.preview_camera_target,
             DEFAULT_MENU_PREVIEW_CAMERA_TARGET
         );
-        assert_eq!(state.menu.state.preview_sky_color, default_sky_color());
+        assert_eq!(
+            state.menu.state.preview_sky_color,
+            LevelMetadata::default().sky_color
+        );
     }
 
     #[test]
@@ -1001,7 +1007,7 @@ mod tests {
             basic: BasicLevelMetadata::default(),
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
-            sky_color: default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,

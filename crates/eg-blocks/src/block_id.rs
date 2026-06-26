@@ -8,7 +8,6 @@
 
 use std::{fmt::Display, ops::Deref};
 
-use is_default::IsDefault;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -37,12 +36,6 @@ impl Display for BlockId {
 impl Default for BlockId {
     fn default() -> Self {
         BlockId(Self::DEFAULT_BLOCK_ID.to_string())
-    }
-}
-
-impl IsDefault for BlockId {
-    fn is_default(&self) -> bool {
-        self.0 == Self::DEFAULT_BLOCK_ID
     }
 }
 

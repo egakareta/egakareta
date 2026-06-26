@@ -15,8 +15,6 @@ mod tests {
         EasingDirection, EditorStateParams, GameCursor, LevelMetadata, LevelObject,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
         TimedTrigger, TriggerTarget, apply_timed_triggers_to_objects,
-        default_camera_trigger_distance, default_camera_trigger_pitch,
-        default_camera_trigger_transition_interval_seconds, default_camera_trigger_yaw,
     };
     use serde_json::json;
 
@@ -130,7 +128,7 @@ mod tests {
             },
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -140,7 +138,6 @@ mod tests {
         });
 
         let value = serde_json::to_value(&metadata).expect("serialize metadata");
-        assert!(value.get("format_version").is_none());
         assert_eq!(value["basic"]["name"], "Minimal");
         assert!(value.get("basic").and_then(|v| v.get("creator")).is_none());
         assert!(
@@ -214,7 +211,7 @@ mod tests {
             },
             music: MusicMetadata::default(),
             spawn: SpawnMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_time_seconds: 0.0,
@@ -249,21 +246,14 @@ mod tests {
 
     #[test]
     fn camera_trigger_serialization_omits_default_pose_fields() {
-        let camera_trigger = CameraTrigger {
-            mode: CameraMode::Follow,
-            transition_interval_seconds: default_camera_trigger_transition_interval_seconds(),
-            use_full_segment_transition: false,
-            target_position: [0.0, 0.0, 0.0],
-            distance: default_camera_trigger_distance(),
-            yaw: default_camera_trigger_yaw(),
-            pitch: default_camera_trigger_pitch(),
-            ..CameraTrigger::default()
-        };
-
-        let value = serde_json::to_value(&camera_trigger).expect("serialize camera trigger");
-        let expected = json!({ "mode": "follow" });
-
-        assert_eq!(value, expected);
+        assert_eq!(
+            serde_json::to_value(&CameraTrigger {
+                mode: CameraMode::Follow,
+                ..CameraTrigger::default()
+            })
+            .expect("serialize camera trigger"),
+            json!({ "mode": "follow" })
+        );
     }
 
     #[test]
@@ -281,9 +271,9 @@ mod tests {
         assert_eq!(camera.mode, CameraMode::Follow);
         assert_eq!(camera.transition_interval_seconds, 1.0);
         assert!(!camera.use_full_segment_transition);
-        assert_eq!(camera.distance, default_camera_trigger_distance());
-        assert_eq!(camera.yaw, default_camera_trigger_yaw());
-        assert_eq!(camera.pitch, default_camera_trigger_pitch());
+        assert_eq!(camera.distance, CameraTrigger::default().distance);
+        assert_eq!(camera.yaw, CameraTrigger::default().yaw);
+        assert_eq!(camera.pitch, CameraTrigger::default().pitch);
     }
 
     #[test]

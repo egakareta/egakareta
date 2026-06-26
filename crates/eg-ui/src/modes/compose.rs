@@ -572,10 +572,10 @@ mod tests {
     use crate::test_utils::editor_view_model;
     use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
     use eg_types::{
-        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_PITCH,
-        DEFAULT_CAMERA_YAW, EditorMode, LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
+        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
+        MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
     };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget, default_camera_trigger_distance};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn make_compose_view<'a>(
         app_settings: &'a AppSettings,
@@ -732,11 +732,6 @@ mod tests {
                 transform: false,
                 camera: Some(CameraTrigger {
                     mode: CameraMode::Follow,
-                    transition_interval_seconds: 1.0,
-                    use_full_segment_transition: false,
-                    distance: default_camera_trigger_distance(),
-                    yaw: DEFAULT_CAMERA_YAW,
-                    pitch: DEFAULT_CAMERA_PITCH,
                     ..CameraTrigger::default()
                 }),
             }),

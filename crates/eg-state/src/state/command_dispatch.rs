@@ -719,10 +719,7 @@ mod tests {
         AppPhase, CAMERA_TRIGGER_BLOCK_ID, EditorMode, KeyChord, LevelObject, MusicMetadata,
         SettingsSection, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
-    use eg_types::{
-        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
-        default_camera_trigger_distance,
-    };
+    use eg_types::{CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget};
     use glam::{Vec2, Vec3};
 
     async fn new_editor_state() -> State {
@@ -2075,11 +2072,7 @@ mod tests {
             + (-camera_offset.normalize() * 8.0)
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
-            mode: CameraMode::Static,
-            transition_interval_seconds: 1.0,
-            use_full_segment_transition: false,
             target_position: target.to_array(),
-            distance: default_camera_trigger_distance(),
             yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
             ..CameraTrigger::default()
@@ -2148,11 +2141,7 @@ mod tests {
             + (-camera_offset.normalize() * 8.0)
             + Vec3::Y * 4.0;
         let camera_trigger = CameraTrigger {
-            mode: CameraMode::Static,
-            transition_interval_seconds: 1.0,
-            use_full_segment_transition: false,
             target_position: target.to_array(),
-            distance: default_camera_trigger_distance(),
             yaw: state.editor.camera.editor_yaw,
             pitch: state.editor.camera.editor_pitch,
             ..CameraTrigger::default()

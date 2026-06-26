@@ -33,7 +33,7 @@ use eg_platform::state_host::WasmCanvas;
 use eg_types::{
     AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform,
     DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, GridUniform,
-    LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+    LevelMetadata, LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -420,6 +420,8 @@ impl State {
 
     #[cfg(any(test, feature = "test-support"))]
     fn new_state_from_test_gpu_fixture(fixture: &TestGpuFixture) -> State {
+        use eg_types::LevelMetadata;
+
         let line_uniform = default_line_uniform();
         let line_uniform_buffer =
             fixture
@@ -496,7 +498,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
-            preview_sky_color: eg_types::default_sky_color(),
+            preview_sky_color: LevelMetadata::default().sky_color,
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
@@ -625,7 +627,7 @@ impl State {
                     author: None,
                 },
                 editor_creator_metadata: BasicLevelMetadata::default(),
-                editor_sky_color: eg_types::default_sky_color(),
+                editor_sky_color: LevelMetadata::default().sky_color,
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_place_window: false,
@@ -643,7 +645,7 @@ impl State {
                 playtesting_editor: false,
                 game_paused: false,
                 playtest_audio_start_seconds: None,
-                playing_sky_color: eg_types::default_sky_color(),
+                playing_sky_color: LevelMetadata::default().sky_color,
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
                 practice_checkpoints: Vec::new(),
@@ -1356,7 +1358,7 @@ impl State {
             selected_level: 0,
             levels: builtin_level_names(),
             preview_level_index: None,
-            preview_sky_color: eg_types::default_sky_color(),
+            preview_sky_color: LevelMetadata::default().sky_color,
             preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
@@ -1529,7 +1531,7 @@ impl State {
                     author: None,
                 },
                 editor_creator_metadata: BasicLevelMetadata::default(),
-                editor_sky_color: eg_types::default_sky_color(),
+                editor_sky_color: LevelMetadata::default().sky_color,
                 editor_menu_preview_camera: None,
                 editor_show_metadata: false,
                 editor_show_place_window: false,
@@ -1547,7 +1549,7 @@ impl State {
                 playtesting_editor: false,
                 game_paused: false,
                 playtest_audio_start_seconds: None,
-                playing_sky_color: eg_types::default_sky_color(),
+                playing_sky_color: LevelMetadata::default().sky_color,
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
                 practice_checkpoints: Vec::new(),

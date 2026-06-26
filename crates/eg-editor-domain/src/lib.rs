@@ -317,7 +317,7 @@ mod tests {
             objects: &objects,
             level_name: Some("Demo"),
             spawn: SpawnMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: &[],
             timeline_seconds: (timeline_time_seconds, 16.0),
         });
@@ -352,7 +352,7 @@ mod tests {
             objects: &objects,
             level_name: None,
             spawn: SpawnMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: &[],
             timeline_seconds: (timeline_time_seconds, 16.0),
         });

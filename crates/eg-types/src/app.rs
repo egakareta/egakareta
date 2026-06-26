@@ -1,5 +1,5 @@
-use is_default::IsDefault;
 use smart_default::SmartDefault;
+use smart_is_default::SmartIsDefault;
 
 /*
 
@@ -112,7 +112,7 @@ pub struct EditorInputState {
     pub show_hitbox_visualization: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, IsDefault)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, SmartIsDefault)]
 /// The current mode of the level editor.
 /// Determines what actions are available and how interactions behave.
 pub enum EditorMode {

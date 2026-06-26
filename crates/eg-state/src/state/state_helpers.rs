@@ -7,7 +7,7 @@
 */
 use super::{EditorSubsystem, State};
 use eg_game::GameState;
-use eg_types::{AppPhase, EditorMode, LevelObject};
+use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
 impl EditorSubsystem {
     pub fn clear_pan_keys(&mut self) {
@@ -243,7 +243,7 @@ impl State {
         self.session.game_paused = false;
         self.session.playing_level_name = level_name;
         self.session.playtest_audio_start_seconds = None;
-        self.session.playing_sky_color = eg_types::default_sky_color();
+        self.session.playing_sky_color = LevelMetadata::default().sky_color;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -258,11 +258,11 @@ impl State {
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
         self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
-        self.session.editor_sky_color = eg_types::default_sky_color();
+        self.session.editor_sky_color = LevelMetadata::default().sky_color;
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
-        self.session.playing_sky_color = eg_types::default_sky_color();
+        self.session.playing_sky_color = LevelMetadata::default().sky_color;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -296,7 +296,7 @@ impl State {
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
-        self.session.playing_sky_color = eg_types::default_sky_color();
+        self.session.playing_sky_color = LevelMetadata::default().sky_color;
         self.session.playing_trigger_base_objects = None;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -305,7 +305,7 @@ impl State {
         self.clear_pending_gameplay_inputs();
         self.session.editor_level_name = None;
         self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
-        self.session.editor_sky_color = eg_types::default_sky_color();
+        self.session.editor_sky_color = LevelMetadata::default().sky_color;
         self.editor.clear_block_selection();
         self.editor.input.marquee_start_screen = None;
         self.editor.input.marquee_current_screen = None;

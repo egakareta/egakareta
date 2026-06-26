@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use eg_types::{
     BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimedTrigger, TimingPoint, default_sky_color,
+    SpawnMetadata, TimedTrigger, TimingPoint,
 };
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
@@ -25,7 +25,6 @@ struct BinaryLevelPayloadV1 {
     music_title: Option<String>,
     music_author: Option<String>,
     spawn: SpawnMetadata,
-    #[serde(default = "default_sky_color")]
     sky_color: [f32; 3],
     tap_times: Vec<f32>,
     timing_points: Vec<TimingPoint>,
@@ -62,7 +61,7 @@ impl Default for BinaryLevelPayloadV1 {
             music_title: None,
             music_author: None,
             spawn: SpawnMetadata::default(),
-            sky_color: default_sky_color(),
+            sky_color: [0.04, 0.07, 0.09],
             tap_times: Vec::new(),
             timing_points: Vec::new(),
             timeline_duration_seconds: 0.0,
@@ -210,7 +209,7 @@ pub fn encode_level_metadata_binary(metadata: &LevelMetadata) -> Result<Vec<u8>,
         timing_points: metadata.timing_points.clone(),
         timeline_duration_seconds: metadata.timeline_duration_seconds,
         menu_preview_camera: metadata.menu_preview_camera.clone(),
-        level_extra_entries: map_to_entries(&metadata.extra)?,
+        level_extra_entries: Vec::new(),
         palette,
         object_runs: rle_encode_palette_indices(&palette_indices),
         object_compact_mask,
@@ -435,7 +434,6 @@ fn decode_payload(payload: BinaryLevelPayloadV1) -> Result<LevelMetadata, String
         timeline_duration_seconds: payload.timeline_duration_seconds,
         menu_preview_camera: payload.menu_preview_camera,
         objects,
-        extra: entries_to_map(payload.level_extra_entries)?,
     };
     metadata.normalize_object_ids();
     Ok(metadata)
@@ -572,32 +570,6 @@ fn count_compact_bits(mask: &[u8], object_count: usize) -> usize {
         }
     }
     count
-}
-
-fn map_to_entries(
-    map: &serde_json::Map<String, serde_json::Value>,
-) -> Result<Vec<MetadataEntry>, String> {
-    let mut entries = Vec::with_capacity(map.len());
-    for (key, value) in map {
-        let value_json = serde_json::to_string(value).map_err(|error| error.to_string())?;
-        entries.push(MetadataEntry {
-            key: key.clone(),
-            value_json,
-        });
-    }
-    Ok(entries)
-}
-
-fn entries_to_map(
-    entries: Vec<MetadataEntry>,
-) -> Result<serde_json::Map<String, serde_json::Value>, String> {
-    let mut map = serde_json::Map::new();
-    for entry in entries {
-        let value = serde_json::from_str::<serde_json::Value>(&entry.value_json)
-            .map_err(|error| error.to_string())?;
-        map.insert(entry.key, value);
-    }
-    Ok(map)
 }
 
 fn rle_encode_palette_indices(indices: &[u16]) -> Vec<ObjectRun> {

@@ -714,7 +714,7 @@ mod tests {
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
         MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
     };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget, default_camera_trigger_distance};
+    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -1020,11 +1020,6 @@ mod tests {
                     transform: false,
                     camera: Some(CameraTrigger {
                         mode: CameraMode::Follow,
-                        transition_interval_seconds: 1.0,
-                        use_full_segment_transition: false,
-                        distance: default_camera_trigger_distance(),
-                        yaw: eg_types::DEFAULT_CAMERA_YAW,
-                        pitch: eg_types::DEFAULT_CAMERA_PITCH,
                         ..CameraTrigger::default()
                     }),
                 }),
@@ -1039,11 +1034,6 @@ mod tests {
                     transform: false,
                     camera: Some(CameraTrigger {
                         mode: CameraMode::Static,
-                        transition_interval_seconds: 1.0,
-                        use_full_segment_transition: false,
-                        target_position: [0.0, 0.0, 0.0],
-                        yaw: 0.0,
-                        pitch: 0.0,
                         ..CameraTrigger::default()
                     }),
                 }),

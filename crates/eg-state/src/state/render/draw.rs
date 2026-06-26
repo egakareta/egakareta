@@ -19,7 +19,7 @@ use wgpu::TextureViewDescriptor;
 use super::super::State;
 use super::MeshSlot;
 use eg_render::RenderSurfaceError;
-use eg_types::{AppPhase, default_sky_color};
+use eg_types::{AppPhase, LevelMetadata};
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
 
@@ -298,7 +298,7 @@ impl State {
             AppPhase::Menu => self.menu.state.preview_sky_color,
             AppPhase::Editor => self.session.editor_sky_color,
             AppPhase::Playing => self.session.playing_sky_color,
-            _ => default_sky_color(),
+            _ => LevelMetadata::default().sky_color,
         };
         let frame_input = RenderFrameInput {
             phase: self.phase,
@@ -854,7 +854,7 @@ mod tests {
         editor_grid_darkening, linear_to_srgb, should_draw_editor_cursor,
         should_draw_editor_overlays, should_draw_floor_and_grid, should_skip_world,
     };
-    use eg_types::{AppPhase, CameraUniform, EditorMode, PhysicalSize};
+    use eg_types::{AppPhase, CameraUniform, EditorMode, LevelMetadata, PhysicalSize};
 
     fn assert_color_approx(actual: Color, expected: Color) {
         approx::assert_abs_diff_eq!(actual.r as f32, expected.r as f32, epsilon = 1e-6);
@@ -1046,7 +1046,7 @@ mod tests {
     #[tokio::test]
     async fn clear_color_for_phase_matches_expected_palette() {
         assert_color_approx(
-            clear_color_for_phase(AppPhase::Playing, true, eg_types::default_sky_color()),
+            clear_color_for_phase(AppPhase::Playing, true, LevelMetadata::default().sky_color),
             Color {
                 r: 0.15,
                 g: 0.05,
@@ -1056,7 +1056,7 @@ mod tests {
         );
 
         assert_color_approx(
-            clear_color_for_phase(AppPhase::Editor, false, eg_types::default_sky_color()),
+            clear_color_for_phase(AppPhase::Editor, false, LevelMetadata::default().sky_color),
             Color {
                 r: 0.04,
                 g: 0.07,
@@ -1066,7 +1066,7 @@ mod tests {
         );
 
         assert_color_approx(
-            clear_color_for_phase(AppPhase::Playing, false, eg_types::default_sky_color()),
+            clear_color_for_phase(AppPhase::Playing, false, LevelMetadata::default().sky_color),
             Color {
                 r: 0.04,
                 g: 0.07,
@@ -1076,7 +1076,7 @@ mod tests {
         );
 
         assert_color_approx(
-            clear_color_for_phase(AppPhase::Menu, false, eg_types::default_sky_color()),
+            clear_color_for_phase(AppPhase::Menu, false, LevelMetadata::default().sky_color),
             Color {
                 r: 0.04,
                 g: 0.07,
@@ -1086,7 +1086,11 @@ mod tests {
         );
 
         assert_color_approx(
-            clear_color_for_phase(AppPhase::GameOver, false, eg_types::default_sky_color()),
+            clear_color_for_phase(
+                AppPhase::GameOver,
+                false,
+                LevelMetadata::default().sky_color,
+            ),
             Color {
                 r: 0.05,
                 g: 0.05,

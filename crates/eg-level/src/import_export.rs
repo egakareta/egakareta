@@ -43,7 +43,7 @@ mod tests {
     use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
     use eg_types::{
         BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
-        MusicMetadata, SpawnMetadata, default_sky_color,
+        MusicMetadata, SpawnMetadata,
     };
 
     use super::super::read_metadata_from_egz;
@@ -66,7 +66,7 @@ mod tests {
                 position: [1.0, 2.0, 3.0],
                 direction: Direction::Right,
             },
-            sky_color: default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             tap_times: vec![0.25, 0.75],
             timing_points: Vec::new(),
             timeline_time_seconds: 0.5,

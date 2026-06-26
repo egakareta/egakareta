@@ -7,10 +7,7 @@
 */
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
-use eg_types::{
-    CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget,
-    default_camera_trigger_target_position,
-};
+use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 
 #[derive(Default)]
 pub struct EditorTriggerState {
@@ -222,7 +219,7 @@ impl EditorSubsystem {
             Self::sync_camera_follow_trigger_object_pose(
                 &mut self.objects[index],
                 &trigger,
-                default_camera_trigger_target_position(),
+                CameraTrigger::default().target_position,
             );
         }
         self.sync_trigger_selection_from_objects();
@@ -240,9 +237,8 @@ mod tests {
     use crate::state::State;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget, default_camera_trigger_distance,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
-    use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -307,10 +303,6 @@ mod tests {
                 camera: Some(CameraTrigger {
                     mode: CameraMode::Follow,
                     transition_interval_seconds: 1.5,
-                    use_full_segment_transition: false,
-                    distance: default_camera_trigger_distance(),
-                    yaw: DEFAULT_CAMERA_YAW,
-                    pitch: DEFAULT_CAMERA_PITCH,
                     ..CameraTrigger::default()
                 }),
             }),

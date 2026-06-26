@@ -2271,7 +2271,9 @@ mod test_utils {
 
     use eg_blocks::BlockId;
     use eg_state::state::UiViewModel;
-    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
+    use eg_types::{
+        AppSettings, Direction, EditorMode, LevelMetadata, MusicMetadata, SettingsSection,
+    };
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
@@ -2297,7 +2299,7 @@ mod test_utils {
             keybind_capture_action: None,
             music_metadata,
             creator_metadata: eg_types::BasicLevelMetadata::default(),
-            sky_color: eg_types::default_sky_color(),
+            sky_color: LevelMetadata::default().sky_color,
             app_settings,
             configured_graphics_backend: "Auto",
             configured_audio_backend: "Default",

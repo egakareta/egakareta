@@ -67,8 +67,7 @@ fn test_egb_roundtrip() {
       "block_id": "core/stone",
       "color_tint": [1.0, 1.0, 1.0]
     }
-  ],
-  "extra": {}
+  ]
 }"#;
 
     fs::write(&json_path, sample_json).expect("Failed to write sample json");
@@ -149,8 +148,7 @@ fn test_egb_encode_stdin() {
   "timeline_duration_seconds": 16.0,
   "triggers": [],
   "simulate_trigger_hitboxes": true,
-  "objects": [],
-  "extra": {}
+  "objects": []
 }"#;
 
     use std::io::Write;
@@ -213,8 +211,7 @@ fn test_egb_short_flags() {
   "timeline_duration_seconds": 16.0,
   "triggers": [],
   "simulate_trigger_hitboxes": true,
-  "objects": [],
-  "extra": {}
+  "objects": []
 }"#;
 
     fs::write(&json_path, sample_json).unwrap();

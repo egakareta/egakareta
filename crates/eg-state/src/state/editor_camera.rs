@@ -423,10 +423,7 @@ mod tests {
         offset_from_rotation_pitch, playing_camera_offset_for_angles,
     };
     use eg_types::{AppPhase, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
-    use eg_types::{
-        CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget,
-        default_camera_trigger_distance,
-    };
+    use eg_types::{CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget};
     use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
@@ -444,10 +441,10 @@ mod tests {
         );
     }
 
-    fn pose_trigger(
+    fn static_trigger(
         time_seconds: f32,
         target_position: [f32; 3],
-        rotation: f32,
+        yaw: f32,
         pitch: f32,
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
@@ -465,7 +462,7 @@ mod tests {
                     transition_interval_seconds,
                     use_full_segment_transition,
                     target_position,
-                    yaw: rotation,
+                    yaw,
                     pitch,
                     ..CameraTrigger::default()
                 }),
@@ -483,9 +480,9 @@ mod tests {
             time_seconds,
             transition_interval_seconds,
             use_full_segment_transition,
-            default_camera_trigger_distance(),
-            DEFAULT_CAMERA_YAW,
-            DEFAULT_CAMERA_PITCH,
+            CameraTrigger::default().distance,
+            CameraTrigger::default().yaw,
+            CameraTrigger::default().pitch,
         )
     }
 
@@ -494,7 +491,7 @@ mod tests {
         transition_interval_seconds: f32,
         use_full_segment_transition: bool,
         distance: f32,
-        rotation: f32,
+        yaw: f32,
         pitch: f32,
     ) -> LevelObject {
         LevelObject {
@@ -509,7 +506,7 @@ mod tests {
                     transition_interval_seconds,
                     use_full_segment_transition,
                     distance,
-                    yaw: rotation,
+                    yaw,
                     pitch,
                     ..CameraTrigger::default()
                 }),
@@ -557,26 +554,6 @@ mod tests {
         let mid = interpolate_camera_samples(start, end, 0.5);
         assert_eq!(mid.eye, Vec3::new(5.0, 10.0, 15.0));
         assert_eq!(mid.target, Vec3::new(2.5, 3.0, 3.5));
-    }
-
-    #[tokio::test]
-    async fn camera_trigger_modes_are_distinct() {
-        let follow = CameraTrigger {
-            mode: CameraMode::Follow,
-            transition_interval_seconds: 1.0,
-            use_full_segment_transition: false,
-            target_position: [0.0, 0.0, 0.0],
-            distance: default_camera_trigger_distance(),
-            yaw: 0.0,
-            pitch: 0.0,
-            ..CameraTrigger::default()
-        };
-        let static_trigger = CameraTrigger {
-            mode: CameraMode::Static,
-            ..follow.clone()
-        };
-
-        assert_ne!(follow.mode, static_trigger.mode);
     }
 
     #[tokio::test]
@@ -630,7 +607,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_interpolates_into_first_trigger_window() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![pose_trigger(
+        state.editor.objects = vec![static_trigger(
             5.0,
             [10.0, 1.0, -2.0],
             0.8,
@@ -666,9 +643,9 @@ mod tests {
         let expected = CameraViewSample {
             eye: target
                 + offset_from_rotation_pitch(
-                    DEFAULT_CAMERA_YAW,
-                    DEFAULT_CAMERA_PITCH,
-                    default_camera_trigger_distance(),
+                    CameraTrigger::default().yaw,
+                    CameraTrigger::default().pitch,
+                    CameraTrigger::default().distance,
                 ),
             target,
         };
@@ -695,7 +672,7 @@ mod tests {
     async fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
         let mut state = new_editor_state().await;
         state.editor.objects = vec![
-            pose_trigger(
+            static_trigger(
                 2.0,
                 [0.0, 0.0, 0.0],
                 0.0,
@@ -704,7 +681,7 @@ mod tests {
                 false,
                 EasingDirection::Linear,
             ),
-            pose_trigger(
+            static_trigger(
                 6.0,
                 [6.0, 1.0, -3.0],
                 1.0,
@@ -742,7 +719,7 @@ mod tests {
     #[tokio::test]
     async fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
         let mut state = new_editor_state().await;
-        state.editor.objects = vec![pose_trigger(
+        state.editor.objects = vec![static_trigger(
             1.0,
             [4.0, 2.0, 1.0],
             0.3,

@@ -12,13 +12,10 @@ use eg_editor_domain::{
     remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
 };
 use eg_game::TimelineSimulationRuntime;
-use eg_types::{
-    AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, Direction, EditorMode, GameCursor,
-    LevelObject, TimingPoint,
-};
+use eg_types::{AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimingPoint};
 use eg_types::{
     CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
-    TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget, default_camera_trigger_distance,
+    TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -1354,21 +1351,14 @@ impl State {
         }
 
         self.record_editor_history_state();
-        let camera = CameraTrigger {
+        let camera: CameraTrigger = CameraTrigger {
             mode: CameraMode::Follow,
-            transition_interval_seconds: 1.0,
-            use_full_segment_transition: false,
-            distance: default_camera_trigger_distance(),
-            yaw: DEFAULT_CAMERA_YAW,
-            pitch: DEFAULT_CAMERA_PITCH,
             ..CameraTrigger::default()
         };
         let trigger_object = LevelObject {
             block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
             trigger: Some(TimedTrigger {
                 time_seconds: self.editor.timeline.clock.time_seconds,
-                duration_seconds: 0.0,
-                easing: EasingDirection::Linear,
                 target: TriggerTarget::Camera,
                 camera: Some(camera),
                 ..TimedTrigger::default()

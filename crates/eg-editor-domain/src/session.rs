@@ -7,7 +7,7 @@
 */
 use eg_types::{
     BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
-    SpawnMetadata, TimingPoint, default_sky_color,
+    SpawnMetadata, TimingPoint,
 };
 
 pub struct EditorSessionInit {
@@ -55,7 +55,7 @@ pub fn editor_session_init_from_metadata(metadata: Option<LevelMetadata>) -> Edi
             SpawnMetadata::default(),
             MusicMetadata::default(),
             BasicLevelMetadata::default(),
-            default_sky_color(),
+            LevelMetadata::default().sky_color,
             Vec::new(),
             Vec::new(),
             16.0,

@@ -1348,11 +1348,11 @@ dependencies = [
  "approx",
  "image",
  "include_dir",
- "is_default",
  "log",
  "serde",
  "serde_json",
  "smart-default",
+ "smart-is-default",
 ]
 
 [[package]]
@@ -1494,6 +1494,7 @@ dependencies = [
  "puffin",
  "serde_json",
  "smart-default",
+ "smart-is-default",
  "tempfile",
  "tokio",
  "web-time",
@@ -1508,11 +1509,11 @@ dependencies = [
  "bytemuck",
  "eg-blocks",
  "glam 0.33.0",
- "is_default",
  "paste",
  "serde",
  "serde_json",
  "smart-default",
+ "smart-is-default",
 ]
 
 [[package]]
@@ -2567,25 +2568,6 @@ name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d98f6fed1fde3f8c21bc40a1abb88dd75e67924f9cffc3ef95607bad8017f8e2"
-
-[[package]]
-name = "is_default"
-version = "0.1.4"
-source = "git+https://github.com/nujievik/is-default-rs?rev=ea3c100f69924b230748f2056c5f3c6ad66353d9#ea3c100f69924b230748f2056c5f3c6ad66353d9"
-dependencies = [
- "is_default_derive",
-]
-
-[[package]]
-name = "is_default_derive"
-version = "0.1.0"
-source = "git+https://github.com/nujievik/is-default-rs?rev=ea3c100f69924b230748f2056c5f3c6ad66353d9#ea3c100f69924b230748f2056c5f3c6ad66353d9"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "is_terminal_polyfill"
@@ -4488,6 +4470,17 @@ name = "smart-default"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0eb01866308440fc64d6c44d9e86c5cc17adfe33c4d6eed55da9145044d0ffc1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "smart-is-default"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "276e6b892fb3ea3e8ce4f85b5af1d24f197c028fdb2ea16f291088433d1c50e4"
 dependencies = [
  "proc-macro2",
  "quote",

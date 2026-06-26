@@ -64,7 +64,6 @@ gloo-utils = "0.3"
 futures = "0.3"
 image = { version = "0.25", default-features = false }
 include_dir = "0.7"
-is_default = { git = "https://github.com/nujievik/is-default-rs", rev = "ea3c100f69924b230748f2056c5f3c6ad66353d9" }
 js-sys = "0.3"
 log = "0.4"
 naga = { version = "29", features = ["wgsl-in"] }
@@ -93,6 +92,7 @@ serde_cbor = "0.11"
 serde_json = "1"
 sha2 = "0.11"
 smart-default = "0.7"
+smart-is-default = "0.2"
 symphonia = { version = "0.6", default-features = false, features = [
     "mp3",
     "ogg",

@@ -6,14 +6,14 @@
 
 */
 
-use is_default::IsDefault;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
+use smart_is_default::SmartIsDefault;
 
 use crate::BlockId;
 
 /// JSON-backed definition for a placeable or gameplay block.
-#[derive(Clone, Deserialize, SmartDefault, IsDefault)]
+#[derive(Clone, Deserialize, PartialEq, SmartDefault, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockDefinition {
     /// Canonical block identifier.
@@ -38,38 +38,33 @@ pub struct BlockDefinition {
 }
 
 /// Optional icon and texture asset references for a block.
-#[derive(Clone, Deserialize, Serialize, Default, IsDefault)]
+#[derive(Clone, Deserialize, PartialEq, Default, SmartIsDefault)]
+#[serde(default)]
 pub struct BlockAssets {
     /// Shared texture for all faces.
-    #[serde(default)]
     pub texture: Option<String>,
     /// Top-face texture override.
-    #[serde(default)]
     pub texture_top: Option<String>,
     /// Side-face texture override.
-    #[serde(default)]
     pub texture_side: Option<String>,
     /// Bottom-face texture override.
-    #[serde(default)]
     pub texture_bottom: Option<String>,
     /// Optional custom icon asset path.
-    #[serde(default)]
     pub icon: Option<String>,
 }
 
 /// Custom geometry definition for a block.
-#[derive(Clone, Deserialize, Default, IsDefault)]
+#[derive(Clone, Deserialize, PartialEq, Default, SmartIsDefault)]
+#[serde(default)]
 pub struct BlockGeometry {
     /// Visual cuboids in 0..16 block-local coordinates.
-    #[serde(default)]
     pub elements: Vec<BlockCuboid>,
     /// Collision cuboids in 0..16 block-local coordinates.
-    #[serde(default)]
     pub hitboxes: Vec<BlockCuboid>,
 }
 
 /// One local-space cuboid in a block definition.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Default, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Default, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockCuboid {
     /// Minimum-ish corner before normalization, in 0..16 coordinates.
@@ -81,21 +76,19 @@ pub struct BlockCuboid {
 }
 
 /// Inline animation and visual effect metadata for a block definition.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, IsDefault)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, SmartIsDefault)]
+#[serde(default)]
 pub struct BlockAnimation {
     /// Idle, shader-side motion applied while the block is visible.
-    #[serde(default)]
     pub idle: BlockIdleAnimation,
     /// Effect spawned when gameplay consumes this block.
-    #[serde(default)]
     pub on_consumed: Option<BlockEffect>,
     /// Effect spawned by future break/destruction actions.
-    #[serde(default)]
     pub on_break: Option<BlockEffect>,
 }
 
 /// Shader-side idle animation presets for a block.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, IsDefault)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockIdleAnimation {
     /// Optional center-based spin animation.
@@ -122,7 +115,7 @@ impl BlockIdleAnimation {
 }
 
 /// Axis used by shader-side block animations.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, IsDefault)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockAnimationAxis {
     /// X-axis motion or rotation.
@@ -135,7 +128,7 @@ pub enum BlockAnimationAxis {
 }
 
 /// How repeated blocks receive idle animation phase offsets.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, IsDefault)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockAnimationPhaseSeed {
     /// Every instance starts with the same phase.
@@ -146,7 +139,7 @@ pub enum BlockAnimationPhaseSeed {
 }
 
 /// Center-based spin animation.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Default, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Default, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockSpinAnimation {
     /// Rotation axis.
@@ -162,7 +155,7 @@ impl BlockSpinAnimation {
 }
 
 /// Axis-aligned sinusoidal bob animation.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, SmartDefault, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, SmartDefault, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockBobAnimation {
     /// Translation axis.
@@ -181,7 +174,7 @@ impl BlockBobAnimation {
 }
 
 /// Center-based sinusoidal scale animation.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, SmartDefault, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, SmartDefault, SmartIsDefault)]
 pub struct BlockPulseAnimation {
     /// Scale amplitude as a fraction of local size.
     pub amplitude: f32,
@@ -197,7 +190,7 @@ impl BlockPulseAnimation {
 }
 
 /// Runtime visual effect preset for block events.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, IsDefault)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockEffectPreset {
     /// Triangular shards burst outward and fade.
@@ -206,7 +199,7 @@ pub enum BlockEffectPreset {
 }
 
 /// Color source for a block visual effect.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, IsDefault)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockEffectColorMode {
     /// Derive effect color from the consumed object's `color_tint`.
@@ -217,7 +210,7 @@ pub enum BlockEffectColorMode {
 }
 
 /// Visual effect metadata for consumed or broken blocks.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, SmartDefault, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, SmartDefault, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockEffect {
     /// Effect generator preset.
@@ -242,7 +235,7 @@ pub struct BlockEffect {
 }
 
 /// Editor category for a block definition.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Default, IsDefault)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Default, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockCategory {
     /// Structural or decorative blocks.
@@ -257,7 +250,7 @@ pub enum BlockCategory {
 }
 
 /// Render profile used by mesh generation and editor previews.
-#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Default, IsDefault)]
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq, Default, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockRenderProfile {
     /// Standard solid block shading.
@@ -278,7 +271,7 @@ pub enum BlockRenderProfile {
 }
 
 /// Rendering metadata for a block definition.
-#[derive(Clone, Deserialize, SmartDefault, IsDefault)]
+#[derive(Clone, Deserialize, PartialEq, SmartDefault, SmartIsDefault)]
 #[serde(default)]
 pub struct BlockRender {
     /// Mesh/rendering profile.
@@ -305,7 +298,7 @@ pub struct BlockRender {
 }
 
 /// Collision category for gameplay simulation.
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default, IsDefault)]
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default, SmartIsDefault)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockCollision {
     /// Normal solid obstacle/support collision.
@@ -322,27 +315,23 @@ pub enum BlockCollision {
 }
 
 /// Gameplay behavior metadata for a block definition.
-#[derive(Clone, Deserialize, Serialize, SmartDefault, IsDefault)]
+#[derive(Clone, Deserialize, PartialEq, SmartDefault, SmartIsDefault)]
+#[serde(default)]
 pub struct BlockBehavior {
     /// Collision behavior.
-    #[serde(default)]
     pub collision: BlockCollision,
 
     /// Movement speed multiplier while interacting with the block.
     #[default = 1.0]
-    #[serde(default)]
     pub speed_multiplier: f32,
 
     /// Whether this block can support player movement.
     #[default = true]
-    #[serde(default)]
     pub support_surface: bool,
 
     /// Whether the block is consumed on overlap.
-    #[serde(default)]
     pub consumed_on_overlap: bool,
 
     /// Gem value awarded by collectible blocks.
-    #[serde(default)]
     pub gem_value: u32,
 }
