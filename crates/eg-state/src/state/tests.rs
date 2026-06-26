@@ -444,6 +444,98 @@ async fn tick_state_handles_practice_mode_payload() {
 }
 
 #[tokio::test]
+async fn tick_state_mirrors_frame_input_into_render_resource() {
+    use crate::state::render::mirror::take_pending_mirror;
+    use crate::state::render::resources::RenderFrameInputRes;
+
+    // Drain any mirror left over from a previous test (the mirror
+    // slot is a process-global resource; tests that don't go
+    // through `tick_state` can leave stale closures behind).
+    let _ = take_pending_mirror();
+
+    let mut state = State::new_test().await;
+    state.phase = AppPhase::Editor;
+    state.editor.input.mode = EditorMode::Place;
+    state.session.editor_sky_color = [0.25, 0.5, 0.75];
+
+    // Before tick_state runs, the resource is at its default
+    // (AppPhase::Menu).
+    let pre = state.world().resource::<RenderFrameInputRes>().0.phase;
+    assert_eq!(pre, AppPhase::Menu);
+
+    state.tick_state();
+
+    // After tick_state runs, the mirror has populated the resource
+    // with the current phase + editor mode + sky color.
+    let frame_input = state.world().resource::<RenderFrameInputRes>().0;
+    assert_eq!(frame_input.phase, AppPhase::Editor);
+    assert_eq!(frame_input.editor_mode, EditorMode::Place);
+    assert_eq!(frame_input.sky_color, [0.25, 0.5, 0.75]);
+    assert!(!frame_input.apply_gamma_correction);
+}
+
+#[tokio::test]
+async fn tick_state_registers_render_pod_resources_on_construction() {
+    use crate::state::render::resources::render_pod_resources_present;
+    use crate::state::render::resources::{
+        RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes,
+    };
+
+    let state = State::new_test().await;
+    let world = state.world();
+
+    assert!(render_pod_resources_present(world));
+    assert!(world.contains_resource::<RenderUniformsRes>());
+    assert!(world.contains_resource::<RenderFrameInputRes>());
+    assert!(world.contains_resource::<RenderResizeRequest>());
+}
+
+#[tokio::test]
+async fn tick_state_does_not_insert_heavy_render_resources_yet() {
+    use crate::state::render::resources::render_heavy_resources_present;
+    use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};
+
+    let state = State::new_test().await;
+    let world = state.world();
+
+    // Phase 4a guard: the heavy resources are defined but not yet
+    // inserted. The legacy `State::render` field remains the
+    // authoritative source of `GpuContext` / `SceneMeshes` /
+    // `SurfaceHost` until Phase 4b/4c moves ownership into the
+    // world.
+    assert!(!render_heavy_resources_present(world));
+    assert!(!world.contains_resource::<RenderGpuRes>());
+    assert!(!world.contains_resource::<RenderMeshesRes>());
+    assert!(!world.contains_resource::<RenderSurfaceHostRes>());
+}
+
+#[tokio::test]
+async fn tick_state_mirror_bridge_consumes_closure() {
+    use crate::state::render::mirror::{install_mirror, take_pending_mirror};
+
+    // Install a sentinel mirror; the bridge system in the schedule
+    // would consume it during `tick_state` if the schedule is
+    // registered. We assert that the slot is non-empty after
+    // `install_mirror`, and that the schedule's bridge system
+    // drains it on `tick_state`.
+    install_mirror(|u, _f| {
+        u.color_space.time_seconds = 42.0;
+    });
+
+    let mut state = State::new_test().await;
+    state.tick_state();
+
+    // After tick_state, the slot should be empty (the bridge system
+    // consumed the closure). If the schedule is not registered,
+    // the slot stays full — this assertion is the contract that
+    // ties the schedule graph to the mirror bridge.
+    assert!(
+        take_pending_mirror().is_none(),
+        "the mirror bridge system should drain the installed closure during tick_state"
+    );
+}
+
+#[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();
     assert!(flags.sync_game_objects);

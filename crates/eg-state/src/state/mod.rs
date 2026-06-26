@@ -251,6 +251,19 @@ impl State {
         transitions::phase_transition_system(
             self.world.resource_mut::<state_resources::AppPhaseRes>(),
         );
+        // Phase 4a: install the per-frame mirror closure. The
+        // closure captures only the `Copy` values it needs (phase,
+        // editor mode, sky color, gamma toggle) — `State` itself
+        // is `!Send` because it owns a `mpsc::Receiver` for auth
+        // results, so the closure cannot borrow `&self`. The
+        // captured values are refreshed every frame. The closure
+        // runs once and is consumed (taken) by the schedule's
+        // `mirror_pod_state_via_bridge` system. See
+        // `state::render::mirror` for the bridge protocol.
+        let frame_input_snapshot = self.compute_frame_input_snapshot();
+        render::mirror::install_mirror(move |_uniforms, frame_input| {
+            frame_input.0 = frame_input_snapshot;
+        });
         // Phase 3: run the per-message drain schedule. This iterates
         // every `Messages<T>` resource once and stages converted
         // `AppCommand` / `EditorCommand` payloads in
@@ -262,6 +275,27 @@ impl State {
         let _ = self.world.try_run_schedule(StateSchedule);
         // Forward the staged commands to the legacy dispatch path.
         self.dispatch_pending_commands();
+    }
+
+    /// Compute the current per-frame `RenderFrameInput` snapshot
+    /// from the legacy state. Phase 4a calls this once per tick
+    /// to capture the `Copy` values needed by the mirror closure.
+    /// Phase 4b moves the snapshot computation into a Bevy system
+    /// and reads from the world resources directly.
+    fn compute_frame_input_snapshot(&self) -> eg_render::RenderFrameInput {
+        eg_render::RenderFrameInput {
+            phase: self.phase,
+            editor_mode: self.editor.input.mode,
+            game_over: self.gameplay.state.game_over,
+            sky_color: match self.phase {
+                eg_types::AppPhase::Menu => self.menu.state.preview_sky_color,
+                eg_types::AppPhase::Editor => self.session.editor_sky_color,
+                eg_types::AppPhase::Playing => self.session.playing_sky_color,
+                _ => eg_types::LevelMetadata::default().sky_color,
+            },
+            grid_center: [0.0, 0.0],
+            apply_gamma_correction: self.render.gpu.apply_gamma_correction,
+        }
     }
 
     /// Forward staged `AppCommand` / `EditorCommand` payloads from

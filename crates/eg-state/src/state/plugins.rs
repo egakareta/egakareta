@@ -36,6 +36,7 @@
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 
+use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
@@ -113,7 +114,21 @@ pub struct StatePlugins;
 
 impl Plugin for StatePlugins {
     fn build(&self, app: &mut App) {
-        app.add_plugins((MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin));
+        app.add_plugins((
+            MenuPlugin,
+            SessionPlugin,
+            EditorPlugin,
+            GameplayPlugin,
+            // Phase 4a: rendering extraction plugin. Registers the
+            // POD resources (RenderUniformsRes, RenderFrameInputRes,
+            // RenderResizeRequest) and the system sets (RenderSet).
+            // The heavy resources (RenderGpuRes, RenderMeshesRes,
+            // RenderSurfaceHostRes) are defined in
+            // `state::render::resources` but not yet inserted; the
+            // legacy `State::render` field remains authoritative
+            // until Phase 4b/4c moves ownership into the world.
+            RenderPlugin,
+        ));
     }
 }
 
@@ -152,6 +167,13 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorRuntimeRes>();
     world.init_resource::<EditorHistoryRes>();
     world.init_resource::<PerfRes>();
+    // Phase 4a: rendering extraction plugin's POD resources. The
+    // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,
+    // `RenderSurfaceHostRes`) are not registered here — they are
+    // defined in `state::render::resources` and will be inserted in
+    // Phase 4b/4c when the legacy `State::render` field ownership
+    // moves into the world.
+    super::render::plugin::register_render_pod_resources(world);
 }
 
 /// Register the per-message command-pipeline resources + the
@@ -165,6 +187,11 @@ pub fn register_state_resources(world: &mut World) {
 /// and stage them in `PendingCommands` for `State::tick_state` to
 /// forward to `State::dispatch` / `State::dispatch_editor`.
 ///
+/// Phase 4a: the schedule also contains the
+/// `mirror_pod_state_via_bridge` system from
+/// `state::render::plugin` that drains the per-frame mirror closure
+/// installed by `State::tick_state` into the POD render resources.
+///
 /// `State` constructs its world via
 /// [`crate::state::lifecycle::build_state_world`] which calls this
 /// helper, so callers don't need to invoke it directly.
@@ -176,10 +203,12 @@ pub fn register_state_command_pipeline(world: &mut World) {
     crate::events::register_command_events_world(world);
 
     // Build the per-frame schedule that drains the per-event
-    // message resources into `PendingCommands`. The schedule is
-    // added to the world's scheduler so `world.run_schedule(...)`
-    // (used by `State::tick_state`) can invoke it.
+    // message resources into `PendingCommands`, then runs the
+    // Phase 4a render mirror bridge. The schedule is added to the
+    // world's scheduler so `world.run_schedule(...)` (used by
+    // `State::tick_state`) can invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     crate::events::add_command_systems(&mut schedule);
+    crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
     world.add_schedule(schedule);
 }

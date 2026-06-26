@@ -83,7 +83,8 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 1** — `eg-game` ECS core (components, resources, query-based systems, `GamePlugin`).
 - [x] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
 - [x] **Phase 3** — command/event fragmentation.
-- [ ] **Phase 4** — rendering extraction plugin (keep custom wgpu).
+- [x] **Phase 4a** — rendering extraction scaffolding (resources + mirror bridge + `RenderPlugin`).
+- [ ] **Phase 4b–4e** — move `GpuContext` / `SceneMeshes` / `SurfaceHost` into resources; replace `rebuild_*_mesh` with systems; add `present_frame_system`.
 - [ ] **Phase 5** — UI as Bevy systems.
 - [ ] **Phase 6** — platform/audio/auth async bridging.
 - [ ] **Phase 7** — `App` wiring (winit drives `app.update()`).
@@ -213,8 +214,8 @@ avigation | 10 | TurnRight, ToggleEditor, GameSetPracticeMode |
 
 ### Input-state carve-out
 
-Per the migration plan, the 7 input_state::_ events and 5
-pointer::_ events are **not** commands — they are _input state_.
+Per the migration plan, the 7 input*state::* events and 5
+pointer::_ events are **not** commands — they are \_input state_.
 A follow-up phase replaces them with direct writes to the
 EditorInput resource from a dedicated InputSet system. For now
 they remain routed through dispatch_editor to preserve test parity
@@ -246,3 +247,66 @@ exercises the full pipeline (write a Message →
 State::tick_state → side effect on the legacy State).
 14 new unit tests in vents::tests cover ToLegacy conversion +
 PendingCommands drain semantics for representative event types.
+
+## Phase 4a — rendering extraction scaffolding
+
+The plan calls for lifting `RenderSubsystem` (`crates/eg-state/src/state/render/mod.rs`) into Bevy resources (`GpuContextRes`, `SceneMeshesRes`, `SurfaceHostRes`, `CameraUniform`, `LineUniform`, `ColorSpaceUniform`) plus an `ExtractSet` / `RenderSet` system pair. Phase 4a is the **non-invasive scaffold** that establishes the boundary without touching the legacy `State::render` field (which has ~440 call sites).
+
+### What's in Phase 4a today
+
+- **New resource types** in `crates/eg-state/src/state/render/resources.rs`:
+    - `RenderUniformsRes` — POD bundle of `CameraUniform` + `LineUniform` + `ColorSpaceUniform` (the per-frame uniform values).
+    - `RenderFrameInputRes` — POD copy of `RenderFrameInput` (phase, editor mode, sky color, grid center, gamma toggle).
+    - `RenderResizeRequest` — platform-side resize queue (consumed by a future `apply_resize_surface_system`).
+    - `RenderGpuRes`, `RenderMeshesRes`, `RenderSurfaceHostRes` — heavy types **defined** but **not yet inserted** (Phase 4b/4c).
+- **`RenderPlugin`** in `crates/eg-state/src/state/render/plugin.rs` registers the POD resources and exposes the `RenderSet` enum (`RenderSet::Extract`, `RenderSet::Present`).
+- **Mirror bridge** in `crates/eg-state/src/state/render/mirror.rs`: a thread-local `RefCell<Option<MirrorFn>>` that `State::tick_state` installs into each frame and the `mirror_pod_state_via_bridge` system drains. The closure captures only `Copy` values (the current `RenderFrameInput` snapshot) so the `!Send` `State` doesn't leak into the schedule.
+- **`State::compute_frame_input_snapshot`** builds the per-frame `RenderFrameInput` from the legacy `State.phase` / `State.editor.input.mode` / `State.session.*_sky_color` fields. The mirror closure captures this snapshot.
+- **Schedule wiring**: `register_state_command_pipeline` (in `state::plugins`) chains `add_mirror_render_systems` after `add_command_systems`. The mirror bridge system runs every frame the schedule runs.
+- **Tests** in `state::tests` (4 new):
+    - `tick_state_mirrors_frame_input_into_render_resource` — end-to-end: write `state.phase = Editor`, `tick_state`, assert `RenderFrameInputRes.0.phase == Editor`.
+    - `tick_state_registers_render_pod_resources_on_construction` — every `State` World has the POD resources.
+    - `tick_state_does_not_insert_heavy_render_resources_yet` — guards the Phase 4a contract: heavy resources are defined but not inserted.
+    - `tick_state_mirror_bridge_consumes_closure` — the schedule drains the installed closure.
+
+### What Phase 4b / 4c / 4d / 4e do (next)
+
+- **Phase 4b** moves `State::render.gpu` ownership into `RenderGpuRes` and replaces `self.render.gpu.X` reads with `world.resource::<RenderGpuRes>().0.X` (440 call sites). Adds `camera_uniform_scratch` / `line_uniform_scratch` / `color_space_scratch` fields on `GpuContext` so the per-frame uniform values can be read back from the GPU-side state.
+- **Phase 4c** moves `State::render.meshes` + `surface_host` into `RenderMeshesRes` / `RenderSurfaceHostRes`. The `MeshSlot` types stay as-is; only the storage location changes.
+- **Phase 4d** replaces the legacy `rebuild_*_mesh` call sites in `state/editor_scene.rs` with `RebuildMeshSet` systems that read `Changed<Position|Rotation|Size>` components and emit mesh buffers into `RenderMeshesRes`. This unlocks deleting `EditorDirtyFlags` entirely.
+- **Phase 4e** adds an actual wgpu `present_frame_system` in `RenderPresentSet` that drains `RenderFrameInputRes` + `RenderMeshesRes` + `RenderGpuRes` + `RenderUniformsRes` and submits the render pass. The current `State::render()` call from `eg-app/src/platform/pipeline.rs::render_frame` is removed in the same commit.
+
+### Schedule graph (post Phase 4a)
+
+`Per-frame schedule order (StateSchedule):
+  transitions::phase_transition_system        // AppPhase change detection
+  mirror::install_mirror                      // tick_state installs the closure
+  events::handle_* (per-message)              // MessageReader<T> → PendingCommands
+  render::mirror_pod_state_via_bridge         // drain closure → RenderUniformsRes / RenderFrameInputRes
+  render::present_render_frame_placeholder    // no-op in Phase 4a
+  dispatch_pending_commands                   // PendingCommands → State::dispatch[_editor]`
+
+### Resource boundary
+
+```text
+State.phase            ──┐
+State.editor.input.mode ─┤  compute_frame_input_snapshot
+State.session.sky_color ┘            │
+                                       ▼
+                          ┌─────────────────────┐
+                          │ RenderFrameInputRes  │  (POD, Copy, mirrored each frame)
+                          └─────────────────────┘
+                                       ▲
+                          ┌────────────┴────────────┐
+                          │  mirror_pod_state_      │
+                          │  via_bridge (system)    │
+                          └─────────────────────────┘
+```
+
+The legacy `State::render` field is still authoritative. Future phases (4b/4c) drain the data ownership from `State` into the world; Phase 4a's mirror is the bridge that lets Bevy systems read the values today without touching `State::render`.
+
+### Bevy 0.19 API notes (Phase 4a)
+
+- `#[derive(Resource)]` works for both `Copy` POD types and the heavy `GpuContext` / `SceneMeshes` wrappers (the heavy types are `Send + Sync` in wgpu 22+, so they are valid `Resource`s).
+- The thread-local mirror slot is `Send`-unsafe by design — the closure must be `Send` only if Bevy moves the schedule to another thread. Today the schedule runs on the main thread; the thread-local is the simplest correct implementation.
+- `ResMut<T>` and `Res<T>` from `bevy_ecs::prelude::*` are the system params; `World::resource_scope` is the test-side helper for borrowing two `ResMut`s simultaneously.
