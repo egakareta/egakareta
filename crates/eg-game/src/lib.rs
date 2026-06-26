@@ -5,13 +5,22 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+pub mod components;
+pub mod events;
 pub mod physics;
+pub mod plugin;
+pub mod resources;
 pub mod simulation;
 pub mod spatial;
 pub mod state;
+pub mod systems;
 #[cfg(test)]
 mod tests;
 
+pub use components::*;
+pub use events::*;
 pub use physics::*;
+pub use plugin::{GamePlugin, GameplaySchedule, tick_gameplay};
+pub use resources::*;
 pub use simulation::*;
 pub use state::*;

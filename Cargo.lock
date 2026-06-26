@@ -1397,6 +1397,7 @@ name = "eg-game"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "bevy_app",
  "bevy_ecs",
  "eg-block-geometry",
  "eg-blocks",

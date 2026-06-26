@@ -5,7 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::state::{ConsumedObjectEvent, GameState};
+use super::events::ConsumedObjectEvent;
+use super::state::GameState;
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
 pub struct TimelineSimulationState {
@@ -17,6 +18,9 @@ pub struct TimelineSimulationState {
     pub is_grounded: bool,
 }
 
+/// REFACTOR POINT(full-bevy): currently uses its own private [`GameState`]
+/// (which itself is a wrapper). Will be replaced by a `bevy_ecs::World` +
+/// `Schedule` shared with the editor and play views.
 pub struct TimelineSimulationRuntime {
     game: GameState,
     tap_times: Vec<f32>,

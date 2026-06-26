@@ -80,7 +80,7 @@ Cross-domain ordering constraints (sample):
 ## Phase checklist
 
 - [x] **Phase 0** — add `bevy_ecs` / `bevy_app` / `bevy_time` / `bevy_tasks` deps; verify native + WASM + clippy; create this doc; tag `REFACTOR POINT` convention in `AGENTS.md`.
-- [ ] **Phase 1** — `eg-game` ECS core (components, resources, query-based systems, `GamePlugin`).
+- [x] **Phase 1** — `eg-game` ECS core (components, resources, query-based systems, `GamePlugin`).
 - [ ] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
 - [ ] **Phase 3** — command/event fragmentation.
 - [ ] **Phase 4** — rendering extraction plugin (keep custom wgpu).
@@ -89,3 +89,17 @@ Cross-domain ordering constraints (sample):
 - [ ] **Phase 7** — `App` wiring (winit drives `app.update()`).
 - [ ] **Phase 8** — test harness migration (`TestApp` builder).
 - [ ] **Phase 9** — documentation pass.
+
+## Phase 1 — completed
+
+`eg-game` now has:
+
+- `components.rs` — `PlayerBundle`, `ObjectBundle`, `PlayState`, `Selected`, `Hovered` markers, plus standalone player components (`PlayerPosition`, `PlayerDirection`, `PlayerSpeed`, `VerticalVelocity`, `Grounded`, `Trail`, `SpawnPosition`, `SpawnDirection`) and object components (`Object`, `ObjectId`, `ObjectData`).
+- `resources.rs` — `GameClock`, `PlayerProgress`, `SpatialIndex`, `PendingTurnInputs`, `FixedStepConfig`, `FrameDelta`, `DeathSfxFlag`, `GameRuntimeTuning`, `LevelMeta`.
+- `events.rs` — `ConsumedObjectEvent` + `ConsumedEventsBuffer` resource.
+- `systems.rs` — 8 query-based systems organized in `GameplaySet` (`TurnInput`, `AdvancePlayer`, `Collision`, `ConsumeObjects`, `GroundGravity`, `Trail`, `Completion`, `Progress`).
+- `plugin.rs` — `GamePlugin` (registers all resources + the schedule).
+- `state.rs::GameState` — backwards-compatible wrapper. The legacy `pub` fields are kept in sync via `sync_from_world()` after the schedule runs. `update(dt)` sets `FrameDelta(dt)` and runs the schedule once per call.
+- `simulation.rs::TimelineSimulationRuntime` — still uses the wrapper. Will be refactored in Phase 2 / Phase 7 to share a `World`.
+
+**Verification:** 19/19 `eg-game` tests pass, `cargo clippy -- -D warnings` is clean, `eg-state` and `eg-app` compile.

@@ -10,6 +10,7 @@ repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"
 
 [dependencies]
+bevy_app = { workspace = true }
 bevy_ecs = { workspace = true }
 eg-block-geometry = { workspace = true }
 eg-blocks = { workspace = true }
