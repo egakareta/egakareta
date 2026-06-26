@@ -9,6 +9,7 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::commands::AppCommand;
 use crate::state::editor_command::EditorCommand;
+use crate::state::{AppPhaseRes, EditorInputRes, EditorRuntimeRes, PerfRes, SessionStateRes};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use eg_game::simulate_timeline_state;
@@ -241,6 +242,49 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
 async fn dirty_flags_default_is_clean() {
     let flags = EditorDirtyFlags::default();
     assert!(!flags.any());
+}
+
+#[tokio::test]
+async fn state_world_is_seeded_with_default_resources() {
+    // Phase 2b: every newly-constructed `State` carries a `World` that has
+    // been pre-populated with the default-constructible eg-state resources
+    // via `register_state_resources`. Verify the canonical resources are
+    // present and at their default values.
+    let state = State::new_test().await;
+
+    let world = state.world();
+    assert_eq!(
+        world.resource::<AppPhaseRes>().get(),
+        eg_types::AppPhase::Menu,
+        "AppPhaseRes should default to Menu"
+    );
+    assert!(
+        world.get_resource::<SessionStateRes>().is_some(),
+        "SessionStateRes should be registered"
+    );
+    assert!(
+        world.get_resource::<EditorInputRes>().is_some(),
+        "EditorInputRes should be registered"
+    );
+    assert!(
+        world.get_resource::<EditorRuntimeRes>().is_some(),
+        "EditorRuntimeRes should be registered"
+    );
+    assert!(
+        world.get_resource::<PerfRes>().is_some(),
+        "PerfRes should be registered"
+    );
+}
+
+#[tokio::test]
+async fn tick_state_is_safe_to_call_with_empty_schedule() {
+    // Phase 2b: `tick_state` runs the (currently empty) `StateSchedule`
+    // and must not panic. Future phases add systems; this test guards
+    // against regressions in the call site.
+    let mut state = State::new_test().await;
+    state.tick_state();
+    state.tick_state();
+    state.tick_state();
 }
 
 #[tokio::test]

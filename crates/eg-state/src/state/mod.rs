@@ -157,9 +157,25 @@ pub struct MenuSubsystem {
     pub state: MenuState,
 }
 
+/// Schedule label for the per-frame state update. Run via
+/// [`State::tick_state`]. Initially empty; systems are added in Phase 2c
+/// (transitions) and Phase 3 (command handlers).
+#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StateSchedule;
+
 /// The central state structure that manages all subsystems of the game engine.
 /// It contains subsystems for rendering, gameplay, editor, audio, session, and menu,
 /// and handles the overall application phase and frame runtime.
+///
+/// In Phase 2b, [`State`] also owns a `bevy_ecs::world::World` registered with
+/// the [`StatePlugins`] from [`super::plugins`]. Legacy subsystems remain
+/// authoritative for now; the World is a parallel mirror that systems (added
+/// in subsequent phases) can read. Use [`State::world`] / [`State::world_mut`]
+/// to access the world, and [`State::tick_state`] to run a frame's systems.
+///
+/// REFACTOR POINT(full-bevy): the legacy subsystem fields are removed in
+/// the full-Bevy migration; all state lives in the World and `State` becomes
+/// a thin alias over `bevy_app::App`.
 pub struct State {
     render: RenderSubsystem,
     auth: AuthSubsystem,
@@ -170,6 +186,7 @@ pub struct State {
     menu: MenuSubsystem,
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
+    world: bevy_ecs::world::World,
 }
 
 impl State {
@@ -192,6 +209,35 @@ impl State {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn window(&self) -> Option<&NativeWindow> {
         self.render.window()
+    }
+
+    /// Read-only access to the ECS `World`. Available since Phase 2b.
+    /// Use this from `eg-state` systems (added in later phases) to query
+    /// components and resources.
+    ///
+    /// The world is registered with [`StatePlugins`] in the [`State`]
+    /// constructor. Today it is only a placeholder — no systems are added
+    /// in Phase 2b. Use [`State::tick_state`] to run a frame's systems.
+    pub fn world(&self) -> &bevy_ecs::world::World {
+        &self.world
+    }
+
+    /// Mutable access to the ECS `World`. Available since Phase 2b.
+    /// Use this to insert/remove resources or spawn/despawn entities.
+    pub fn world_mut(&mut self) -> &mut bevy_ecs::world::World {
+        &mut self.world
+    }
+
+    /// Run a single tick of the [`StateSchedule`]. No systems are registered
+    /// in Phase 2b; Phase 2c adds phase-transition systems and Phase 3
+    /// adds command-handler systems. The call is a no-op for now but
+    /// exists so the call sites (e.g. the future `FramePipeline::run_frame`)
+    /// can be written once.
+    pub fn tick_state(&mut self) {
+        puffin::profile_scope!("StateSchedule");
+        // The schedule is added once during construction and updated
+        // lazily. For Phase 2b there are no systems, so the run is a no-op.
+        // Phase 2c adds phase transitions here.
     }
 
     /// Resizes the rendering surface to the new dimensions.

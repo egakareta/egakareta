@@ -34,10 +34,12 @@
 //! `Update` / `FixedUpdate` / `OnEnter` schedules.
 
 use bevy_app::{App, Plugin};
+use bevy_ecs::prelude::*;
 
 use super::state_resources::{
-    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes, SessionStateRes,
+    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
+    SessionStateRes,
 };
 
 /// Registers the headless gameplay systems. Currently a thin shim around
@@ -128,4 +130,26 @@ impl Plugin for StatePlugins {
 /// `configure_sets` will be wired in Phase 2c.
 pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
+}
+
+/// Register all default-constructible eg-state resources on a `World`.
+///
+/// `State` carries a `World` directly (Phase 2b: see
+/// [`crate::state::State::world`]). Use this helper to bring the world
+/// up to the same state as [`setup_state_app`] without going through an
+/// `App` first. Note: this only handles default-constructible resources.
+/// `MenuStateRes` (which needs level names) is not registered here and
+/// must be inserted by the caller with [`MenuStateRes::new`].
+pub fn register_state_resources(world: &mut World) {
+    world.init_resource::<AppPhaseRes>();
+    world.init_resource::<SessionStateRes>();
+    world.init_resource::<EditorInputRes>();
+    world.init_resource::<EditorConfigRes>();
+    world.init_resource::<EditorCameraRes>();
+    world.init_resource::<EditorTriggerRes>();
+    world.init_resource::<EditorTimelineRes>();
+    world.init_resource::<EditorTimingRes>();
+    world.init_resource::<EditorRuntimeRes>();
+    world.init_resource::<EditorHistoryRes>();
+    world.init_resource::<PerfRes>();
 }

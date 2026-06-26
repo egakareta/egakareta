@@ -309,6 +309,15 @@ impl From<&GpuContext> for TestGpuFixture {
     }
 }
 
+/// Build a fresh [`bevy_ecs::world::World`] pre-populated with the
+/// default-constructible eg-state resources. Used by the [`State`]
+/// constructors to seed the parallel ECS world (Phase 2b).
+fn build_state_world() -> bevy_ecs::world::World {
+    let mut world = bevy_ecs::world::World::new();
+    super::plugins::register_state_resources(&mut world);
+    world
+}
+
 impl State {
     #[cfg(target_arch = "wasm32")]
     pub async fn new(
@@ -664,6 +673,7 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
+            world: build_state_world(),
         }
     }
 
@@ -1568,6 +1578,7 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
+            world: build_state_world(),
         })
     }
 }
