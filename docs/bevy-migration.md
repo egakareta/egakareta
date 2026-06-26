@@ -81,7 +81,7 @@ Cross-domain ordering constraints (sample):
 
 - [x] **Phase 0** — add `bevy_ecs` / `bevy_app` / `bevy_time` / `bevy_tasks` deps; verify native + WASM + clippy; create this doc; tag `REFACTOR POINT` convention in `AGENTS.md`.
 - [x] **Phase 1** — `eg-game` ECS core (components, resources, query-based systems, `GamePlugin`).
-- [ ] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
+- [x] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
 - [ ] **Phase 3** — command/event fragmentation.
 - [ ] **Phase 4** — rendering extraction plugin (keep custom wgpu).
 - [ ] **Phase 5** — UI as Bevy systems.
@@ -103,3 +103,36 @@ Cross-domain ordering constraints (sample):
 - `simulation.rs::TimelineSimulationRuntime` — still uses the wrapper. Will be refactored in Phase 2 / Phase 7 to share a `World`.
 
 **Verification:** 19/19 `eg-game` tests pass, `cargo clippy -- -D warnings` is clean, `eg-state` and `eg-app` compile.
+
+## Phase 1.1 — bugfix: `ground_gravity_system` + `trail_system` regressions
+
+The initial Phase 1 system port was not a behavior-preserving rewrite. Two
+silent regressions were caught by `eg-state` integration tests (`main` is
+green, `ecs-migration` was failing 4 tests):
+
+1. **`ground_gravity_system` was missing the broad-phase XZ overlap filter.**
+   The legacy `top_surface_y_under_indices` calls
+   `aabb_overlaps_cuboid_xz(player_xz, obj, cuboid)` on every cuboid before
+   considering it. The ECS port relied solely on the spatial grid, so a
+   support block sitting in the same grid cell as the player but past them
+   in x/z would still be treated as ground support. Symptom: airborne test
+   (`playback_trail_vertices_include_airborne_head_segment`) — the player
+   runs past a stone at `[0, 2, 0]` but never falls because the system
+   keeps reporting `grounded = true` even after the player leaves the
+   support's footprint.
+
+2. **`trail_system` was branching on `grounded.0` without tracking the
+   previous value.** Both the airborne and grounded branches pushed a new
+   segment, so every `Changed<Grounded>` tick grew the trail by 2
+   single-point segments. With 481 cached samples the trail ended up as
+   481 segments of 1 point each, which made the editor scrub trail
+   (which only draws a "head" line if the snapshot's last point is
+   different from the player's current position) collapse to zero
+   vertices. Symptom: 3 editor / scrub-trail tests failed with empty
+   vertex buffers. Fix: track `was_grounded` per entity in a
+   `Local<HashMap<Entity, bool>>` and mirror the legacy transition logic
+   (grounded→airborne: append to last segment, deduping within 1e-3;
+   airborne→grounded: start a new segment anchored at the landing pos).
+
+**Verification:** all 4 previously-failing tests now pass; full
+`cargo test --workspace` is green; `cargo clippy -p eg-game --all-targets -- -D warnings` is clean.

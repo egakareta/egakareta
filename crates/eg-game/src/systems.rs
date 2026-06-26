@@ -9,6 +9,8 @@
 //! [`GameplaySet`] for ordering. The `state.rs` wrapper drives them by
 //! running the schedule in `GameState::update`.
 
+use std::collections::HashMap;
+
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemSet;
 use eg_block_geometry::hitbox_cuboids;
@@ -20,6 +22,7 @@ use crate::components::{
     VerticalVelocity,
 };
 use crate::events::{ConsumedEventsBuffer, ConsumedObjectEvent};
+use crate::physics::aabb_overlaps_cuboid_xz;
 use crate::resources::{
     DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress,
     SpatialIndex, TimedTurnInput, TurnInputKind,
@@ -321,6 +324,13 @@ pub fn ground_gravity_system(
             continue;
         }
         for cuboid in hitbox_cuboids(&obj.0) {
+            // Broad-phase (spatial grid) found the entity, but it still needs
+            // to actually overlap the player's XZ footprint. Without this
+            // filter, supports in the same cell as the player but past the
+            // player in x/z incorrectly ground them.
+            if !aabb_overlaps_cuboid_xz(s_min_x, s_max_x, s_min_z, s_max_z, &obj.0, cuboid) {
+                continue;
+            }
             let top_y = cuboid.max[1];
             if top_y <= pos.0[1] + snap {
                 if let Some(t) = top_surface {
@@ -361,14 +371,58 @@ pub fn ground_gravity_system(
 // 6. Trail
 // ---------------------------------------------------------------------------
 
-/// Manage trail segments based on `Grounded` changes.
+/// Manage trail segments based on `Grounded` changes. Mirrors the legacy
+/// `GameState::update` transition logic:
+/// - `grounded -> airborne` (just took off): append the current position to
+///   the last trail segment, deduping within `MIN_DELTA`.
+/// - `airborne -> grounded` (just landed): start a new segment containing
+///   the current position.
+///
+/// `Changed<Grounded>` is not used directly because Bevy does not expose the
+/// previous value of a changed component; we track it ourselves in a
+/// `Local<HashMap<Entity, bool>>` so we know which transition occurred.
 pub fn trail_system(
-    mut players: Query<(&PlayerPosition, &mut Trail, &Grounded), Changed<Grounded>>,
+    mut players: Query<(Entity, &PlayerPosition, &mut Trail, &Grounded)>,
+    mut previous_grounded: Local<HashMap<Entity, bool>>,
 ) {
-    for (pos, mut trail, grounded) in players.iter_mut() {
-        if !grounded.0 {
-            trail.segments.push(vec![pos.0]);
-        } else if let Some(_last_segment) = trail.segments.last_mut() {
+    const MIN_DELTA: f32 = 0.001;
+
+    for (entity, pos, mut trail, grounded) in players.iter_mut() {
+        let is_grounded = grounded.0;
+        let was_grounded = previous_grounded
+            .get(&entity)
+            .copied()
+            .unwrap_or(is_grounded);
+        previous_grounded.insert(entity, is_grounded);
+
+        if was_grounded == is_grounded {
+            continue;
+        }
+
+        if was_grounded && !is_grounded {
+            // Just took off: extend the active ground segment with the
+            // current position. Skip duplicates within MIN_DELTA so the
+            // segment doesn't bloat on the same spot.
+            if let Some(segment) = trail.segments.last_mut() {
+                let dominated_by_last = segment
+                    .last()
+                    .map(|last| {
+                        (last[0] - pos.0[0]).abs() < MIN_DELTA
+                            && (last[1] - pos.0[1]).abs() < MIN_DELTA
+                            && (last[2] - pos.0[2]).abs() < MIN_DELTA
+                    })
+                    .unwrap_or(false);
+                if !dominated_by_last {
+                    segment.push(pos.0);
+                }
+            } else {
+                trail.segments.push(vec![pos.0]);
+            }
+        } else {
+            // Just landed: begin a fresh air segment anchored at the
+            // landing position. The render layer's "head" extension will
+            // close the gap between the previous ground segment and this
+            // new air segment.
             trail.segments.push(vec![pos.0]);
         }
     }
