@@ -7,7 +7,6 @@
 */
 
 use glam::{EulerRot, Mat3, Vec3};
-use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use smart_is_default::SmartIsDefault;
@@ -512,27 +511,7 @@ pub enum TriggerTarget {
     #[default]
     Camera,
     /// A list of level objects.
-    Objects {
-        #[serde(deserialize_with = "deserialize_trigger_object_ids")]
-        object_ids: Vec<String>,
-    },
-}
-
-fn deserialize_trigger_object_ids<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let values = Vec::<serde_json::Value>::deserialize(deserializer)?;
-    values
-        .into_iter()
-        .map(|value| match value {
-            serde_json::Value::String(value) => Ok(value),
-            serde_json::Value::Number(value) => Ok(value.to_string()),
-            other => Err(serde::de::Error::custom(format!(
-                "invalid object id value {other}"
-            ))),
-        })
-        .collect()
+    Objects { object_ids: Vec<String> },
 }
 
 /// An event tied to a specific object that fires at a specific time in the level.
