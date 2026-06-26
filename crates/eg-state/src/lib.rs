@@ -10,4 +10,5 @@
 #![allow(missing_docs)]
 
 pub mod commands;
+pub mod events;
 pub mod state;

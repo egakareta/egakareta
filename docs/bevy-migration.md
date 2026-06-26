@@ -82,7 +82,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 0** — add `bevy_ecs` / `bevy_app` / `bevy_time` / `bevy_tasks` deps; verify native + WASM + clippy; create this doc; tag `REFACTOR POINT` convention in `AGENTS.md`.
 - [x] **Phase 1** — `eg-game` ECS core (components, resources, query-based systems, `GamePlugin`).
 - [x] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
-- [ ] **Phase 3** — command/event fragmentation.
+- [x] **Phase 3** — command/event fragmentation.
 - [ ] **Phase 4** — rendering extraction plugin (keep custom wgpu).
 - [ ] **Phase 5** — UI as Bevy systems.
 - [ ] **Phase 6** — platform/audio/auth async bridging.
@@ -136,3 +136,113 @@ green, `ecs-migration` was failing 4 tests):
 
 **Verification:** all 4 previously-failing tests now pass; full
 `cargo test --workspace` is green; `cargo clippy -p eg-game --all-targets -- -D warnings` is clean.
+
+## Phase 3 — command / event fragmentation
+
+AppCommand (15 variants) + EditorCommand (~87 variants) are
+fragmented into a per-semantic Bevy Message type under
+crates/eg-state/src/events/. The legacy enum-to-method dispatch path
+(State::dispatch / State::dispatch_editor) is **unchanged** — the
+new event bus feeds the legacy path through a PendingCommands
+resource + the StateSchedule (see crates/eg-state/src/state/mod.rs).
+This keeps the existing test suite green while introducing the new
+event taxonomy. Future phases migrate UI / winit / egui code to write
+Message<T>::write directly, then delete the legacy enums + dispatch
+files in one final sweep.
+
+### What's in Phase 3 today
+
+- 15 event submodules under vents/ (
+  avigation, uth,
+  ditor_mode, snap, lock, selection, imeline, iming,
+  pm, spawn, history, camera, misc, session,
+  input_state, pointer).
+- One Message struct per semantic command (~85 distinct message
+  types).
+- A ToLegacy trait on each message type that converts the message to
+  a LegacyCommand (an AppCommand or EditorCommand enum variant).
+- A per-message drain system (one n handle\_\*(MessageReader<T>,
+  ResMut<PendingCommands>) per message type) that stages commands in
+  the PendingCommands resource.
+- A StateSchedule that bundles the per-message drain systems.
+- State::tick_state now runs the schedule and forwards
+  PendingCommands to State::dispatch / State::dispatch_editor.
+- A HistorySnapshot marker event for direct-manipulation UI (gizmo
+  drag / marquee / block drag) that reserves the PreCommandHistorySet
+  slot in the schedule. A follow-up phase wires a real
+  pre-mutation history snapshot system to it.
+
+### Bevy 0.19 API notes
+
+Bevy 0.19 uses Message (not Event) for buffered per-frame
+payloads; observer-based Events fire immediately. We use
+Message here because we want pull-based consumption by the
+per-message drain systems in [vents::CommandSet], then a single
+drain into [vents::PendingCommands] at the end of the frame. The
+full Bevy 0.19 pattern is:
+
+- #[derive(Message)] for the message type.
+- Messages<T> for the resource (added by pp.add_message::<T>()).
+- MessageReader<T> / MessageWriter<T> for system params.
+- world.write_message(event) to send.
+- world.resource_mut::<Messages<T>>() to inspect the buffer.
+
+### Event taxonomy table
+
+| Module | Count | Examples |
+| ------ | ----- | -------- |
+
+|
+avigation | 10 | TurnRight, ToggleEditor, GameSetPracticeMode |
+| uth | 5 | AuthSubmitSignIn, AuthSignOut, ResizeSurface |
+| ditor_mode | 5 | SetEditorMode, SetBlockId, PickBlockAt |
+| snap | 4 | SetSnapToGrid, SetSnapStep |
+| lock | 5 | RemoveBlock, CopyBlock, UpdateSelectedBlock |
+| selection | 3 | SnapSelectionToGrid, AddTransformTrigger |
+| imeline | 14 | ToggleTimelinePlayback, SetTimelineTime, Playtest|
+| iming | 6 | AddTimingPoint, SetTimingPointTime |
+| pm | 2 | BpmTap, BpmTapReset |
+| spawn | 3 | SetSpawnHere, RotateSpawnDirection |
+| history | 3 | Undo, Redo, HistorySnapshot |
+| camera | 5 | AdjustZoom, SetCameraOrientation |
+| misc | 4 | ToggleHitboxVisualization, Escape |
+| session | 22 | LoadLevel, RenameLevel, UpdateMusic |
+| input_state | 7 | SetShiftHeld, SetPanUpHeld (carve-out — see below) |
+| pointer | 5 | MouseButton, PrimaryClick (carve-out — see below) |
+| **Total** | **~102** | Plus 7 in input_state + 5 in pointer are deprecated |
+
+### Input-state carve-out
+
+Per the migration plan, the 7 input_state::_ events and 5
+pointer::_ events are **not** commands — they are _input state_.
+A follow-up phase replaces them with direct writes to the
+EditorInput resource from a dedicated InputSet system. For now
+they remain routed through dispatch_editor to preserve test parity
+with the legacy EditorCommand::SetShiftHeld /
+EditorCommand::MouseButton etc. variants.
+
+REFACTOR POINT(full-bevy): the input-state + pointer events
+disappear in the full-Bevy migration; the corresponding evy_input
+Input<KeyCode> / ButtonInput<MouseButton> resources handle
+held-state + click events natively.
+
+### Schedule graph (post Phase 3)
+
+`Per-frame schedule order (StateSchedule):
+  transitions::phase_transition_system   // AppPhase change detection
+  events::handle_* (per-message)         // MessageReader<T> → PendingCommands
+  dispatch_pending_commands              // PendingCommands → State::dispatch[_editor]`
+
+Future phases add more sets at the top of the chain (InputSet,
+ClickHandlingSet, ModeChangeSet, PreCommandHistorySet,
+CommandHandlerSet, SimulationSet, UiSet, HistorySet,
+RebuildMeshSet, ExtractSet, RenderSet). Phase 3 keeps the
+schedule minimal so the existing legacy dispatch path is exercised
+end-to-end on every frame.
+
+**Verification:** cargo test --workspace is green; the new
+ick_state_drains_message_into_pending_then_dispatches test
+exercises the full pipeline (write a Message →
+State::tick_state → side effect on the legacy State).
+14 new unit tests in vents::tests cover ToLegacy conversion +
+PendingCommands drain semantics for representative event types.

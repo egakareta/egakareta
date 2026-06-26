@@ -153,3 +153,33 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorHistoryRes>();
     world.init_resource::<PerfRes>();
 }
+
+/// Register the per-message command-pipeline resources + the
+/// [`StateSchedule`] on a `World`.
+///
+/// Phase 3: alongside the eg-state resources, this also initializes
+/// the `Messages<T>` buffers for every event type and the
+/// [`crate::events::PendingCommands`] resource, then adds the
+/// [`StateSchedule`] to the world. The schedule contains the
+/// per-message drain systems that convert events to legacy commands
+/// and stage them in `PendingCommands` for `State::tick_state` to
+/// forward to `State::dispatch` / `State::dispatch_editor`.
+///
+/// `State` constructs its world via
+/// [`crate::state::lifecycle::build_state_world`] which calls this
+/// helper, so callers don't need to invoke it directly.
+pub fn register_state_command_pipeline(world: &mut World) {
+    // Message resources for every command event type. The
+    // `register_command_events` helper takes an `App`; we use the
+    // `World`-flavoured helper to keep this function working on a
+    // bare world (no `App`).
+    crate::events::register_command_events_world(world);
+
+    // Build the per-frame schedule that drains the per-event
+    // message resources into `PendingCommands`. The schedule is
+    // added to the world's scheduler so `world.run_schedule(...)`
+    // (used by `State::tick_state`) can invoke it.
+    let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
+    crate::events::add_command_systems(&mut schedule);
+    world.add_schedule(schedule);
+}

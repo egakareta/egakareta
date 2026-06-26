@@ -330,6 +330,119 @@ async fn tick_state_runs_phase_transition_system() {
     );
 }
 
+// ── Phase 3 — command / event fragmentation tests ───────────────
+#[tokio::test]
+async fn tick_state_drains_message_into_pending_then_dispatches() {
+    // Phase 3: writing a Bevy `Message` into the world's
+    // `Messages<T>` resource, then calling `State::tick_state()`,
+    // must route the message through the per-event drain system into
+    // `PendingCommands` and finally into the legacy dispatch path
+    // (`State::dispatch` / `State::dispatch_editor`). The
+    // `PhaseTransition` resource remains in the world as a
+    // `TickState` side effect and is verified by the prior test.
+    use crate::events::PendingCommands;
+    use crate::events::editor_mode::SetEditorMode;
+    use crate::events::navigation::TurnRight;
+    use eg_types::EditorMode;
+
+    let mut state = State::new_test().await;
+
+    // Write a TurnRight message.
+    state.world_mut().write_message(TurnRight);
+    // Write a SetEditorMode(Place) message.
+    state
+        .world_mut()
+        .write_message(SetEditorMode(EditorMode::Place));
+
+    // `PendingCommands` is currently empty.
+    assert!(state.world().resource::<PendingCommands>().is_empty());
+
+    // Tick: per-event drain systems fire, stage commands in
+    // `PendingCommands`, then `dispatch_pending_commands` runs the
+    // legacy dispatch path and clears the buffer.
+    state.tick_state();
+
+    // After the tick, the buffer is empty (forwarded to dispatch).
+    assert!(
+        state.world().resource::<PendingCommands>().is_empty(),
+        "PendingCommands must be drained after tick_state"
+    );
+
+    // Side effects of the dispatched commands:
+    // - TurnRight in Menu phase starts the selected level (which
+    //   moves the phase to Playing). The test state was constructed
+    //   in Menu with a default selected_level; we don't assert the
+    //   exact level here, just that the command was processed.
+    // - SetEditorMode(Place) sets `editor.input.mode` to Place.
+    //   We're in the Menu phase so editor state isn't initialized;
+    //   set the phase to Editor first and re-tick to verify the
+    //   editor command dispatches.
+    state.phase = eg_types::AppPhase::Editor;
+    state.enter_editor_phase("Phase3Test".to_string());
+    state
+        .world_mut()
+        .write_message(SetEditorMode(EditorMode::Scale));
+    state.tick_state();
+    assert_eq!(
+        state.editor.input.mode,
+        EditorMode::Scale,
+        "SetEditorMode message should have been dispatched to the editor"
+    );
+}
+
+#[tokio::test]
+async fn tick_state_handles_undo_via_message_pipeline() {
+    // Verify that the editor Undo message routes through the
+    // pipeline and calls `State::editor_undo`. We don't have a
+    // pre-existing undo history to pop, but the call must be safe.
+    use crate::events::PendingCommands;
+    use crate::events::history::Undo;
+
+    let mut state = State::new_test().await;
+    state.enter_editor_phase("Phase3UndoTest".to_string());
+
+    // Buffer is empty before the tick.
+    assert!(state.world().resource::<PendingCommands>().is_empty());
+
+    state.world_mut().write_message(Undo);
+    state.tick_state();
+
+    // After the tick, the buffer is empty (forwarded).
+    assert!(state.world().resource::<PendingCommands>().is_empty());
+    // The editor_undo call is safe with an empty history; no
+    // specific assertion on the resulting state.
+}
+
+#[tokio::test]
+async fn tick_state_handles_practice_mode_payload() {
+    // Verify that a message carrying a payload (`GameSetPracticeMode`)
+    // routes through the pipeline and toggles the practice-mode
+    // flag on the session state.
+    use crate::events::PendingCommands;
+    use crate::events::navigation::GameSetPracticeMode;
+
+    let mut state = State::new_test().await;
+    state.enter_editor_phase("Phase3PracticeTest".to_string());
+    state.phase = eg_types::AppPhase::Playing;
+    state.session.playtesting_editor = false;
+
+    assert!(!state.session.practice_mode_enabled);
+
+    state
+        .world_mut()
+        .write_message(GameSetPracticeMode { enabled: true });
+    state.tick_state();
+
+    assert!(
+        state.world().resource::<PendingCommands>().is_empty(),
+        "PendingCommands should be drained after tick_state"
+    );
+    assert!(
+        state.session.practice_mode_enabled,
+        "GameSetPracticeMode(true) message should have been dispatched"
+    );
+}
+
 #[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();

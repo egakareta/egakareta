@@ -1,0 +1,517 @@
+/*
+
+* Copyright (c) egakareta <team@egakareta.com>.
+* Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+* See LICENSE and COMMERCIAL.md for details.
+
+*/
+//! Session / UI / level-management events.
+
+use bevy_app::App;
+use bevy_ecs::prelude::*;
+use eg_types::{BasicLevelMetadata, MusicMetadata, SettingsSection};
+
+use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::state::editor_command::EditorCommand;
+
+/// Load a level from a builtin resource name.
+#[derive(Message, Debug, Clone)]
+pub struct LoadLevel(pub String);
+
+impl ToLegacy for LoadLevel {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::LoadLevel(self.0))
+    }
+}
+
+/// Rename the current level.
+#[derive(Message, Debug, Clone)]
+pub struct RenameLevel(pub String);
+
+impl ToLegacy for RenameLevel {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::RenameLevel(self.0))
+    }
+}
+
+/// Start the level export process.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct ExportLevel;
+
+impl ToLegacy for ExportLevel {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::ExportLevel)
+    }
+}
+
+/// Open or close the metadata editing window.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct SetShowMetadata(pub bool);
+
+impl ToLegacy for SetShowMetadata {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetShowMetadata(self.0))
+    }
+}
+
+/// Toggle the settings sidebar visibility.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct ToggleSettings;
+
+impl ToLegacy for ToggleSettings {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::ToggleSettings)
+    }
+}
+
+/// Open or close the settings sidebar.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct SetShowSettings(pub bool);
+
+impl ToLegacy for SetShowSettings {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetShowSettings(self.0))
+    }
+}
+
+/// Select which settings section is displayed in the sidebar.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct SetSettingsSection(pub SettingsSection);
+
+impl ToLegacy for SetSettingsSection {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetSettingsSection(self.0))
+    }
+}
+
+/// Set preferred graphics backend for subsequent launches.
+#[derive(Message, Debug, Clone)]
+pub struct SetGraphicsBackend(pub String);
+
+impl ToLegacy for SetGraphicsBackend {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetGraphicsBackend(self.0))
+    }
+}
+
+/// Set preferred audio backend and apply immediately when possible.
+#[derive(Message, Debug, Clone)]
+pub struct SetAudioBackend(pub String);
+
+impl ToLegacy for SetAudioBackend {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetAudioBackend(self.0))
+    }
+}
+
+/// Set UI scale multiplier used with responsive UI scaling.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct SetUiScaleMultiplier(pub f32);
+
+impl ToLegacy for SetUiScaleMultiplier {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetUiScaleMultiplier(self.0))
+    }
+}
+
+/// Start or cancel keybind capture for an action slot.
+#[derive(Message, Debug, Clone)]
+pub struct SetKeybindCapture(pub Option<(String, usize)>);
+
+impl ToLegacy for SetKeybindCapture {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetKeybindCapture(self.0))
+    }
+}
+
+/// Set a keybind mapping for an action at a specific slot.
+#[derive(Message, Debug, Clone)]
+pub struct SetKeybind {
+    pub action: String,
+    pub slot: usize,
+    pub chord: eg_types::KeyChord,
+}
+
+impl ToLegacy for SetKeybind {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::SetKeybind {
+            action: self.action,
+            slot: self.slot,
+            chord: self.chord,
+        })
+    }
+}
+
+/// Clear the keybind mapping for an action at a specific slot.
+#[derive(Message, Debug, Clone)]
+pub struct ClearKeybindSlot {
+    pub action: String,
+    pub slot: usize,
+}
+
+impl ToLegacy for ClearKeybindSlot {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::ClearKeybindSlot {
+            action: self.action,
+            slot: self.slot,
+        })
+    }
+}
+
+/// Reset a single keybind action to its default values.
+#[derive(Message, Debug, Clone)]
+pub struct ResetKeybind(pub String);
+
+impl ToLegacy for ResetKeybind {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::ResetKeybind(self.0))
+    }
+}
+
+/// Reset all keybinds to defaults.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct ResetKeybinds;
+
+impl ToLegacy for ResetKeybinds {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::ResetKeybinds)
+    }
+}
+
+/// Trigger level import via platform file picker.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct CompleteImport;
+
+impl ToLegacy for CompleteImport {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::CompleteImport)
+    }
+}
+
+/// Update music information for the level.
+#[derive(Message, Debug, Clone)]
+pub struct UpdateMusic(pub MusicMetadata);
+
+impl ToLegacy for UpdateMusic {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::UpdateMusic(self.0))
+    }
+}
+
+/// Update creator-facing metadata for the level.
+#[derive(Message, Debug, Clone)]
+pub struct UpdateCreatorMetadata(pub BasicLevelMetadata);
+
+impl ToLegacy for UpdateCreatorMetadata {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::UpdateCreatorMetadata(self.0))
+    }
+}
+
+/// Update the level sky clear color.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct UpdateSkyColor(pub [f32; 3]);
+
+impl ToLegacy for UpdateSkyColor {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::UpdateSkyColor(self.0))
+    }
+}
+
+/// Trigger the platform audio import dialog.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct TriggerAudioImport;
+
+impl ToLegacy for TriggerAudioImport {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::TriggerAudioImport)
+    }
+}
+
+/// Store the current editor camera as menu preview camera metadata.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct CaptureMenuPreviewCamera;
+
+impl ToLegacy for CaptureMenuPreviewCamera {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::CaptureMenuPreviewCamera)
+    }
+}
+
+/// Remove manual menu preview camera metadata and use automatic camera.
+#[derive(Message, Debug, Clone, Copy, Default)]
+pub struct UseAutoMenuPreviewCamera;
+
+impl ToLegacy for UseAutoMenuPreviewCamera {
+    fn to_legacy(self) -> LegacyCommand {
+        LegacyCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera)
+    }
+}
+
+pub fn register_events(app: &mut App) {
+    app.add_message::<LoadLevel>()
+        .add_message::<RenameLevel>()
+        .add_message::<ExportLevel>()
+        .add_message::<SetShowMetadata>()
+        .add_message::<ToggleSettings>()
+        .add_message::<SetShowSettings>()
+        .add_message::<SetSettingsSection>()
+        .add_message::<SetGraphicsBackend>()
+        .add_message::<SetAudioBackend>()
+        .add_message::<SetUiScaleMultiplier>()
+        .add_message::<SetKeybindCapture>()
+        .add_message::<SetKeybind>()
+        .add_message::<ClearKeybindSlot>()
+        .add_message::<ResetKeybind>()
+        .add_message::<ResetKeybinds>()
+        .add_message::<CompleteImport>()
+        .add_message::<UpdateMusic>()
+        .add_message::<UpdateCreatorMetadata>()
+        .add_message::<UpdateSkyColor>()
+        .add_message::<TriggerAudioImport>()
+        .add_message::<CaptureMenuPreviewCamera>()
+        .add_message::<UseAutoMenuPreviewCamera>();
+}
+
+// -----------------------------------------------------------------------
+// Dispatch systems
+// -----------------------------------------------------------------------
+
+pub fn handle_load_level(
+    mut events: MessageReader<LoadLevel>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::LoadLevel(event.0.clone()));
+    }
+}
+
+pub fn handle_rename_level(
+    mut events: MessageReader<RenameLevel>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::RenameLevel(event.0.clone()));
+    }
+}
+
+pub fn handle_export_level(
+    mut events: MessageReader<ExportLevel>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending.editor_commands.push(EditorCommand::ExportLevel);
+    }
+}
+
+pub fn handle_set_show_metadata(
+    mut events: MessageReader<SetShowMetadata>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetShowMetadata(event.0));
+    }
+}
+
+pub fn handle_toggle_settings(
+    mut events: MessageReader<ToggleSettings>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending.editor_commands.push(EditorCommand::ToggleSettings);
+    }
+}
+
+pub fn handle_set_show_settings(
+    mut events: MessageReader<SetShowSettings>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetShowSettings(event.0));
+    }
+}
+
+pub fn handle_set_settings_section(
+    mut events: MessageReader<SetSettingsSection>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetSettingsSection(event.0));
+    }
+}
+
+pub fn handle_set_graphics_backend(
+    mut events: MessageReader<SetGraphicsBackend>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetGraphicsBackend(event.0.clone()));
+    }
+}
+
+pub fn handle_set_audio_backend(
+    mut events: MessageReader<SetAudioBackend>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetAudioBackend(event.0.clone()));
+    }
+}
+
+pub fn handle_set_ui_scale_multiplier(
+    mut events: MessageReader<SetUiScaleMultiplier>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetUiScaleMultiplier(event.0));
+    }
+}
+
+pub fn handle_set_keybind_capture(
+    mut events: MessageReader<SetKeybindCapture>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::SetKeybindCapture(event.0.clone()));
+    }
+}
+
+pub fn handle_set_keybind(
+    mut events: MessageReader<SetKeybind>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending.editor_commands.push(EditorCommand::SetKeybind {
+            action: event.action.clone(),
+            slot: event.slot,
+            chord: event.chord.clone(),
+        });
+    }
+}
+
+pub fn handle_clear_keybind_slot(
+    mut events: MessageReader<ClearKeybindSlot>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::ClearKeybindSlot {
+                action: event.action.clone(),
+                slot: event.slot,
+            });
+    }
+}
+
+pub fn handle_reset_keybind(
+    mut events: MessageReader<ResetKeybind>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::ResetKeybind(event.0.clone()));
+    }
+}
+
+pub fn handle_reset_keybinds(
+    mut events: MessageReader<ResetKeybinds>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending.editor_commands.push(EditorCommand::ResetKeybinds);
+    }
+}
+
+pub fn handle_complete_import(
+    mut events: MessageReader<CompleteImport>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending.editor_commands.push(EditorCommand::CompleteImport);
+    }
+}
+
+pub fn handle_update_music(
+    mut events: MessageReader<UpdateMusic>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::UpdateMusic(event.0.clone()));
+    }
+}
+
+pub fn handle_update_creator_metadata(
+    mut events: MessageReader<UpdateCreatorMetadata>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::UpdateCreatorMetadata(event.0.clone()));
+    }
+}
+
+pub fn handle_update_sky_color(
+    mut events: MessageReader<UpdateSkyColor>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for event in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::UpdateSkyColor(event.0));
+    }
+}
+
+pub fn handle_trigger_audio_import(
+    mut events: MessageReader<TriggerAudioImport>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::TriggerAudioImport);
+    }
+}
+
+pub fn handle_capture_menu_preview_camera(
+    mut events: MessageReader<CaptureMenuPreviewCamera>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::CaptureMenuPreviewCamera);
+    }
+}
+
+pub fn handle_use_auto_menu_preview_camera(
+    mut events: MessageReader<UseAutoMenuPreviewCamera>,
+    mut pending: ResMut<PendingCommands>,
+) {
+    for _ in events.read() {
+        pending
+            .editor_commands
+            .push(EditorCommand::UseAutoMenuPreviewCamera);
+    }
+}

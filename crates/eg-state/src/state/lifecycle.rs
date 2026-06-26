@@ -310,11 +310,15 @@ impl From<&GpuContext> for TestGpuFixture {
 }
 
 /// Build a fresh [`bevy_ecs::world::World`] pre-populated with the
-/// default-constructible eg-state resources. Used by the [`State`]
-/// constructors to seed the parallel ECS world (Phase 2b).
+/// default-constructible eg-state resources + the [`StateSchedule`]
+/// schedule. Used by the [`State`] constructors to seed the parallel
+/// ECS world (Phase 2b + 3).
 fn build_state_world() -> bevy_ecs::world::World {
     let mut world = bevy_ecs::world::World::new();
     super::plugins::register_state_resources(&mut world);
+    // Phase 3: register the per-event message resources + the schedule
+    // that drains them into the legacy command dispatch path.
+    super::plugins::register_state_command_pipeline(&mut world);
     world
 }
 

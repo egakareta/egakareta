@@ -33,6 +33,12 @@ mod transitions;
 mod update;
 mod view_model;
 
+use crate::events as state_events;
+pub use state_events::{
+    CommandSet, LegacyCommand, PendingCommands, ToLegacy, add_command_systems,
+    register_command_events,
+};
+
 #[cfg(test)]
 mod editor_domain_tests;
 #[cfg(test)]
@@ -229,15 +235,47 @@ impl State {
         &mut self.world
     }
 
-    /// Run a single tick of the [`StateSchedule`]. Currently executes
-    /// the [`transitions::phase_transition_system`] which detects
-    /// `AppPhase` changes and runs `OnEnter` / `OnExit` side effects.
-    /// Phase 3 adds command-handler systems here.
+    /// Run a single tick of the [`StateSchedule`]. Executes the
+    /// [`transitions::phase_transition_system`] (which detects
+    /// `AppPhase` changes and runs `OnEnter` / `OnExit` side effects)
+    /// plus the per-message drain systems registered in Phase 3
+    /// (which convert Bevy messages into legacy `AppCommand` /
+    /// `EditorCommand` payloads in the `PendingCommands` resource).
+    /// After the schedule runs, the buffered commands are routed
+    /// through [`State::dispatch`] / [`State::dispatch_editor`].
     pub fn tick_state(&mut self) {
         puffin::profile_scope!("StateSchedule");
+        // Phase 2c: detect AppPhase changes + run OnEnter/OnExit side
+        // effects via a non-system free function. This call is
+        // idempotent when the phase hasn't changed.
         transitions::phase_transition_system(
             self.world.resource_mut::<state_resources::AppPhaseRes>(),
         );
+        // Phase 3: run the per-message drain schedule. This iterates
+        // every `Messages<T>` resource once and stages converted
+        // `AppCommand` / `EditorCommand` payloads in
+        // `PendingCommands`. The schedule is registered once during
+        // world construction (see
+        // [`crate::state::lifecycle::build_state_world`]); if the
+        // schedule was never registered (e.g. a test world) the
+        // `run_schedule` call is a no-op via `try_run_schedule`.
+        let _ = self.world.try_run_schedule(StateSchedule);
+        // Forward the staged commands to the legacy dispatch path.
+        self.dispatch_pending_commands();
+    }
+
+    /// Forward staged `AppCommand` / `EditorCommand` payloads from
+    /// `PendingCommands` to [`State::dispatch`] /
+    /// [`State::dispatch_editor`]. The buffer is cleared once the
+    /// commands have been forwarded.
+    fn dispatch_pending_commands(&mut self) {
+        let mut pending = std::mem::take(&mut *self.world.resource_mut::<PendingCommands>());
+        for cmd in pending.app_commands.drain(..) {
+            self.dispatch(cmd);
+        }
+        for cmd in pending.editor_commands.drain(..) {
+            self.dispatch_editor(cmd);
+        }
     }
 
     /// Resizes the rendering surface to the new dimensions.
