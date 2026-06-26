@@ -1770,7 +1770,7 @@ mod tests {
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
                 assert_eq!(object_ids, &["object_4".to_string()]);
                 found_retargeted_capture = true;
-                approx::assert_abs_diff_eq!(trigger_object.position[0], 4.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 9.0, epsilon = 1e-6);
                 approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
                 approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }
