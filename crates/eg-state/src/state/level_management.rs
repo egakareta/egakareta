@@ -1348,7 +1348,7 @@ mod tests {
             .state
             .editor
             .local_audio_cache
-            .remove("unit-test-audio.mp3");
+            .remove("audio.mp3");
 
         state
             .import_level_egz(&exported)
@@ -1367,7 +1367,7 @@ mod tests {
                 .state
                 .editor
                 .local_audio_cache
-                .contains_key("unit-test-audio.mp3")
+                .contains_key("audio.mp3")
         );
     }
 
