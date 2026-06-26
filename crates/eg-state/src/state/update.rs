@@ -9,14 +9,15 @@ use glam::{Mat4, Vec3};
 
 use super::State;
 use super::runtime::BlockVisualEffect;
-use eg_blocks::BlockDefinition;
 use eg_blocks::BlockEffectColorMode;
+use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_game::{
     TimelineSimulationRuntime, advance_simulation_time, trigger_transformed_objects_at_time,
 };
 use eg_mesh::{
-    BlockEffectInstance, build_block_effect_vertices, build_block_instance_batches_at_time,
-    build_trail_vertices, build_trail_vertices_with_alpha,
+    BlockEffectInstance, build_block_effect_vertices,
+    build_block_instance_batches_from_refs_at_time, build_trail_vertices,
+    build_trail_vertices_with_alpha,
 };
 use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject};
 
@@ -32,6 +33,10 @@ const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/metronome_minor.mp3"
 ));
+
+fn is_play_world_render_object(object: &LevelObject) -> bool {
+    BlockDefinition::get(&object.block_id).render.profile != BlockRenderProfile::CameraTrigger
+}
 
 impl State {
     fn play_death_sfx_once(&mut self) {
@@ -849,9 +854,13 @@ impl State {
             || self.editor.has_camera_timeline_triggers()
         {
             puffin::profile_scope!("PlayingAnimatedBlockMesh");
-            let animated_batches = build_block_instance_batches_at_time(
-                render_objects,
-                self.gameplay.state.elapsed_seconds,
+            let render_object_refs = render_objects
+                .iter()
+                .filter(|object| is_play_world_render_object(object))
+                .collect::<Vec<_>>();
+            let animated_batches = build_block_instance_batches_from_refs_at_time(
+                &render_object_refs,
+                Some(self.gameplay.state.elapsed_seconds),
             );
             self.render.meshes.blocks_instanced.replace_with_batches(
                 &self.render.gpu.device,
@@ -1053,8 +1062,8 @@ mod tests {
     use super::State;
     use eg_game::{GameState, TimelineSimulationRuntime};
     use eg_types::{
-        AppPhase, Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
-        TimedTrigger, TimingPoint, TriggerTarget,
+        AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, Direction, EasingDirection, EditorMode,
+        LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TimingPoint, TriggerTarget,
     };
 
     fn sample_object() -> LevelObject {
@@ -1078,6 +1087,18 @@ mod tests {
                 camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        }
+    }
+
+    fn camera_trigger() -> LevelObject {
+        LevelObject {
+            id: "camera_trigger".to_string(),
+            trigger: Some(TimedTrigger {
+                target: TriggerTarget::Camera,
+                camera: Some(CameraTrigger::default()),
+                ..TimedTrigger::default()
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
     }
 
@@ -1203,6 +1224,28 @@ mod tests {
 
         assert!(state.render.meshes.blocks_chunked.is_empty());
         assert!(!state.render.meshes.blocks_instanced.is_empty());
+    }
+
+    #[tokio::test]
+    async fn update_playing_state_hides_camera_triggers_from_trigger_render_mesh() {
+        let mut state = State::new_test().await;
+
+        state.phase = AppPhase::Playing;
+        state.gameplay.state.started = true;
+        state.gameplay.state.objects = vec![sample_object(), camera_trigger()];
+        state.gameplay.state.rebuild_behavior_cache();
+        state.editor.objects.push(instant_move_trigger());
+
+        state.update();
+
+        assert!(state.gameplay.state.objects.iter().any(|object| {
+            object
+                .trigger
+                .as_ref()
+                .is_some_and(|trigger| trigger.camera.is_some())
+        }));
+        assert!(!state.render.meshes.blocks_instanced.is_empty());
+        assert!(state.render.meshes.blocks.draw_data().is_none());
     }
 
     #[tokio::test]
