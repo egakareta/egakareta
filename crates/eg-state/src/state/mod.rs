@@ -23,9 +23,12 @@ mod history;
 mod level_management;
 mod lifecycle;
 mod perf;
+mod plugins;
 mod render;
 mod runtime;
+mod sets;
 mod state_helpers;
+mod state_resources;
 mod update;
 mod view_model;
 
@@ -54,8 +57,17 @@ pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
 pub use history::EditorHistoryState;
 pub use perf::PerfState;
+pub use plugins::{
+    EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins, setup_state_app,
+};
 pub use render::RenderSubsystem;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
+pub use sets::StateSet;
+pub use state_resources::{
+    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, MenuStateRes, PerfRes,
+    SessionStateRes,
+};
 pub use view_model::UiViewModel;
 
 use crate::state::editor_command::EditorCommand;
