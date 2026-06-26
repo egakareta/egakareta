@@ -103,6 +103,10 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - For serialization, heavily utilize `serde`. Use the `serde_default!` macro family in `src/types.rs` to define defaults (see "Adding a New Serde Field" below).
 - Use arrays like `[f32; 3]` for positions/colors when serializing to JSON, rather than glam types directly.
 
+### Refactor Points (full-Bevy migration)
+
+We are mid-migration from a hand-rolled state machine to a `bevy_ecs` + `bevy_app` core (custom wgpu/egui/rodio/cpal stack kept for now). A future revision will move to the full Bevy umbrella (`bevy_render`, `bevy_winit`, `bevy_egui`, `bevy_tasks`, `bevy_time` `Time<Fixed>`, etc.). Every site that will eventually be replaced by a full-Bevy feature **MUST** be tagged with a `// REFACTOR POINT(full-bevy): <one-line summary>` doc comment and have a matching entry in [docs/bevy-migration.md](docs/bevy-migration.md). The comment is the canonical pointer; the doc is the registry. When the swap happens, both the comment and the doc entry are removed together.
+
 ### Block Asset Authoring
 
 Built-in block definitions live in `assets/blocks/*.json`. Prefer JSON `geometry.elements` for cuboid or voxel-style shapes. Each cuboid uses 0..16 block-local coordinates:

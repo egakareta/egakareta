@@ -11,6 +11,10 @@ license = "AGPL-3.0-only"
 test-support = []
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_tasks = { workspace = true }
+bevy_time = { workspace = true }
 eg-audio = { workspace = true }
 eg-block-geometry = { workspace = true }
 eg-blocks = { workspace = true }
