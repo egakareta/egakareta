@@ -192,6 +192,15 @@ pub fn register_state_resources(world: &mut World) {
 /// `state::render::plugin` that drains the per-frame mirror closure
 /// installed by `State::tick_state` into the POD render resources.
 ///
+/// Phase 6a: the schedule also contains the
+/// `poll_channels_system` from `state::async_bridge` that drains
+/// the five legacy `mpsc` receivers (auth, audio import,
+/// waveform, audio preload, level import) and emits the
+/// corresponding async-result events into the World. The channel
+/// wrappers themselves are inserted lazily by
+/// `install_async_bridge_from_state` (when the legacy `State`
+/// fields are wired into the world).
+///
 /// `State` constructs its world via
 /// [`crate::state::lifecycle::build_state_world`] which calls this
 /// helper, so callers don't need to invoke it directly.
@@ -202,13 +211,20 @@ pub fn register_state_command_pipeline(world: &mut World) {
     // bare world (no `App`).
     crate::events::register_command_events_world(world);
 
+    // Phase 6a: register the async-bridge `Messages<T>` resources
+    // (the channel wrappers are inserted lazily by
+    // `install_async_bridge_from_state`).
+    crate::state::async_bridge::register_state_async_bridge_world(world);
+
     // Build the per-frame schedule that drains the per-event
     // message resources into `PendingCommands`, then runs the
-    // Phase 4a render mirror bridge. The schedule is added to the
-    // world's scheduler so `world.run_schedule(...)` (used by
-    // `State::tick_state`) can invoke it.
+    // Phase 4a render mirror bridge and the Phase 6a channel poll
+    // systems. The schedule is added to the world's scheduler so
+    // `world.run_schedule(...)` (used by `State::tick_state`) can
+    // invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     crate::events::add_command_systems(&mut schedule);
     crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
+    crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
     world.add_schedule(schedule);
 }

@@ -491,6 +491,97 @@ async fn tick_state_registers_render_pod_resources_on_construction() {
 }
 
 #[tokio::test]
+async fn tick_state_poll_channels_emits_audio_import_result_event() {
+    use crate::events::async_results::AudioImportResultEvent;
+    use crate::state::async_bridge::AudioImportChannelRes;
+    use bevy_ecs::message::Messages;
+
+    let mut state = State::new_test().await;
+
+    // Create a fresh channel whose receiver sits in the Bevy
+    // world resource (and whose sender we control from the test).
+    // Phase 6a's `poll_channels_system` drains this resource once
+    // per frame and emits the corresponding result event. The
+    // legacy `State::audio.state.editor.audio_import_channel.1`
+    // is left alone (Phase 6b will share the receiver via Arc).
+    let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
+    state
+        .world_mut()
+        .insert_resource(AudioImportChannelRes(std::sync::Mutex::new(rx)));
+
+    // Send an audio-import result. The poll system drains
+    // receivers once per frame; tick_state runs the schedule
+    // which includes the poll system.
+    tx.send(("level1.ogg".to_string(), vec![1, 2, 3, 4]))
+        .unwrap();
+
+    state.tick_state();
+
+    // The event should be in the Messages<AudioImportResultEvent>
+    // buffer. We read it via the resource API.
+    let messages = state.world().resource::<Messages<AudioImportResultEvent>>();
+    let mut reader = messages.get_cursor();
+    let events: Vec<_> = reader.read(messages).collect();
+    assert_eq!(events.len(), 1, "expected one audio import event");
+    assert_eq!(events[0].filename, "level1.ogg");
+    assert_eq!(events[0].bytes, Some(vec![1, 2, 3, 4]));
+}
+
+#[tokio::test]
+async fn tick_state_poll_channels_emits_level_import_result_event() {
+    use crate::events::async_results::LevelImportResultEvent;
+    use crate::state::async_bridge::LevelImportChannelRes;
+    use bevy_ecs::message::Messages;
+
+    let mut state = State::new_test().await;
+
+    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    state
+        .world_mut()
+        .insert_resource(LevelImportChannelRes(std::sync::Mutex::new(rx)));
+
+    tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
+
+    state.tick_state();
+
+    let messages = state.world().resource::<Messages<LevelImportResultEvent>>();
+    let mut cursor = messages.get_cursor();
+    let events: Vec<_> = cursor.read(messages).collect();
+    assert_eq!(events.len(), 1, "expected one level import event");
+    assert_eq!(events[0].bytes, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+}
+
+#[tokio::test]
+async fn tick_state_poll_channels_emits_auth_service_result_event() {
+    use crate::events::async_results::AuthServiceResultEvent;
+    use crate::state::async_bridge::AuthChannelRes;
+    use bevy_ecs::message::Messages;
+
+    let mut state = State::new_test().await;
+
+    let (tx, rx) = std::sync::mpsc::channel::<eg_platform::services::AuthServiceMessage>();
+    state
+        .world_mut()
+        .insert_resource(AuthChannelRes(std::sync::Mutex::new(rx)));
+
+    // We use the simpler SignedOut variant that doesn't require
+    // constructing an AuthSession payload.
+    tx.send(eg_platform::services::AuthServiceMessage::SignedOut(Ok(())))
+        .unwrap();
+
+    state.tick_state();
+
+    let messages = state.world().resource::<Messages<AuthServiceResultEvent>>();
+    let mut cursor = messages.get_cursor();
+    let events: Vec<_> = cursor.read(messages).collect();
+    assert_eq!(events.len(), 1, "expected one auth event");
+    assert!(matches!(
+        events[0].message,
+        eg_platform::services::AuthServiceMessage::SignedOut(_)
+    ));
+}
+
+#[tokio::test]
 async fn tick_state_does_not_insert_heavy_render_resources_yet() {
     use crate::state::render::resources::render_heavy_resources_present;
     use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};

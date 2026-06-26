@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+mod async_bridge;
 mod audio_state;
 mod auth_state;
 mod command_dispatch;
@@ -264,6 +265,19 @@ impl State {
         render::mirror::install_mirror(move |_uniforms, frame_input| {
             frame_input.0 = frame_input_snapshot;
         });
+        // Phase 6a: the async channel wrappers are NOT auto-installed
+        // by `tick_state` today. `mpsc::Receiver<T>` is not `Clone`,
+        // and moving it from the legacy `State` fields into the
+        // World would break the legacy `update_*` methods that also
+        // drain the same channel. Phase 6b (a) moves the legacy
+        // fields to `Arc<Mutex<Receiver<T>>>` shared between the
+        // State and the World, and (b) replaces the legacy drains
+        // with handler systems that consume the result events.
+        // Until then, the new `poll_channels_system` runs once per
+        // frame and emits events for any messages sitting in the
+        // resource's receiver; tests that exercise the bridge
+        // insert the resource manually (see
+        // `tick_state_poll_channels_emits_*` tests in `state::tests`).
         // Phase 3: run the per-message drain schedule. This iterates
         // every `Messages<T>` resource once and stages converted
         // `AppCommand` / `EditorCommand` payloads in

@@ -86,7 +86,8 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 4a** — rendering extraction scaffolding (resources + mirror bridge + `RenderPlugin`).
 - [ ] **Phase 4b–4e** — move `GpuContext` / `SceneMeshes` / `SurfaceHost` into resources; replace `rebuild_*_mesh` with systems; add `present_frame_system`.
 - [ ] **Phase 5** — UI as Bevy systems.
-- [ ] **Phase 6** — platform/audio/auth async bridging.
+- [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
+- [ ] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
 - [ ] **Phase 7** — `App` wiring (winit drives `app.update()`).
 - [ ] **Phase 8** — test harness migration (`TestApp` builder).
 - [ ] **Phase 9** — documentation pass.
@@ -310,3 +311,65 @@ The legacy `State::render` field is still authoritative. Future phases (4b/4c) d
 - `#[derive(Resource)]` works for both `Copy` POD types and the heavy `GpuContext` / `SceneMeshes` wrappers (the heavy types are `Send + Sync` in wgpu 22+, so they are valid `Resource`s).
 - The thread-local mirror slot is `Send`-unsafe by design — the closure must be `Send` only if Bevy moves the schedule to another thread. Today the schedule runs on the main thread; the thread-local is the simplest correct implementation.
 - `ResMut<T>` and `Res<T>` from `bevy_ecs::prelude::*` are the system params; `World::resource_scope` is the test-side helper for borrowing two `ResMut`s simultaneously.
+
+## Phase 6a — async bridging scaffold
+
+The plan calls for wrapping the five `mpsc` channels the legacy `State` struct owns (auth service, audio import, waveform load, audio preload, level import) in Bevy `Resource`s and adding a `PollChannelsSet` system that drains them and emits per-channel result events. Phase 6a is the **non-invasive scaffold** that establishes the boundary without disturbing the legacy `update_*` methods (Phase 6b replaces them with handler systems that consume the events).
+
+### What's in Phase 6a today
+
+- **5 new event types** in `crates/eg-state/src/events/async_results.rs`:
+    - `AuthServiceResultEvent` — `AuthServiceMessage` payload.
+    - `AudioImportResultEvent` — `(filename, Option<Vec<u8>>)` payload.
+    - `WaveformResultEvent` — `(source, level_name, WaveformLoadMessage)` payload. **Not `Clone`** because `WaveformLoadMessage` doesn't implement `Clone`; consumers receive by value.
+    - `AudioPreloadResultEvent` — `(source_key, Option<Vec<u8>>)` payload.
+    - `LevelImportResultEvent` — `Vec<u8>` payload.
+- **5 channel wrapper resources** in `crates/eg-state/src/state/async_bridge.rs`:
+    - `AuthChannelRes(Mutex<Receiver<AuthServiceMessage>>)`
+    - `AudioImportChannelRes(Mutex<Receiver<(String, Vec<u8>)>>)`
+    - `WaveformLoadChannelRes(Mutex<Receiver<WaveformResult>>)`
+    - `AudioPreloadChannelRes(Mutex<Receiver<AudioPreloadResult>>)`
+    - `LevelImportChannelRes(Mutex<Receiver<Vec<u8>>>)`
+      Each wraps the receiver in a `Mutex` so it can sit in a Bevy `Resource` (which requires `Send + Sync + 'static`). The `Mutex` is uncontended in practice — only the `poll_channels_system` ever locks it.
+- **`PollChannelsSet`** system set + **`poll_channels_system`** that drains every receiver once per frame and emits the corresponding result event. The system takes `Option<Res<...>>` for each wrapper so it works whether or not the wrapper is installed.
+- **Schedule wiring**: `register_state_command_pipeline` (in `state::plugins`) chains `add_poll_channels_systems` after `add_command_systems` and `add_mirror_render_systems`. The poll system runs once per frame alongside the Phase 3 message drain systems and the Phase 4a render mirror bridge.
+- **Tests** (3 integration + 8 unit + 5 module = 16 new tests):
+    - `tick_state_poll_channels_emits_audio_import_result_event` — end-to-end: write to a channel, `tick_state`, assert the event is in `Messages<AudioImportResultEvent>`.
+    - `tick_state_poll_channels_emits_level_import_result_event` — same for level import.
+    - `tick_state_poll_channels_emits_auth_service_result_event` — same for auth service.
+    - 7 unit tests in `events::async_results::tests` cover the event constructors + payload preservation.
+    - 5 unit tests in `state::async_bridge::tests` cover `drain_one` (Empty/Disconnected handling), `register_state_async_bridge_world` (resource initialization), and `install_async_bridge_from_state` (idempotency).
+
+### Design notes
+
+- **Why messages and not direct resource writes?** — distinct `Message<T>` types give each handler its own `MessageReader<T>`, so multiple readers of the same channel can be added without cross-reader nondeterminism. Tests can write a synthetic event into the `Messages<...>` buffer and assert the handler behavior without going through the platform layer.
+- **Why a `Mutex<Receiver<T>>` wrapper?** — `mpsc::Receiver<T>` is `Send` but not `Sync` (its `try_recv` API is `&self` but the value can't be shared between two consumers without a lock). Bevy `Resource` requires `Send + Sync + 'static`. The wrapper's `Mutex` is uncontended in practice.
+- **Why is the install not auto-wired?** — `mpsc::Receiver<T>` is not `Clone`. Moving it from the legacy `State` fields into the World would break the legacy `update_*` methods that also drain the same channel. Phase 6b moves the legacy fields to `Arc<Mutex<Receiver<T>>>` shared between the State and the World, then replaces the legacy drains with handler systems. Until then, the new `poll_channels_system` runs once per frame and emits events for any messages sitting in the resource's receiver; tests that exercise the bridge insert the resource manually.
+- **Idempotent install** — `install_async_bridge_from_state` is a no-op for already-installed resources, so calling it from multiple frames is safe.
+
+### What Phase 6b does (next)
+
+- (a) Move the legacy `State::auth.channel.1` / `State::audio.state.editor.audio_import_channel.1` / `State::audio.state.editor.waveform_load_channel.1` / `State::audio.state.runtime_preload.preload_channel.1` / `State::session.editor_level_import_channel.1` fields to `Arc<Mutex<Receiver<T>>>`. Both the State and the World hold an `Arc` clone of the same data; `try_recv` is `&self` so both consumers race for messages.
+- (b) Replace the legacy `update_*` methods with handler systems that consume the result events:
+    - `auth_update_session_system` (consumes `AuthServiceResultEvent`, updates `AuthSubsystem.session` / `pending` / `message`).
+    - `audio_import_update_cache_system` (consumes `AudioImportResultEvent`, calls `EditorAudioCache::insert_level_audio`).
+    - `waveform_update_cache_system` (consumes `WaveformResultEvent`, updates waveform cache entries).
+    - `audio_preload_update_cache_system` (consumes `AudioPreloadResultEvent`, updates `RuntimeAudioPreloadState::preloaded_audio`).
+    - `level_import_decode_system` (consumes `LevelImportResultEvent`, decodes `.egz` / `.egb` / `.json` and loads the level).
+
+### Schedule graph (post Phase 6a)
+
+`Per-frame schedule order (StateSchedule):
+  transitions::phase_transition_system        // AppPhase change detection
+  mirror::install_mirror                      // tick_state installs the closure
+  events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
+  render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
+  render::present_render_frame_placeholder    // no-op in Phase 4a
+  async_bridge::poll_channels_system          // drain 5 receivers -> 5 result events
+  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
+
+### Bevy 0.19 API notes (Phase 6a)
+
+- `#[derive(Message)]` is used for the 5 new event types. `WaveformResultEvent` is intentionally **not** `Clone` because `WaveformLoadMessage` doesn't implement `Clone`. The other 4 events derive `Clone` for ergonomic test usage.
+- `Mutex<T>` is `Send + Sync` when `T: Send`, so the channel wrappers satisfy Bevy's `Resource` bound. The receivers are owned by value (no `Arc`); the wrappers are inserted at most once per world (idempotent install).
+- The `poll_channels_system` takes `Option<Res<...>>` for each wrapper so it works whether or not the wrapper is installed. This is the same pattern Bevy uses for optional system params and avoids the need for separate "registered" / "unregistered" code paths.
