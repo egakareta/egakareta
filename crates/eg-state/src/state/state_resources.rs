@@ -42,32 +42,42 @@ use crate::state::runtime::EditorRuntimeState;
 /// can react to phase changes. The legacy `State::phase` field mirrors
 /// this resource; updates flow both ways during Phase 2.
 ///
+/// `previous_app_phase` is the value the resource held on the previous
+/// frame. The transition system in [`crate::state::transitions`] compares
+/// the current and previous values to detect phase changes and emit
+/// `OnEnter` / `OnExit` side effects. The default value is `Menu` on
+/// both fields so the first frame is a no-op.
+///
 /// REFACTOR POINT(full-bevy): `AppPhase` is already a `Copy + Eq + Hash`
 /// enum, so the full-Bevy migration just adds the `States` derive directly
-/// in `eg-types` and drops this wrapper.
-///
-/// `AppPhase` itself doesn't derive `Default`, so this resource is
-/// constructed explicitly via [`AppPhaseRes::new`].
+/// in `eg-types` and drops this wrapper (and the `previous_app_phase`
+/// bookkeeping).
 #[derive(Resource, Debug, Clone, Copy)]
-pub struct AppPhaseRes(pub AppPhase);
+pub struct AppPhaseRes {
+    pub current: AppPhase,
+    pub previous_app_phase: AppPhase,
+}
 
 impl AppPhaseRes {
     pub const fn new(phase: AppPhase) -> Self {
-        Self(phase)
+        Self {
+            current: phase,
+            previous_app_phase: phase,
+        }
     }
 
     pub const fn get(&self) -> AppPhase {
-        self.0
+        self.current
     }
 
     pub fn set(&mut self, phase: AppPhase) {
-        self.0 = phase;
+        self.current = phase;
     }
 }
 
 impl Default for AppPhaseRes {
     fn default() -> Self {
-        Self(AppPhase::Menu)
+        Self::new(AppPhase::Menu)
     }
 }
 

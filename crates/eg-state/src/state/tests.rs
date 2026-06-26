@@ -288,6 +288,49 @@ async fn tick_state_is_safe_to_call_with_empty_schedule() {
 }
 
 #[tokio::test]
+async fn tick_state_runs_phase_transition_system() {
+    // Phase 2c: `tick_state` now runs the `phase_transition_system`
+    // which detects changes to `AppPhaseRes` and runs `OnEnter` /
+    // `OnExit` side effects. Demonstrate the bookkeeping works:
+    // - the first tick is a no-op (current == previous == Menu)
+    // - after we change the resource, the next tick updates the
+    //   `previous_app_phase` field.
+    let mut state = State::new_test().await;
+
+    // Initial tick: no transition.
+    state.tick_state();
+    assert_eq!(
+        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        eg_types::AppPhase::Menu
+    );
+
+    // Change the phase manually (in later phases this happens via
+    // a `NavigationEvent`; for Phase 2c we set it directly).
+    state
+        .world_mut()
+        .resource_mut::<AppPhaseRes>()
+        .set(eg_types::AppPhase::Playing);
+
+    // Tick: should detect the change and update `previous_app_phase`.
+    state.tick_state();
+    assert_eq!(
+        state.world().resource::<AppPhaseRes>().get(),
+        eg_types::AppPhase::Playing
+    );
+    assert_eq!(
+        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        eg_types::AppPhase::Playing
+    );
+
+    // Subsequent tick with no change: no-op.
+    state.tick_state();
+    assert_eq!(
+        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        eg_types::AppPhase::Playing
+    );
+}
+
+#[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();
     assert!(flags.sync_game_objects);

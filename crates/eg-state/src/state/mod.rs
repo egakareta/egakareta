@@ -29,6 +29,7 @@ mod runtime;
 mod sets;
 mod state_helpers;
 mod state_resources;
+mod transitions;
 mod update;
 mod view_model;
 
@@ -228,16 +229,15 @@ impl State {
         &mut self.world
     }
 
-    /// Run a single tick of the [`StateSchedule`]. No systems are registered
-    /// in Phase 2b; Phase 2c adds phase-transition systems and Phase 3
-    /// adds command-handler systems. The call is a no-op for now but
-    /// exists so the call sites (e.g. the future `FramePipeline::run_frame`)
-    /// can be written once.
+    /// Run a single tick of the [`StateSchedule`]. Currently executes
+    /// the [`transitions::phase_transition_system`] which detects
+    /// `AppPhase` changes and runs `OnEnter` / `OnExit` side effects.
+    /// Phase 3 adds command-handler systems here.
     pub fn tick_state(&mut self) {
         puffin::profile_scope!("StateSchedule");
-        // The schedule is added once during construction and updated
-        // lazily. For Phase 2b there are no systems, so the run is a no-op.
-        // Phase 2c adds phase transitions here.
+        transitions::phase_transition_system(
+            self.world.resource_mut::<state_resources::AppPhaseRes>(),
+        );
     }
 
     /// Resizes the rendering surface to the new dimensions.
