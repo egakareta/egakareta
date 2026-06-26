@@ -215,8 +215,8 @@ impl State {
             .audio
             .state
             .editor
-            .local_audio_cache
-            .get("audio.mp3")
+            .cache
+            .bytes_for_level_audio(&metadata.basic.name)
             .cloned()
             .or_else(|| read_editor_music_bytes("audio.mp3"));
 
@@ -232,8 +232,8 @@ impl State {
             self.audio
                 .state
                 .editor
-                .local_audio_cache
-                .insert("audio.mp3".to_string(), bytes);
+                .cache
+                .insert_level_audio(&metadata.basic.name, bytes);
         }
         self.apply_imported_level_metadata(metadata);
         Ok(())
@@ -255,8 +255,13 @@ impl State {
     }
 
     pub(super) fn current_editor_metadata(&self) -> LevelMetadata {
+        let mut basic = self.session.editor_creator_metadata.clone();
+        if let Some(name) = &self.session.editor_level_name {
+            basic.name = name.clone();
+        }
+
         LevelMetadata::from_editor_state(EditorStateParams {
-            basic: self.session.editor_creator_metadata.clone(),
+            basic,
             music: self.session.editor_music_metadata.clone(),
             spawn: self.editor.spawn.clone(),
             sky_color: self.session.editor_sky_color,
@@ -1334,8 +1339,8 @@ mod tests {
             .audio
             .state
             .editor
-            .local_audio_cache
-            .insert("audio.mp3".to_string(), vec![1, 2, 3, 4, 5, 6]);
+            .cache
+            .insert_level_audio("EgzRoundtrip", vec![1, 2, 3, 4, 5, 6]);
 
         let expected = state.current_editor_metadata();
         let exported = state
@@ -1343,12 +1348,6 @@ mod tests {
             .expect("egz export should succeed when metadata is valid");
 
         state.editor.objects.clear();
-        state
-            .audio
-            .state
-            .editor
-            .local_audio_cache
-            .remove("audio.mp3");
 
         state
             .import_level_egz(&exported)
@@ -1366,8 +1365,9 @@ mod tests {
                 .audio
                 .state
                 .editor
-                .local_audio_cache
-                .contains_key("audio.mp3")
+                .cache
+                .bytes_for_level_audio("EgzRoundtrip")
+                .is_some()
         );
     }
 
@@ -1381,8 +1381,8 @@ mod tests {
             .audio
             .state
             .editor
-            .local_audio_cache
-            .insert("audio.mp3".to_string(), vec![7, 8, 9, 10]);
+            .cache
+            .insert_level_audio("MethodPointer", vec![7, 8, 9, 10]);
 
         let level_export_filename = format!(
             "{}.egz",

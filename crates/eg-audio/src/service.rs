@@ -10,16 +10,136 @@
 //! Provides functionality to asynchronously load audio files, decode them into
 //! waveform data for visualization, and cache the raw bytes for playback.
 
+use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 
 use sha2::{Digest, Sha256};
 
+use crate::audio::runtime_asset_source_key;
 use eg_platform::task::spawn_background;
 
 pub type AudioPreloadResult = (String, Option<Vec<u8>>);
 pub const WAVEFORM_WINDOW: usize = 256;
 const WAVEFORM_CHUNK_PEAKS: usize = 2048;
 const WAVEFORM_CACHE_VERSION: u32 = 1;
+
+#[derive(Clone, Debug)]
+pub struct WaveformCacheEntry {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+    pub window_size: usize,
+    pub complete: bool,
+}
+
+impl Default for WaveformCacheEntry {
+    fn default() -> Self {
+        Self {
+            samples: Vec::new(),
+            sample_rate: 0,
+            window_size: WAVEFORM_WINDOW,
+            complete: false,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct AudioByteCache {
+    bytes_by_source: HashMap<String, Vec<u8>>,
+}
+
+impl AudioByteCache {
+    pub fn insert(&mut self, source_key: String, bytes: Vec<u8>) {
+        self.bytes_by_source.insert(source_key, bytes);
+    }
+
+    pub fn get(&self, source_key: &str) -> Option<&Vec<u8>> {
+        self.bytes_by_source.get(source_key)
+    }
+
+    pub fn contains_key(&self, source_key: &str) -> bool {
+        self.bytes_by_source.contains_key(source_key)
+    }
+
+    pub fn remove(&mut self, source_key: &str) -> Option<Vec<u8>> {
+        self.bytes_by_source.remove(source_key)
+    }
+}
+
+#[derive(Default)]
+pub struct EditorAudioCache {
+    source_bytes: AudioByteCache,
+    local_file_bytes: HashMap<String, Vec<u8>>,
+    waveform_entries: HashMap<String, WaveformCacheEntry>,
+    loading_source: Option<String>,
+}
+
+impl EditorAudioCache {
+    pub fn from_local_files(local_file_bytes: HashMap<String, Vec<u8>>) -> Self {
+        Self {
+            local_file_bytes,
+            ..Self::default()
+        }
+    }
+
+    pub fn insert_level_audio(&mut self, level_name: &str, bytes: Vec<u8>) -> String {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
+        self.source_bytes.insert(source_key.clone(), bytes);
+        source_key
+    }
+
+    pub fn insert_source_bytes(&mut self, source_key: String, bytes: Vec<u8>) {
+        self.source_bytes.insert(source_key, bytes);
+    }
+
+    pub fn bytes_for_level_audio(&self, level_name: &str) -> Option<&Vec<u8>> {
+        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
+        self.source_bytes
+            .get(&source_key)
+            .or_else(|| self.local_file_bytes.get("audio.mp3"))
+    }
+
+    pub fn bytes_for_source(&self, source_key: &str) -> Option<&Vec<u8>> {
+        self.source_bytes.get(source_key)
+    }
+
+    pub fn contains_source_bytes(&self, source_key: &str) -> bool {
+        self.source_bytes.contains_key(source_key)
+    }
+
+    pub fn waveform(&self, source_key: &str) -> Option<&WaveformCacheEntry> {
+        self.waveform_entries.get(source_key)
+    }
+
+    pub fn waveform_mut_or_default(&mut self, source_key: String) -> &mut WaveformCacheEntry {
+        self.waveform_entries.entry(source_key).or_default()
+    }
+
+    pub fn insert_waveform(&mut self, source_key: String, entry: WaveformCacheEntry) {
+        self.waveform_entries.insert(source_key, entry);
+    }
+
+    pub fn remove_waveform(&mut self, source_key: &str) {
+        self.waveform_entries.remove(source_key);
+    }
+
+    pub fn contains_waveform(&self, source_key: &str) -> bool {
+        self.waveform_entries.contains_key(source_key)
+    }
+
+    pub fn loading_source(&self) -> Option<&str> {
+        self.loading_source.as_deref()
+    }
+
+    pub fn set_loading_source(&mut self, source_key: Option<String>) {
+        self.loading_source = source_key;
+    }
+
+    pub fn clear_loading_source_if(&mut self, source_key: &str) {
+        if self.loading_source.as_deref() == Some(source_key) {
+            self.loading_source = None;
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum WaveformLoadMessage {

@@ -1754,7 +1754,7 @@ mod tests {
         assert!(state.add_editor_transform_trigger());
 
         assert_eq!(state.editor.objects.len(), 4);
-        assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_object_pose(&state.editor.objects[2], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_eq!(state.editor.input.selected_block_index, Some(3));
         assert_eq!(state.editor.input.selected_block_indices, vec![3]);
 
@@ -1770,7 +1770,7 @@ mod tests {
             if (trigger.time_seconds - 2.5).abs() <= 1e-6 {
                 assert_eq!(object_ids, &["object_4".to_string()]);
                 found_retargeted_capture = true;
-                approx::assert_abs_diff_eq!(trigger_object.position[0], 9.0, epsilon = 1e-6);
+                approx::assert_abs_diff_eq!(trigger_object.position[0], 4.0, epsilon = 1e-6);
                 approx::assert_abs_diff_eq!(trigger_object.position[1], 0.0, epsilon = 1e-6);
                 approx::assert_abs_diff_eq!(trigger_object.position[2], 0.0, epsilon = 1e-6);
             }

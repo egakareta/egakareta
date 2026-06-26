@@ -114,9 +114,11 @@ fn test_egb_roundtrip() {
     let original: serde_json::Value = serde_json::from_str(sample_json).unwrap();
     let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
 
-    assert_eq!(original["name"], decoded["name"]);
+    assert!(decoded.get("name").is_none());
+    assert!(decoded.get("basic").is_none());
     assert_eq!(decoded["format_version"], serde_json::Value::Null);
-    assert_eq!(original["music"]["source"], decoded["music"]["source"]);
+    assert_eq!(original["music"]["title"], decoded["music"]["title"]);
+    assert_eq!(original["music"]["author"], decoded["music"]["author"]);
     assert_eq!(
         original["objects"].as_array().unwrap().len(),
         decoded["objects"].as_array().unwrap().len()
@@ -181,7 +183,9 @@ fn test_egb_encode_stdin() {
     assert!(decode_output.status.success());
     let decoded_json = String::from_utf8_lossy(&decode_output.stdout);
     let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
-    assert_eq!(decoded["name"], "Stdin Test");
+    assert!(decoded.get("name").is_none());
+    assert!(decoded.get("basic").is_none());
+    assert_eq!(decoded["music"]["title"], "Stdin Track");
 }
 
 #[test]
@@ -240,7 +244,9 @@ fn test_egb_short_flags() {
 
     let decoded_json = fs::read_to_string(&output_json_path).unwrap();
     let decoded: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
-    assert_eq!(decoded["name"], "Short Flag Test");
+    assert!(decoded.get("name").is_none());
+    assert!(decoded.get("basic").is_none());
+    assert_eq!(decoded["music"]["title"], "Title");
 }
 
 #[test]

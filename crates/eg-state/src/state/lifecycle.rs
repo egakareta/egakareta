@@ -1707,8 +1707,8 @@ mod tests {
             .audio
             .state
             .editor
-            .local_audio_cache
-            .insert("audio.mp3".to_string(), eg_audio::audio::tiny_wav_bytes());
+            .cache
+            .insert_level_audio("AudioStartTest", eg_audio::audio::tiny_wav_bytes());
         state.editor_playtest();
 
         state.turn_right();

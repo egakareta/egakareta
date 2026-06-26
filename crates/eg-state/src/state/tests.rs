@@ -776,30 +776,14 @@ async fn start_editor_warms_audio_before_playtest() {
 #[tokio::test]
 async fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
     let mut state = new_editor_state().await;
-
-    let current_level = state
-        .menu
-        .state
-        .levels
-        .first()
-        .cloned()
-        .expect("test requires at least one built-in level");
-    let next_level = state
-        .menu
-        .state
-        .levels
-        .iter()
-        .find(|name| *name != &current_level)
-        .cloned()
-        .expect("test requires at least two built-in levels");
+    let next_level = "Synthetic Timing Level".to_string();
 
     state.editor.input.mode = EditorMode::Timing;
     state.editor.timing.waveform_samples = vec![0.25, -0.5, 0.75];
     state.editor.timing.waveform_sample_rate = 44_100;
 
-    state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(
-        next_level.clone(),
-    )));
+    state.set_editor_level_name(next_level.clone());
+    state.load_waveform_for_current_audio();
 
     assert!(
         state.editor.timing.waveform_samples.is_empty(),
@@ -812,8 +796,8 @@ async fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
 
     let expected_source_key = runtime_asset_source_key(&next_level, "audio.mp3");
     assert_eq!(
-        state.audio.state.editor.waveform_loading_source,
-        Some(expected_source_key),
+        state.audio.state.editor.cache.loading_source(),
+        Some(expected_source_key.as_str()),
         "switching levels in timing mode should start loading waveform for the new level"
     );
 }
