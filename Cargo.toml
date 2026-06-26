@@ -31,8 +31,8 @@ sha2 = "0.11"
 zstd = "0.13"
 include_dir = "0.7"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
-egui = "0.34.3"
-egui-wgpu = "0.34.3"
+egui = "0.35.0"
+egui-wgpu = "0.35.0"
 egui-phosphor = "0.12.0"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
@@ -44,7 +44,7 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 async-trait = "0.1"
 winit = "0.30"
-cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
+cpal = { version = "0.18", features = ["wasm-bindgen", "audioworklet"] }
 rodio = { version = "0.22", default-features = false, features = [
     "mp3",
     "playback",
@@ -64,7 +64,7 @@ paste = "1.0.15"
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 arboard = "3.6"
 directories = "6.0"
-egui-winit = "0.34.3"
+egui-winit = "0.35.0"
 env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
@@ -75,7 +75,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
-egui-winit = { version = "0.34.2", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
+egui-winit = { version = "0.35.0", default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
 gloo-net = "0.7"
 gloo-console = "0.4"
 gloo-file = "0.4"
@@ -133,7 +133,7 @@ winres = "0.1"
 zstd = "0.13"
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 naga = { version = "29", features = ["wgsl-in"] }
 tempfile = "3"
 
