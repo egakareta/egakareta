@@ -12,8 +12,8 @@ use bevy_ecs::world::World;
 use eg_state::events::PendingCommands;
 use eg_state::state::State;
 use eg_state::state::enqueue_platform_input;
-use eg_state::state::register_state_app_update_driver;
 use eg_state::state::register_state_command_pipeline;
+use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
 use eg_ui::{
     drain_ui_command_queue, enqueue_ui_commands, register_ui_resources_world, sync_egui_context,
@@ -97,7 +97,6 @@ impl Runtime {
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
         register_ui_resources_world(app.world_mut());
-        register_state_app_update_driver(&mut app);
 
         Self {
             state,
@@ -120,6 +119,7 @@ impl Runtime {
             enqueue_ui_commands(app.world_mut(), ui_commands);
             drain_ui_command_queue(app.world_mut());
             app.update();
+            run_state_schedule_in_world(app.world_mut());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.tick_state();
         })
@@ -348,8 +348,8 @@ mod tests {
     }
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,
-    /// which in turn runs the eg-state `StateSchedule` on the App's
-    /// World.
+    /// then explicitly runs the eg-state `StateSchedule` on the App's
+    /// World before draining pending commands.
     #[tokio::test]
     async fn runtime_run_app_frame_updates_app_state_schedule() {
         let state = State::new_test().await;
@@ -366,6 +366,27 @@ mod tests {
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
         assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
+    }
+
+    /// Plain `app.update()` no longer drives the mirror `StateSchedule`.
+    /// Runtime owns that order so command draining stays visible in one
+    /// frame-driver method.
+    #[tokio::test]
+    async fn runtime_app_update_does_not_run_state_schedule_directly() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(eg_types::AppPhase::Playing);
+
+        runtime.app.update();
+
+        let app_phase = runtime.app.world().resource::<AppPhaseRes>();
+        assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
+        assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Menu);
     }
 
     /// `Runtime::run_app_frame` drains App-world messages and applies

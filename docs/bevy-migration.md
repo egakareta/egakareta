@@ -124,7 +124,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
-- [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` now install default App resources directly, including `eg_game::GamePlugin`; the legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
+- [ ] **Phase 7** — in progress. `Runtime` owns a `bevy_app::App`; `Runtime::run_app_frame(raw_input)` drives `app.update()`, then explicitly runs the App-world `StateSchedule` before draining App-world `PendingCommands` into legacy `State`. `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` install default App resources directly, including `eg_game::GamePlugin`; the legacy `State` world, Runtime command bridge, `UiViewModel`, and render pipeline remain as compatibility bridges until the single-world deletion pass.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 
@@ -571,7 +571,6 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     setup_state_app(&mut app);
     register_state_command_pipeline(app.world_mut());
     register_ui_resources_world(app.world_mut());
-    register_state_app_update_driver(&mut app);
     ```
 
     Both helpers are already public from Phases 2 and 3. The App's `World` now has:
@@ -580,7 +579,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`) + the `Messages<RebuildMeshEvent>` buffer.
     - The UI bridge resources (`EguiContextRes`, `UiCommandQueue`) registered by `eg-ui`.
     - The `StateSchedule` registered by `register_state_command_pipeline`.
-    - A Bevy `Update` system (`run_state_schedule_from_app_system`) that calls `phase_transition_system` and then `world.try_run_schedule(StateSchedule)`.
+    - A Runtime-owned frame helper (`run_state_schedule_in_world`) that calls `phase_transition_system` and then `world.try_run_schedule(StateSchedule)` after `app.update()`.
 
     - **`Runtime::process_input_event(event)`** — queues platform input into App-world `PlatformInputQueue`, then forwards the same event to the legacy `State::process_input_event` path during the compatibility window. Production winit/touch/resize/key/mouse callers now use this Runtime method instead of calling `runtime.state.process_input_event(...)` directly.
 
@@ -592,7 +591,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
 - **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` now adds `eg_game::GamePlugin`, so the App world owns `GameClock` and `GameplaySchedule`. The bare-`World` `register_state_resources` helper remains only for legacy `State::world` construction and focused tests.
 
-- **Re-export** of `register_state_command_pipeline` and `register_state_app_update_driver` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
+- **Re-export** of `register_state_command_pipeline` and `run_state_schedule_in_world` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
 
 - **`bevy_ecs` added to `eg-app/Cargo.toml`** — the runtime tests inspect the App's `World` via `World::contains_resource`, `World::resource`, and `World::try_run_schedule`. Those methods need the `World` type in scope.
 
@@ -602,7 +601,8 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_run_app_frame_returns_output` — `run_app_frame` produces normal egui output.
     - `runtime_run_app_frame_syncs_egui_context_to_app_world` — `run_app_frame` mirrors the live egui context into App-world `EguiContextRes`.
     - `runtime_process_input_event_queues_app_world_input` — platform input enters App-world `PlatformInputQueue` before the legacy `State::process_input_event` compatibility path consumes it.
-    - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, which runs the App-world phase transition + `StateSchedule`.
+    - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, then explicitly runs the App-world phase transition + `StateSchedule`.
+    - `runtime_app_update_does_not_run_state_schedule_directly` — plain `app.update()` no longer advances the mirror `StateSchedule`; Runtime owns that order.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
     - `runtime_app_world_is_separate_from_state_world` — App setup does not mutate legacy `State` until `Runtime` explicitly applies queued commands.
 
@@ -610,7 +610,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
 ### Schedule graph (post Phase 7)
 
-The production redraw path now writes UI commands into the App world from `Runtime`, runs the App-world `Update` schedule, applies App-world `PendingCommands` to legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first and the render pipeline no longer owns the App bridge.
+The production redraw path now writes UI commands into the App world from `Runtime`, runs the App `Update` schedule, explicitly runs the App-world `StateSchedule`, applies App-world `PendingCommands` to legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first and the render pipeline no longer owns the App bridge.
 
 Production platform input is also App-world first: winit/touch/resize/key/mouse events call `Runtime::process_input_event`, which writes to `PlatformInputQueue(App::world)` before forwarding to legacy `State::process_input_event`.
 
@@ -624,9 +624,9 @@ RedrawRequested:
       enqueue_ui_commands(App::world, frame_ui_commands)
       drain_ui_command_queue(App::world) -> Messages<T>
       app.update()
-        Update::run_state_schedule_from_app_system
-          transitions::phase_transition_system
-          app.world.try_run_schedule(StateSchedule)
+      run_state_schedule_in_world(App::world)
+        transitions::phase_transition_system
+        app.world.try_run_schedule(StateSchedule)
       Runtime::dispatch_app_pending_commands(App::world, State)
       State::tick_state()
       State::update()

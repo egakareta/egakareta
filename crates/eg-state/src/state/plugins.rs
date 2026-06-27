@@ -144,20 +144,15 @@ pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
 }
 
-/// Drive the eg-state schedule from Bevy's default `Update` schedule.
+/// Drive the eg-state schedule on a World.
 ///
 /// Phase 7 keeps the legacy `State` object as the compatibility owner for
-/// rendering and input, but the `App` now has an observable frame driver: each
-/// `app.update()` runs the same phase-transition prelude + `StateSchedule`
-/// that `State::tick_state()` runs on the legacy world.
-pub fn run_state_schedule_from_app_system(world: &mut World) {
+/// rendering and input, but Runtime now controls the frame order explicitly:
+/// `app.update()` runs App systems, then Runtime invokes this helper before
+/// draining App-world `PendingCommands` into the legacy State.
+pub fn run_state_schedule_in_world(world: &mut World) {
     transitions::phase_transition_system(world.resource_mut::<AppPhaseRes>());
     let _ = world.try_run_schedule(StateSchedule);
-}
-
-/// Register the Phase 7 App-frame driver.
-pub fn register_state_app_update_driver(app: &mut App) {
-    app.add_systems(bevy_app::Update, run_state_schedule_from_app_system);
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
