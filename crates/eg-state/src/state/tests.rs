@@ -658,6 +658,89 @@ async fn tick_state_mirrors_render_uniforms() {
     assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
 }
 
+/// Phase 4b-2: the Editor non-playtest path in
+/// `State::compute_render_uniforms_snapshot` builds the camera pose
+/// from `editor_pan` + `editor_target_z` + `editor_camera_offset()`.
+/// The mirror must propagate the same math into
+/// `RenderUniformsRes`. This test pins the Editor path the same way
+/// `tick_state_mirrors_render_uniforms` pins the Menu path.
+#[tokio::test]
+async fn tick_state_mirrors_render_uniforms_in_editor() {
+    use crate::state::render::resources::RenderUniformsRes;
+    use approx::assert_abs_diff_eq;
+
+    let mut state = State::new_test().await;
+    state.enter_editor_phase("Mirror Test".to_string());
+
+    // Set non-default pan + target so we exercise the actual
+    // pan-driven math (the default pan is `[0, 0]` which trivially
+    // matches anything).
+    state.editor.camera.editor_pan = [4.0, 8.0];
+    state.editor.camera.editor_target_z = 6.0;
+
+    // Recompute the expected eye = target + editor_camera_offset().
+    // We call the same helper that `compute_render_uniforms_snapshot`
+    // calls so the assertion stays in lockstep with the production
+    // code (no duplicated math in the test).
+    let target = glam::Vec3::new(
+        state.editor.camera.editor_pan[0],
+        state.editor.camera.editor_target_z,
+        state.editor.camera.editor_pan[1],
+    );
+    let expected_eye = target + state.editor_camera_offset();
+    let expected_viewport = [
+        state.render.gpu.config.width.max(1) as f32,
+        state.render.gpu.config.height.max(1) as f32,
+    ];
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+
+    // camera_position stores [x, y, z, 0.0].
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[0],
+        expected_eye.x,
+        epsilon = 1e-6
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[1],
+        expected_eye.y,
+        epsilon = 1e-6
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[2],
+        expected_eye.z,
+        epsilon = 1e-6
+    );
+    assert_eq!(uniforms.camera.camera_position[3], 0.0);
+
+    // view_proj must be non-identity (the eye != target), and must
+    // match the per-axis magnitude of what the production code
+    // computes for the same pan.
+    let view = glam::Mat4::look_at_rh(expected_eye, target, glam::Vec3::Y);
+    let aspect = state.render.gpu.config.width as f32 / state.render.gpu.config.height as f32;
+    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+    let expected_view_proj = proj * view;
+    let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
+    for col in 0..4 {
+        for row in 0..4 {
+            assert_abs_diff_eq!(
+                actual_view_proj.col(col)[row],
+                expected_view_proj.col(col)[row],
+                epsilon = 1e-5
+            );
+        }
+    }
+
+    // The line uniform is *not* driven by the Editor phase; it
+    // reflects the global `frame_runtime.player_render.line_uniform`
+    // (i.e. the default unless the playtest path has run). We only
+    // assert the viewport to keep the test focused on the camera
+    // mirror.
+    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
+}
+
 #[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();

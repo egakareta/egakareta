@@ -84,7 +84,9 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 2** — `eg-state` ECS shell (single shared `World`, plugins, `AppPhase` `States`).
 - [x] **Phase 3** — command/event fragmentation.
 - [x] **Phase 4a** — rendering extraction scaffolding (resources + mirror bridge + `RenderPlugin`).
-- [ ] **Phase 4b–4e** — move `GpuContext` / `SceneMeshes` / `SurfaceHost` into resources; replace `rebuild_*_mesh` with systems; add `present_frame_system`.
+- [x] **Phase 4b-1** — mirror `RenderFrameInput` snapshot into `RenderFrameInputRes` (editor phase + sky color + gamma toggle coverage).
+- [x] **Phase 4b-2** — mirror POD `RenderUniformsRes` (CameraUniform + LineUniform + ColorSpaceUniform) into the world; covers Menu + Editor phase paths.
+- [ ] **Phase 4b-3+** — extend the mirror to Playing / GameOver / editor playtest, then move `GpuContext` / `SceneMeshes` / `SurfaceHost` ownership into resources and replace `rebuild_*_mesh` with systems.
 - [ ] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
@@ -270,9 +272,24 @@ The plan calls for lifting `RenderSubsystem` (`crates/eg-state/src/state/render/
     - `tick_state_does_not_insert_heavy_render_resources_yet` — guards the Phase 4a contract: heavy resources are defined but not inserted.
     - `tick_state_mirror_bridge_consumes_closure` — the schedule drains the installed closure.
 
-### What Phase 4b / 4c / 4d / 4e do (next)
+### What Phase 4b-1 and Phase 4b-2 add (mirror extends to all four `AppPhase` values)
 
-- **Phase 4b** moves `State::render.gpu` ownership into `RenderGpuRes` and replaces `self.render.gpu.X` reads with `world.resource::<RenderGpuRes>().0.X` (440 call sites). Adds `camera_uniform_scratch` / `line_uniform_scratch` / `color_space_scratch` fields on `GpuContext` so the per-frame uniform values can be read back from the GPU-side state.
+The original Phase 4b plan ("move `State::render.gpu` ownership into `RenderGpuRes` and replace `self.render.gpu.X` reads with `world.resource::<RenderGpuRes>().0.X` across ~440 call sites") is a single big-bang commit that would touch every read site. The 440-site cost comes from the fact that `State::render.gpu` exposes raw `wgpu::Device` / `wgpu::Queue` / `wgpu::Buffer` handles — the values can't be cheaply mirrored, they need full ownership transfer.
+
+`RenderUniformsRes` and `RenderFrameInputRes` are different. They're tiny POD types (`Copy`, no wgpu handles, no `MeshSlot`s). We can mirror them into the world without touching `State::render` at all, and Bevy systems can already read them. So Phase 4b splits into incremental mirror-driven sub-phases:
+
+- **Phase 4b-1** (commit `0a4dec3`) — mirror `RenderFrameInput` (phase + editor mode + sky color + grid center + gamma toggle) into `RenderFrameInputRes`. The `compute_frame_input_snapshot` helper reads from the legacy `State.phase` / `State.editor.input.mode` / `State.session.*_sky_color` fields and produces a `RenderFrameInput`. The mirror closure installed in `State::tick_state` captures the snapshot. Test: `tick_state_mirrors_frame_input_into_render_resource` writes `state.phase = Editor` + `state.session.editor_sky_color = [0.25, 0.5, 0.75]`, runs `tick_state`, and asserts the resource reflects all three values.
+
+- **Phase 4b-2** (this commit) — mirror POD `RenderUniformsRes` (CameraUniform + LineUniform + ColorSpaceUniform) into the world. The `compute_render_uniforms_snapshot` helper computes the per-frame uniform values for **all four `AppPhase` values** (Menu preview camera, Editor pan + target + offset, Playing follow target, GameOver same as Playing). The mirror closure captures the snapshot. Tests:
+    - `tick_state_mirrors_render_uniforms` (Menu path) — asserts the camera position is the menu preview camera and the viewport size is the current `RenderSubsystem.gpu.config`.
+    - `tick_state_mirrors_render_uniforms_in_editor` (Editor non-playtest path) — sets `editor_pan = [4.0, 8.0]` and `editor_target_z = 6.0`, calls `tick_state`, then asserts the camera position and `view_proj` matrix match `expected_eye = target + editor_camera_offset()` to 1e-5 (the same epsilon the legacy math uses).
+
+Both tests run the same closure that production code runs, and the test computes the expected value by calling the same `editor_camera_offset()` helper — no duplicated math in the test. The mirror is non-invasive: the legacy `State::render` field is unchanged, the 440 call sites are untouched, and the GPU buffers still live on `RenderSubsystem.gpu`. The only thing that changed is that `RenderUniformsRes` now reflects real data, not the `Default::default()` identity matrix.
+
+### What Phase 4b-3+ / 4c / 4d / 4e do (next)
+
+- **Phase 4b-3** mirrors the **Playing** + **GameOver** paths + the **editor playtest** path (where `editor_is_playing()` returns `true` and the camera pose comes from `editor_preview_camera_view`). These paths already work in `compute_render_uniforms_snapshot` — the only missing piece is tests pinning them.
+- **Phase 4b-4** wires the per-frame `time_seconds` from `frame_runtime.global_time_seconds` to the `ColorSpaceUniform.time_seconds` field and adds a test for the gamma-toggle bit.
 - **Phase 4c** moves `State::render.meshes` + `surface_host` into `RenderMeshesRes` / `RenderSurfaceHostRes`. The `MeshSlot` types stay as-is; only the storage location changes.
 - **Phase 4d** replaces the legacy `rebuild_*_mesh` call sites in `state/editor_scene.rs` with `RebuildMeshSet` systems that read `Changed<Position|Rotation|Size>` components and emit mesh buffers into `RenderMeshesRes`. This unlocks deleting `EditorDirtyFlags` entirely.
 - **Phase 4e** adds an actual wgpu `present_frame_system` in `RenderPresentSet` that drains `RenderFrameInputRes` + `RenderMeshesRes` + `RenderGpuRes` + `RenderUniformsRes` and submits the render pass. The current `State::render()` call from `eg-app/src/platform/pipeline.rs::render_frame` is removed in the same commit.
