@@ -319,9 +319,9 @@ fn build_state_world(
 ) -> bevy_ecs::world::World {
     let mut world = bevy_ecs::world::World::new();
     super::plugins::register_state_resources(&mut world);
-    world.insert_resource(crate::state::render::resources::RenderGpuRes(gpu));
-    world.insert_resource(crate::state::render::resources::RenderMeshesRes(meshes));
-    world.insert_resource(crate::state::render::resources::RenderSurfaceHostRes(
+    world.insert_non_send(crate::state::render::resources::RenderGpuRes(gpu));
+    world.insert_non_send(crate::state::render::resources::RenderMeshesRes(meshes));
+    world.insert_non_send(crate::state::render::resources::RenderSurfaceHostRes(
         surface_host,
     ));
     // Phase 3: register the per-event message resources + the schedule

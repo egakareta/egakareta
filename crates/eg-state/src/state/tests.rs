@@ -580,18 +580,18 @@ async fn tick_state_inserts_heavy_render_resources_phase4c() {
     let state = State::new_test().await;
     let world = state.world();
 
-    assert!(world.contains_resource::<RenderGpuRes>());
-    assert!(world.contains_resource::<RenderMeshesRes>());
-    assert!(world.contains_resource::<RenderSurfaceHostRes>());
+    assert!(world.contains_non_send::<RenderGpuRes>());
+    assert!(world.contains_non_send::<RenderMeshesRes>());
+    assert!(world.contains_non_send::<RenderSurfaceHostRes>());
 
     // Test states have no platform host, so the authoritative
     // `RenderSurfaceHostRes` is `None`.
-    let surface = world.resource::<RenderSurfaceHostRes>();
+    let surface = world.non_send::<RenderSurfaceHostRes>();
     assert!(surface.0.is_none());
 
     // Test construction seeds the real scene mesh storage: static
     // slots start empty, while the trail keeps its streaming buffer.
-    let meshes = world.resource::<RenderMeshesRes>();
+    let meshes = world.non_send::<RenderMeshesRes>();
     assert!(matches!(meshes.0.floor, eg_render::MeshSlot::Empty));
     assert!(matches!(
         meshes.0.trail,

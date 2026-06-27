@@ -20,9 +20,10 @@
 //! ## Why split POD vs heavy?
 //!
 //! - `wgpu::Device`, `wgpu::Queue`, `wgpu::Buffer`, `wgpu::Surface`,
-//!   `wgpu::BindGroup` and friends are all `Send + Sync` and can be
-//!   stored in Bevy `Resource`s directly. Phase 4 moved these heavy
-//!   values behind `State` accessors backed by World resources.
+//!   `wgpu::BindGroup` and friends are render-thread-owned handles.
+//!   Some of their web backends contain non-`Send` DOM values, so Phase
+//!   4 stores these heavy values as Bevy non-send resources behind
+//!   `State` accessors.
 //! - Mirroring just the POD types first establishes the resource
 //!   boundary, the system-set graph, and the extraction system
 //!   contract. Subsequent phases replace the POD mirror with direct
@@ -45,7 +46,6 @@ use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
 /// Inserted by `State` construction with the authoritative wgpu
 /// context. Bare test worlds that do not initialize wgpu may omit it.
 #[allow(dead_code)]
-#[derive(Resource)]
 pub struct RenderGpuRes(pub eg_render::GpuContext);
 
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
@@ -54,7 +54,7 @@ pub struct RenderGpuRes(pub eg_render::GpuContext);
 /// resource so scene mesh storage is now held by the Bevy world while
 /// legacy callers go through `State::render_meshes()`.
 #[allow(dead_code)]
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct RenderMeshesRes(pub SceneMeshes);
 
 /// Wrapper resource for the optional platform [`SurfaceHost`].
@@ -63,7 +63,7 @@ pub struct RenderMeshesRes(pub SceneMeshes);
 /// this resource so surface ownership is now held by the Bevy world
 /// while legacy callers go through `State::surface_host()`.
 #[allow(dead_code)]
-#[derive(Resource, Default)]
+#[derive(Default)]
 pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 
 /// Bundle of the three `Copy` uniforms that drive the per-frame
@@ -204,9 +204,9 @@ pub fn render_pod_resources_present(world: &World) -> bool {
 /// bare test worlds may omit `RenderGpuRes` because it has no default.
 #[allow(dead_code)]
 pub fn render_heavy_resources_present(world: &World) -> bool {
-    world.contains_resource::<RenderGpuRes>()
-        && world.contains_resource::<RenderMeshesRes>()
-        && world.contains_resource::<RenderSurfaceHostRes>()
+    world.contains_non_send::<RenderGpuRes>()
+        && world.contains_non_send::<RenderMeshesRes>()
+        && world.contains_non_send::<RenderSurfaceHostRes>()
 }
 
 /// Returns `true` if the world has every Phase 4c heavy resource.
@@ -214,8 +214,8 @@ pub fn render_heavy_resources_present(world: &World) -> bool {
 /// inserted with authoritative construction values.
 #[allow(dead_code)]
 pub fn render_phase4c_resources_present(world: &World) -> bool {
-    world.contains_resource::<RenderMeshesRes>()
-        && world.contains_resource::<RenderSurfaceHostRes>()
+    world.contains_non_send::<RenderMeshesRes>()
+        && world.contains_non_send::<RenderSurfaceHostRes>()
 }
 
 /// Render POD mirror helper.

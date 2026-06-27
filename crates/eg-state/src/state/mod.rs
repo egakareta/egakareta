@@ -223,14 +223,14 @@ impl State {
 
     /// Returns the GPU render context for render-owned helpers.
     pub fn render_gpu(&self) -> &eg_render::GpuContext {
-        &self.world.resource::<render::resources::RenderGpuRes>().0
+        &self.world.non_send::<render::resources::RenderGpuRes>().0
     }
 
     /// Returns mutable GPU render context for render-owned helpers.
     pub fn render_gpu_mut(&mut self) -> &mut eg_render::GpuContext {
         let gpu = self
             .world
-            .resource_mut::<render::resources::RenderGpuRes>()
+            .non_send_mut::<render::resources::RenderGpuRes>()
             .into_inner();
         &mut gpu.0
     }
@@ -239,7 +239,7 @@ impl State {
     pub fn render_meshes(&self) -> &eg_render::SceneMeshes {
         &self
             .world
-            .resource::<render::resources::RenderMeshesRes>()
+            .non_send::<render::resources::RenderMeshesRes>()
             .0
     }
 
@@ -247,7 +247,7 @@ impl State {
     pub fn render_meshes_mut(&mut self) -> &mut eg_render::SceneMeshes {
         let meshes = self
             .world
-            .resource_mut::<render::resources::RenderMeshesRes>()
+            .non_send_mut::<render::resources::RenderMeshesRes>()
             .into_inner();
         &mut meshes.0
     }
@@ -260,7 +260,7 @@ impl State {
         let device = self.render_gpu().device.clone();
         let meshes = self
             .world
-            .resource_mut::<render::resources::RenderMeshesRes>()
+            .non_send_mut::<render::resources::RenderMeshesRes>()
             .into_inner();
         f(&device, &mut meshes.0)
     }
@@ -273,7 +273,7 @@ impl State {
         let queue = self.render_gpu().queue.clone();
         let meshes = self
             .world
-            .resource_mut::<render::resources::RenderMeshesRes>()
+            .non_send_mut::<render::resources::RenderMeshesRes>()
             .into_inner();
         f(&queue, &mut meshes.0)
     }
@@ -281,7 +281,7 @@ impl State {
     /// Returns the optional platform surface host.
     pub fn surface_host(&self) -> Option<&eg_platform::state_host::SurfaceHost> {
         self.world
-            .resource::<render::resources::RenderSurfaceHostRes>()
+            .non_send::<render::resources::RenderSurfaceHostRes>()
             .0
             .as_ref()
     }

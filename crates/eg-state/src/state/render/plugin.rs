@@ -82,8 +82,8 @@ impl Plugin for RenderPlugin {
         app.init_resource::<RenderUniformsRes>()
             .init_resource::<RenderFrameInputRes>()
             .init_resource::<RenderResizeRequest>()
-            .init_resource::<RenderMeshesRes>()
-            .init_resource::<RenderSurfaceHostRes>()
+            .init_non_send::<RenderMeshesRes>()
+            .init_non_send::<RenderSurfaceHostRes>()
             .add_message::<RebuildMeshEvent>();
     }
 }
@@ -98,8 +98,8 @@ pub fn register_render_pod_resources(world: &mut World) {
     // Phase 4c: insert default heavy resources so standalone worlds
     // can query them. `State` construction overwrites these defaults
     // with the authoritative `SceneMeshes` / `SurfaceHost` values.
-    world.init_resource::<RenderMeshesRes>();
-    world.init_resource::<RenderSurfaceHostRes>();
+    world.init_non_send::<RenderMeshesRes>();
+    world.init_non_send::<RenderSurfaceHostRes>();
     // Phase 4d: register the RebuildMeshEvent message buffer.
     world.init_resource::<Messages<RebuildMeshEvent>>();
 }
@@ -113,9 +113,9 @@ pub fn register_render_pod_resources(world: &mut World) {
 /// present set wired to the final resource boundary without acquiring
 /// the surface twice in the current compatibility path.
 pub fn present_render_frame_system(
-    gpu: Option<Res<RenderGpuRes>>,
-    meshes: Res<RenderMeshesRes>,
-    surface_host: Res<RenderSurfaceHostRes>,
+    gpu: Option<NonSend<RenderGpuRes>>,
+    meshes: NonSend<RenderMeshesRes>,
+    surface_host: NonSend<RenderSurfaceHostRes>,
     uniforms: Res<RenderUniformsRes>,
     frame_input: Res<RenderFrameInputRes>,
 ) {
@@ -248,9 +248,9 @@ mod tests {
     fn register_inserts_phase4c_heavy_resources() {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
-        assert!(world.contains_resource::<RenderMeshesRes>());
-        assert!(world.contains_resource::<RenderSurfaceHostRes>());
-        assert!(!world.contains_resource::<RenderGpuRes>());
+        assert!(world.contains_non_send::<RenderMeshesRes>());
+        assert!(world.contains_non_send::<RenderSurfaceHostRes>());
+        assert!(!world.contains_non_send::<RenderGpuRes>());
     }
 
     /// Bare worlds do not fabricate a GPU resource; `State` construction
