@@ -86,7 +86,11 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 4a** — rendering extraction scaffolding (resources + mirror bridge + `RenderPlugin`).
 - [x] **Phase 4b-1** — mirror `RenderFrameInput` snapshot into `RenderFrameInputRes` (editor phase + sky color + gamma toggle coverage).
 - [x] **Phase 4b-2** — mirror POD `RenderUniformsRes` (CameraUniform + LineUniform + ColorSpaceUniform) into the world; covers Menu + Editor phase paths.
-- [ ] **Phase 4b-3+** — extend the mirror to Playing / GameOver / editor playtest, then move `GpuContext` / `SceneMeshes` / `SurfaceHost` ownership into resources and replace `rebuild_*_mesh` with systems.
+- [x] **Phase 4b-3** — mirror Playing + GameOver + editor-playtest paths (4 new tests pinning `playing_camera_view` + `editor_preview_camera_view` + line uniform per player direction).
+- [x] **Phase 4b-4** — mirror `ColorSpaceUniform.time_seconds` from `frame_runtime.global_time_seconds` + the gamma-toggle bit; 2 new tests covering the bit-as-float conversion.
+- [ ] **Phase 4c** — move `State::render.meshes` + `State::render.surface_host` into `RenderMeshesRes` + `RenderSurfaceHostRes`.
+- [ ] **Phase 4d** — `RebuildMeshSet` systems + `Changed<>` change detection; delete `EditorDirtyFlags`.
+- [ ] **Phase 4e** — `present_frame_system` in `RenderPresentSet`; remove `State::render()` call from `eg-app/src/platform/pipeline.rs`.
 - [ ] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
@@ -286,10 +290,23 @@ The original Phase 4b plan ("move `State::render.gpu` ownership into `RenderGpuR
 
 Both tests run the same closure that production code runs, and the test computes the expected value by calling the same `editor_camera_offset()` helper — no duplicated math in the test. The mirror is non-invasive: the legacy `State::render` field is unchanged, the 440 call sites are untouched, and the GPU buffers still live on `RenderSubsystem.gpu`. The only thing that changed is that `RenderUniformsRes` now reflects real data, not the `Default::default()` identity matrix.
 
-### What Phase 4b-3+ / 4c / 4d / 4e do (next)
+### What Phase 4b-3 and Phase 4b-4 add (mirror covers all four `AppPhase` values + time + gamma)
 
-- **Phase 4b-3** mirrors the **Playing** + **GameOver** paths + the **editor playtest** path (where `editor_is_playing()` returns `true` and the camera pose comes from `editor_preview_camera_view`). These paths already work in `compute_render_uniforms_snapshot` — the only missing piece is tests pinning them.
-- **Phase 4b-4** wires the per-frame `time_seconds` from `frame_runtime.global_time_seconds` to the `ColorSpaceUniform.time_seconds` field and adds a test for the gamma-toggle bit.
+The 4b-2 commit covered Menu + the Editor non-playtest path. The remaining paths in `compute_render_uniforms_snapshot` were **already producing the right values** — only the tests were missing. Phase 4b-3 + 4b-4 add the missing test coverage so every branch of the mirror is pinned:
+
+- **Phase 4b-3** — 3 new tests:
+    - `tick_state_mirrors_render_uniforms_in_playing` — sets `state.phase = Playing`, `elapsed_seconds = 0.5`, `position = [12, 3, 7]`, `direction = Right`. Computes `(expected_eye, expected_target) = state.playing_camera_view()` (the same helper the production code calls) and asserts the mirrored `camera_position` and full `view_proj` matrix match. Also asserts the `line_uniform` (offset rounded to 2 decimal places, rotation = `-π/2` for `Direction::Right`).
+    - `tick_state_mirrors_render_uniforms_in_game_over` — follows the same setup as Playing but flips `phase = GameOver` + `game_over = true`. Pins the `| Playing | GameOver` shared branch in the production code so any future refactor that splits them is caught.
+    - `tick_state_mirrors_render_uniforms_in_editor_playtest` — sets `editor.timeline.playback.playing = true` + `playtesting_editor = true` + `timeline.clock.time_seconds = 0.75` + `preview.position = [2, 4, 6]`. Computes `(expected_eye, expected_target) = state.editor_preview_camera_view()` and asserts the mirrored `camera_position` matches. This is the one Editor path that does NOT use `editor_pan` + `editor_target_z` — it uses the camera track like the Playing path.
+
+- **Phase 4b-4** — 2 new tests:
+    - `tick_state_mirrors_color_space_time_and_gamma` — sets `frame_runtime.global_time_seconds = 12.5` + `apply_gamma_correction = true`. Asserts `ColorSpaceUniform.time_seconds == 12.5` and `apply_gamma_correction == 1.0`. This pins the per-frame time + the gamma-as-float conversion.
+    - `tick_state_mirrors_gamma_off_as_zero` — sets `apply_gamma_correction = false`. Asserts `apply_gamma_correction == 0.0` exactly (not 0.5 or any other float). Pins the bit-vs-float conversion in `compute_render_uniforms_snapshot`.
+
+After 4b-4, every branch of `compute_render_uniforms_snapshot` is test-pinned. The total mirror test count is now 8 (`tick_state_mirrors_frame_input_into_render_resource` + 7 `tick_state_mirrors_render_uniforms*` tests). The 440 call sites of `State::render.gpu.*` remain untouched.
+
+### What Phase 4c / 4d / 4e do (next)
+
 - **Phase 4c** moves `State::render.meshes` + `surface_host` into `RenderMeshesRes` / `RenderSurfaceHostRes`. The `MeshSlot` types stay as-is; only the storage location changes.
 - **Phase 4d** replaces the legacy `rebuild_*_mesh` call sites in `state/editor_scene.rs` with `RebuildMeshSet` systems that read `Changed<Position|Rotation|Size>` components and emit mesh buffers into `RenderMeshesRes`. This unlocks deleting `EditorDirtyFlags` entirely.
 - **Phase 4e** adds an actual wgpu `present_frame_system` in `RenderPresentSet` that drains `RenderFrameInputRes` + `RenderMeshesRes` + `RenderGpuRes` + `RenderUniformsRes` and submits the render pass. The current `State::render()` call from `eg-app/src/platform/pipeline.rs::render_frame` is removed in the same commit.

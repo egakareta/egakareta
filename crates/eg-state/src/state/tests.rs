@@ -741,6 +741,245 @@ async fn tick_state_mirrors_render_uniforms_in_editor() {
     assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
 }
 
+/// Phase 4b-3: the Playing path in
+/// `State::compute_render_uniforms_snapshot` builds the camera pose
+/// from `playing_camera_view()` (the camera track evaluated at the
+/// current `elapsed_seconds` for the player position). The mirror
+/// must propagate the same math into `RenderUniformsRes`.
+#[tokio::test]
+async fn tick_state_mirrors_render_uniforms_in_playing() {
+    use crate::state::render::resources::RenderUniformsRes;
+    use approx::assert_abs_diff_eq;
+
+    let mut state = State::new_test().await;
+    state.enter_playing_phase(Some("Mirror Playing".to_string()), false);
+
+    // The camera track uses `elapsed_seconds` for the sample time
+    // and the player position as the target. We seed both with
+    // non-default values so the test exercises the actual path
+    // (defaults at zero would trivially match).
+    state.gameplay.state.elapsed_seconds = 0.5;
+    state.gameplay.state.position = [12.0, 3.0, 7.0];
+    state.gameplay.state.direction = Direction::Right;
+
+    let (expected_eye, expected_target) = state.playing_camera_view();
+    let expected_viewport = [
+        state.render.gpu.config.width.max(1) as f32,
+        state.render.gpu.config.height.max(1) as f32,
+    ];
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+
+    // camera_position stores [x, y, z, 0.0].
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[0],
+        expected_eye.x,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[1],
+        expected_eye.y,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[2],
+        expected_eye.z,
+        epsilon = 1e-5
+    );
+    assert_eq!(uniforms.camera.camera_position[3], 0.0);
+
+    // view_proj must match the production code's view_proj for the
+    // same eye + target. We assert the full matrix (per-element) so
+    // any future drift in `look_at_rh` / `perspective_rh_gl`
+    // ordering is caught.
+    let view = glam::Mat4::look_at_rh(expected_eye, expected_target, glam::Vec3::Y);
+    let aspect = state.render.gpu.config.width as f32 / state.render.gpu.config.height as f32;
+    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+    let expected_view_proj = proj * view;
+    let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
+    for col in 0..4 {
+        for row in 0..4 {
+            assert_abs_diff_eq!(
+                actual_view_proj.col(col)[row],
+                expected_view_proj.col(col)[row],
+                epsilon = 1e-5
+            );
+        }
+    }
+
+    // The Playing path also drives the line uniform from the player
+    // position + direction. We assert the offset values to 1e-2
+    // (the production code rounds to 2 decimal places).
+    assert_abs_diff_eq!(
+        uniforms.line.offset[0],
+        (state.gameplay.state.position[0] * 100.0).round() / 100.0,
+        epsilon = 1e-2
+    );
+    assert_abs_diff_eq!(
+        uniforms.line.offset[1],
+        (state.gameplay.state.position[2] * 100.0).round() / 100.0,
+        epsilon = 1e-2
+    );
+    // Right = -π/2.
+    assert_abs_diff_eq!(
+        uniforms.line.rotation,
+        -std::f32::consts::FRAC_PI_2,
+        epsilon = 1e-6
+    );
+
+    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
+}
+
+/// Phase 4b-3: the GameOver path shares the Playing camera-track
+/// math (the production code matches both with `| Playing |
+/// GameOver`). This test pins the GameOver code path so any future
+/// refactor that splits the two paths is caught.
+#[tokio::test]
+async fn tick_state_mirrors_render_uniforms_in_game_over() {
+    use crate::state::render::resources::RenderUniformsRes;
+    use approx::assert_abs_diff_eq;
+
+    let mut state = State::new_test().await;
+    // `enter_playing_phase` is the only entry to set `phase =
+    // GameOver`; the production code doesn't have a dedicated
+    // `enter_game_over_phase`. We follow the same pattern as the
+    // legacy command dispatch: enter playing, then flip the
+    // `game_over` flag.
+    state.enter_playing_phase(Some("Mirror GameOver".to_string()), false);
+    state.phase = AppPhase::GameOver;
+    state.gameplay.state.game_over = true;
+    state.gameplay.state.elapsed_seconds = 1.25;
+    state.gameplay.state.position = [-4.0, 0.0, 9.0];
+
+    let (expected_eye, _expected_target) = state.playing_camera_view();
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[0],
+        expected_eye.x,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[1],
+        expected_eye.y,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[2],
+        expected_eye.z,
+        epsilon = 1e-5
+    );
+}
+
+/// Phase 4b-3: the Editor **playtest** path is the only Editor
+/// code path in `compute_render_uniforms_snapshot` that does NOT
+/// use `editor_pan` + `editor_target_z`. It uses
+/// `editor_preview_camera_view()` (the camera track evaluated at
+/// `editor.timeline.clock.time_seconds` for the timeline preview
+/// position). This test pins that path.
+#[tokio::test]
+async fn tick_state_mirrors_render_uniforms_in_editor_playtest() {
+    use crate::state::render::resources::RenderUniformsRes;
+    use approx::assert_abs_diff_eq;
+
+    let mut state = State::new_test().await;
+    state.enter_editor_phase("Mirror Playtest".to_string());
+
+    // Flip the editor timeline into "playing" mode (this is what
+    // `editor_is_playing()` checks). The state stores a separate
+    // `is_playing` flag on the editor runtime.
+    state.editor.timeline.clock.time_seconds = 0.75;
+    state.editor.timeline.preview.position = [2.0, 4.0, 6.0];
+
+    // Enter the editor playtest path (sets `playtesting_editor` +
+    // starts the editor timeline). The `editor.timeline.playback.playing`
+    // flag is what `editor_is_playing()` reads (it delegates to
+    // `EditorSubsystem::is_playing`).
+    state.editor.timeline.playback.playing = true;
+    state.session.playtesting_editor = true;
+
+    // Sanity check: the production path requires
+    // `editor_is_playing()` to return true.
+    assert!(state.editor_is_playing());
+
+    let (expected_eye_arr, expected_target_arr) = state.editor_preview_camera_view();
+    let expected_eye = glam::Vec3::from_array(expected_eye_arr);
+    let _expected_target = glam::Vec3::from_array(expected_target_arr);
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[0],
+        expected_eye.x,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[1],
+        expected_eye.y,
+        epsilon = 1e-5
+    );
+    assert_abs_diff_eq!(
+        uniforms.camera.camera_position[2],
+        expected_eye.z,
+        epsilon = 1e-5
+    );
+}
+
+/// Phase 4b-4: `time_seconds` (from
+/// `frame_runtime.global_time_seconds`) is mirrored into
+/// `ColorSpaceUniform.time_seconds` and the gamma toggle is mirrored
+/// as a `0.0` / `1.0` bit. This test pins both.
+#[tokio::test]
+async fn tick_state_mirrors_color_space_time_and_gamma() {
+    use crate::state::render::resources::RenderUniformsRes;
+    use approx::assert_abs_diff_eq;
+
+    let mut state = State::new_test().await;
+    // Set a non-zero global time + enable gamma so the test
+    // exercises both fields (defaults at zero would trivially
+    // match).
+    state.frame_runtime.global_time_seconds = 12.5;
+    state.render.gpu.apply_gamma_correction = true;
+
+    let expected_viewport = [
+        state.render.gpu.config.width.max(1) as f32,
+        state.render.gpu.config.height.max(1) as f32,
+    ];
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+    assert_abs_diff_eq!(uniforms.color_space.time_seconds, 12.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(
+        uniforms.color_space.apply_gamma_correction,
+        1.0,
+        epsilon = 1e-6
+    );
+    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
+}
+
+/// Phase 4b-4: when the gamma toggle is **off** the mirror must
+/// produce `0.0` (not 0.5 or a float that round-trips). This is a
+/// focused regression for the bit-vs-float conversion in
+/// `compute_render_uniforms_snapshot`.
+#[tokio::test]
+async fn tick_state_mirrors_gamma_off_as_zero() {
+    use crate::state::render::resources::RenderUniformsRes;
+
+    let mut state = State::new_test().await;
+    state.render.gpu.apply_gamma_correction = false;
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+    assert_eq!(uniforms.color_space.apply_gamma_correction, 0.0);
+}
+
 #[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();
