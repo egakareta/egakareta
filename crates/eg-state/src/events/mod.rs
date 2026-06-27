@@ -8,12 +8,10 @@
 //! Bevy `Message` taxonomy for the eg-state `App`.
 //!
 //! Phase 3 fragments the monolithic `AppCommand` / `EditorCommand` enums
-//! into a per-semantic Bevy `Message` type. The dispatch path on the
-//! legacy `State` struct stays in place — messages are drained from the
-//! `World` and converted back to the legacy enums via [`ToLegacy`], then
-//! routed through `State::dispatch` / `State::dispatch_editor`. This
-//! keeps the existing test suite green while introducing the new event
-//! bus.
+//! into a per-semantic Bevy `Message` type. During the Phase 7
+//! compatibility window, messages are drained from the App `World`,
+//! converted back to the legacy enums via [`ToLegacy`], and staged in
+//! [`PendingCommands`] for `Runtime` to apply to legacy `State`.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
@@ -23,8 +21,9 @@
 //!
 //! The per-message drain systems are wired into the `StateSchedule` so
 //! a single Bevy system per message type drains that message into the
-//! [`PendingCommands`] resource. `State::tick_state` runs the schedule
-//! and then drains `PendingCommands` into `State::dispatch` calls.
+//! [`PendingCommands`] resource. `State::tick_state` can still run the
+//! schedule on the legacy State-owned world, but it no longer drains
+//! those commands into `State::dispatch`.
 //!
 //! ## Why messages?
 //!

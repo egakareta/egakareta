@@ -203,8 +203,9 @@ files in one final sweep.
   ResMut<PendingCommands>) per message type) that stages commands in
   the PendingCommands resource.
 - A StateSchedule that bundles the per-message drain systems.
-- State::tick_state now runs the schedule and forwards
-  PendingCommands to State::dispatch / State::dispatch_editor.
+- Runtime drains App-world PendingCommands to State::dispatch /
+  State::dispatch_editor during the compatibility window; the duplicate
+  State::world tick no longer forwards its staged PendingCommands.
 - A HistorySnapshot marker event for direct-manipulation UI (gizmo
   drag / marquee / block drag) that reserves the PreCommandHistorySet
   slot in the schedule. A follow-up phase wires a real
@@ -268,8 +269,7 @@ held-state + click events natively.
 
 `Per-frame schedule order (StateSchedule):
   transitions::phase_transition_system   // AppPhase change detection
-  events::handle_* (per-message)         // MessageReader<T> → PendingCommands
-  dispatch_pending_commands              // PendingCommands → State::dispatch[_editor]`
+  events::handle_* (per-message)         // MessageReader<T> → PendingCommands`
 
 Future phases add more sets at the top of the chain (InputSet,
 ClickHandlingSet, ModeChangeSet, PreCommandHistorySet,
@@ -363,7 +363,7 @@ The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhas
   render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
   render::present_render_frame_system         // read authoritative render resources
   // tick_state then drains pending async result closures -> mutates State
-  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
+  // PendingCommands remain staged; Runtime owns the App-world compatibility drain`
 
 The order matches the legacy `render_to_view` / `render_with_overlay` /
 `State::update` call sequence: simulation → mesh rebuild → extract →
@@ -376,8 +376,7 @@ present. Future commits add real systems into each set.
   mirror::install_mirror                      // tick_state installs the closure
   events::handle_* (per-message)              // MessageReader<T> → PendingCommands
   render::mirror_pod_state_via_bridge         // drain closure → RenderUniformsRes / RenderFrameInputRes
-  render::present_render_frame_placeholder    // no-op in Phase 4a
-  dispatch_pending_commands                   // PendingCommands → State::dispatch[_editor]`
+  render::present_render_frame_placeholder    // no-op in Phase 4a`
 
 ### Resource boundary
 
@@ -459,8 +458,7 @@ The plan calls for wrapping the five `mpsc` channels the legacy `State` struct o
   events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
   render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
   render::present_render_frame_placeholder    // no-op in Phase 4a
-  async_bridge::poll_channels_system          // drain 5 receivers -> 5 result events
-  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
+  async_bridge::poll_channels_system          // drain 5 receivers -> 5 result events`
 
 ### Bevy 0.19 API notes (Phase 6a)
 
@@ -542,7 +540,7 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
   async_bridge::add_apply_async_results_systems // consume events -> install closures
   render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
   // tick_state then drains pending async result closures -> mutates State
-  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
+  // PendingCommands remain staged; Runtime owns the App-world compatibility drain`
 
 ### Bevy 0.19 API notes (Phase 6b)
 
@@ -558,11 +556,11 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 
 ## Phase 7 — App wiring complete
 
-Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but the App update and command drain now sit in `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI and returns UI commands, `Runtime` writes them into the App world, runs `app.update()` to drain them through the App-world schedule, applies the resulting `PendingCommands` to legacy `State`, then lets the compatibility pipeline update and render the frame.
+Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but the App update and command drain now sit in `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI and returns UI commands, `Runtime` writes them into the App world, runs `app.update()`, explicitly runs the App-world `StateSchedule`, applies the resulting `PendingCommands` to legacy `State`, then lets the compatibility pipeline update and render the frame. The duplicate `State::world` schedule can still stage commands for tests, but `State::tick_state` no longer drains them into legacy dispatch.
 
 ### What's in Phase 7 today
 
-- **`Runtime` owns a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. The App's World remains separate from `State::world`, but it is no longer idle: Bevy `Update` runs the App-world `StateSchedule` once per frame.
+- **`Runtime` owns a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. The App's World remains separate from `State::world`, but it is no longer idle: Runtime runs `app.update()`, then explicitly runs the App-world `StateSchedule` once per frame.
 
 - **`Runtime::new` builds and drives the App**:
 
@@ -605,6 +603,11 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_app_update_does_not_run_state_schedule_directly` — plain `app.update()` no longer advances the mirror `StateSchedule`; Runtime owns that order.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
     - `runtime_app_world_is_separate_from_state_world` — App setup does not mutate legacy `State` until `Runtime` explicitly applies queued commands.
+
+    - **Tests** in `crates/eg-state/src/state/tests.rs`:
+        - `tick_state_stages_messages_without_dispatching` — the legacy State-owned world still runs the per-message drain systems, but staged commands no longer dispatch into legacy `State`.
+        - `tick_state_stages_undo_without_dispatching` — editor commands from `State::world` remain staged in `PendingCommands`.
+        - `tick_state_stages_practice_mode_payload_without_dispatching` — app commands with payloads stage without mutating legacy session state.
 
 - **Dead-code allowances removed** from `Runtime.app` and `Runtime::run_app_frame` because both are now production-used.
 
@@ -821,7 +824,8 @@ The remaining gap is architectural, not just cleanup. The code still has two wor
 
 - runtime.rs still owns `State`, `FramePipeline`, and `App` together.
 - mod.rs still defines the legacy `State` with subsystem fields plus `State::world`.
-- mod.rs still drains App-world `PendingCommands` into `State::dispatch` / `dispatch_editor`.
+- runtime.rs still drains App-world `PendingCommands` into `State::dispatch` / `dispatch_editor`.
+- mod.rs still lets the duplicate State-owned world stage legacy commands, but `State::tick_state` no longer dispatches them.
 - mod.rs explicitly says messages still convert back to legacy commands.
 - lib.rs still uses `UiViewModel`.
 - pipeline.rs still renders UI from legacy `State`, but the live egui context and UI command queue now live in the App world during the frame.

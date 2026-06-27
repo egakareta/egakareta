@@ -318,8 +318,10 @@ impl State {
     /// plus the per-message drain systems registered in Phase 3
     /// (which convert Bevy messages into legacy `AppCommand` /
     /// `EditorCommand` payloads in the `PendingCommands` resource).
-    /// After the schedule runs, the buffered commands are routed
-    /// through [`State::dispatch`] / [`State::dispatch_editor`].
+    /// Phase 7 no longer lets the State-owned world drain those commands
+    /// into the legacy dispatcher; production command dispatch is owned by
+    /// `Runtime` from the App world while the duplicate State-world bridge
+    /// is being deleted.
     pub fn tick_state(&mut self) {
         puffin::profile_scope!("StateSchedule");
         // Phase 2c: detect AppPhase changes + run OnEnter/OnExit side
@@ -368,8 +370,6 @@ impl State {
         // to the matching `complete_*` methods / per-channel
         // mutation logic.
         async_bridge::drain_pending_async_result_fns(self);
-        // Forward the staged commands to the legacy dispatch path.
-        self.dispatch_pending_commands();
     }
 
     /// Compute the current per-frame `RenderFrameInput` snapshot
@@ -451,20 +451,6 @@ impl State {
                     gpu.config.height.max(1) as f32,
                 ],
             },
-        }
-    }
-
-    /// Forward staged `AppCommand` / `EditorCommand` payloads from
-    /// `PendingCommands` to [`State::dispatch`] /
-    /// [`State::dispatch_editor`]. The buffer is cleared once the
-    /// commands have been forwarded.
-    fn dispatch_pending_commands(&mut self) {
-        let mut pending = std::mem::take(&mut *self.world.resource_mut::<PendingCommands>());
-        for cmd in pending.app_commands.drain(..) {
-            self.dispatch(cmd);
-        }
-        for cmd in pending.editor_commands.drain(..) {
-            self.dispatch_editor(cmd);
         }
     }
 
