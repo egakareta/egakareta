@@ -27,9 +27,9 @@ use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 use super::physics::BASE_PLAYER_SPEED;
 use super::spatial::SpatialGrid;
 use crate::components::{
-    CachedBlockBehavior, Grounded, ObjectBundle, ObjectData, ObjectId, PlayerBundle,
-    PlayerDirection, PlayerPosition, PlayerSpeed, SpawnDirection, SpawnPosition, Trail,
-    VerticalVelocity,
+    BlockId, CachedBlockBehavior, ColorTint, Grounded, ObjectBundle, ObjectData, ObjectId,
+    PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position, Rotation, Size,
+    SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
 };
 use crate::events::{ConsumedEventsBuffer, ConsumedObjectEvent};
 use crate::resources::{
@@ -244,6 +244,11 @@ impl GameState {
                     object: crate::components::Object,
                     id: ObjectId(format!("__obj_{idx}")),
                     data: ObjectData(obj.clone()),
+                    position: Position(obj.position),
+                    rotation: Rotation(obj.rotation),
+                    size: Size(obj.size),
+                    block_id: BlockId(obj.block_id.clone()),
+                    color_tint: ColorTint(obj.color_tint),
                     cached_behavior: self
                         .cached_behaviors
                         .get(idx)

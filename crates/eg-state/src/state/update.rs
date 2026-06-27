@@ -580,21 +580,21 @@ impl State {
         self.frame_runtime.global_time_seconds += frame_dt.max(0.0);
 
         let color_space_uniform = ColorSpaceUniform {
-            apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
+            apply_gamma_correction: if self.render_gpu().apply_gamma_correction {
                 1.0
             } else {
                 0.0
             },
             time_seconds: self.frame_runtime.global_time_seconds,
             viewport_size: [
-                self.render.gpu.config.width.max(1) as f32,
-                self.render.gpu.config.height.max(1) as f32,
+                self.render_gpu().config.width.max(1) as f32,
+                self.render_gpu().config.height.max(1) as f32,
             ],
         };
         {
             puffin::profile_scope!("ColorSpaceUniformUpload");
-            self.render.gpu.queue.write_buffer(
-                &self.render.gpu.color_space_uniform_buffer,
+            self.render_gpu().queue.write_buffer(
+                &self.render_gpu().color_space_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&color_space_uniform),
             );
@@ -980,14 +980,14 @@ impl State {
 
         {
             puffin::profile_scope!("PlayingLineUniformUpload");
-            self.render.gpu.queue.write_buffer(
-                &self.render.gpu.line_uniform_buffer,
+            self.render_gpu().queue.write_buffer(
+                &self.render_gpu().line_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&self.frame_runtime.player_render.line_uniform),
             );
         }
 
-        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
         let (eye, target) = self.playing_camera_view();
         let up = Vec3::new(0.0, 1.0, 0.0);
         let view = Mat4::look_at_rh(eye, target, up);
@@ -1000,8 +1000,8 @@ impl State {
 
         {
             puffin::profile_scope!("PlayingCameraUniformUpload");
-            self.render.gpu.queue.write_buffer(
-                &self.render.gpu.camera_uniform_buffer,
+            self.render_gpu().queue.write_buffer(
+                &self.render_gpu().camera_uniform_buffer,
                 0,
                 bytemuck::bytes_of(&camera_uniform),
             );
@@ -1010,7 +1010,7 @@ impl State {
 
     fn update_menu_camera(&mut self) {
         puffin::profile_scope!("MenuCameraUniform");
-        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
         let eye = Vec3::from_array(self.menu.state.preview_camera_position);
         let target = Vec3::from_array(self.menu.state.preview_camera_target);
         let up = Vec3::new(0.0, 1.0, 0.0);
@@ -1022,8 +1022,8 @@ impl State {
             camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
-        self.render.gpu.queue.write_buffer(
-            &self.render.gpu.camera_uniform_buffer,
+        self.render_gpu().queue.write_buffer(
+            &self.render_gpu().camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );
@@ -1031,7 +1031,7 @@ impl State {
 
     fn update_editor_camera(&mut self) {
         puffin::profile_scope!("EditorCameraUniformBuild");
-        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
         let (eye, target) = if self.editor_is_playing() {
             let (e, t) = self.editor_preview_camera_view();
             (Vec3::from_array(e), Vec3::from_array(t))
@@ -1053,8 +1053,8 @@ impl State {
             camera_position: [eye.x, eye.y, eye.z, 0.0],
         };
 
-        self.render.gpu.queue.write_buffer(
-            &self.render.gpu.camera_uniform_buffer,
+        self.render_gpu().queue.write_buffer(
+            &self.render_gpu().camera_uniform_buffer,
             0,
             bytemuck::bytes_of(&camera_uniform),
         );

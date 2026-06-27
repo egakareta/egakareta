@@ -10,7 +10,7 @@ use super::super::State;
 impl State {
     /// Renders a single block to an offscreen texture for use as an editor icon.
     pub fn render_block_icon_snapshot(&self, block_id: &str, size: u32) -> Option<wgpu::Texture> {
-        self.render.gpu.render_block_icon_snapshot(block_id, size)
+        self.render_gpu().render_block_icon_snapshot(block_id, size)
     }
 }
 

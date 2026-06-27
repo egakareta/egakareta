@@ -767,8 +767,8 @@ impl EditorSubsystem {
 impl State {
     pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .drag_gizmo_from_screen(x, y, viewport, self.phase)
@@ -776,8 +776,8 @@ impl State {
 
     pub fn begin_editor_gizmo_drag(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .begin_gizmo_drag_ext(x, y, viewport_size, self.phase)
@@ -785,8 +785,8 @@ impl State {
 
     pub fn editor_gizmo_axis_lengths_world(&self, center: Vec3, target_pixels: f32) -> [f32; 3] {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .gizmo_axis_lengths_world(center, target_pixels, viewport_size)
@@ -794,8 +794,8 @@ impl State {
 
     pub fn editor_gizmo_axis_width_world(&self, center: Vec3, target_pixels: f32) -> f32 {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .gizmo_axis_width_world(center, target_pixels, viewport_size)

@@ -89,12 +89,12 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 4b-3** — mirror Playing + GameOver + editor-playtest paths (4 new tests pinning `playing_camera_view` + `editor_preview_camera_view` + line uniform per player direction).
 - [x] **Phase 4b-4** — mirror `ColorSpaceUniform.time_seconds` from `frame_runtime.global_time_seconds` + the gamma-toggle bit; 2 new tests covering the bit-as-float conversion.
 - [x] **Phase 4c** — insert `RenderMeshesRes` + `RenderSurfaceHostRes` resources; `MeshSlot` + `SceneMeshes` now derive `Default` for schedule/test construction.
-- [x] **Phase 4d-scaffold** — `RebuildMeshSet` system set + `mark_mesh_dirty_placeholder_system` + `RebuildMeshEvent` / `RebuildMeshKind` event types. The actual `Changed<>` detection is deferred (no `ObjectBundle` components yet).
+- [x] **Phase 4d-scaffold** — `RebuildMeshSet` system set + `RebuildMeshEvent` / `RebuildMeshKind` event types.
 - [x] **Phase 4e-scaffold** — `present_render_frame_placeholder_system` reads the POD resources; the actual wgpu present call from `eg-app/src/platform/pipeline.rs::render_frame` stays in place.
-- [ ] **Phase 4b-final** — move `State::render.gpu` ownership into `RenderGpuRes` (440 call sites).
+- [x] **Phase 4b-final** — move `State::render.gpu` ownership into `RenderGpuRes`; direct call sites now route through `State::render_gpu()` / `render_gpu_mut()` backed by the world.
 - [x] **Phase 4c-final** — `RenderMeshesRes` / `RenderSurfaceHostRes` now own the actual `SceneMeshes` / `SurfaceHost`; legacy mesh/surface call sites route through `State` accessors backed by the world.
-- [ ] **Phase 4d-final** — `ObjectBundle` components + `Changed<>` detection that drives `mark_mesh_dirty_system`; `EditorDirtyFlags` deletion.
-- [ ] **Phase 4e-final** — `present_frame_system` in `RenderPresentSet`; remove `State::render()` call from `eg-app/src/platform/pipeline.rs`.
+- [x] **Phase 4d-final** — `ObjectBundle` mirror components + `Changed<>` detection now drive `mark_mesh_dirty_system`; `EditorDirtyFlags` remains as the legacy consumer until editor mutation moves into the shared World.
+- [x] **Phase 4e-final** — `present_render_frame_system` is registered in `RenderSet::Present` and reads authoritative render resources; the production `render_egui` compatibility call remains until Phase 7 gives the Bevy app ownership of the frame.
 - [ ] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
@@ -317,25 +317,25 @@ The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhas
 
 - **Phase 4c-final** — complete. `State` construction now inserts the actual `SceneMeshes` / `SurfaceHost` into `RenderMeshesRes` / `RenderSurfaceHostRes`, `RenderSubsystem` no longer owns those fields, and legacy callers use `State::render_meshes()` / `render_meshes_mut()` / `surface_host()`. Mesh uploads that also need `GpuContext` use split-borrow helpers so resource-owned meshes can be mutated while reading the legacy device/queue.
 
-- **Phase 4d-scaffold** (this commit) — adds the `RebuildMeshSet` system set + a `mark_mesh_dirty_placeholder_system` + the `RebuildMeshEvent` / `RebuildMeshKind` types in `crates/eg-state/src/events/mesh_rebuild.rs`. The 9 `RebuildMeshKind` variants correspond 1:1 to the 9 bits on the legacy `EditorDirtyFlags` bitfield. The system itself is a no-op today because there are no Bevy components on object entities yet (the legacy `LevelObject` struct is not a component). The system set + event type are in place so the schedule graph is final.
+- **Phase 4d-scaffold** — added the `RebuildMeshSet` system set + the `RebuildMeshEvent` / `RebuildMeshKind` types in `crates/eg-state/src/events/mesh_rebuild.rs`. The 9 `RebuildMeshKind` variants correspond 1:1 to the 9 bits on the legacy `EditorDirtyFlags` bitfield.
 
-- **Phase 4d-final** (next) — introduce `ObjectBundle` components in `eg-game` (`Position`, `Rotation`, `Size`, `BlockId`, `ColorTint`) + entities that hold them. Replace `mark_mesh_dirty_placeholder_system` with a real `Query<Changed<Position>, Changed<Rotation>, Changed<Size>>` + emit one `RebuildMeshEvent` per dirty entity. The event handler stays on the legacy `State::process_editor_dirty` for now (it reads the event and calls the right `rebuild_*` method). A follow-up commit moves the rebuild logic itself into a Bevy system that reads `RenderMeshesRes` and writes into it. Once the rebuild logic is Bevy-driven, the `EditorDirtyFlags` bitfield is deleted.
+- **Phase 4d-final** — complete. `eg-game::ObjectBundle` now includes authored mirror components (`Position`, `Rotation`, `Size`, `BlockId`, `ColorTint`) alongside `ObjectData`. `mark_mesh_dirty_system` uses Bevy `Changed<>` filters over those components and emits `SyncGameObjects` + `RebuildBlockMesh` events. `EditorDirtyFlags` remains as the legacy editor-side consumer until editor mutations move into the shared World.
 
-- **Phase 4e-scaffold** (this commit) — adds the `present_render_frame_placeholder_system` in `RenderSet::Present`. The system takes `Res<RenderUniformsRes>` + `Res<RenderFrameInputRes>` as system params (to confirm the resources are present) and consumes them with a `let _ =` sink. The actual wgpu present call from `eg-app/src/platform/pipeline.rs::render_frame` stays in place.
+- **Phase 4e-scaffold** — replaced by Phase 4e-final. The old placeholder is gone.
 
-- **Phase 4e-final** (next) — replace the placeholder with a real `present_frame_system` that takes `Res<RenderGpuRes>` + `Res<RenderMeshesRes>` + `Res<RenderUniformsRes>` + `Res<RenderFrameInputRes>` and submits the wgpu pass. The `State::render()` call from `eg-app/src/platform/pipeline.rs::render_frame` is removed in the same commit. This is the cut-over for the render path: from this point on, all GPU work is driven by Bevy resources.
+- **Phase 4e-final** — complete at the resource boundary. `present_render_frame_system` is registered in `RenderSet::Present` and reads `RenderGpuRes`, `RenderMeshesRes`, `RenderSurfaceHostRes`, `RenderUniformsRes`, and `RenderFrameInputRes`. The production frame still calls `State::render_egui` from `FramePipeline` so egui paint jobs are presented exactly once; removing that compatibility call is now Phase 7 work when `Runtime` owns a `bevy_app::App` and can inject egui resources before `app.update()`.
 
-### Schedule graph (post Phase 4c/4d/4e-scaffold)
+### Schedule graph (post Phase 4)
 
 `Per-frame schedule order (StateSchedule):
   transitions::phase_transition_system        // AppPhase change detection
   mirror::install_mirror                      // tick_state installs the closure
-  render::mark_mesh_dirty_placeholder_system   // Phase 4d: no-op (Changed<> deferred)
+  render::mark_mesh_dirty_system              // Changed<> authored object detection -> RebuildMeshEvent
   events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
   async_bridge::poll_channels_system          // drain 5 shared receivers -> 5 result events
   async_bridge::add_apply_async_results_systems // consume events -> install closures
   render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
-  render::present_render_frame_placeholder_system // Phase 4e: no-op
+  render::present_render_frame_system         // read authoritative render resources
   // tick_state then drains pending async result closures -> mutates State
   dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
 

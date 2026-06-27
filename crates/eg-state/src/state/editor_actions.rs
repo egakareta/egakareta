@@ -557,8 +557,8 @@ impl State {
         }
 
         let viewport_size = glam::Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         let Some(pick) = self.editor.pick_from_screen(x, y, viewport_size) else {
             return false;
@@ -1195,8 +1195,8 @@ impl State {
         }
 
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         let Some(block_id) = self
             .editor

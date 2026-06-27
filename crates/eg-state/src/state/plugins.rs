@@ -119,14 +119,12 @@ impl Plugin for StatePlugins {
             SessionPlugin,
             EditorPlugin,
             GameplayPlugin,
-            // Phase 4a: rendering extraction plugin. Registers the
-            // POD resources (RenderUniformsRes, RenderFrameInputRes,
+            // Rendering extraction plugin. Registers the POD
+            // resources (RenderUniformsRes, RenderFrameInputRes,
             // RenderResizeRequest) and the system sets (RenderSet).
-            // The heavy resources (RenderGpuRes, RenderMeshesRes,
-            // RenderSurfaceHostRes) are defined in
-            // `state::render::resources` but not yet inserted; the
-            // legacy `State::render` field remains authoritative
-            // until Phase 4b/4c moves ownership into the world.
+            // State construction inserts the authoritative heavy
+            // resources (RenderGpuRes, RenderMeshesRes,
+            // RenderSurfaceHostRes) after wgpu initialization.
             RenderPlugin,
         ));
     }

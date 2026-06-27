@@ -669,8 +669,8 @@ impl State {
         if handled {
             if self.editor.marquee_has_dragged_far_enough() {
                 let viewport_size = Vec2::new(
-                    self.render.gpu.config.width as f32,
-                    self.render.gpu.config.height as f32,
+                    self.render_gpu().config.width as f32,
+                    self.render_gpu().config.height as f32,
                 );
                 let additive = self.editor.input.shift_held;
                 self.editor.apply_marquee_selection(viewport_size, additive);
@@ -683,8 +683,8 @@ impl State {
 
     pub fn finish_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         let had_marquee = self.editor.input.marquee_start_screen.is_some();
         if !had_marquee {
@@ -713,8 +713,8 @@ impl State {
 
     pub fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .drag_selection_from_screen(x, y, viewport, self.phase)
@@ -722,8 +722,8 @@ impl State {
 
     pub fn begin_editor_selected_block_drag(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         self.editor
             .begin_selected_block_drag_ext(x, y, viewport_size, self.phase)

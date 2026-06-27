@@ -1058,8 +1058,8 @@ mod tests {
             height: new_height,
         });
 
-        assert_eq!(state.render.gpu.config.width, new_width);
-        assert_eq!(state.render.gpu.config.height, new_height);
+        assert_eq!(state.render_gpu().config.width, new_width);
+        assert_eq!(state.render_gpu().config.height, new_height);
     }
 
     #[tokio::test]
@@ -1174,8 +1174,8 @@ mod tests {
         ))));
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let screen = state
             .editor
@@ -1342,8 +1342,8 @@ mod tests {
             width: 1280,
             height: 720,
         });
-        assert_eq!(state.render.gpu.config.width, 1280);
-        assert_eq!(state.render.gpu.config.height, 720);
+        assert_eq!(state.render_gpu().config.width, 1280);
+        assert_eq!(state.render_gpu().config.height, 720);
     }
 
     #[tokio::test]
@@ -1641,8 +1641,8 @@ mod tests {
 
         let start_x = 0.0;
         let start_y = 0.0;
-        let end_x = state.render.gpu.config.width.max(1) as f64;
-        let end_y = state.render.gpu.config.height.max(1) as f64;
+        let end_x = state.render_gpu().config.width.max(1) as f64;
+        let end_y = state.render_gpu().config.height.max(1) as f64;
 
         state.process_input_event(InputEvent::PointerMoved {
             x: start_x as f64,
@@ -1691,8 +1691,8 @@ mod tests {
 
         let start_x = 0.0;
         let start_y = 0.0;
-        let end_x = state.render.gpu.config.width.max(1) as f64;
-        let end_y = state.render.gpu.config.height.max(1) as f64;
+        let end_x = state.render_gpu().config.width.max(1) as f64;
+        let end_y = state.render_gpu().config.height.max(1) as f64;
 
         state.process_input_event(InputEvent::PointerMoved {
             x: start_x,
@@ -1756,8 +1756,8 @@ mod tests {
         state.editor.objects = vec![LevelObject::default()];
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let block_center = glam::Vec3::new(0.5, 0.5, 0.5);
         let block_screen = state
@@ -1815,8 +1815,8 @@ mod tests {
         let original_target_z = state.editor.camera.editor_target_z;
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let tap_center = glam::Vec3::new(0.75, 0.1, 1.25);
         let tap_screen = state
@@ -1890,8 +1890,8 @@ mod tests {
         assert!((first_tap_position[2] - second_tap_position[2]).abs() < 0.001);
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let second_tap_center = glam::Vec3::new(
             second_tap_position[0] + 0.5,
@@ -1956,8 +1956,8 @@ mod tests {
             .expect("division preview should exist");
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let division_center = glam::Vec3::new(
             division.indicator_position[0] + 0.5,
@@ -2030,8 +2030,8 @@ mod tests {
         state.editor.camera.editor_target_z = 2.5;
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let off_path_world = glam::Vec3::new(4.5, 0.0, 1.5);
         let off_path_screen = state
@@ -2092,8 +2092,8 @@ mod tests {
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let marker_screen = state
             .editor
@@ -2161,8 +2161,8 @@ mod tests {
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         });
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let marker_screen = state
             .editor
@@ -2221,8 +2221,8 @@ mod tests {
         });
 
         let viewport = Vec2::new(
-            state.render.gpu.config.width as f32,
-            state.render.gpu.config.height as f32,
+            state.render_gpu().config.width as f32,
+            state.render_gpu().config.height as f32,
         );
         let target_center = glam::Vec3::new(2.5, 0.5, 0.5);
         let target_screen = state
@@ -2866,8 +2866,8 @@ mod tests {
             width: 1024,
             height: 576,
         });
-        assert_eq!(state.render.gpu.config.width, 1024);
-        assert_eq!(state.render.gpu.config.height, 576);
+        assert_eq!(state.render_gpu().config.width, 1024);
+        assert_eq!(state.render_gpu().config.height, 576);
 
         state.editor.objects.push(LevelObject {
             position: [1.0, 0.0, 0.0],

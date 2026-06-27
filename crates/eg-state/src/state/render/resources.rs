@@ -11,28 +11,22 @@
 //! `SurfaceHostRes`, `CameraUniform`, `LineUniform`, and
 //! `ColorSpaceUniform` to be lifted out of the legacy `State` struct
 //! and become `bevy_ecs::Resource`s. This file defines the resource
-//! types. Phase 4a only populates the **POD** resources
-//! ([`RenderUniformsRes`], [`RenderFrameInputRes`]) — they are small
-//! `Copy` types that can be mirrored safely from the legacy state
-//! each frame. The mesh and surface heavy resources
-//! ([`RenderMeshesRes`], [`RenderSurfaceHostRes`]) now own the
-//! authoritative values inserted during `State` construction. The
-//! GPU heavy resource ([`RenderGpuRes`]) remains deferred until the
-//! large `State::render.gpu` call surface moves into the world.
+//! types. The POD resources ([`RenderUniformsRes`],
+//! [`RenderFrameInputRes`]) are still mirrored while the legacy frame
+//! update computes uniforms, and the heavy resources
+//! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`])
+//! own the authoritative values inserted during `State` construction.
 //!
 //! ## Why split POD vs heavy?
 //!
 //! - `wgpu::Device`, `wgpu::Queue`, `wgpu::Buffer`, `wgpu::Surface`,
 //!   `wgpu::BindGroup` and friends are all `Send + Sync` and can be
-//!   stored in Bevy `Resource`s directly, but the legacy code base has
-//!   ~440 call sites that read `state.render.gpu.*`. Moving every
-//!   heavy resource at once would touch too many independent paths;
-//!   Phase 4c moved meshes and surface host first.
+//!   stored in Bevy `Resource`s directly. Phase 4 moved these heavy
+//!   values behind `State` accessors backed by World resources.
 //! - Mirroring just the POD types first establishes the resource
 //!   boundary, the system-set graph, and the extraction system
-//!   contract. Subsequent phases replace the mirror with direct
-//!   resource access one field at a time, and finally delete the
-//!   legacy `State::render` field once nothing reads it.
+//!   contract. Subsequent phases replace the POD mirror with direct
+//!   resource writes as `State::update` moves into Bevy systems.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
 //! entire module with `bevy_render` render-world resources
@@ -48,9 +42,8 @@ use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
 
 /// Wrapper resource for the full [`eg_render::GpuContext`].
 ///
-/// Phase 4a only **defines** this type; the constructor does not yet
-/// insert a value. Phase 4b will move the `State::render.gpu` field
-/// into this resource.
+/// Inserted by `State` construction with the authoritative wgpu
+/// context. Bare test worlds that do not initialize wgpu may omit it.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct RenderGpuRes(pub eg_render::GpuContext);
@@ -77,11 +70,11 @@ pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 /// shader constants (`CameraUniform`, `LineUniform`,
 /// `ColorSpaceUniform`).
 ///
-/// Mirrored from the legacy `State::render.gpu.*_uniform` fields
-/// during the [`RenderExtractSet`](super::plugin) phase. The mirror
+/// Mirrored from the legacy frame-update uniform computation during
+/// the [`RenderExtractSet`](super::plugin) phase. The mirror
 /// is a free operation: the uniform values are tiny POD types
 /// (a `Mat4` and a handful of `f32`s), and the actual GPU buffers
-/// stay in `RenderGpuRes` (Phase 4b). Bevy systems can use this
+/// stay in `RenderGpuRes`. Bevy systems can use this
 /// resource to read the per-frame uniform values without touching
 /// the legacy state.
 #[allow(dead_code)]
@@ -206,11 +199,9 @@ pub fn render_pod_resources_present(world: &World) -> bool {
         && world.contains_resource::<RenderResizeRequest>()
 }
 
-/// Returns `true` if the world has every heavy render resource
-/// (Phase 4b + Phase 4c). `RenderMeshesRes` +
-/// `RenderSurfaceHostRes` now hold the authoritative values, while
-/// `RenderGpuRes` is still deferred (Phase 4b). Once Phase 4b lands,
-/// this reports `true` for every eg-state `World`.
+/// Returns `true` if the world has every heavy render resource. This
+/// is true for constructed `State` worlds after wgpu initialization;
+/// bare test worlds may omit `RenderGpuRes` because it has no default.
 #[allow(dead_code)]
 pub fn render_heavy_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderGpuRes>()
@@ -227,14 +218,14 @@ pub fn render_phase4c_resources_present(world: &World) -> bool {
         && world.contains_resource::<RenderSurfaceHostRes>()
 }
 
-/// The Phase 4a mirror helper.
+/// Render POD mirror helper.
 ///
-/// Reads the current uniform values + frame input from the
-/// `RenderSubsystem` exposed by the closure and writes them into
+/// Reads the current uniform values + frame input exposed by the
+/// closure and writes them into
 /// [`RenderUniformsRes`] / [`RenderFrameInputRes`].
 ///
-/// The closure lets us reach the non-`Send` legacy `State::render`
-/// field without making it a system arg. The closure must be cheap
+/// The closure lets us reach legacy frame-computed values without
+/// making `State` a system arg. The closure must be cheap
 /// (it runs once per frame) and must not retain references past the
 /// call.
 #[allow(dead_code)]

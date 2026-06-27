@@ -586,13 +586,9 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     ));
 }
 
-/// Phase 4c-scaffold: `RenderMeshesRes` and `RenderSurfaceHostRes`
-/// are now inserted with their authoritative values during `State`
-/// construction. Bevy systems can query them directly.
-///
-/// `RenderGpuRes` is still NOT inserted (Phase 4b is deferred —
-/// moving `wgpu::Device` + `wgpu::Queue` ownership touches ~440
-/// call sites of `state.render.gpu.*`).
+/// Phase 4b/4c-final: the heavy render resources are now inserted
+/// with their authoritative values during `State` construction.
+/// Bevy systems can query them directly.
 #[tokio::test]
 async fn tick_state_inserts_heavy_render_resources_phase4c() {
     use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};
@@ -600,12 +596,9 @@ async fn tick_state_inserts_heavy_render_resources_phase4c() {
     let state = State::new_test().await;
     let world = state.world();
 
-    // Phase 4c-final: meshes + surface_host are inserted.
+    assert!(world.contains_resource::<RenderGpuRes>());
     assert!(world.contains_resource::<RenderMeshesRes>());
     assert!(world.contains_resource::<RenderSurfaceHostRes>());
-
-    // Phase 4b deferred: gpu is still NOT inserted.
-    assert!(!world.contains_resource::<RenderGpuRes>());
 
     // Test states have no platform host, so the authoritative
     // `RenderSurfaceHostRes` is `None`.
@@ -656,8 +649,8 @@ async fn tick_state_mirrors_render_uniforms() {
     let mut state = State::new_test().await;
     let expected_camera_position = state.menu.state.preview_camera_position;
     let expected_viewport = [
-        state.render.gpu.config.width.max(1) as f32,
-        state.render.gpu.config.height.max(1) as f32,
+        state.render_gpu().config.width.max(1) as f32,
+        state.render_gpu().config.height.max(1) as f32,
     ];
 
     state.tick_state();
@@ -706,8 +699,8 @@ async fn tick_state_mirrors_render_uniforms_in_editor() {
     );
     let expected_eye = target + state.editor_camera_offset();
     let expected_viewport = [
-        state.render.gpu.config.width.max(1) as f32,
-        state.render.gpu.config.height.max(1) as f32,
+        state.render_gpu().config.width.max(1) as f32,
+        state.render_gpu().config.height.max(1) as f32,
     ];
 
     state.tick_state();
@@ -736,7 +729,7 @@ async fn tick_state_mirrors_render_uniforms_in_editor() {
     // match the per-axis magnitude of what the production code
     // computes for the same pan.
     let view = glam::Mat4::look_at_rh(expected_eye, target, glam::Vec3::Y);
-    let aspect = state.render.gpu.config.width as f32 / state.render.gpu.config.height as f32;
+    let aspect = state.render_gpu().config.width as f32 / state.render_gpu().config.height as f32;
     let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
     let expected_view_proj = proj * view;
     let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
@@ -781,8 +774,8 @@ async fn tick_state_mirrors_render_uniforms_in_playing() {
 
     let (expected_eye, expected_target) = state.playing_camera_view();
     let expected_viewport = [
-        state.render.gpu.config.width.max(1) as f32,
-        state.render.gpu.config.height.max(1) as f32,
+        state.render_gpu().config.width.max(1) as f32,
+        state.render_gpu().config.height.max(1) as f32,
     ];
 
     state.tick_state();
@@ -812,7 +805,7 @@ async fn tick_state_mirrors_render_uniforms_in_playing() {
     // any future drift in `look_at_rh` / `perspective_rh_gl`
     // ordering is caught.
     let view = glam::Mat4::look_at_rh(expected_eye, expected_target, glam::Vec3::Y);
-    let aspect = state.render.gpu.config.width as f32 / state.render.gpu.config.height as f32;
+    let aspect = state.render_gpu().config.width as f32 / state.render_gpu().config.height as f32;
     let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
     let expected_view_proj = proj * view;
     let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
@@ -961,11 +954,11 @@ async fn tick_state_mirrors_color_space_time_and_gamma() {
     // exercises both fields (defaults at zero would trivially
     // match).
     state.frame_runtime.global_time_seconds = 12.5;
-    state.render.gpu.apply_gamma_correction = true;
+    state.render_gpu_mut().apply_gamma_correction = true;
 
     let expected_viewport = [
-        state.render.gpu.config.width.max(1) as f32,
-        state.render.gpu.config.height.max(1) as f32,
+        state.render_gpu().config.width.max(1) as f32,
+        state.render_gpu().config.height.max(1) as f32,
     ];
 
     state.tick_state();
@@ -989,7 +982,7 @@ async fn tick_state_mirrors_gamma_off_as_zero() {
     use crate::state::render::resources::RenderUniformsRes;
 
     let mut state = State::new_test().await;
-    state.render.gpu.apply_gamma_correction = false;
+    state.render_gpu_mut().apply_gamma_correction = false;
 
     state.tick_state();
 
@@ -1334,8 +1327,8 @@ async fn multi_selection_clicking_rendered_gizmo_starts_gizmo_drag_not_block_dra
     state.sync_primary_selection_from_indices();
 
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
     let (bounds_position, bounds_size) = state
         .selected_group_bounds()
@@ -1659,8 +1652,8 @@ async fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging
     state.editor.input.cursor = [99.0, 99.0, 99.0];
 
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
     let screen_x = viewport.x as f64 * 0.5;
     let screen_y = viewport.y as f64 * 0.5;
@@ -1687,8 +1680,8 @@ async fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
     state.editor.input.cursor = [99.0, 99.0, 99.0];
 
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
     let screen_x = viewport.x as f64 * 0.5;
     let screen_y = viewport.y as f64 * 0.5;
@@ -1924,8 +1917,8 @@ async fn test_gizmo_move_shaft_is_pickable() {
     state.sync_editor_objects();
 
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
 
     let (bounds_position, bounds_size) = state
@@ -1992,8 +1985,8 @@ async fn test_gizmo_hover_priority_suppresses_block_outline() {
     state.sync_editor_objects();
 
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
 
     // 2. Find screen position of a gizmo handle (e.g. Move X)
@@ -2138,12 +2131,12 @@ async fn state_navigation_resize_and_phase_queries_cover_core_branches() {
     }
 
     let initial_size = PhysicalSize::new(
-        state.render.gpu.config.width,
-        state.render.gpu.config.height,
+        state.render_gpu().config.width,
+        state.render_gpu().config.height,
     );
     state.resize_surface(PhysicalSize::new(0, initial_size.height));
-    assert_eq!(state.render.gpu.config.width, initial_size.width);
-    assert_eq!(state.render.gpu.config.height, initial_size.height);
+    assert_eq!(state.render_gpu().config.width, initial_size.width);
+    assert_eq!(state.render_gpu().config.height, initial_size.height);
 
     let level_count = state.menu.state.levels.len();
     state.menu.state.selected_level = level_count - 1;
@@ -2260,8 +2253,8 @@ async fn handle_primary_click_covers_tapping_trigger_and_timing_mode_paths() {
     state.editor.timeline.clock.duration_seconds = 4.0;
     state.set_editor_timeline_time_seconds(0.0);
     let viewport = Vec2::new(
-        state.render.gpu.config.width as f32,
-        state.render.gpu.config.height as f32,
+        state.render_gpu().config.width as f32,
+        state.render_gpu().config.height as f32,
     );
     let future_tap_screen = state
         .editor

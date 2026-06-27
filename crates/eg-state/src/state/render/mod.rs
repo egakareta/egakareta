@@ -11,7 +11,7 @@ pub mod mirror;
 pub mod plugin;
 pub mod resources;
 
-use eg_render::{GpuContext, MeshSlot};
+use eg_render::MeshSlot;
 
 use eg_types::PhysicalSize;
 
@@ -19,11 +19,11 @@ use super::State;
 
 impl State {
     pub fn surface_width(&self) -> u32 {
-        self.render.gpu.surface_width()
+        self.render_gpu().surface_width()
     }
 
     pub fn surface_height(&self) -> u32 {
-        self.render.gpu.surface_height()
+        self.render_gpu().surface_height()
     }
 
     pub fn handle_surface_lost(&mut self) {
@@ -34,12 +34,8 @@ impl State {
     pub fn current_render_size(&self) -> PhysicalSize<u32> {
         self.surface_host()
             .map(|h| h.current_size())
-            .unwrap_or(self.render.gpu.size)
+            .unwrap_or(self.render_gpu().size)
     }
-}
-
-pub struct RenderSubsystem {
-    pub gpu: GpuContext,
 }
 
 #[cfg(test)]
@@ -48,17 +44,13 @@ impl Drop for State {
         if let Some(mut meshes) = self.world.get_resource_mut::<resources::RenderMeshesRes>() {
             meshes.0.destroy();
         }
-    }
-}
-
-#[cfg(test)]
-impl Drop for RenderSubsystem {
-    fn drop(&mut self) {
-        self.gpu.line_uniform_buffer.destroy();
-        self.gpu.camera_uniform_buffer.destroy();
-        self.gpu.color_space_uniform_buffer.destroy();
-        self.gpu.grid_uniform_buffer.destroy();
-        let _ = self.gpu.device.poll(wgpu::PollType::Poll);
+        if let Some(gpu) = self.world.get_resource_mut::<resources::RenderGpuRes>() {
+            gpu.0.line_uniform_buffer.destroy();
+            gpu.0.camera_uniform_buffer.destroy();
+            gpu.0.color_space_uniform_buffer.destroy();
+            gpu.0.grid_uniform_buffer.destroy();
+            let _ = gpu.0.device.poll(wgpu::PollType::Poll);
+        }
     }
 }
 
@@ -72,37 +64,37 @@ mod tests {
         let mut state = State::new_test().await;
 
         // Save old size and config
-        let old_size = state.render.gpu.size;
-        let old_config_width = state.render.gpu.config.width;
-        let old_config_height = state.render.gpu.config.height;
+        let old_size = state.render_gpu().size;
+        let old_config_width = state.render_gpu().config.width;
+        let old_config_height = state.render_gpu().config.height;
 
         // Apply 0 size width
-        state.render.gpu.apply_resize(PhysicalSize {
+        state.render_gpu_mut().apply_resize(PhysicalSize {
             width: 0,
             height: 100,
         });
 
         // Assert it returned early and didn't change size
-        assert_eq!(state.render.gpu.size.width, old_size.width);
-        assert_eq!(state.render.gpu.config.width, old_config_width);
+        assert_eq!(state.render_gpu().size.width, old_size.width);
+        assert_eq!(state.render_gpu().config.width, old_config_width);
 
         // Apply 0 size height
-        state.render.gpu.apply_resize(PhysicalSize {
+        state.render_gpu_mut().apply_resize(PhysicalSize {
             width: 100,
             height: 0,
         });
 
         // Assert it returned early and didn't change size
-        assert_eq!(state.render.gpu.size.height, old_size.height);
-        assert_eq!(state.render.gpu.config.height, old_config_height);
+        assert_eq!(state.render_gpu().size.height, old_size.height);
+        assert_eq!(state.render_gpu().config.height, old_config_height);
 
         // Apply non-zero resize
-        state.render.gpu.apply_resize(PhysicalSize {
+        state.render_gpu_mut().apply_resize(PhysicalSize {
             width: 800,
             height: 600,
         });
 
-        assert_eq!(state.render.gpu.size.width, 800);
-        assert_eq!(state.render.gpu.config.width, 800);
+        assert_eq!(state.render_gpu().size.width, 800);
+        assert_eq!(state.render_gpu().config.width, 800);
     }
 }

@@ -119,7 +119,7 @@ impl super::State {
     }
 
     pub fn perf_graphics_backend(&self) -> String {
-        format!("{:?}", self.render.gpu.adapter_info.backend)
+        format!("{:?}", self.render_gpu().adapter_info.backend)
     }
 
     pub fn perf_audio_backend(&self) -> String {

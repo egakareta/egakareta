@@ -120,8 +120,8 @@ fn grid_center_for_phase(state: &State) -> [f32; 2] {
 }
 
 fn view_projection_for_current_phase(state: &State) -> Mat4 {
-    let height = state.render.gpu.config.height.max(1);
-    let aspect = state.render.gpu.config.width.max(1) as f32 / height as f32;
+    let height = state.render_gpu().config.height.max(1);
+    let aspect = state.render_gpu().config.width.max(1) as f32 / height as f32;
     let (eye, target) = match state.phase {
         AppPhase::Editor if state.editor_is_playing() => {
             let (eye, target) = state.editor_preview_camera_view();
@@ -223,8 +223,8 @@ impl State {
     /// Creates a new `EguiRenderer` configured for the current GPU device and surface format.
     pub fn create_egui_renderer(&self) -> EguiRenderer {
         EguiRenderer::new(
-            &self.render.gpu.device,
-            self.render.gpu.config.format,
+            &self.render_gpu().device,
+            self.render_gpu().config.format,
             egui_wgpu::RendererOptions::default(),
         )
     }
@@ -246,7 +246,7 @@ impl State {
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
         puffin::profile_scope!("RenderWithOverlay");
-        let surface = match &self.render.gpu.surface {
+        let surface = match &self.render_gpu().surface {
             Some(s) => s,
             None => return Ok(()),
         };
@@ -261,8 +261,7 @@ impl State {
             .create_view(&TextureViewDescriptor::default());
 
         let mut encoder =
-            self.render
-                .gpu
+            self.render_gpu()
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
@@ -275,7 +274,7 @@ impl State {
 
         {
             puffin::profile_scope!("GpuSubmit");
-            self.render.gpu.queue.submit(iter::once(encoder.finish()));
+            self.render_gpu().queue.submit(iter::once(encoder.finish()));
         }
         {
             puffin::profile_scope!("SurfacePresent");
@@ -306,7 +305,7 @@ impl State {
             game_over: self.gameplay.state.game_over,
             sky_color,
             grid_center: grid_center_for_phase(self),
-            apply_gamma_correction: self.render.gpu.apply_gamma_correction,
+            apply_gamma_correction: self.render_gpu().apply_gamma_correction,
         };
         let skip_world = frame_input.should_skip_world();
         let draw_editor_overlays = frame_input.should_draw_editor_overlays();
@@ -314,8 +313,8 @@ impl State {
         let grid_uniform = frame_input.grid_uniform(GRID_HALF_EXTENT);
         let block_frustum =
             ViewFrustum::from_view_projection(view_projection_for_current_phase(self));
-        self.render.gpu.queue.write_buffer(
-            &self.render.gpu.grid_uniform_buffer,
+        self.render_gpu().queue.write_buffer(
+            &self.render_gpu().grid_uniform_buffer,
             0,
             bytemuck::bytes_of(&grid_uniform),
         );
@@ -332,7 +331,7 @@ impl State {
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.render.gpu.depth_view,
+                view: &self.render_gpu().depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -347,11 +346,11 @@ impl State {
             multiview_mask: None,
         });
 
-        render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-        render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+        render_pass.set_pipeline(&self.render_gpu().render_pipeline);
+        render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+        render_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
 
         if frame_input.should_draw_floor_and_grid() {
             puffin::profile_scope!("DrawFloorGrid");
@@ -360,16 +359,16 @@ impl State {
             }
 
             if let Some(draw_data) = self.render_meshes().grid.draw_data() {
-                render_pass.set_pipeline(&self.render.gpu.grid_pipeline);
-                render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                render_pass.set_bind_group(1, &self.render.gpu.grid_bind_group, &[]);
-                render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                render_pass.set_pipeline(&self.render_gpu().grid_pipeline);
+                render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.render_gpu().grid_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
                 draw_mesh(&mut render_pass, draw_data);
-                render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                render_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                render_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
             }
         }
 
@@ -381,8 +380,8 @@ impl State {
             if !skip_world {
                 puffin::profile_scope!("DrawBlocksTrail");
                 if self.phase == AppPhase::Editor {
-                    render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_pipeline(&self.render_gpu().instanced_block_pipeline);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_visible_chunked_instances(
                         &mut render_pass,
                         &self.render_meshes().blocks_static_chunked,
@@ -392,13 +391,13 @@ impl State {
                         &mut render_pass,
                         &self.render_meshes().blocks_static_instanced,
                     );
-                    render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                    render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
 
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_visible_chunked_geometry(
                         &mut render_pass,
                         &self.render_meshes().blocks_static_chunked,
@@ -406,30 +405,30 @@ impl State {
                     );
 
                     if let Some(draw_data) = self.render_meshes().blocks_static.draw_data() {
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
 
                     if let Some(draw_data) = self.render_meshes().blocks_selected.draw_data() {
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
                 } else {
-                    render_pass.set_pipeline(&self.render.gpu.instanced_block_pipeline);
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_pipeline(&self.render_gpu().instanced_block_pipeline);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_visible_chunked_instances(
                         &mut render_pass,
                         &self.render_meshes().blocks_chunked,
                         block_frustum,
                     );
                     draw_instanced_blocks(&mut render_pass, &self.render_meshes().blocks_instanced);
-                    render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                    render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                    render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                    render_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                    render_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                    render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                    render_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
 
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_visible_chunked_geometry(
                         &mut render_pass,
                         &self.render_meshes().blocks_chunked,
@@ -437,45 +436,53 @@ impl State {
                     );
 
                     if let Some(draw_data) = self.render_meshes().blocks.draw_data() {
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
                 }
 
                 if let Some(draw_data) = self.render_meshes().gem_shatter_effects.draw_data() {
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
                 if let Some(draw_data) = self.render_meshes().practice_checkpoints.draw_data() {
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
                 if let Some(draw_data) = self.render_meshes().trail.draw_data() {
                     if self.phase == AppPhase::Editor {
-                        render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
-                        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        render_pass.set_pipeline(&self.render_gpu().editor_ghost_trail_pipeline);
+                        render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(
+                            2,
+                            &self.render_gpu().color_space_bind_group,
+                            &[],
+                        );
                         render_pass.set_bind_group(
                             3,
-                            &self.render.gpu.block_texture_bind_group,
+                            &self.render_gpu().block_texture_bind_group,
                             &[],
                         );
                     }
 
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
 
                     if self.phase == AppPhase::Editor {
-                        render_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                        render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                        render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        render_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        render_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                        render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                        render_pass.set_bind_group(
+                            2,
+                            &self.render_gpu().color_space_bind_group,
+                            &[],
+                        );
                         render_pass.set_bind_group(
                             3,
-                            &self.render.gpu.block_texture_bind_group,
+                            &self.render_gpu().block_texture_bind_group,
                             &[],
                         );
                     }
@@ -485,17 +492,17 @@ impl State {
             if draw_editor_overlays {
                 puffin::profile_scope!("DrawEditorOverlayMeshes");
                 if let Some(draw_data) = self.render_meshes().spawn_marker.draw_data() {
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
                 if let Some(draw_data) = self.render_meshes().camera_trigger_markers.draw_data() {
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
                 if let Some(draw_data) = self.render_meshes().tap_indicators.draw_data() {
-                    render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
             }
@@ -521,7 +528,7 @@ impl State {
                             },
                         })],
                         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                            view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                            view: &self.render_gpu().editor_outline_occlusion_depth_view,
                             depth_ops: Some(wgpu::Operations {
                                 load: wgpu::LoadOp::Clear(1.0),
                                 store: wgpu::StoreOp::Store,
@@ -535,17 +542,21 @@ impl State {
                         timestamp_writes: None,
                         multiview_mask: None,
                     });
-                transform_marker_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                transform_marker_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                transform_marker_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                transform_marker_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                transform_marker_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                transform_marker_pass.set_bind_group(
+                    1,
+                    &self.render_gpu().zero_line_bind_group,
+                    &[],
+                );
                 transform_marker_pass.set_bind_group(
                     2,
-                    &self.render.gpu.color_space_bind_group,
+                    &self.render_gpu().color_space_bind_group,
                     &[],
                 );
                 transform_marker_pass.set_bind_group(
                     3,
-                    &self.render.gpu.block_texture_bind_group,
+                    &self.render_gpu().block_texture_bind_group,
                     &[],
                 );
                 draw_mesh(&mut transform_marker_pass, draw_data);
@@ -588,7 +599,9 @@ impl State {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                                        view: &self
+                                            .render_gpu()
+                                            .editor_outline_occlusion_depth_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Clear(1.0),
                                             store: wgpu::StoreOp::Store,
@@ -604,14 +617,19 @@ impl State {
                                 multiview_mask: None,
                             });
 
-                        depth_pass
-                            .set_pipeline(&self.render.gpu.editor_outline_occlusion_depth_pipeline);
-                        depth_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                        depth_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                        depth_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
+                        depth_pass.set_pipeline(
+                            &self.render_gpu().editor_outline_occlusion_depth_pipeline,
+                        );
+                        depth_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                        depth_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                        depth_pass.set_bind_group(
+                            2,
+                            &self.render_gpu().color_space_bind_group,
+                            &[],
+                        );
                         depth_pass.set_bind_group(
                             3,
-                            &self.render.gpu.block_texture_bind_group,
+                            &self.render_gpu().block_texture_bind_group,
                             &[],
                         );
                         depth_pass.set_vertex_buffer(0, selection_mask_buffer.slice(..));
@@ -635,7 +653,9 @@ impl State {
                                 })],
                                 depth_stencil_attachment: Some(
                                     wgpu::RenderPassDepthStencilAttachment {
-                                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                                        view: &self
+                                            .render_gpu()
+                                            .editor_outline_occlusion_depth_view,
                                         depth_ops: Some(wgpu::Operations {
                                             load: wgpu::LoadOp::Load,
                                             store: wgpu::StoreOp::Store,
@@ -651,16 +671,20 @@ impl State {
                                 multiview_mask: None,
                             });
 
-                        outline_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                        outline_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                        outline_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                        outline_pass.set_bind_group(
+                            1,
+                            &self.render_gpu().zero_line_bind_group,
+                            &[],
+                        );
                         outline_pass.set_bind_group(
                             2,
-                            &self.render.gpu.color_space_bind_group,
+                            &self.render_gpu().color_space_bind_group,
                             &[],
                         );
                         outline_pass.set_bind_group(
                             3,
-                            &self.render.gpu.block_texture_bind_group,
+                            &self.render_gpu().block_texture_bind_group,
                             &[],
                         );
 
@@ -669,11 +693,11 @@ impl State {
                             outline_pass.set_stencil_reference(stencil_ref);
 
                             outline_pass
-                                .set_pipeline(&self.render.gpu.editor_outline_mask_pipeline);
+                                .set_pipeline(&self.render_gpu().editor_outline_mask_pipeline);
                             outline_pass.set_vertex_buffer(0, selection_mask_buffer.slice(..));
                             outline_pass.draw(instance.mask_vertices.clone(), 0..1);
 
-                            outline_pass.set_pipeline(&self.render.gpu.editor_outline_pipeline);
+                            outline_pass.set_pipeline(&self.render_gpu().editor_outline_pipeline);
                             outline_pass.set_vertex_buffer(0, selection_outline_buffer.slice(..));
                             outline_pass.draw(instance.outline_vertices.clone(), 0..1);
                         }
@@ -698,7 +722,7 @@ impl State {
                         },
                     })],
                     depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.render.gpu.editor_outline_occlusion_depth_view,
+                        view: &self.render_gpu().editor_outline_occlusion_depth_view,
                         depth_ops: Some(wgpu::Operations {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
@@ -714,18 +738,18 @@ impl State {
                 });
 
                 hover_pass.set_stencil_reference(1);
-                hover_pass.set_pipeline(&self.render.gpu.editor_outline_mask_pipeline);
-                hover_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                hover_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                hover_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                hover_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                hover_pass.set_pipeline(&self.render_gpu().editor_outline_mask_pipeline);
+                hover_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                hover_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                hover_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                hover_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
                 draw_mesh(&mut hover_pass, mask_data);
 
-                hover_pass.set_pipeline(&self.render.gpu.editor_hover_outline_pipeline);
-                hover_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                hover_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                hover_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                hover_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                hover_pass.set_pipeline(&self.render_gpu().editor_hover_outline_pipeline);
+                hover_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                hover_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                hover_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                hover_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
                 draw_mesh(&mut hover_pass, outline_data);
             }
 
@@ -742,7 +766,7 @@ impl State {
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.render.gpu.depth_view,
+                    view: &self.render_gpu().depth_view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
@@ -758,71 +782,71 @@ impl State {
             });
 
             gizmo_pass.set_stencil_reference(0);
-            gizmo_pass.set_pipeline(&self.render.gpu.render_pipeline);
-            gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-            gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-            gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-            gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+            gizmo_pass.set_pipeline(&self.render_gpu().render_pipeline);
+            gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+            gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+            gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+            gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
 
             if let Some(draw_data) = self.render_meshes().editor_gizmo.draw_data() {
-                gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().gizmo_overlay_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                 draw_mesh(&mut gizmo_pass, draw_data);
 
-                gizmo_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
             }
 
             if let Some(draw_data) = self.render_meshes().editor_hitbox_visualization.draw_data() {
-                gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().gizmo_overlay_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
                 draw_mesh(&mut gizmo_pass, draw_data);
 
-                gizmo_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
             }
 
             if frame_input.should_draw_editor_cursor()
                 && let Some(draw_data) = self.render_meshes().editor_cursor.draw_data()
             {
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                 draw_mesh(&mut gizmo_pass, draw_data);
             }
 
             if let Some(draw_data) = self.render_meshes().camera_arrow.draw_data() {
-                gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().gizmo_overlay_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
                 draw_mesh(&mut gizmo_pass, draw_data);
 
-                gizmo_pass.set_pipeline(&self.render.gpu.render_pipeline);
-                gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
-                gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
-                gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
-                gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
+                gizmo_pass.set_pipeline(&self.render_gpu().render_pipeline);
+                gizmo_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
+                gizmo_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
+                gizmo_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
+                gizmo_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
             }
         }
 
         {
             puffin::profile_scope!("RenderOverlayClosure");
             overlay(
-                &self.render.gpu.device,
-                &self.render.gpu.queue,
+                &self.render_gpu().device,
+                &self.render_gpu().queue,
                 view,
                 encoder,
             );
@@ -915,7 +939,7 @@ mod tests {
             camera_position: [0.0, 0.0, 0.0, 0.0],
         };
         state.queue().write_buffer(
-            &state.render.gpu.camera_uniform_buffer,
+            &state.render_gpu().camera_uniform_buffer,
             0,
             bytemuck::cast_slice(&[camera]),
         );
@@ -930,7 +954,7 @@ mod tests {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: state.render.gpu.config.format,
+            format: state.render_gpu().config.format,
             usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
@@ -992,7 +1016,7 @@ mod tests {
         let pixel = [data[0], data[1], data[2], data[3]];
         drop(data);
         readback.unmap();
-        rgba_from_surface_format(state.render.gpu.config.format, pixel)
+        rgba_from_surface_format(state.render_gpu().config.format, pixel)
     }
 
     fn prepare_outline_occlusion_test_state(state: &mut State) {
@@ -1373,7 +1397,7 @@ mod tests {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: state.render.gpu.config.format,
+            format: state.render_gpu().config.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
@@ -1409,7 +1433,7 @@ mod tests {
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
 
         // 4. Test with gamma correction enabled
-        state.render.gpu.apply_gamma_correction = true;
+        state.render_gpu_mut().apply_gamma_correction = true;
         state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
 
         state.queue().submit(std::iter::once(encoder.finish()));
@@ -1434,7 +1458,7 @@ mod tests {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: state.render.gpu.config.format,
+            format: state.render_gpu().config.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });

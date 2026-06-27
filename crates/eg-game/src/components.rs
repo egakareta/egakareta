@@ -108,6 +108,38 @@ pub struct ObjectId(pub String);
 #[derive(Component)]
 pub struct ObjectData(pub LevelObject);
 
+/// Authored object position, mirrored out of [`ObjectData`] for ECS change detection.
+#[derive(Component, Clone, Copy, Default)]
+pub struct Position(pub [f32; 3]);
+
+/// Authored object rotation in degrees, mirrored out of [`ObjectData`] for ECS change detection.
+#[derive(Component, Clone, Copy, Default)]
+pub struct Rotation(pub [f32; 3]);
+
+/// Authored object size, mirrored out of [`ObjectData`] for ECS change detection.
+#[derive(Component, Clone, Copy)]
+pub struct Size(pub [f32; 3]);
+
+impl Default for Size {
+    fn default() -> Self {
+        Self([1.0, 1.0, 1.0])
+    }
+}
+
+/// Authored object block id, mirrored out of [`ObjectData`] for ECS change detection.
+#[derive(Component, Clone, Default)]
+pub struct BlockId(pub eg_blocks::BlockId);
+
+/// Authored object color tint, mirrored out of [`ObjectData`] for ECS change detection.
+#[derive(Component, Clone, Copy)]
+pub struct ColorTint(pub [f32; 3]);
+
+impl Default for ColorTint {
+    fn default() -> Self {
+        Self([1.0, 1.0, 1.0])
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Runtime + editor markers
 // ---------------------------------------------------------------------------
@@ -155,5 +187,10 @@ pub struct ObjectBundle {
     pub object: Object,
     pub id: ObjectId,
     pub data: ObjectData,
+    pub position: Position,
+    pub rotation: Rotation,
+    pub size: Size,
+    pub block_id: BlockId,
+    pub color_tint: ColorTint,
     pub cached_behavior: CachedBlockBehavior,
 }

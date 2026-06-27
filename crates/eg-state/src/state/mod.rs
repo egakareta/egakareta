@@ -68,7 +68,6 @@ pub use perf::PerfState;
 pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins, setup_state_app,
 };
-pub use render::RenderSubsystem;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
@@ -192,7 +191,6 @@ pub struct StateSchedule;
 /// the full-Bevy migration; all state lives in the World and `State` becomes
 /// a thin alias over `bevy_app::App`.
 pub struct State {
-    render: RenderSubsystem,
     auth: AuthSubsystem,
     gameplay: GameplaySubsystem,
     editor: EditorSubsystem,
@@ -207,17 +205,26 @@ pub struct State {
 impl State {
     /// Returns a reference to the wgpu device for GPU operations.
     pub fn device(&self) -> &wgpu::Device {
-        &self.render.gpu.device
+        &self.render_gpu().device
     }
 
     /// Returns a reference to the wgpu queue for command submission.
     pub fn queue(&self) -> &wgpu::Queue {
-        &self.render.gpu.queue
+        &self.render_gpu().queue
     }
 
     /// Returns the GPU render context for render-owned helpers.
     pub fn render_gpu(&self) -> &eg_render::GpuContext {
-        &self.render.gpu
+        &self.world.resource::<render::resources::RenderGpuRes>().0
+    }
+
+    /// Returns mutable GPU render context for render-owned helpers.
+    pub fn render_gpu_mut(&mut self) -> &mut eg_render::GpuContext {
+        let gpu = self
+            .world
+            .resource_mut::<render::resources::RenderGpuRes>()
+            .into_inner();
+        &mut gpu.0
     }
 
     /// Returns the scene mesh storage for render-owned helpers.
@@ -242,12 +249,12 @@ impl State {
         &mut self,
         f: impl FnOnce(&wgpu::Device, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
-        let device = &self.render.gpu.device;
+        let device = self.render_gpu().device.clone();
         let meshes = self
             .world
             .resource_mut::<render::resources::RenderMeshesRes>()
             .into_inner();
-        f(device, &mut meshes.0)
+        f(&device, &mut meshes.0)
     }
 
     /// Mutates scene mesh storage while also reading the wgpu queue.
@@ -255,12 +262,12 @@ impl State {
         &mut self,
         f: impl FnOnce(&wgpu::Queue, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
-        let queue = &self.render.gpu.queue;
+        let queue = self.render_gpu().queue.clone();
         let meshes = self
             .world
             .resource_mut::<render::resources::RenderMeshesRes>()
             .into_inner();
-        f(queue, &mut meshes.0)
+        f(&queue, &mut meshes.0)
     }
 
     /// Returns the optional platform surface host.
@@ -374,15 +381,16 @@ impl State {
                 _ => eg_types::LevelMetadata::default().sky_color,
             },
             grid_center: [0.0, 0.0],
-            apply_gamma_correction: self.render.gpu.apply_gamma_correction,
+            apply_gamma_correction: self.render_gpu().apply_gamma_correction,
         }
     }
 
     /// Compute the current POD render uniforms for the ECS mirror.
     /// This mirrors the same values uploaded by `State::update` while
-    /// heavy GPU buffers still live on the legacy `RenderSubsystem`.
+    /// the update path is still being migrated into Bevy systems.
     fn compute_render_uniforms_snapshot(&self) -> render::resources::RenderUniformsRes {
-        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let gpu = self.render_gpu();
+        let aspect = gpu.config.width as f32 / gpu.config.height as f32;
         let (eye, target) = match self.phase {
             AppPhase::Menu => (
                 glam::Vec3::from_array(self.menu.state.preview_camera_position),
@@ -428,15 +436,11 @@ impl State {
             },
             line,
             color_space: ColorSpaceUniform {
-                apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
-                    1.0
-                } else {
-                    0.0
-                },
+                apply_gamma_correction: if gpu.apply_gamma_correction { 1.0 } else { 0.0 },
                 time_seconds: self.frame_runtime.global_time_seconds,
                 viewport_size: [
-                    self.render.gpu.config.width.max(1) as f32,
-                    self.render.gpu.config.height.max(1) as f32,
+                    gpu.config.width.max(1) as f32,
+                    gpu.config.height.max(1) as f32,
                 ],
             },
         }
@@ -490,7 +494,7 @@ impl State {
         if let Some(host) = self.surface_host() {
             host.prepare_resize(new_size);
         }
-        self.render.gpu.apply_resize(new_size);
+        self.render_gpu_mut().apply_resize(new_size);
     }
 
     fn current_gameplay_input_time_seconds(&self) -> f32 {
@@ -761,8 +765,8 @@ impl State {
                     return;
                 }
                 let viewport_size = glam::Vec2::new(
-                    self.render.gpu.config.width as f32,
-                    self.render.gpu.config.height as f32,
+                    self.render_gpu().config.width as f32,
+                    self.render_gpu().config.height as f32,
                 );
                 let hit_selectable = self
                     .editor
@@ -801,8 +805,8 @@ impl State {
 
         if !handled && self.is_editor() {
             let viewport_size = glam::Vec2::new(
-                self.render.gpu.config.width as f32,
-                self.render.gpu.config.height as f32,
+                self.render_gpu().config.width as f32,
+                self.render_gpu().config.height as f32,
             );
             let next_hover = self.editor.pick_gizmo_handle(x, y, viewport_size);
             if self.editor.runtime.interaction.hovered_gizmo != next_hover {

@@ -130,8 +130,8 @@ impl State {
         }
 
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         if self.editor.force_cursor_from_screen(x, y, viewport_size)
             == EditorInteractionChange::Cursor
@@ -142,8 +142,8 @@ impl State {
 
     pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         let viewport_size = Vec2::new(
-            self.render.gpu.config.width as f32,
-            self.render.gpu.config.height as f32,
+            self.render_gpu().config.width as f32,
+            self.render_gpu().config.height as f32,
         );
         let previous_tap_division_hover = self.editor.runtime.interaction.hovered_tap_division;
         let previous_tap_hover = self.editor.runtime.interaction.hovered_tap_index;

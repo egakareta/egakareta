@@ -12,7 +12,6 @@ use super::{
     AudioState, AudioSubsystem, AuthSubsystem, EditorConfigState, EditorSubsystem,
     GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
 };
-use crate::state::RenderSubsystem;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use glam::Mat4;
 #[cfg(any(test, feature = "test-support"))]
@@ -314,11 +313,13 @@ impl From<&GpuContext> for TestGpuFixture {
 /// schedule. Used by the [`State`] constructors to seed the parallel
 /// ECS world (Phase 2b + 3).
 fn build_state_world(
+    gpu: GpuContext,
     surface_host: Option<SurfaceHost>,
     meshes: SceneMeshes,
 ) -> bevy_ecs::world::World {
     let mut world = bevy_ecs::world::World::new();
     super::plugins::register_state_resources(&mut world);
+    world.insert_resource(crate::state::render::resources::RenderGpuRes(gpu));
     world.insert_resource(crate::state::render::resources::RenderMeshesRes(meshes));
     world.insert_resource(crate::state::render::resources::RenderSurfaceHostRes(
         surface_host,
@@ -427,7 +428,7 @@ impl State {
                         )
                         .await
                         {
-                            let fixture = TestGpuFixture::from(&state.render.gpu);
+                            let fixture = TestGpuFixture::from(state.render_gpu());
                             return Some(fixture);
                         }
                     }
@@ -541,8 +542,8 @@ impl State {
         let now = web_time::Instant::now();
 
         Self {
-            render: RenderSubsystem {
-                gpu: GpuContext {
+            world: build_state_world(
+                GpuContext {
                     surface: None,
                     adapter_info: fixture.adapter_info.clone(),
                     device: fixture.device.clone(),
@@ -584,7 +585,36 @@ impl State {
                     block_texture_bind_group: fixture.block_texture_bind_group.clone(),
                     apply_gamma_correction: fixture.apply_gamma_correction,
                 },
-            },
+                None,
+                SceneMeshes {
+                    floor: MeshSlot::Empty,
+                    grid: MeshSlot::Empty,
+                    trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
+                    blocks: MeshSlot::Empty,
+                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_instanced: InstancedMeshSlot::default(),
+                    blocks_static: MeshSlot::Empty,
+                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_static_instanced: InstancedMeshSlot::default(),
+                    blocks_selected: MeshSlot::Empty,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_stencil: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_stencil: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_selection_outline_instances: Vec::new(),
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    transform_trigger_markers: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    camera_trigger_markers: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
+                },
+            ),
             auth: AuthSubsystem {
                 session: auth_session,
                 pending: false,
@@ -661,37 +691,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            world: build_state_world(
-                None,
-                SceneMeshes {
-                    floor: MeshSlot::Empty,
-                    grid: MeshSlot::Empty,
-                    trail: trail_mesh,
-                    gem_shatter_effects: MeshSlot::Empty,
-                    practice_checkpoints: MeshSlot::Empty,
-                    blocks: MeshSlot::Empty,
-                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
-                    editor_cursor: MeshSlot::Empty,
-                    editor_hover_stencil: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
-                    editor_selection_stencil: MeshSlot::Empty,
-                    editor_selection_outline: MeshSlot::Empty,
-                    editor_selection_outline_instances: Vec::new(),
-                    editor_gizmo: MeshSlot::Empty,
-                    tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
-                    spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
-                    editor_preview_player: MeshSlot::Empty,
-                    editor_hitbox_visualization: MeshSlot::Empty,
-                    camera_arrow: MeshSlot::Empty,
-                },
-            ),
         }
     }
 
@@ -1459,8 +1458,8 @@ impl State {
         let now = web_time::Instant::now();
 
         Some(Self {
-            render: RenderSubsystem {
-                gpu: GpuContext {
+            world: build_state_world(
+                GpuContext {
                     surface,
                     adapter_info,
                     device,
@@ -1496,7 +1495,36 @@ impl State {
                     block_texture_bind_group,
                     apply_gamma_correction: should_apply_gamma_correction,
                 },
-            },
+                surface_host,
+                SceneMeshes {
+                    floor: floor_mesh,
+                    grid: grid_mesh,
+                    trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
+                    blocks: block_mesh,
+                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_instanced: InstancedMeshSlot::default(),
+                    blocks_static: MeshSlot::Empty,
+                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_static_instanced: InstancedMeshSlot::default(),
+                    blocks_selected: MeshSlot::Empty,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_stencil: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_stencil: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_selection_outline_instances: Vec::new(),
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    transform_trigger_markers: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    camera_trigger_markers: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
+                },
+            ),
             auth: AuthSubsystem {
                 session: auth_session,
                 pending: false,
@@ -1573,37 +1601,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            world: build_state_world(
-                surface_host,
-                SceneMeshes {
-                    floor: floor_mesh,
-                    grid: grid_mesh,
-                    trail: trail_mesh,
-                    gem_shatter_effects: MeshSlot::Empty,
-                    practice_checkpoints: MeshSlot::Empty,
-                    blocks: block_mesh,
-                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
-                    editor_cursor: MeshSlot::Empty,
-                    editor_hover_stencil: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
-                    editor_selection_stencil: MeshSlot::Empty,
-                    editor_selection_outline: MeshSlot::Empty,
-                    editor_selection_outline_instances: Vec::new(),
-                    editor_gizmo: MeshSlot::Empty,
-                    tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
-                    spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
-                    editor_preview_player: MeshSlot::Empty,
-                    editor_hitbox_visualization: MeshSlot::Empty,
-                    camera_arrow: MeshSlot::Empty,
-                },
-            ),
         })
     }
 }
