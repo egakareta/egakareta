@@ -88,11 +88,11 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 4b-2** — mirror POD `RenderUniformsRes` (CameraUniform + LineUniform + ColorSpaceUniform) into the world; covers Menu + Editor phase paths.
 - [x] **Phase 4b-3** — mirror Playing + GameOver + editor-playtest paths (4 new tests pinning `playing_camera_view` + `editor_preview_camera_view` + line uniform per player direction).
 - [x] **Phase 4b-4** — mirror `ColorSpaceUniform.time_seconds` from `frame_runtime.global_time_seconds` + the gamma-toggle bit; 2 new tests covering the bit-as-float conversion.
-- [x] **Phase 4c** — insert `RenderMeshesRes` + `RenderSurfaceHostRes` with default values; `MeshSlot` + `SceneMeshes` now derive `Default`; legacy `State::render` fields remain authoritative.
+- [x] **Phase 4c** — insert `RenderMeshesRes` + `RenderSurfaceHostRes` resources; `MeshSlot` + `SceneMeshes` now derive `Default` for schedule/test construction.
 - [x] **Phase 4d-scaffold** — `RebuildMeshSet` system set + `mark_mesh_dirty_placeholder_system` + `RebuildMeshEvent` / `RebuildMeshKind` event types. The actual `Changed<>` detection is deferred (no `ObjectBundle` components yet).
 - [x] **Phase 4e-scaffold** — `present_render_frame_placeholder_system` reads the POD resources; the actual wgpu present call from `eg-app/src/platform/pipeline.rs::render_frame` stays in place.
 - [ ] **Phase 4b-final** — move `State::render.gpu` ownership into `RenderGpuRes` (440 call sites).
-- [ ] **Phase 4c-final** — swap the `RenderMeshesRes` / `RenderSurfaceHostRes` defaults for the actual `SceneMeshes` / `SurfaceHost` from `State::render`.
+- [x] **Phase 4c-final** — `RenderMeshesRes` / `RenderSurfaceHostRes` now own the actual `SceneMeshes` / `SurfaceHost`; legacy mesh/surface call sites route through `State` accessors backed by the world.
 - [ ] **Phase 4d-final** — `ObjectBundle` components + `Changed<>` detection that drives `mark_mesh_dirty_system`; `EditorDirtyFlags` deletion.
 - [ ] **Phase 4e-final** — `present_frame_system` in `RenderPresentSet`; remove `State::render()` call from `eg-app/src/platform/pipeline.rs`.
 - [ ] **Phase 5** — UI as Bevy systems.
@@ -311,11 +311,11 @@ After 4b-4, every branch of `compute_render_uniforms_snapshot` is test-pinned. T
 
 ### What Phase 4c / 4d / 4e do (next)
 
-The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhase` values + time + gamma. The remaining Phase 4 sub-phases (4c, 4d, 4e) move the heavy render ownership into Bevy resources. Each sub-phase is split into a **scaffold** (this commit) and a **final** (future) stage:
+The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhase` values + time + gamma. The remaining Phase 4 sub-phases (4c, 4d, 4e) move the heavy render ownership into Bevy resources. Phase 4c-final is complete; GPU ownership and present cut-over remain pending.
 
-- **Phase 4c-scaffold** (this commit) — `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted with their `Default` values (`SceneMeshes::default()` and `None` respectively) by `register_render_pod_resources`. Bevy systems can query for their presence. The legacy `State::render.meshes` + `State::render.surface_host` fields remain authoritative. Two `Default` impls were added to `eg-render`: `MeshSlot::default() = MeshSlot::Empty` and `SceneMeshes::default()` (all 25 `MeshSlot` fields set to `Empty`, the two chunked/instanced slots use their existing `#[derive(Default)]` impls, `editor_selection_outline_instances = Vec::new()`).
+- **Phase 4c-scaffold** — `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted with default values by `register_render_pod_resources`. Bevy systems can query for their presence. Two `Default` impls were added to `eg-render`: `MeshSlot::default() = MeshSlot::Empty` and `SceneMeshes::default()` (all 25 `MeshSlot` fields set to `Empty`, the two chunked/instanced slots use their existing `#[derive(Default)]` impls, `editor_selection_outline_instances = Vec::new()`).
 
-- **Phase 4c-final** (next) — swap the resource defaults for the actual `SceneMeshes` / `SurfaceHost` from `State::render`. This touches the 85 call sites of `self.render.meshes.*` and the 1 call site of `self.render.surface_host`. The transition is mechanical: each call site goes from `self.render.meshes.X` to `self.world().resource::<RenderMeshesRes>().0.X` (or a `State::meshes()` helper that delegates to the world).
+- **Phase 4c-final** — complete. `State` construction now inserts the actual `SceneMeshes` / `SurfaceHost` into `RenderMeshesRes` / `RenderSurfaceHostRes`, `RenderSubsystem` no longer owns those fields, and legacy callers use `State::render_meshes()` / `render_meshes_mut()` / `surface_host()`. Mesh uploads that also need `GpuContext` use split-borrow helpers so resource-owned meshes can be mutated while reading the legacy device/queue.
 
 - **Phase 4d-scaffold** (this commit) — adds the `RebuildMeshSet` system set + a `mark_mesh_dirty_placeholder_system` + the `RebuildMeshEvent` / `RebuildMeshKind` types in `crates/eg-state/src/events/mesh_rebuild.rs`. The 9 `RebuildMeshKind` variants correspond 1:1 to the 9 bits on the legacy `EditorDirtyFlags` bitfield. The system itself is a no-op today because there are no Bevy components on object entities yet (the legacy `LevelObject` struct is not a component). The system set + event type are in place so the schedule graph is final.
 

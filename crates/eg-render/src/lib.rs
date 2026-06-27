@@ -211,7 +211,9 @@ pub struct EditorOutlineInstance {
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 
+#[derive(Default)]
 pub enum MeshSlot {
+    #[default]
     Empty,
     VertexData {
         buffer: wgpu::Buffer,
@@ -235,12 +237,6 @@ pub enum MeshSlot {
         count: u32,
         capacity_vertices: u32,
     },
-}
-
-impl Default for MeshSlot {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 #[derive(Clone, Copy)]

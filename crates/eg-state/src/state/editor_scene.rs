@@ -684,7 +684,7 @@ impl State {
         puffin::profile_scope!("EditorCursorMesh");
         let vertices = if self.editor.input.mode == EditorMode::Tapping {
             if self.editor_tap_cursor_overlap_index().is_some() {
-                self.render.meshes.editor_cursor.clear();
+                self.render_meshes_mut().editor_cursor.clear();
                 return;
             }
             build_editor_tap_cursor_vertices(self.editor.input.cursor)
@@ -696,18 +696,20 @@ impl State {
                 self.editor.config.selected_block_rotation_degrees,
             )
         };
-        self.render.meshes.editor_cursor.replace_with_vertices(
-            &self.render.gpu.device,
-            "Editor Cursor Vertex Buffer",
-            &vertices,
-        );
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.editor_cursor.replace_with_vertices(
+                device,
+                "Editor Cursor Vertex Buffer",
+                &vertices,
+            );
+        });
     }
 
     pub(super) fn rebuild_editor_hover_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorHoverOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.input.mode.is_transform_mode() {
-            self.render.meshes.editor_hover_stencil.clear();
-            self.render.meshes.editor_hover_outline.clear();
+            self.render_meshes_mut().editor_hover_stencil.clear();
+            self.render_meshes_mut().editor_hover_outline.clear();
             return;
         }
 
@@ -734,8 +736,8 @@ impl State {
         });
 
         if indices_to_outline.is_empty() && !has_transform_trigger_targets {
-            self.render.meshes.editor_hover_stencil.clear();
-            self.render.meshes.editor_hover_outline.clear();
+            self.render_meshes_mut().editor_hover_stencil.clear();
+            self.render_meshes_mut().editor_hover_outline.clear();
             return;
         }
 
@@ -758,23 +760,19 @@ impl State {
             &mut all_vertices,
         );
 
-        self.render
-            .meshes
-            .editor_hover_stencil
-            .replace_with_geometry(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.editor_hover_stencil.replace_with_geometry(
+                device,
                 "Editor Hover Stencil Vertex Buffer",
                 &stencil_geometry,
             );
 
-        self.render
-            .meshes
-            .editor_hover_outline
-            .replace_with_vertices(
-                &self.render.gpu.device,
+            meshes.editor_hover_outline.replace_with_vertices(
+                device,
                 "Editor Hover Outline Vertex Buffer",
                 &all_vertices,
             );
+        });
     }
 
     pub(super) fn rebuild_editor_gizmo_vertices(&mut self) {
@@ -787,12 +785,12 @@ impl State {
         if self.phase != AppPhase::Editor
             || (!show_move_handles && !show_scale_handles && !show_rotate_handles)
         {
-            self.render.meshes.editor_gizmo.clear();
+            self.render_meshes_mut().editor_gizmo.clear();
             return;
         }
 
         let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
-            self.render.meshes.editor_gizmo.clear();
+            self.render_meshes_mut().editor_gizmo.clear();
             return;
         };
 
@@ -848,20 +846,21 @@ impl State {
             hovered_part,
             dragged_part,
         });
-        self.render.meshes.editor_gizmo.replace_with_vertices(
-            &self.render.gpu.device,
-            "Editor Gizmo Vertex Buffer",
-            &vertices,
-        );
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.editor_gizmo.replace_with_vertices(
+                device,
+                "Editor Gizmo Vertex Buffer",
+                &vertices,
+            );
+        });
     }
 
     pub(super) fn rebuild_editor_selection_outline_vertices(&mut self) {
         puffin::profile_scope!("EditorSelectionOutlineMesh");
         if self.phase != AppPhase::Editor || !self.editor.input.mode.is_transform_mode() {
-            self.render.meshes.editor_selection_stencil.clear();
-            self.render.meshes.editor_selection_outline.clear();
-            self.render
-                .meshes
+            self.render_meshes_mut().editor_selection_stencil.clear();
+            self.render_meshes_mut().editor_selection_outline.clear();
+            self.render_meshes_mut()
                 .editor_selection_outline_instances
                 .clear();
             return;
@@ -869,10 +868,9 @@ impl State {
 
         let selected_indices = self.selected_block_indices_normalized();
         if selected_indices.is_empty() {
-            self.render.meshes.editor_selection_stencil.clear();
-            self.render.meshes.editor_selection_outline.clear();
-            self.render
-                .meshes
+            self.render_meshes_mut().editor_selection_stencil.clear();
+            self.render_meshes_mut().editor_selection_outline.clear();
+            self.render_meshes_mut()
                 .editor_selection_outline_instances
                 .clear();
             return;
@@ -880,10 +878,9 @@ impl State {
 
         if selected_indices.len() > SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
             let Some((bounds_position, bounds_size)) = self.selected_group_bounds() else {
-                self.render.meshes.editor_selection_stencil.clear();
-                self.render.meshes.editor_selection_outline.clear();
-                self.render
-                    .meshes
+                self.render_meshes_mut().editor_selection_stencil.clear();
+                self.render_meshes_mut().editor_selection_outline.clear();
+                self.render_meshes_mut()
                     .editor_selection_outline_instances
                     .clear();
                 return;
@@ -914,23 +911,19 @@ impl State {
                 &mut outline_vertices,
                 &mut instances,
             );
-            self.render
-                .meshes
-                .editor_selection_stencil
-                .replace_with_vertices(
-                    &self.render.gpu.device,
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.editor_selection_stencil.replace_with_vertices(
+                    device,
                     "Editor Selection Stencil Vertex Buffer",
                     &mask_vertices,
                 );
-            self.render
-                .meshes
-                .editor_selection_outline
-                .replace_with_vertices(
-                    &self.render.gpu.device,
+                meshes.editor_selection_outline.replace_with_vertices(
+                    device,
                     "Editor Selection Outline Vertex Buffer",
                     &outline_vertices,
                 );
-            self.render.meshes.editor_selection_outline_instances = instances;
+                meshes.editor_selection_outline_instances = instances;
+            });
             return;
         }
 
@@ -959,23 +952,19 @@ impl State {
             &mut outline_vertices,
             &mut instances,
         );
-        self.render
-            .meshes
-            .editor_selection_stencil
-            .replace_with_vertices(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.editor_selection_stencil.replace_with_vertices(
+                device,
                 "Editor Selection Stencil Vertex Buffer",
                 &mask_vertices,
             );
-        self.render
-            .meshes
-            .editor_selection_outline
-            .replace_with_vertices(
-                &self.render.gpu.device,
+            meshes.editor_selection_outline.replace_with_vertices(
+                device,
                 "Editor Selection Outline Vertex Buffer",
                 &outline_vertices,
             );
-        self.render.meshes.editor_selection_outline_instances = instances;
+            meshes.editor_selection_outline_instances = instances;
+        });
     }
 
     pub(super) fn rebuild_spawn_marker_vertices(&mut self) {
@@ -984,22 +973,24 @@ impl State {
             self.editor.spawn.position,
             matches!(self.editor.spawn.direction, Direction::Right),
         );
-        self.render.meshes.spawn_marker.replace_with_vertices(
-            &self.render.gpu.device,
-            "Spawn Marker Vertex Buffer",
-            &vertices,
-        );
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.spawn_marker.replace_with_vertices(
+                device,
+                "Spawn Marker Vertex Buffer",
+                &vertices,
+            );
+        });
     }
 
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("CameraTriggerMarkerMesh");
-        self.render.meshes.camera_trigger_markers.clear();
+        self.render_meshes_mut().camera_trigger_markers.clear();
     }
 
     pub(super) fn rebuild_transform_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("TransformTriggerMarkerMesh");
         if self.phase != AppPhase::Editor {
-            self.render.meshes.transform_trigger_markers.clear();
+            self.render_meshes_mut().transform_trigger_markers.clear();
             return;
         }
 
@@ -1010,7 +1001,7 @@ impl State {
         );
 
         if markers.is_empty() {
-            self.render.meshes.transform_trigger_markers.clear();
+            self.render_meshes_mut().transform_trigger_markers.clear();
             return;
         }
 
@@ -1018,14 +1009,13 @@ impl State {
             &markers,
             self.editor.timeline.clock.time_seconds,
         );
-        self.render
-            .meshes
-            .transform_trigger_markers
-            .replace_with_vertices(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.transform_trigger_markers.replace_with_vertices(
+                device,
                 "Transform Trigger Marker Vertex Buffer",
                 &vertices,
             );
+        });
     }
 
     pub(super) fn rebuild_block_vertices(&mut self) {
@@ -1045,17 +1035,19 @@ impl State {
             } else {
                 build_chunked_block_mesh(&self.gameplay.state.objects)
             };
-            self.render.meshes.blocks_chunked.replace_with_chunked_mesh(
-                &self.render.gpu.device,
-                "Chunked Block Buffer",
-                &result,
-            );
-            self.render.meshes.blocks.clear();
-            self.render.meshes.blocks_instanced.clear();
-            self.render.meshes.blocks_static.clear();
-            self.render.meshes.blocks_static_chunked.clear();
-            self.render.meshes.blocks_static_instanced.clear();
-            self.render.meshes.blocks_selected.clear();
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_chunked.replace_with_chunked_mesh(
+                    device,
+                    "Chunked Block Buffer",
+                    &result,
+                );
+            });
+            self.render_meshes_mut().blocks.clear();
+            self.render_meshes_mut().blocks_instanced.clear();
+            self.render_meshes_mut().blocks_static.clear();
+            self.render_meshes_mut().blocks_static_chunked.clear();
+            self.render_meshes_mut().blocks_static_instanced.clear();
+            self.render_meshes_mut().blocks_selected.clear();
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
         }
@@ -1067,7 +1059,7 @@ impl State {
             || !self.session.practice_mode_enabled
             || self.session.practice_checkpoints.is_empty()
         {
-            self.render.meshes.practice_checkpoints.clear();
+            self.render_meshes_mut().practice_checkpoints.clear();
             return;
         }
 
@@ -1084,14 +1076,13 @@ impl State {
             })
             .collect::<Vec<_>>();
         let geometry = build_practice_checkpoint_flag_geometry(&flags);
-        self.render
-            .meshes
-            .practice_checkpoints
-            .replace_with_geometry(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.practice_checkpoints.replace_with_geometry(
+                device,
                 "Practice Checkpoint Flag Vertex Buffer",
                 &geometry,
             );
+        });
     }
 
     fn rebuild_editor_block_vertices_split(&mut self) {
@@ -1163,42 +1154,42 @@ impl State {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache = static_chunks.fallback_geometry();
             self.editor.block_static_vertex_cache_complete_len = Some(object_source.len());
-            self.render
-                .meshes
-                .blocks_static_chunked
-                .replace_with_chunked_mesh(
-                    &self.render.gpu.device,
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_static_chunked.replace_with_chunked_mesh(
+                    device,
                     "Chunked Block Static Buffer",
                     &static_chunks,
                 );
-            self.render.meshes.blocks_static.clear();
-            self.render.meshes.blocks_static_instanced.clear();
+            });
+            self.render_meshes_mut().blocks_static.clear();
+            self.render_meshes_mut().blocks_static_instanced.clear();
         } else {
             puffin::profile_scope!("BlockMeshUploadStatic");
             self.editor.block_static_vertex_cache.clear();
             self.editor.block_static_vertex_cache_complete_len = None;
-            self.render
-                .meshes
-                .blocks_static_chunked
-                .replace_with_chunked_mesh(
-                    &self.render.gpu.device,
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_static_chunked.replace_with_chunked_mesh(
+                    device,
                     "Chunked Block Static Buffer",
                     &static_chunks,
                 );
-            self.render.meshes.blocks_static.clear();
-            self.render.meshes.blocks_static_instanced.clear();
+            });
+            self.render_meshes_mut().blocks_static.clear();
+            self.render_meshes_mut().blocks_static_instanced.clear();
         }
 
         {
             puffin::profile_scope!("BlockMeshUploadSelected");
-            self.render.meshes.blocks_selected.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Selected Vertex Buffer",
-                &selected_vertices,
-            );
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_selected.replace_with_geometry(
+                    device,
+                    "Block Selected Vertex Buffer",
+                    &selected_vertices,
+                );
+            });
         }
-        self.render.meshes.blocks.clear();
-        self.render.meshes.blocks_chunked.clear();
+        self.render_meshes_mut().blocks.clear();
+        self.render_meshes_mut().blocks_chunked.clear();
     }
 
     fn rebuild_editor_selected_block_vertices(&mut self) {
@@ -1224,7 +1215,7 @@ impl State {
         }
 
         let Some(selected_mask) = self.editor.selected_mask_cache.as_ref() else {
-            self.render.meshes.blocks_selected.clear();
+            self.render_meshes_mut().blocks_selected.clear();
             return;
         };
 
@@ -1249,20 +1240,22 @@ impl State {
 
         {
             puffin::profile_scope!("SelectedOnlyUpload");
-            self.render.meshes.blocks_selected.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Selected Vertex Buffer",
-                &selected_vertices,
-            );
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_selected.replace_with_geometry(
+                    device,
+                    "Block Selected Vertex Buffer",
+                    &selected_vertices,
+                );
+            });
         }
-        self.render.meshes.blocks.clear();
+        self.render_meshes_mut().blocks.clear();
     }
 
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         puffin::profile_scope!("TapIndicatorMesh");
         let effective_mode = self.editor_effective_mode_for_playback();
         if self.phase != AppPhase::Editor || effective_mode == EditorMode::Timing {
-            self.render.meshes.tap_indicators.clear();
+            self.render_meshes_mut().tap_indicators.clear();
             return;
         }
         let show_timing_division_previews = effective_mode == EditorMode::Tapping;
@@ -1341,17 +1334,19 @@ impl State {
             && preview_indicators.is_empty()
             && division_tap_indicators.is_empty()
         {
-            self.render.meshes.tap_indicators.clear();
+            self.render_meshes_mut().tap_indicators.clear();
             return;
         }
 
         if indicators.is_empty() && division_tap_indicators.is_empty() {
             let vertices = build_tap_division_preview_vertices(&preview_indicators);
-            self.render.meshes.tap_indicators.replace_with_vertices(
-                &self.render.gpu.device,
-                "Tap Indicator Vertex Buffer",
-                &vertices,
-            );
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.tap_indicators.replace_with_vertices(
+                    device,
+                    "Tap Indicator Vertex Buffer",
+                    &vertices,
+                );
+            });
             return;
         }
 
@@ -1360,15 +1355,17 @@ impl State {
         vertices.extend(build_tap_division_tap_marker_vertices(
             &division_tap_indicators,
         ));
-        self.render.meshes.tap_indicators.replace_with_vertices(
-            &self.render.gpu.device,
-            "Tap Indicator Vertex Buffer",
-            &vertices,
-        );
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.tap_indicators.replace_with_vertices(
+                device,
+                "Tap Indicator Vertex Buffer",
+                &vertices,
+            );
+        });
     }
 
     pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {
-        self.render.meshes.editor_preview_player.clear();
+        self.render_meshes_mut().editor_preview_player.clear();
     }
 
     pub(super) fn rebuild_editor_preview_player_vertices_for_state(
@@ -1378,7 +1375,7 @@ impl State {
     ) {
         self.editor.timeline.preview.position = position;
         self.editor.timeline.preview.direction = direction;
-        self.render.meshes.editor_preview_player.clear();
+        self.render_meshes_mut().editor_preview_player.clear();
         self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
@@ -1389,7 +1386,7 @@ impl State {
             || effective_mode == EditorMode::Timing
             || !self.editor.input.show_hitbox_visualization
         {
-            self.render.meshes.editor_hitbox_visualization.clear();
+            self.render_meshes_mut().editor_hitbox_visualization.clear();
             return;
         }
 
@@ -1400,20 +1397,19 @@ impl State {
         let player_hitbox = editor_preview_player_hitbox(self.editor.timeline.preview.position);
         let vertices =
             build_editor_hitbox_visualization_vertices(&object_source, Some(player_hitbox));
-        self.render
-            .meshes
-            .editor_hitbox_visualization
-            .replace_with_vertices(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.editor_hitbox_visualization.replace_with_vertices(
+                device,
                 "Editor Hitbox Visualization Vertex Buffer",
                 &vertices,
             );
+        });
     }
 
     pub(super) fn rebuild_camera_arrow_vertices(&mut self) {
         puffin::profile_scope!("CameraArrowMesh");
         if self.phase != AppPhase::Editor || self.editor_is_playing() {
-            self.render.meshes.camera_arrow.clear();
+            self.render_meshes_mut().camera_arrow.clear();
             return;
         }
 
@@ -1437,11 +1433,13 @@ impl State {
             (target + offset).to_array()
         };
         let vertices = build_camera_arrow_vertices(eye.to_array(), forward, editor_camera_eye);
-        self.render.meshes.camera_arrow.replace_with_vertices(
-            &self.render.gpu.device,
-            "Camera Arrow Vertex Buffer",
-            &vertices,
-        );
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.camera_arrow.replace_with_vertices(
+                device,
+                "Camera Arrow Vertex Buffer",
+                &vertices,
+            );
+        });
     }
 }
 
@@ -1769,8 +1767,7 @@ mod tests {
         state.rebuild_camera_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .camera_trigger_markers
                 .draw_data()
                 .is_none()
@@ -1781,8 +1778,7 @@ mod tests {
         state.rebuild_camera_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .camera_trigger_markers
                 .draw_data()
                 .is_none()
@@ -1792,8 +1788,7 @@ mod tests {
         state.rebuild_camera_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .camera_trigger_markers
                 .draw_data()
                 .is_none()
@@ -1801,19 +1796,18 @@ mod tests {
 
         state.phase = AppPhase::Menu;
         state.rebuild_tap_indicator_vertices();
-        assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+        assert!(state.render_meshes().tap_indicators.draw_data().is_none());
 
         state.phase = AppPhase::Editor;
         state.editor.input.mode = EditorMode::Tapping;
         state.editor.timeline.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0], [1.0, 0.0, 1.0]];
         state.rebuild_tap_indicator_vertices();
-        assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+        assert!(state.render_meshes().tap_indicators.draw_data().is_some());
 
         state.editor.input.mode = EditorMode::Place;
         state.rebuild_tap_indicator_vertices();
         let compose_draw_data = state
-            .render
-            .meshes
+            .render_meshes()
             .tap_indicators
             .draw_data()
             .expect("compose should draw saved tap indicators");
@@ -1830,17 +1824,17 @@ mod tests {
         state.editor.input.mode = EditorMode::Null;
         state.editor.runtime.interaction.last_mode = Some(EditorMode::Tapping);
         state.rebuild_tap_indicator_vertices();
-        assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+        assert!(state.render_meshes().tap_indicators.draw_data().is_some());
 
         // During playback from Compose tab, taps should remain visible
         state.editor.runtime.interaction.last_mode = Some(EditorMode::Place);
         state.rebuild_tap_indicator_vertices();
-        assert!(state.render.meshes.tap_indicators.draw_data().is_some());
+        assert!(state.render_meshes().tap_indicators.draw_data().is_some());
 
         state.editor.runtime.interaction.last_mode = None;
         state.editor.input.mode = EditorMode::Timing;
         state.rebuild_tap_indicator_vertices();
-        assert!(state.render.meshes.tap_indicators.draw_data().is_none());
+        assert!(state.render_meshes().tap_indicators.draw_data().is_none());
     }
 
     #[tokio::test]
@@ -1853,8 +1847,7 @@ mod tests {
         state.rebuild_transform_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .transform_trigger_markers
                 .draw_data()
                 .is_none()
@@ -1864,8 +1857,7 @@ mod tests {
         state.rebuild_transform_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .transform_trigger_markers
                 .draw_data()
                 .is_some()
@@ -1878,8 +1870,7 @@ mod tests {
         state.rebuild_transform_trigger_marker_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .transform_trigger_markers
                 .draw_data()
                 .is_none()
@@ -1947,20 +1938,20 @@ mod tests {
         state.editor.input.cursor = [1.0, 0.0, 1.0];
 
         state.rebuild_editor_cursor_vertices();
-        assert!(state.render.meshes.editor_cursor.draw_data().is_some());
+        assert!(state.render_meshes().editor_cursor.draw_data().is_some());
 
         state.editor.runtime.interaction.hovered_tap_index = Some(0);
         state.rebuild_editor_cursor_vertices();
-        assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+        assert!(state.render_meshes().editor_cursor.draw_data().is_none());
 
         state.editor.runtime.interaction.hovered_tap_index = None;
         state.editor.timeline.taps.selected_index = Some(0);
         state.rebuild_editor_cursor_vertices();
-        assert!(state.render.meshes.editor_cursor.draw_data().is_none());
+        assert!(state.render_meshes().editor_cursor.draw_data().is_none());
 
         state.editor.input.cursor = [2.0, 0.0, 2.0];
         state.rebuild_editor_cursor_vertices();
-        assert!(state.render.meshes.editor_cursor.draw_data().is_some());
+        assert!(state.render_meshes().editor_cursor.draw_data().is_some());
     }
 
     #[tokio::test]
@@ -1975,22 +1966,22 @@ mod tests {
 
         state.phase = AppPhase::Editor;
         state.rebuild_block_vertices();
-        assert!(state.render.meshes.blocks.draw_data().is_none());
-        assert!(state.render.meshes.blocks_selected.draw_data().is_some());
-        assert_eq!(state.render.meshes.blocks_static_chunked.chunk_count(), 1);
-        assert!(!state.render.meshes.blocks_static_chunked.is_empty());
+        assert!(state.render_meshes().blocks.draw_data().is_none());
+        assert!(state.render_meshes().blocks_selected.draw_data().is_some());
+        assert_eq!(state.render_meshes().blocks_static_chunked.chunk_count(), 1);
+        assert!(!state.render_meshes().blocks_static_chunked.is_empty());
 
         state.phase = AppPhase::Playing;
         state.gameplay.state.objects = state.editor.objects.clone();
         state.rebuild_block_vertices();
-        assert_eq!(state.render.meshes.blocks_chunked.chunk_count(), 1);
-        assert!(!state.render.meshes.blocks_chunked.is_empty());
-        assert!(state.render.meshes.blocks_instanced.is_empty());
-        assert!(state.render.meshes.blocks.draw_data().is_none());
-        assert!(state.render.meshes.blocks_selected.draw_data().is_none());
-        assert!(state.render.meshes.blocks_static.draw_data().is_none());
-        assert!(state.render.meshes.blocks_static_chunked.is_empty());
-        assert!(state.render.meshes.blocks_static_instanced.is_empty());
+        assert_eq!(state.render_meshes().blocks_chunked.chunk_count(), 1);
+        assert!(!state.render_meshes().blocks_chunked.is_empty());
+        assert!(state.render_meshes().blocks_instanced.is_empty());
+        assert!(state.render_meshes().blocks.draw_data().is_none());
+        assert!(state.render_meshes().blocks_selected.draw_data().is_none());
+        assert!(state.render_meshes().blocks_static.draw_data().is_none());
+        assert!(state.render_meshes().blocks_static_chunked.is_empty());
+        assert!(state.render_meshes().blocks_static_instanced.is_empty());
     }
 
     #[tokio::test]
@@ -2019,7 +2010,7 @@ mod tests {
 
         let after_count = state.editor.block_static_vertex_cache.draw_count();
         assert!(after_count > before_count);
-        assert_eq!(state.render.meshes.blocks_static_chunked.chunk_count(), 1);
+        assert_eq!(state.render_meshes().blocks_static_chunked.chunk_count(), 1);
         assert_eq!(state.editor.block_static_vertex_cache_complete_len, Some(2));
         assert!(!state.editor.runtime.dirty.any());
     }

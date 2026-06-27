@@ -313,9 +313,16 @@ impl From<&GpuContext> for TestGpuFixture {
 /// default-constructible eg-state resources + the [`StateSchedule`]
 /// schedule. Used by the [`State`] constructors to seed the parallel
 /// ECS world (Phase 2b + 3).
-fn build_state_world() -> bevy_ecs::world::World {
+fn build_state_world(
+    surface_host: Option<SurfaceHost>,
+    meshes: SceneMeshes,
+) -> bevy_ecs::world::World {
     let mut world = bevy_ecs::world::World::new();
     super::plugins::register_state_resources(&mut world);
+    world.insert_resource(crate::state::render::resources::RenderMeshesRes(meshes));
+    world.insert_resource(crate::state::render::resources::RenderSurfaceHostRes(
+        surface_host,
+    ));
     // Phase 3: register the per-event message resources + the schedule
     // that drains them into the legacy command dispatch path.
     super::plugins::register_state_command_pipeline(&mut world);
@@ -535,7 +542,6 @@ impl State {
 
         Self {
             render: RenderSubsystem {
-                surface_host: None,
                 gpu: GpuContext {
                     surface: None,
                     adapter_info: fixture.adapter_info.clone(),
@@ -577,34 +583,6 @@ impl State {
                     grid_bind_group,
                     block_texture_bind_group: fixture.block_texture_bind_group.clone(),
                     apply_gamma_correction: fixture.apply_gamma_correction,
-                },
-                meshes: SceneMeshes {
-                    floor: MeshSlot::Empty,
-                    grid: MeshSlot::Empty,
-                    trail: trail_mesh,
-                    gem_shatter_effects: MeshSlot::Empty,
-                    practice_checkpoints: MeshSlot::Empty,
-                    blocks: MeshSlot::Empty,
-                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
-                    editor_cursor: MeshSlot::Empty,
-                    editor_hover_stencil: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
-                    editor_selection_stencil: MeshSlot::Empty,
-                    editor_selection_outline: MeshSlot::Empty,
-                    editor_selection_outline_instances: Vec::new(),
-                    editor_gizmo: MeshSlot::Empty,
-                    tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
-                    spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
-                    editor_preview_player: MeshSlot::Empty,
-                    editor_hitbox_visualization: MeshSlot::Empty,
-                    camera_arrow: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {
@@ -683,7 +661,37 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            world: build_state_world(),
+            world: build_state_world(
+                None,
+                SceneMeshes {
+                    floor: MeshSlot::Empty,
+                    grid: MeshSlot::Empty,
+                    trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
+                    blocks: MeshSlot::Empty,
+                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_instanced: InstancedMeshSlot::default(),
+                    blocks_static: MeshSlot::Empty,
+                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_static_instanced: InstancedMeshSlot::default(),
+                    blocks_selected: MeshSlot::Empty,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_stencil: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_stencil: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_selection_outline_instances: Vec::new(),
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    transform_trigger_markers: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    camera_trigger_markers: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
+                },
+            ),
         }
     }
 
@@ -1452,7 +1460,6 @@ impl State {
 
         Some(Self {
             render: RenderSubsystem {
-                surface_host,
                 gpu: GpuContext {
                     surface,
                     adapter_info,
@@ -1488,34 +1495,6 @@ impl State {
                     grid_bind_group,
                     block_texture_bind_group,
                     apply_gamma_correction: should_apply_gamma_correction,
-                },
-                meshes: SceneMeshes {
-                    floor: floor_mesh,
-                    grid: grid_mesh,
-                    trail: trail_mesh,
-                    gem_shatter_effects: MeshSlot::Empty,
-                    practice_checkpoints: MeshSlot::Empty,
-                    blocks: block_mesh,
-                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
-                    editor_cursor: MeshSlot::Empty,
-                    editor_hover_stencil: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
-                    editor_selection_stencil: MeshSlot::Empty,
-                    editor_selection_outline: MeshSlot::Empty,
-                    editor_selection_outline_instances: Vec::new(),
-                    editor_gizmo: MeshSlot::Empty,
-                    tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
-                    spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
-                    editor_preview_player: MeshSlot::Empty,
-                    editor_hitbox_visualization: MeshSlot::Empty,
-                    camera_arrow: MeshSlot::Empty,
                 },
             },
             auth: AuthSubsystem {
@@ -1594,7 +1573,37 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            world: build_state_world(),
+            world: build_state_world(
+                surface_host,
+                SceneMeshes {
+                    floor: floor_mesh,
+                    grid: grid_mesh,
+                    trail: trail_mesh,
+                    gem_shatter_effects: MeshSlot::Empty,
+                    practice_checkpoints: MeshSlot::Empty,
+                    blocks: block_mesh,
+                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_instanced: InstancedMeshSlot::default(),
+                    blocks_static: MeshSlot::Empty,
+                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
+                    blocks_static_instanced: InstancedMeshSlot::default(),
+                    blocks_selected: MeshSlot::Empty,
+                    editor_cursor: MeshSlot::Empty,
+                    editor_hover_stencil: MeshSlot::Empty,
+                    editor_hover_outline: MeshSlot::Empty,
+                    editor_selection_stencil: MeshSlot::Empty,
+                    editor_selection_outline: MeshSlot::Empty,
+                    editor_selection_outline_instances: Vec::new(),
+                    editor_gizmo: MeshSlot::Empty,
+                    tap_indicators: MeshSlot::Empty,
+                    transform_trigger_markers: MeshSlot::Empty,
+                    spawn_marker: MeshSlot::Empty,
+                    camera_trigger_markers: MeshSlot::Empty,
+                    editor_preview_player: MeshSlot::Empty,
+                    editor_hitbox_visualization: MeshSlot::Empty,
+                    camera_arrow: MeshSlot::Empty,
+                },
+            ),
         })
     }
 }

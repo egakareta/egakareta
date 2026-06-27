@@ -1683,8 +1683,7 @@ mod tests {
         state.rebuild_editor_hover_outline_vertices();
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_hover_outline
                 .draw_data()
                 .is_none()
@@ -1711,8 +1710,7 @@ mod tests {
         assert_eq!(state.editor.input.selected_block_indices, vec![0]);
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_hover_outline
                 .draw_data()
                 .is_none(),
@@ -1720,8 +1718,7 @@ mod tests {
         );
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_selection_outline
                 .draw_data()
                 .is_some(),
@@ -1740,8 +1737,7 @@ mod tests {
         // After release, the block is selected, so it shouldn't have a hover outline
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_hover_outline
                 .draw_data()
                 .is_none(),
@@ -1785,16 +1781,14 @@ mod tests {
         state.process_editor_dirty(1.0 / 60.0);
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_hover_outline
                 .draw_data()
                 .is_none()
         );
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_selection_outline
                 .draw_data()
                 .is_some()

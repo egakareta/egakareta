@@ -355,11 +355,11 @@ impl State {
 
         if frame_input.should_draw_floor_and_grid() {
             puffin::profile_scope!("DrawFloorGrid");
-            if let Some(draw_data) = self.render.meshes.floor.draw_data() {
+            if let Some(draw_data) = self.render_meshes().floor.draw_data() {
                 draw_mesh(&mut render_pass, draw_data);
             }
 
-            if let Some(draw_data) = self.render.meshes.grid.draw_data() {
+            if let Some(draw_data) = self.render_meshes().grid.draw_data() {
                 render_pass.set_pipeline(&self.render.gpu.grid_pipeline);
                 render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 render_pass.set_bind_group(1, &self.render.gpu.grid_bind_group, &[]);
@@ -385,12 +385,12 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_visible_chunked_instances(
                         &mut render_pass,
-                        &self.render.meshes.blocks_static_chunked,
+                        &self.render_meshes().blocks_static_chunked,
                         block_frustum,
                     );
                     draw_instanced_blocks(
                         &mut render_pass,
-                        &self.render.meshes.blocks_static_instanced,
+                        &self.render_meshes().blocks_static_instanced,
                     );
                     render_pass.set_pipeline(&self.render.gpu.render_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -401,16 +401,16 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_visible_chunked_geometry(
                         &mut render_pass,
-                        &self.render.meshes.blocks_static_chunked,
+                        &self.render_meshes().blocks_static_chunked,
                         block_frustum,
                     );
 
-                    if let Some(draw_data) = self.render.meshes.blocks_static.draw_data() {
+                    if let Some(draw_data) = self.render_meshes().blocks_static.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
 
-                    if let Some(draw_data) = self.render.meshes.blocks_selected.draw_data() {
+                    if let Some(draw_data) = self.render_meshes().blocks_selected.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
@@ -419,10 +419,10 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_visible_chunked_instances(
                         &mut render_pass,
-                        &self.render.meshes.blocks_chunked,
+                        &self.render_meshes().blocks_chunked,
                         block_frustum,
                     );
-                    draw_instanced_blocks(&mut render_pass, &self.render.meshes.blocks_instanced);
+                    draw_instanced_blocks(&mut render_pass, &self.render_meshes().blocks_instanced);
                     render_pass.set_pipeline(&self.render.gpu.render_pipeline);
                     render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -432,27 +432,27 @@ impl State {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_visible_chunked_geometry(
                         &mut render_pass,
-                        &self.render.meshes.blocks_chunked,
+                        &self.render_meshes().blocks_chunked,
                         block_frustum,
                     );
 
-                    if let Some(draw_data) = self.render.meshes.blocks.draw_data() {
+                    if let Some(draw_data) = self.render_meshes().blocks.draw_data() {
                         render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                         draw_mesh(&mut render_pass, draw_data);
                     }
                 }
 
-                if let Some(draw_data) = self.render.meshes.gem_shatter_effects.draw_data() {
+                if let Some(draw_data) = self.render_meshes().gem_shatter_effects.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some(draw_data) = self.render.meshes.practice_checkpoints.draw_data() {
+                if let Some(draw_data) = self.render_meshes().practice_checkpoints.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some(draw_data) = self.render.meshes.trail.draw_data() {
+                if let Some(draw_data) = self.render_meshes().trail.draw_data() {
                     if self.phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render.gpu.editor_ghost_trail_pipeline);
                         render_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
@@ -484,17 +484,17 @@ impl State {
 
             if draw_editor_overlays {
                 puffin::profile_scope!("DrawEditorOverlayMeshes");
-                if let Some(draw_data) = self.render.meshes.spawn_marker.draw_data() {
+                if let Some(draw_data) = self.render_meshes().spawn_marker.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some(draw_data) = self.render.meshes.camera_trigger_markers.draw_data() {
+                if let Some(draw_data) = self.render_meshes().camera_trigger_markers.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some(draw_data) = self.render.meshes.tap_indicators.draw_data() {
+                if let Some(draw_data) = self.render_meshes().tap_indicators.draw_data() {
                     render_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
                 }
@@ -506,7 +506,7 @@ impl State {
         if draw_editor_overlays {
             puffin::profile_scope!("DrawEditorOverlays");
 
-            if let Some(draw_data) = self.render.meshes.transform_trigger_markers.draw_data() {
+            if let Some(draw_data) = self.render_meshes().transform_trigger_markers.draw_data() {
                 puffin::profile_scope!("DrawTransformTriggerMarkers");
                 let mut transform_marker_pass =
                     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -554,18 +554,18 @@ impl State {
             // Selection outlines use a selected-only depth prepass, so each block keeps its own
             // hollow silhouette while other selected blocks occlude outlines behind them.
             let selection_instances = self
-                .render
-                .meshes
+                .render_meshes()
                 .editor_selection_outline_instances
                 .as_slice();
 
             if !selection_instances.is_empty() {
                 puffin::profile_scope!("DrawSelectionOutlines");
-                let selection_mask_buffer = match &self.render.meshes.editor_selection_stencil {
+                let selection_mask_buffer = match &self.render_meshes().editor_selection_stencil {
                     MeshSlot::VertexData { buffer, .. } => Some(buffer),
                     _ => None,
                 };
-                let selection_outline_buffer = match &self.render.meshes.editor_selection_outline {
+                let selection_outline_buffer = match &self.render_meshes().editor_selection_outline
+                {
                     MeshSlot::VertexData { buffer, .. } => Some(buffer),
                     _ => None,
                 };
@@ -682,8 +682,8 @@ impl State {
             }
 
             if let (Some(mask_data), Some(outline_data)) = (
-                self.render.meshes.editor_hover_stencil.draw_data(),
-                self.render.meshes.editor_hover_outline.draw_data(),
+                self.render_meshes().editor_hover_stencil.draw_data(),
+                self.render_meshes().editor_hover_outline.draw_data(),
             ) {
                 puffin::profile_scope!("DrawHoverOutline");
                 let mut hover_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -764,7 +764,7 @@ impl State {
             gizmo_pass.set_bind_group(2, &self.render.gpu.color_space_bind_group, &[]);
             gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
 
-            if let Some(draw_data) = self.render.meshes.editor_gizmo.draw_data() {
+            if let Some(draw_data) = self.render_meshes().editor_gizmo.draw_data() {
                 gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
                 gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -780,7 +780,7 @@ impl State {
                 gizmo_pass.set_bind_group(3, &self.render.gpu.block_texture_bind_group, &[]);
             }
 
-            if let Some(draw_data) = self.render.meshes.editor_hitbox_visualization.draw_data() {
+            if let Some(draw_data) = self.render_meshes().editor_hitbox_visualization.draw_data() {
                 gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
                 gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -796,13 +796,13 @@ impl State {
             }
 
             if frame_input.should_draw_editor_cursor()
-                && let Some(draw_data) = self.render.meshes.editor_cursor.draw_data()
+                && let Some(draw_data) = self.render_meshes().editor_cursor.draw_data()
             {
                 gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
                 draw_mesh(&mut gizmo_pass, draw_data);
             }
 
-            if let Some(draw_data) = self.render.meshes.camera_arrow.draw_data() {
+            if let Some(draw_data) = self.render_meshes().camera_arrow.draw_data() {
                 gizmo_pass.set_pipeline(&self.render.gpu.gizmo_overlay_pipeline);
                 gizmo_pass.set_bind_group(0, &self.render.gpu.camera_bind_group, &[]);
                 gizmo_pass.set_bind_group(1, &self.render.gpu.zero_line_bind_group, &[]);
@@ -831,7 +831,7 @@ impl State {
 
     /// Recreates the window surface following a resize or other configuration change.
     pub fn recreate_surface(&mut self) {
-        let size = self.render.current_size();
+        let size = self.current_render_size();
         self.resize_surface(size);
     }
 }
@@ -998,28 +998,27 @@ mod tests {
     fn prepare_outline_occlusion_test_state(state: &mut State) {
         state.phase = AppPhase::Editor;
         state.editor.input.mode = EditorMode::Select;
-        state.render.meshes.floor = MeshSlot::Empty;
-        state.render.meshes.grid = MeshSlot::Empty;
-        state.render.meshes.trail = MeshSlot::Empty;
-        state.render.meshes.blocks = MeshSlot::Empty;
-        state.render.meshes.blocks_static = MeshSlot::Empty;
-        state.render.meshes.blocks_selected = MeshSlot::Empty;
-        state.render.meshes.editor_cursor = MeshSlot::Empty;
-        state.render.meshes.editor_hover_stencil = MeshSlot::Empty;
-        state.render.meshes.editor_hover_outline = MeshSlot::Empty;
-        state.render.meshes.editor_selection_stencil = MeshSlot::Empty;
-        state.render.meshes.editor_selection_outline = MeshSlot::Empty;
+        state.render_meshes_mut().floor = MeshSlot::Empty;
+        state.render_meshes_mut().grid = MeshSlot::Empty;
+        state.render_meshes_mut().trail = MeshSlot::Empty;
+        state.render_meshes_mut().blocks = MeshSlot::Empty;
+        state.render_meshes_mut().blocks_static = MeshSlot::Empty;
+        state.render_meshes_mut().blocks_selected = MeshSlot::Empty;
+        state.render_meshes_mut().editor_cursor = MeshSlot::Empty;
+        state.render_meshes_mut().editor_hover_stencil = MeshSlot::Empty;
+        state.render_meshes_mut().editor_hover_outline = MeshSlot::Empty;
+        state.render_meshes_mut().editor_selection_stencil = MeshSlot::Empty;
+        state.render_meshes_mut().editor_selection_outline = MeshSlot::Empty;
         state
-            .render
-            .meshes
+            .render_meshes_mut()
             .editor_selection_outline_instances
             .clear();
-        state.render.meshes.editor_gizmo = MeshSlot::Empty;
-        state.render.meshes.tap_indicators = MeshSlot::Empty;
-        state.render.meshes.transform_trigger_markers = MeshSlot::Empty;
-        state.render.meshes.spawn_marker = MeshSlot::Empty;
-        state.render.meshes.camera_trigger_markers = MeshSlot::Empty;
-        state.render.meshes.editor_preview_player = MeshSlot::Empty;
+        state.render_meshes_mut().editor_gizmo = MeshSlot::Empty;
+        state.render_meshes_mut().tap_indicators = MeshSlot::Empty;
+        state.render_meshes_mut().transform_trigger_markers = MeshSlot::Empty;
+        state.render_meshes_mut().spawn_marker = MeshSlot::Empty;
+        state.render_meshes_mut().camera_trigger_markers = MeshSlot::Empty;
+        state.render_meshes_mut().editor_preview_player = MeshSlot::Empty;
     }
 
     #[tokio::test]
@@ -1287,16 +1286,17 @@ mod tests {
         let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
         let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-        state.render.meshes.blocks_static =
+        state.render_meshes_mut().blocks_static =
             MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-        state.render.meshes.editor_selection_stencil =
+        state.render_meshes_mut().editor_selection_stencil =
             MeshSlot::from_vertices(state.device(), "Selection Mask", &corner_mask);
-        state.render.meshes.editor_selection_outline =
+        state.render_meshes_mut().editor_selection_outline =
             MeshSlot::from_vertices(state.device(), "Selection Outline", &cyan_outline);
-        state.render.meshes.editor_selection_outline_instances = vec![EditorOutlineInstance {
-            mask_vertices: 0..corner_mask.len() as u32,
-            outline_vertices: 0..cyan_outline.len() as u32,
-        }];
+        state.render_meshes_mut().editor_selection_outline_instances =
+            vec![EditorOutlineInstance {
+                mask_vertices: 0..corner_mask.len() as u32,
+                outline_vertices: 0..cyan_outline.len() as u32,
+            }];
 
         let pixel = render_center_pixel(&mut state);
         assert!(
@@ -1314,11 +1314,11 @@ mod tests {
         let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
         let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-        state.render.meshes.blocks_static =
+        state.render_meshes_mut().blocks_static =
             MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-        state.render.meshes.editor_hover_stencil =
+        state.render_meshes_mut().editor_hover_stencil =
             MeshSlot::from_vertices(state.device(), "Hover Mask", &corner_mask);
-        state.render.meshes.editor_hover_outline =
+        state.render_meshes_mut().editor_hover_outline =
             MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
 
         let pixel = render_center_pixel(&mut state);
@@ -1338,13 +1338,13 @@ mod tests {
         let selected_mask = fullscreen_triangle(0.1, [1.0, 1.0, 1.0, 1.0]);
         let hover_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
 
-        state.render.meshes.blocks_selected =
+        state.render_meshes_mut().blocks_selected =
             MeshSlot::from_vertices(state.device(), "Selected Front Block", &red_selected);
-        state.render.meshes.editor_selection_stencil =
+        state.render_meshes_mut().editor_selection_stencil =
             MeshSlot::from_vertices(state.device(), "Selected Occlusion Mask", &selected_mask);
-        state.render.meshes.editor_hover_stencil =
+        state.render_meshes_mut().editor_hover_stencil =
             MeshSlot::from_vertices(state.device(), "Hover Mask", &hover_mask);
-        state.render.meshes.editor_hover_outline =
+        state.render_meshes_mut().editor_hover_outline =
             MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
 
         let pixel = render_center_pixel(&mut state);
@@ -1451,29 +1451,33 @@ mod tests {
             Vertex::untextured([0.0, 0.2, 0.0], [0.2, 0.2, 1.0, 1.0]),
         ];
 
-        state.render.meshes.floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
-        state.render.meshes.grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
-        state.render.meshes.trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
-        state.render.meshes.blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
-        state.render.meshes.blocks_static =
+        state.render_meshes_mut().floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
+        state.render_meshes_mut().grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
+        state.render_meshes_mut().trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
+        state.render_meshes_mut().blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
+        state.render_meshes_mut().blocks_static =
             MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
-        state.render.meshes.blocks_selected =
+        state.render_meshes_mut().blocks_selected =
             MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
-        state.render.meshes.editor_cursor = MeshSlot::from_vertices(state.device(), "cursor", &tri);
-        state.render.meshes.editor_hover_stencil =
+        state.render_meshes_mut().editor_cursor =
+            MeshSlot::from_vertices(state.device(), "cursor", &tri);
+        state.render_meshes_mut().editor_hover_stencil =
             MeshSlot::from_vertices(state.device(), "hover_stencil", &tri);
-        state.render.meshes.editor_hover_outline =
+        state.render_meshes_mut().editor_hover_outline =
             MeshSlot::from_vertices(state.device(), "hover", &tri);
-        state.render.meshes.editor_selection_stencil =
+        state.render_meshes_mut().editor_selection_stencil =
             MeshSlot::from_vertices(state.device(), "selection_stencil", &tri);
-        state.render.meshes.editor_selection_outline =
+        state.render_meshes_mut().editor_selection_outline =
             MeshSlot::from_vertices(state.device(), "selection", &tri);
-        state.render.meshes.editor_gizmo = MeshSlot::from_vertices(state.device(), "gizmo", &tri);
-        state.render.meshes.tap_indicators = MeshSlot::from_vertices(state.device(), "taps", &tri);
-        state.render.meshes.transform_trigger_markers =
+        state.render_meshes_mut().editor_gizmo =
+            MeshSlot::from_vertices(state.device(), "gizmo", &tri);
+        state.render_meshes_mut().tap_indicators =
+            MeshSlot::from_vertices(state.device(), "taps", &tri);
+        state.render_meshes_mut().transform_trigger_markers =
             MeshSlot::from_vertices(state.device(), "transform_markers", &tri);
-        state.render.meshes.spawn_marker = MeshSlot::from_vertices(state.device(), "spawn", &tri);
-        state.render.meshes.camera_trigger_markers =
+        state.render_meshes_mut().spawn_marker =
+            MeshSlot::from_vertices(state.device(), "spawn", &tri);
+        state.render_meshes_mut().camera_trigger_markers =
             MeshSlot::from_vertices(state.device(), "camera_markers", &tri);
 
         let overlay_calls = Cell::new(0_u32);

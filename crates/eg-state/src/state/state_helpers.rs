@@ -284,7 +284,7 @@ impl State {
         self.editor.camera.editor_pitch = eg_types::DEFAULT_CAMERA_PITCH;
         self.editor.camera.editor_target_z = 0.0;
         self.gameplay.state = GameState::new();
-        self.render.meshes.trail.clear();
+        self.render_meshes_mut().trail.clear();
     }
 
     #[cfg(any(test, feature = "test-support"))]

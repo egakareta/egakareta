@@ -1096,7 +1096,7 @@ mod tests {
         state.phase = AppPhase::Editor;
         state.editor.input.mode = EditorMode::Select;
         state.editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        state.render.meshes.editor_hover_outline.clear();
+        state.render_meshes_mut().editor_hover_outline.clear();
 
         assert!(state.begin_editor_marquee_selection(0.0, 0.0));
         state.editor.runtime.dirty = EditorDirtyFlags::default();
@@ -1106,8 +1106,7 @@ mod tests {
             assert!(state.editor.runtime.dirty.rebuild_selection_overlays);
             assert!(
                 state
-                    .render
-                    .meshes
+                    .render_meshes()
                     .editor_hover_outline
                     .draw_data()
                     .is_none()
@@ -1122,16 +1121,14 @@ mod tests {
         state.process_editor_dirty(1.0 / 60.0);
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_hover_outline
                 .draw_data()
                 .is_none()
         );
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .editor_selection_outline
                 .draw_data()
                 .is_some()

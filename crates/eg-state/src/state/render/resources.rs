@@ -14,19 +14,20 @@
 //! types. Phase 4a only populates the **POD** resources
 //! ([`RenderUniformsRes`], [`RenderFrameInputRes`]) — they are small
 //! `Copy` types that can be mirrored safely from the legacy state
-//! each frame. The heavy resources ([`RenderGpuRes`],
-//! [`RenderMeshesRes`], [`RenderSurfaceHostRes`]) are **defined** but
-//! not yet inserted; they will be populated in Phase 4b/4c once the
-//! legacy `State::render` field ownership moves into the world.
+//! each frame. The mesh and surface heavy resources
+//! ([`RenderMeshesRes`], [`RenderSurfaceHostRes`]) now own the
+//! authoritative values inserted during `State` construction. The
+//! GPU heavy resource ([`RenderGpuRes`]) remains deferred until the
+//! large `State::render.gpu` call surface moves into the world.
 //!
 //! ## Why split POD vs heavy?
 //!
 //! - `wgpu::Device`, `wgpu::Queue`, `wgpu::Buffer`, `wgpu::Surface`,
 //!   `wgpu::BindGroup` and friends are all `Send + Sync` and can be
 //!   stored in Bevy `Resource`s directly, but the legacy code base has
-//!   ~440 call sites that read `state.render.gpu.*` /
-//!   `state.render.meshes.*` / `state.render.surface_host.*`. Moving
-//!   the heavy resources all at once would touch every one of them.
+//!   ~440 call sites that read `state.render.gpu.*`. Moving every
+//!   heavy resource at once would touch too many independent paths;
+//!   Phase 4c moved meshes and surface host first.
 //! - Mirroring just the POD types first establishes the resource
 //!   boundary, the system-set graph, and the extraction system
 //!   contract. Subsequent phases replace the mirror with direct
@@ -56,25 +57,18 @@ pub struct RenderGpuRes(pub eg_render::GpuContext);
 
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
 ///
-/// Phase 4a only **defines** this type; the constructor does not yet
-/// insert a value. Phase 4c moves the `State::render.meshes` field
-/// into this resource. Phase 4c-scaffold (this commit) inserts the
-/// resource with `SceneMeshes::default()` (all `MeshSlot::Empty`)
-/// so Bevy systems can query for its presence. The actual
-/// `SceneMeshes` value still lives on `State::render.meshes` for
-/// now.
+/// Phase 4c moved the former `State::render.meshes` field into this
+/// resource so scene mesh storage is now held by the Bevy world while
+/// legacy callers go through `State::render_meshes()`.
 #[allow(dead_code)]
 #[derive(Resource, Default)]
 pub struct RenderMeshesRes(pub SceneMeshes);
 
 /// Wrapper resource for the optional platform [`SurfaceHost`].
 ///
-/// Phase 4a only **defines** this type; the constructor does not yet
-/// insert a value. Phase 4c moves the `State::render.surface_host`
-/// field into this resource. Phase 4c-scaffold (this commit) inserts
-/// the resource with `Default::default() = None` so Bevy systems
-/// can query for its presence. The actual `SurfaceHost` value still
-/// lives on `State::render.surface_host` for now.
+/// Phase 4c moved the former `State::render.surface_host` field into
+/// this resource so surface ownership is now held by the Bevy world
+/// while legacy callers go through `State::surface_host()`.
 #[allow(dead_code)]
 #[derive(Resource, Default)]
 pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
@@ -213,11 +207,10 @@ pub fn render_pod_resources_present(world: &World) -> bool {
 }
 
 /// Returns `true` if the world has every heavy render resource
-/// (Phase 4b + Phase 4c). As of the Phase 4c-scaffold commit,
-/// `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted with
-/// default values but `RenderGpuRes` is still deferred (Phase 4b).
-/// Once Phase 4b lands, this will report `true` for every eg-state
-/// `World`.
+/// (Phase 4b + Phase 4c). `RenderMeshesRes` +
+/// `RenderSurfaceHostRes` now hold the authoritative values, while
+/// `RenderGpuRes` is still deferred (Phase 4b). Once Phase 4b lands,
+/// this reports `true` for every eg-state `World`.
 #[allow(dead_code)]
 pub fn render_heavy_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderGpuRes>()
@@ -225,12 +218,9 @@ pub fn render_heavy_resources_present(world: &World) -> bool {
         && world.contains_resource::<RenderSurfaceHostRes>()
 }
 
-/// Returns `true` if the world has every Phase 4c-scaffold heavy
-/// resource. Today this is `true` for every eg-state `World` (the
-/// resources are inserted with `Default` values during construction).
-/// This helper is the contract for Phase 4c-scaffold: a future
-/// commit that removes the resource registration (or a regression
-/// in the construction path) will be caught by tests that call this.
+/// Returns `true` if the world has every Phase 4c heavy resource.
+/// Today this is `true` for every eg-state `World`; the resources are
+/// inserted with authoritative construction values.
 #[allow(dead_code)]
 pub fn render_phase4c_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderMeshesRes>()

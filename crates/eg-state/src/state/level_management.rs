@@ -1262,8 +1262,7 @@ mod tests {
         state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .practice_checkpoints
                 .draw_data()
                 .is_some()
@@ -1272,8 +1271,7 @@ mod tests {
         state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
         assert!(
             state
-                .render
-                .meshes
+                .render_meshes()
                 .practice_checkpoints
                 .draw_data()
                 .is_none()

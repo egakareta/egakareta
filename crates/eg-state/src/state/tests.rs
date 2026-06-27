@@ -86,8 +86,7 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     state.rebuild_editor_hover_outline_vertices();
 
     let count = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_hover_outline
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -99,8 +98,7 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     );
     assert!(
         state
-            .render
-            .meshes
+            .render_meshes()
             .editor_hover_stencil
             .draw_data()
             .is_some()
@@ -119,8 +117,7 @@ async fn test_marquee_no_redundant_selections_before_drag_started() {
     // they shouldn't show up because drag isn't active.
     state.rebuild_editor_hover_outline_vertices();
     let count = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_hover_outline
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -153,10 +150,13 @@ async fn selection_outline_builds_instances_per_selected_block() {
     state.rebuild_editor_selection_outline_vertices();
 
     assert_eq!(
-        state.render.meshes.editor_selection_outline_instances.len(),
+        state
+            .render_meshes()
+            .editor_selection_outline_instances
+            .len(),
         2
     );
-    let instances = &state.render.meshes.editor_selection_outline_instances;
+    let instances = &state.render_meshes().editor_selection_outline_instances;
     for instance in instances {
         assert_eq!(
             instance.outline_vertices.end - instance.outline_vertices.start,
@@ -169,8 +169,7 @@ async fn selection_outline_builds_instances_per_selected_block() {
     }
 
     let total_outline = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_selection_outline
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -178,8 +177,7 @@ async fn selection_outline_builds_instances_per_selected_block() {
     assert_eq!(total_outline, 72);
 
     let total_mask = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_selection_stencil
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -205,10 +203,13 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     state.rebuild_editor_selection_outline_vertices();
 
     assert_eq!(
-        state.render.meshes.editor_selection_outline_instances.len(),
+        state
+            .render_meshes()
+            .editor_selection_outline_instances
+            .len(),
         1
     );
-    let instance = &state.render.meshes.editor_selection_outline_instances[0];
+    let instance = &state.render_meshes().editor_selection_outline_instances[0];
     assert_eq!(
         instance.outline_vertices.end - instance.outline_vertices.start,
         36
@@ -219,8 +220,7 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     );
 
     let total_outline = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_selection_outline
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -228,8 +228,7 @@ async fn selection_outline_uses_single_bounds_mesh_for_large_selections() {
     assert_eq!(total_outline, 36);
 
     let total_mask = state
-        .render
-        .meshes
+        .render_meshes()
         .editor_selection_stencil
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -588,8 +587,8 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
 }
 
 /// Phase 4c-scaffold: `RenderMeshesRes` and `RenderSurfaceHostRes`
-/// are now inserted with their `Default` values during `State`
-/// construction. Bevy systems can query for their presence.
+/// are now inserted with their authoritative values during `State`
+/// construction. Bevy systems can query them directly.
 ///
 /// `RenderGpuRes` is still NOT inserted (Phase 4b is deferred —
 /// moving `wgpu::Device` + `wgpu::Queue` ownership touches ~440
@@ -601,25 +600,26 @@ async fn tick_state_inserts_heavy_render_resources_phase4c() {
     let state = State::new_test().await;
     let world = state.world();
 
-    // Phase 4c-scaffold: meshes + surface_host are inserted.
+    // Phase 4c-final: meshes + surface_host are inserted.
     assert!(world.contains_resource::<RenderMeshesRes>());
     assert!(world.contains_resource::<RenderSurfaceHostRes>());
 
     // Phase 4b deferred: gpu is still NOT inserted.
     assert!(!world.contains_resource::<RenderGpuRes>());
 
-    // The default `RenderSurfaceHostRes` is `None` (the
-    // `SurfaceHost` lives on the legacy `State::render` field for
-    // now).
+    // Test states have no platform host, so the authoritative
+    // `RenderSurfaceHostRes` is `None`.
     let surface = world.resource::<RenderSurfaceHostRes>();
     assert!(surface.0.is_none());
 
-    // The default `RenderMeshesRes` is `SceneMeshes::default()` —
-    // all `MeshSlot::Empty`. We assert a few key slots to confirm
-    // the default is well-formed.
+    // Test construction seeds the real scene mesh storage: static
+    // slots start empty, while the trail keeps its streaming buffer.
     let meshes = world.resource::<RenderMeshesRes>();
     assert!(matches!(meshes.0.floor, eg_render::MeshSlot::Empty));
-    assert!(matches!(meshes.0.trail, eg_render::MeshSlot::Empty));
+    assert!(matches!(
+        meshes.0.trail,
+        eg_render::MeshSlot::Streaming { .. }
+    ));
     assert!(matches!(meshes.0.blocks, eg_render::MeshSlot::Empty));
 }
 
@@ -1261,8 +1261,7 @@ async fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     state.update();
 
     let trail_count = state
-        .render
-        .meshes
+        .render_meshes()
         .trail
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -1273,8 +1272,7 @@ async fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
     );
     assert!(
         state
-            .render
-            .meshes
+            .render_meshes()
             .editor_preview_player
             .draw_data()
             .is_none(),
@@ -1292,8 +1290,7 @@ async fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
     state.update();
 
     let trail_count = state
-        .render
-        .meshes
+        .render_meshes()
         .trail
         .draw_data()
         .map(|draw_data| draw_data.count())
@@ -1304,8 +1301,7 @@ async fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
     );
     assert!(
         state
-            .render
-            .meshes
+            .render_meshes()
             .editor_preview_player
             .draw_data()
             .is_none(),

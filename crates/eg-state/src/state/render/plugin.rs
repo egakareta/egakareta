@@ -8,19 +8,18 @@
 //! Rendering extraction plugin (Phase 4a).
 //!
 //! Establishes the resource boundary + system-set graph for the
-//! `RenderPlugin` skeleton. Phase 4a only **scaffolds** the plugin:
-//! the heavy resources ([`RenderGpuRes`], [`RenderMeshesRes`],
-//! [`RenderSurfaceHostRes`]) are defined in [`super::resources`] but
-//! not yet inserted into the world — the legacy `State::render` field
-//! remains authoritative. The POD resources ([`RenderUniformsRes`],
+//! `RenderPlugin` skeleton. The POD resources ([`RenderUniformsRes`],
 //! [`RenderFrameInputRes`], [`RenderResizeRequest`]) are inserted as
 //! defaults and populated each frame by the
-//! [`mirror_render_pod_state_system`].
+//! [`mirror_render_pod_state_system`]. [`RenderMeshesRes`] and
+//! [`RenderSurfaceHostRes`] now own their authoritative construction
+//! values. [`RenderGpuRes`] remains deferred because moving
+//! `GpuContext` touches the remaining legacy present/update surface.
 //!
 //! Future phases:
 //! - **Phase 4b** moves `State::render.gpu` into [`RenderGpuRes`] and
 //!   replaces `state.render.gpu.X` reads with `world.resource::<RenderGpuRes>().0.X`.
-//! - **Phase 4c** moves `State::render.meshes` + `surface_host` into
+//! - **Phase 4c** moved `State::render.meshes` + `surface_host` into
 //!   [`RenderMeshesRes`] / [`RenderSurfaceHostRes`].
 //! - **Phase 4d** replaces the legacy `rebuild_*_mesh` call sites in
 //!   `state/editor_scene.rs` with `RebuildMeshSet` systems that read
@@ -80,9 +79,9 @@ pub enum RenderSet {
     RebuildMesh,
     /// Snapshot the world into render resources.
     ///
-    /// Today (Phase 4a) this only mirrors POD uniform values from
-    /// the legacy `State::render.gpu.*_uniform_*` fields into
-    /// [`RenderUniformsRes`] and [`RenderFrameInputRes`]. Future
+    /// Today this mirrors POD uniform values from the legacy
+    /// `State::render.gpu.*_uniform_*` fields into [`RenderUniformsRes`]
+    /// and [`RenderFrameInputRes`]. Future
     /// phases add a `rebuild_mesh_batches_system` that walks object
     /// entities (`Query<(&Position, &Rotation, &Size, &BlockId,
     /// &ColorTint, Option<&PlayState>)>` + player + camera + effects)
@@ -105,8 +104,9 @@ pub enum RenderSet {
 /// The rendering extraction plugin.
 ///
 /// Registers the POD resources + a mirror system + a placeholder
-/// present set. The legacy `State::render` field remains
-/// authoritative; the plugin is a non-invasive scaffold for Phase 4a.
+/// present set. Mesh and surface ownership live in resources; GPU
+/// ownership remains on the legacy `State::render` field until
+/// Phase 4b-final.
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
@@ -120,7 +120,8 @@ impl Plugin for RenderPlugin {
         // `RenderGpuRes` is still deferred to Phase 4b. It owns the
         // raw `wgpu::Device` + `wgpu::Queue` handles which can't be
         // cheaply mirrored (the legacy `State::render.gpu` field is
-        // authoritative; moving ownership is a 440-site refactor).
+        // authoritative; moving ownership is the remaining large
+        // render refactor).
     }
 }
 
@@ -131,11 +132,9 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();
     world.init_resource::<RenderResizeRequest>();
-    // Phase 4c: insert the heavy resources with default values so
-    // Bevy systems can query them. The actual data ownership stays
-    // in `State::render` for now (a future Phase 4c-final swaps
-    // the storage location). The defaults are empty / `None` so the
-    // resources are zero-cost in tests.
+    // Phase 4c: insert default heavy resources so standalone worlds
+    // can query them. `State` construction overwrites these defaults
+    // with the authoritative `SceneMeshes` / `SurfaceHost` values.
     world.init_resource::<RenderMeshesRes>();
     world.init_resource::<RenderSurfaceHostRes>();
     // Phase 4d: register the RebuildMeshEvent message buffer.

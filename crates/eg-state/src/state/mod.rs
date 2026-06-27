@@ -220,10 +220,64 @@ impl State {
         &self.render.gpu
     }
 
+    /// Returns the scene mesh storage for render-owned helpers.
+    pub fn render_meshes(&self) -> &eg_render::SceneMeshes {
+        &self
+            .world
+            .resource::<render::resources::RenderMeshesRes>()
+            .0
+    }
+
+    /// Returns mutable scene mesh storage for render-owned helpers.
+    pub fn render_meshes_mut(&mut self) -> &mut eg_render::SceneMeshes {
+        let meshes = self
+            .world
+            .resource_mut::<render::resources::RenderMeshesRes>()
+            .into_inner();
+        &mut meshes.0
+    }
+
+    /// Mutates scene mesh storage while also reading the wgpu device.
+    pub fn with_render_meshes_and_device<T>(
+        &mut self,
+        f: impl FnOnce(&wgpu::Device, &mut eg_render::SceneMeshes) -> T,
+    ) -> T {
+        let device = &self.render.gpu.device;
+        let meshes = self
+            .world
+            .resource_mut::<render::resources::RenderMeshesRes>()
+            .into_inner();
+        f(device, &mut meshes.0)
+    }
+
+    /// Mutates scene mesh storage while also reading the wgpu queue.
+    pub fn with_render_meshes_and_queue<T>(
+        &mut self,
+        f: impl FnOnce(&wgpu::Queue, &mut eg_render::SceneMeshes) -> T,
+    ) -> T {
+        let queue = &self.render.gpu.queue;
+        let meshes = self
+            .world
+            .resource_mut::<render::resources::RenderMeshesRes>()
+            .into_inner();
+        f(queue, &mut meshes.0)
+    }
+
+    /// Returns the optional platform surface host.
+    pub fn surface_host(&self) -> Option<&eg_platform::state_host::SurfaceHost> {
+        self.world
+            .resource::<render::resources::RenderSurfaceHostRes>()
+            .0
+            .as_ref()
+    }
+
     /// Returns a reference to the native window (desktop only).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn window(&self) -> Option<&NativeWindow> {
-        self.render.window()
+        match self.surface_host() {
+            Some(eg_platform::state_host::SurfaceHost::Window(w)) => Some(w),
+            _ => None,
+        }
     }
 
     /// Read-only access to the ECS `World`. Available since Phase 2b.
@@ -433,7 +487,7 @@ impl State {
             return;
         }
 
-        if let Some(host) = &self.render.surface_host {
+        if let Some(host) = self.surface_host() {
             host.prepare_resize(new_size);
         }
         self.render.gpu.apply_resize(new_size);

@@ -1093,7 +1093,7 @@ impl State {
         self.gameplay.state = GameState::new();
         self.gameplay.death_sfx_played = false;
         self.refresh_menu_level_preview_if_needed();
-        self.render.meshes.trail.clear();
+        self.render_meshes_mut().trail.clear();
     }
 
     pub(super) fn move_editor_cursor(&mut self, dx: i32, dy: i32) {

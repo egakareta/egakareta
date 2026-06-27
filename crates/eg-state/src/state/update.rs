@@ -76,7 +76,7 @@ impl State {
         effects.retain(|effect| effect.age_seconds < effect.effect.duration_seconds);
 
         if effects.is_empty() {
-            self.render.meshes.gem_shatter_effects.clear();
+            self.render_meshes_mut().gem_shatter_effects.clear();
             return;
         }
 
@@ -91,14 +91,13 @@ impl State {
             })
             .collect::<Vec<_>>();
         let vertices = build_block_effect_vertices(&instances);
-        self.render
-            .meshes
-            .gem_shatter_effects
-            .replace_with_vertices(
-                &self.render.gpu.device,
+        self.with_render_meshes_and_device(|device, meshes| {
+            meshes.gem_shatter_effects.replace_with_vertices(
+                device,
                 "Gem Shatter Vertex Buffer",
                 &vertices,
             );
+        });
     }
 
     fn recent_trail_segments<'a>(
@@ -398,15 +397,16 @@ impl State {
     fn update_editor_playback_trail_mesh(&mut self) {
         puffin::profile_scope!("EditorPlaybackTrailMesh");
         let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() else {
-            self.render.meshes.trail.clear();
+            self.render_meshes_mut().trail.clear();
             return;
         };
 
         let trail_vertices = Self::build_editor_playback_trail_vertices(runtime);
-        self.render
-            .meshes
-            .trail
-            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
+        self.with_render_meshes_and_queue(|queue, meshes| {
+            meshes
+                .trail
+                .write_streaming_vertices(queue, &trail_vertices);
+        });
     }
 
     fn update_editor_scrub_trail_mesh(&mut self) {
@@ -420,10 +420,11 @@ impl State {
 
         self.rebuild_editor_timeline_snapshot_cache_if_needed();
         let trail_vertices = self.build_editor_scrub_trail_vertices_from_cache(target_time);
-        self.render
-            .meshes
-            .trail
-            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
+        self.with_render_meshes_and_queue(|queue, meshes| {
+            meshes
+                .trail
+                .write_streaming_vertices(queue, &trail_vertices);
+        });
     }
 
     fn build_editor_scrub_trail_vertices_from_cache(
@@ -603,7 +604,7 @@ impl State {
             puffin::profile_scope!("MenuUpdate");
             self.frame_runtime.editor.accumulator = 0.0;
             self.frame_runtime.player_render.gem_shatter_effects.clear();
-            self.render.meshes.gem_shatter_effects.clear();
+            self.render_meshes_mut().gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
             self.update_menu_camera();
             return;
@@ -612,7 +613,7 @@ impl State {
         if self.phase == AppPhase::Editor {
             puffin::profile_scope!("EditorUpdate");
             self.frame_runtime.editor.accumulator = 0.0;
-            self.render.meshes.trail.clear();
+            self.render_meshes_mut().trail.clear();
 
             if self.editor.timeline.playback.playing {
                 self.maybe_resync_editor_playback_from_pending_seek(frame_dt);
@@ -752,11 +753,11 @@ impl State {
                 }
             } else if self.editor.input.mode != EditorMode::Timing {
                 self.frame_runtime.player_render.gem_shatter_effects.clear();
-                self.render.meshes.gem_shatter_effects.clear();
+                self.render_meshes_mut().gem_shatter_effects.clear();
                 self.update_editor_scrub_trail_mesh();
             } else {
                 self.frame_runtime.player_render.gem_shatter_effects.clear();
-                self.render.meshes.gem_shatter_effects.clear();
+                self.render_meshes_mut().gem_shatter_effects.clear();
             }
 
             {
@@ -862,17 +863,19 @@ impl State {
                 &render_object_refs,
                 Some(self.gameplay.state.elapsed_seconds),
             );
-            self.render.meshes.blocks_instanced.replace_with_batches(
-                &self.render.gpu.device,
-                "Block Instance Buffer",
-                &animated_batches,
-            );
-            self.render.meshes.blocks.replace_with_geometry(
-                &self.render.gpu.device,
-                "Block Vertex Buffer",
-                &animated_batches.fallback_geometry,
-            );
-            self.render.meshes.blocks_chunked.clear();
+            self.with_render_meshes_and_device(|device, meshes| {
+                meshes.blocks_instanced.replace_with_batches(
+                    device,
+                    "Block Instance Buffer",
+                    &animated_batches,
+                );
+                meshes.blocks.replace_with_geometry(
+                    device,
+                    "Block Vertex Buffer",
+                    &animated_batches.fallback_geometry,
+                );
+            });
+            self.render_meshes_mut().blocks_chunked.clear();
         }
 
         if self.gameplay.state.level_complete && self.gameplay.state.completion_hold_seconds <= 0.0
@@ -955,10 +958,11 @@ impl State {
             }
         }
 
-        self.render
-            .meshes
-            .trail
-            .write_streaming_vertices(&self.render.gpu.queue, &trail_vertices);
+        self.with_render_meshes_and_queue(|queue, meshes| {
+            meshes
+                .trail
+                .write_streaming_vertices(queue, &trail_vertices);
+        });
 
         self.update_playing_render_uniforms();
     }
@@ -1218,12 +1222,12 @@ mod tests {
         state.editor.objects.push(instant_move_trigger());
 
         state.rebuild_block_vertices();
-        assert!(!state.render.meshes.blocks_chunked.is_empty());
+        assert!(!state.render_meshes().blocks_chunked.is_empty());
 
         state.update();
 
-        assert!(state.render.meshes.blocks_chunked.is_empty());
-        assert!(!state.render.meshes.blocks_instanced.is_empty());
+        assert!(state.render_meshes().blocks_chunked.is_empty());
+        assert!(!state.render_meshes().blocks_instanced.is_empty());
     }
 
     #[tokio::test]
@@ -1244,8 +1248,8 @@ mod tests {
                 .as_ref()
                 .is_some_and(|trigger| trigger.camera.is_some())
         }));
-        assert!(!state.render.meshes.blocks_instanced.is_empty());
-        assert!(state.render.meshes.blocks.draw_data().is_none());
+        assert!(!state.render_meshes().blocks_instanced.is_empty());
+        assert!(state.render_meshes().blocks.draw_data().is_none());
     }
 
     #[tokio::test]
@@ -1609,7 +1613,7 @@ mod tests {
             state.frame_runtime.player_render.line_uniform.rotation,
             -std::f32::consts::FRAC_PI_2
         );
-        assert!(state.render.meshes.trail.draw_data().is_some());
+        assert!(state.render_meshes().trail.draw_data().is_some());
     }
 
     #[tokio::test]

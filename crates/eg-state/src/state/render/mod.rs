@@ -11,9 +11,8 @@ pub mod mirror;
 pub mod plugin;
 pub mod resources;
 
-use eg_render::{GpuContext, MeshSlot, SceneMeshes};
+use eg_render::{GpuContext, MeshSlot};
 
-use eg_platform::state_host::SurfaceHost;
 use eg_types::PhysicalSize;
 
 use super::State;
@@ -28,38 +27,33 @@ impl State {
     }
 
     pub fn handle_surface_lost(&mut self) {
-        let size = self.render.current_size();
+        let size = self.current_render_size();
         self.resize_surface(size);
+    }
+
+    pub fn current_render_size(&self) -> PhysicalSize<u32> {
+        self.surface_host()
+            .map(|h| h.current_size())
+            .unwrap_or(self.render.gpu.size)
     }
 }
 
 pub struct RenderSubsystem {
-    pub surface_host: Option<SurfaceHost>,
     pub gpu: GpuContext,
-    pub meshes: SceneMeshes,
 }
 
-impl RenderSubsystem {
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn window(&self) -> Option<&eg_platform::state_host::NativeWindow> {
-        match &self.surface_host {
-            Some(SurfaceHost::Window(w)) => Some(w),
-            _ => None,
+#[cfg(test)]
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(mut meshes) = self.world.get_resource_mut::<resources::RenderMeshesRes>() {
+            meshes.0.destroy();
         }
-    }
-
-    pub fn current_size(&self) -> PhysicalSize<u32> {
-        self.surface_host
-            .as_ref()
-            .map(|h| h.current_size())
-            .unwrap_or(self.gpu.size)
     }
 }
 
 #[cfg(test)]
 impl Drop for RenderSubsystem {
     fn drop(&mut self) {
-        self.meshes.destroy();
         self.gpu.line_uniform_buffer.destroy();
         self.gpu.camera_uniform_buffer.destroy();
         self.gpu.color_space_uniform_buffer.destroy();
