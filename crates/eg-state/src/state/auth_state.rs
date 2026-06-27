@@ -11,6 +11,19 @@ use eg_platform::services::{
 };
 use eg_types::AuthSession;
 
+/// Receiver end of the auth service channel. The `Sender` is cloned into
+/// background tasks; the `Receiver` is shared with the Bevy World
+/// resource (`AuthChannelRes`) via `Arc<Mutex<>>` so the per-frame
+/// `poll_channels_system` can drain it.
+///
+/// Phase 6b: `Receiver<T>` is not `Clone`; wrapping it in
+/// `Arc<Mutex<>>` lets both the legacy `update_auth_results` (called
+/// from `State::update`) and the Phase 6b handler system (called from
+/// `State::tick_state`) race for the same messages without
+/// double-processing — the first caller wins each message.
+pub type AuthChannelReceiver =
+    std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<AuthServiceMessage>>>;
+
 pub struct AuthSubsystem {
     pub session: Option<AuthSession>,
     pub pending: bool,
@@ -18,7 +31,7 @@ pub struct AuthSubsystem {
     pub refresh_started: bool,
     pub channel: (
         std::sync::mpsc::Sender<AuthServiceMessage>,
-        std::sync::mpsc::Receiver<AuthServiceMessage>,
+        AuthChannelReceiver,
     ),
 }
 
@@ -111,7 +124,25 @@ impl State {
             self.refresh_auth_session();
         }
 
-        while let Ok(message) = self.auth.channel.1.try_recv() {
+        // Phase 6b: the receiver is shared with the Phase 6b handler
+        // system via `Arc<Mutex<>>`. We drain the receiver into a
+        // local `Vec` under the lock, then drop the lock and apply
+        // each message to the State (the `complete_*` methods take
+        // `&mut self` which conflicts with the held mutex guard).
+        let drained: Vec<AuthServiceMessage> = {
+            let guard = self
+                .auth
+                .channel
+                .1
+                .lock()
+                .expect("auth channel mutex poisoned");
+            let mut out: Vec<AuthServiceMessage> = Vec::new();
+            while let Ok(message) = guard.try_recv() {
+                out.push(message);
+            }
+            out
+        };
+        for message in drained {
             match message {
                 AuthServiceMessage::SignedIn(result) => self.complete_auth_sign_in(result),
                 AuthServiceMessage::Refreshed(result) => self.complete_auth_refresh(result),
@@ -120,7 +151,10 @@ impl State {
         }
     }
 
-    fn complete_auth_sign_in(&mut self, result: Result<AuthSession, String>) {
+    /// Phase 6b: visible to the `auth_handler_system` in
+    /// `state::async_bridge`. The system installs a closure that
+    /// calls this method, so it must be at least `pub(crate)`.
+    pub(crate) fn complete_auth_sign_in(&mut self, result: Result<AuthSession, String>) {
         self.auth.pending = false;
         match result {
             Ok(session) => {
@@ -134,7 +168,8 @@ impl State {
         }
     }
 
-    fn complete_auth_refresh(&mut self, result: Result<AuthSession, String>) {
+    /// Phase 6b: visible to `auth_handler_system`.
+    pub(crate) fn complete_auth_refresh(&mut self, result: Result<AuthSession, String>) {
         match result {
             Ok(session) => {
                 self.auth.session = Some(session);
@@ -148,7 +183,8 @@ impl State {
         }
     }
 
-    fn complete_auth_sign_out(&mut self, result: Result<(), String>) {
+    /// Phase 6b: visible to `auth_handler_system`.
+    pub(crate) fn complete_auth_sign_out(&mut self, result: Result<(), String>) {
         self.auth.pending = false;
         self.auth.refresh_started = false;
         self.auth.session = None;

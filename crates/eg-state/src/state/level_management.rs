@@ -635,7 +635,25 @@ impl State {
     }
 
     pub fn update_level_imports(&mut self) {
-        while let Ok(bytes) = self.session.editor_level_import_channel.1.try_recv() {
+        // Phase 6b: the receiver is shared with the Phase 6b
+        // handler system via `Arc<Mutex<>>`. We drain under the
+        // lock, drop the lock, then process (the `import_*` methods
+        // take `&mut self` which conflicts with the held mutex
+        // guard).
+        let drained: Vec<Vec<u8>> = {
+            let guard = self
+                .session
+                .editor_level_import_channel
+                .1
+                .lock()
+                .expect("level import channel mutex poisoned");
+            let mut out: Vec<Vec<u8>> = Vec::new();
+            while let Ok(bytes) = guard.try_recv() {
+                out.push(bytes);
+            }
+            out
+        };
+        for bytes in drained {
             match self.import_level_egz(&bytes) {
                 Ok(()) => continue,
                 Err(egz_error) => {

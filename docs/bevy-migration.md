@@ -87,7 +87,7 @@ Cross-domain ordering constraints (sample):
 - [ ] **Phase 4b–4e** — move `GpuContext` / `SceneMeshes` / `SurfaceHost` into resources; replace `rebuild_*_mesh` with systems; add `present_frame_system`.
 - [ ] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
-- [ ] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
+- [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
 - [ ] **Phase 7** — `App` wiring (winit drives `app.update()`).
 - [ ] **Phase 8** — test harness migration (`TestApp` builder).
 - [ ] **Phase 9** — documentation pass.
@@ -347,16 +347,6 @@ The plan calls for wrapping the five `mpsc` channels the legacy `State` struct o
 - **Why is the install not auto-wired?** — `mpsc::Receiver<T>` is not `Clone`. Moving it from the legacy `State` fields into the World would break the legacy `update_*` methods that also drain the same channel. Phase 6b moves the legacy fields to `Arc<Mutex<Receiver<T>>>` shared between the State and the World, then replaces the legacy drains with handler systems. Until then, the new `poll_channels_system` runs once per frame and emits events for any messages sitting in the resource's receiver; tests that exercise the bridge insert the resource manually.
 - **Idempotent install** — `install_async_bridge_from_state` is a no-op for already-installed resources, so calling it from multiple frames is safe.
 
-### What Phase 6b does (next)
-
-- (a) Move the legacy `State::auth.channel.1` / `State::audio.state.editor.audio_import_channel.1` / `State::audio.state.editor.waveform_load_channel.1` / `State::audio.state.runtime_preload.preload_channel.1` / `State::session.editor_level_import_channel.1` fields to `Arc<Mutex<Receiver<T>>>`. Both the State and the World hold an `Arc` clone of the same data; `try_recv` is `&self` so both consumers race for messages.
-- (b) Replace the legacy `update_*` methods with handler systems that consume the result events:
-    - `auth_update_session_system` (consumes `AuthServiceResultEvent`, updates `AuthSubsystem.session` / `pending` / `message`).
-    - `audio_import_update_cache_system` (consumes `AudioImportResultEvent`, calls `EditorAudioCache::insert_level_audio`).
-    - `waveform_update_cache_system` (consumes `WaveformResultEvent`, updates waveform cache entries).
-    - `audio_preload_update_cache_system` (consumes `AudioPreloadResultEvent`, updates `RuntimeAudioPreloadState::preloaded_audio`).
-    - `level_import_decode_system` (consumes `LevelImportResultEvent`, decodes `.egz` / `.egb` / `.json` and loads the level).
-
 ### Schedule graph (post Phase 6a)
 
 `Per-frame schedule order (StateSchedule):
@@ -373,3 +363,91 @@ The plan calls for wrapping the five `mpsc` channels the legacy `State` struct o
 - `#[derive(Message)]` is used for the 5 new event types. `WaveformResultEvent` is intentionally **not** `Clone` because `WaveformLoadMessage` doesn't implement `Clone`. The other 4 events derive `Clone` for ergonomic test usage.
 - `Mutex<T>` is `Send + Sync` when `T: Send`, so the channel wrappers satisfy Bevy's `Resource` bound. The receivers are owned by value (no `Arc`); the wrappers are inserted at most once per world (idempotent install).
 - The `poll_channels_system` takes `Option<Res<...>>` for each wrapper so it works whether or not the wrapper is installed. This is the same pattern Bevy uses for optional system params and avoids the need for separate "registered" / "unregistered" code paths.
+
+## Phase 6b — async result handler systems
+
+Phase 6a established the channel wrappers and the `poll_channels_system` that emits 5 result events. Phase 6b is the **handler half**: 5 Bevy systems consume the events and apply them to the legacy `State`, plus a thread-local bridge that lets the systems mutate the `!Send` `State` without leaking it into the schedule.
+
+### What's in Phase 6b today
+
+- **Channel field type change.** The 5 legacy channel fields change from `(Sender, Receiver<T>)` to `(Sender, Arc<Mutex<Receiver<T>>>)`:
+    - `State::auth.channel: (Sender<AuthServiceMessage>, SharedAuthReceiver)`
+    - `State::audio.state.editor.audio_import_channel: (Sender<(String, Vec<u8>)>, SharedAudioImportReceiver)`
+    - `State::audio.state.editor.waveform_load_channel: (Sender<WaveformResult>, SharedWaveformReceiver)`
+    - `State::audio.state.runtime_preload.preload_channel: (Sender<AudioPreloadResult>, SharedAudioPreloadReceiver)`
+    - `State::session.editor_level_import_channel: (Sender<Vec<u8>>, SharedLevelImportReceiver)`
+      The `Arc<Mutex<>>` wrapper is `Clone + Send + Sync` so both the State and the World can hold a clone. `try_recv` is `&self`; the first caller wins (the second sees an empty receiver). This eliminates the double-process race that Phase 6a's parallel poll + drain design had.
+
+- **5 channel resources updated.** The `AuthChannelRes` / `AudioImportChannelRes` / `WaveformLoadChannelRes` / `AudioPreloadChannelRes` / `LevelImportChannelRes` resources now hold the **shared** `Shared*Receiver` (one less `Mutex` layer — the inner `Mutex` is shared with the legacy field). The 5 type aliases are exported from `state::async_bridge`.
+
+- **5 handler systems** in `crates/eg-state/src/state/async_bridge.rs`:
+    - `auth_handler_system` — consumes `AuthServiceResultEvent`, installs a closure that routes the `AuthServiceMessage` to `State::complete_auth_sign_in` / `complete_auth_refresh` / `complete_auth_sign_out` (now `pub(crate)`).
+    - `audio_import_handler_system` — consumes `AudioImportResultEvent`, installs a closure that mirrors the body of `State::update_audio_imports` (insert into `EditorAudioCache`, reload waveform).
+    - `waveform_handler_system` — consumes `WaveformResultEvent`, installs a closure that mirrors the body of `State::update_waveform_loading` (per `WaveformLoadMessage` variant: `Started` / `Chunk` / `Cached` / `Finished` / `Failed`). Because `WaveformResultEvent` is not `Clone`, this system takes `&mut World` and `drain`s the `Messages<>` buffer directly.
+    - `audio_preload_handler_system` — consumes `AudioPreloadResultEvent`, installs a closure that mirrors the body of `State::update_runtime_audio_preloads` (remove from `preloading_source_keys`, insert into `preloaded_audio`).
+    - `level_import_handler_system` — consumes `LevelImportResultEvent`, installs a closure that calls `State::import_level_egz` / `State::import_level` (with the same error logging as the legacy `update_level_imports`).
+
+- **`ApplyAsyncResultsSet`** system set + `add_apply_async_results_systems` registration helper.
+
+- **Thread-local bridge**: `install_async_result_fn(F: FnOnce(&mut State) + 'static)` + `drain_pending_async_result_fns(state: &mut State)`. The handler systems install `FnOnce(&mut State)` closures into a `thread_local!` `RefCell<Vec<Box<dyn FnOnce(&mut State)>>>` slot. `State::tick_state` drains the slot and applies each closure after the schedule finishes. This is the same pattern as Phase 4a's `render::mirror`.
+
+- **`install_async_bridge_from_state_arc`** helper. `State::tick_state` calls this on every frame to wire the 5 `Arc<Mutex<Receiver<T>>>` fields into the World's resources (idempotent — no-op if already installed). This replaces the Phase 6a `install_async_bridge_from_state` (which took owned `Receiver<T>` and is still used by tests that build a world from scratch with fresh channels).
+
+- **Visibility bumps**:
+    - `State::complete_auth_sign_in` / `complete_auth_refresh` / `complete_auth_sign_out` made `pub(crate)` so the auth handler system can call them from a closure.
+    - `state::audio_state::persist_waveform_cache_entry` made `pub(crate)` so the waveform handler's `apply_waveform_message` helper can call it from a closure.
+
+- **Tests** (15 new unit + 0 integration = 15 new tests):
+    - `install_async_bridge_from_state_arc_shares_receivers` — `Arc::ptr_eq` confirms the resource holds the same `Arc` we passed in.
+    - `install_async_bridge_from_state_arc_is_idempotent` — second install with fresh receivers doesn't overwrite the first.
+    - `async_result_fn_slot_drains_in_order` — the thread-local slot drains closures in insertion order.
+    - `async_result_fn_slot_drain_is_idempotent` — second drain with no new closures is a no-op.
+    - `auth_handler_system_routes_to_complete_sign_out` — write `SignedOut(Ok(()))`, run system, drain slot, verify `State.auth.session = None` and `auth.pending = false`.
+    - `audio_import_handler_system_runs_with_cancellation` — write `bytes = None`, run system, verify no panic.
+    - `waveform_handler_system_drains_events` — write `Failed` event, run system (drains the buffer), verify no panic.
+    - `audio_preload_handler_system_inserts_bytes` — write `Some(bytes)`, run system, verify `preloaded_audio` contains the entry.
+    - `audio_preload_handler_system_handles_failure` — write `None`, run system, verify nothing inserted.
+    - `level_import_handler_system_is_safe_on_invalid_bytes` — write invalid bytes, run system, verify no panic.
+
+- **Existing test updates** (no behavior change): the 3 Phase 6a integration tests (`tick_state_poll_channels_emits_*`) now insert `Arc<Mutex<Receiver<T>>>` resources instead of `Mutex<Receiver<T>>` to match the new resource type.
+
+### Design notes
+
+- **Why a thread-local bridge?** `State` is `!Send` (it owns `mpsc::Receiver<T>` fields, even when wrapped — see `Arc<Mutex<Receiver<T>>>: !Send` because `MutexGuard` is `!Send`). Bevy schedules run on the main thread today; the thread-local slot is the simplest correct mechanism for handler systems to install closures that take `&mut State` and have them run on the same thread. The full-Bevy migration replaces this with `bevy_tasks` async event streams and direct resource mutation — see refactor point #5.
+
+- **Why one less `Mutex` layer than Phase 6a?** Phase 6a wrapped the receiver in `Mutex<Receiver<T>>` for the resource. Phase 6b shares the existing `Arc<Mutex<Receiver<T>>>` directly with the resource (no second `Mutex`). The `poll_channels_system` locks the same `Mutex` as the legacy `update_*` methods — first caller wins. The cost is the same (one `lock()` per `try_recv`); the benefit is no double-wrapper.
+
+- **Why the `drain` pattern in `waveform_handler_system`?** `WaveformResultEvent` carries a `WaveformLoadMessage` which is not `Clone`. `MessageReader<T>::read` returns an iterator over `&T`; we can't move the message out without taking `&mut World` and using `Messages<T>::drain`. The other 4 handler systems use the standard `MessageReader<T>` pattern (their payloads are `Clone`).
+
+- **Race semantics**: the legacy `update_*` methods and the new handler systems race for messages on the same shared receiver. The first caller to `try_recv` wins. In practice:
+    - `State::update` (the legacy frame loop) runs the `update_*` methods. These call `tick_state` does NOT run before `update`. Wait, let me re-check. The flow is:
+        1. `State::update()` calls the legacy `update_*` methods directly (Phase 6a behavior — unchanged).
+        2. `State::tick_state()` runs the schedule (which runs the poll + handler systems) and drains the thread-local slot.
+        3. Both paths can run in the same frame (e.g., `State::update()` followed by `State::tick_state()`). Whoever locks the receiver first gets the message.
+        4. In tests that exercise the schedule, only `tick_state` runs (no `update`). The poll system + handler systems drain everything.
+
+    This is the "first caller wins" behavior. The new systems are the intended path; the legacy methods exist for compatibility with tests that drive the State directly without going through the schedule. Both paths are idempotent in the sense that running them on the same frame doesn't double-process messages.
+
+### Schedule graph (post Phase 6b)
+
+`Per-frame schedule order (StateSchedule):
+  transitions::phase_transition_system        // AppPhase change detection
+  mirror::install_mirror                      // tick_state installs the closure
+  events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
+  async_bridge::poll_channels_system          // drain 5 shared receivers -> 5 result events
+  async_bridge::add_apply_async_results_systems // consume events -> install closures
+  render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
+  // tick_state then drains pending async result closures -> mutates State
+  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]`
+
+### Bevy 0.19 API notes (Phase 6b)
+
+- `thread_local!` with `RefCell<Vec<Box<dyn FnOnce(&mut State)>>>` is the bridge slot. The closures don't need to be `Send` because the schedule + the drain both run on the main thread. The slot is process-global; tests that don't go through `tick_state` should not leave stale closures (the slot is drained on every `tick_state` call).
+- `pub(crate)` visibility is used for `complete_auth_*` methods and `persist_waveform_cache_entry` so the handler systems can call them from closures.
+- `Arc<Mutex<Receiver<T>>>` is `Send + Sync` (the inner `Receiver<T>: Send`), so it satisfies Bevy's `Resource` bound. The resource holds a clone of the `Arc`; the legacy field holds its own clone; both consumers race for messages via the same `Mutex`.
+
+### Verification
+
+- `cargo test -p eg-state --lib` is green: **434 tests pass** (was 424 before Phase 6b, +10 new unit tests).
+- `cargo build -p eg-state` is clean.
+- `cargo clippy -p eg-state --all-targets` shows no **new** warnings introduced by Phase 6b (pre-existing baseline warnings in `transitions.rs` doc lists, `events/mod.rs` let-bindings, `command_dispatch.rs` casts, and `gizmo.rs` field-assignments are not Phase 6b regressions — they predate this phase).

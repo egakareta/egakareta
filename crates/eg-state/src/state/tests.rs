@@ -507,7 +507,9 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
     state
         .world_mut()
-        .insert_resource(AudioImportChannelRes(std::sync::Mutex::new(rx)));
+        .insert_resource(AudioImportChannelRes(std::sync::Arc::new(
+            std::sync::Mutex::new(rx),
+        )));
 
     // Send an audio-import result. The poll system drains
     // receivers once per frame; tick_state runs the schedule
@@ -538,7 +540,9 @@ async fn tick_state_poll_channels_emits_level_import_result_event() {
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
     state
         .world_mut()
-        .insert_resource(LevelImportChannelRes(std::sync::Mutex::new(rx)));
+        .insert_resource(LevelImportChannelRes(std::sync::Arc::new(
+            std::sync::Mutex::new(rx),
+        )));
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
@@ -562,7 +566,9 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     let (tx, rx) = std::sync::mpsc::channel::<eg_platform::services::AuthServiceMessage>();
     state
         .world_mut()
-        .insert_resource(AuthChannelRes(std::sync::Mutex::new(rx)));
+        .insert_resource(AuthChannelRes(std::sync::Arc::new(std::sync::Mutex::new(
+            rx,
+        ))));
 
     // We use the simpler SignedOut variant that doesn't require
     // constructing an AuthSession payload.

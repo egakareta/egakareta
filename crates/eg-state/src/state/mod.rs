@@ -115,9 +115,16 @@ pub struct SessionSubsystem {
     pub editor_show_settings: bool,
     pub editor_settings_section: SettingsSection,
     pub editor_keybind_capture_action: Option<(String, usize)>,
+    /// Phase 6b: the receiver end is wrapped in
+    /// `Arc<Mutex<Receiver<Vec<u8>>>>` so both the legacy
+    /// `update_level_imports` (called from `State::update`) and the
+    /// Phase 6b `level_import_handler_system` (called from
+    /// `State::tick_state`) can race for messages. See
+    /// `AuthChannelReceiver` in `state::auth_state` for the
+    /// rationale.
     pub editor_level_import_channel: (
         std::sync::mpsc::Sender<Vec<u8>>,
-        std::sync::mpsc::Receiver<Vec<u8>>,
+        crate::state::async_bridge::SharedLevelImportReceiver,
     ),
     pub settings_restart_required: bool,
     pub graphics_backend_locked: bool,
@@ -265,19 +272,16 @@ impl State {
         render::mirror::install_mirror(move |_uniforms, frame_input| {
             frame_input.0 = frame_input_snapshot;
         });
-        // Phase 6a: the async channel wrappers are NOT auto-installed
-        // by `tick_state` today. `mpsc::Receiver<T>` is not `Clone`,
-        // and moving it from the legacy `State` fields into the
-        // World would break the legacy `update_*` methods that also
-        // drain the same channel. Phase 6b (a) moves the legacy
-        // fields to `Arc<Mutex<Receiver<T>>>` shared between the
-        // State and the World, and (b) replaces the legacy drains
-        // with handler systems that consume the result events.
-        // Until then, the new `poll_channels_system` runs once per
-        // frame and emits events for any messages sitting in the
-        // resource's receiver; tests that exercise the bridge
-        // insert the resource manually (see
-        // `tick_state_poll_channels_emits_*` tests in `state::tests`).
+        // Phase 6b: the channel wrappers are auto-installed from
+        // the `Arc<Mutex<Receiver<T>>>` fields on the legacy
+        // `State`. Both the State and the World hold an `Arc`
+        // clone of the same receiver; the `poll_channels_system`
+        // and the handler systems race for messages, but the
+        // first caller wins (the second sees an empty receiver).
+        //
+        // The `install_async_bridge_from_state` helper is
+        // idempotent: a second call is a no-op.
+        self.install_async_channel_resources();
         // Phase 3: run the per-message drain schedule. This iterates
         // every `Messages<T>` resource once and stages converted
         // `AppCommand` / `EditorCommand` payloads in
@@ -287,6 +291,12 @@ impl State {
         // schedule was never registered (e.g. a test world) the
         // `run_schedule` call is a no-op via `try_run_schedule`.
         let _ = self.world.try_run_schedule(StateSchedule);
+        // Phase 6b: drain the pending async-result closures
+        // installed by the handler systems and apply each one to
+        // the legacy `State`. The closures route the result events
+        // to the matching `complete_*` methods / per-channel
+        // mutation logic.
+        async_bridge::drain_pending_async_result_fns(self);
         // Forward the staged commands to the legacy dispatch path.
         self.dispatch_pending_commands();
     }
@@ -324,6 +334,28 @@ impl State {
         for cmd in pending.editor_commands.drain(..) {
             self.dispatch_editor(cmd);
         }
+    }
+
+    /// Phase 6b: install the Bevy `Message<T>` resources + the
+    /// 5 channel-wrapper resources (`AuthChannelRes`, etc.) on
+    /// the World, sharing the `Arc<Mutex<Receiver<T>>>` fields
+    /// from the legacy `State` with the World's resources.
+    ///
+    /// The `install_async_bridge_from_state` helper is idempotent
+    /// (no-op for already-installed resources), so calling this on
+    /// every `tick_state` is safe. The first call wires the
+    /// `Arc<Mutex<Receiver<T>>>` into the World's
+    /// `Mutex<Receiver<T>>` wrapper (one extra layer of `Mutex` —
+    /// see `state::async_bridge` for the rationale).
+    fn install_async_channel_resources(&mut self) {
+        async_bridge::install_async_bridge_from_state_arc(
+            &mut self.world,
+            std::sync::Arc::clone(&self.auth.channel.1),
+            std::sync::Arc::clone(&self.audio.state.editor.audio_import_channel.1),
+            std::sync::Arc::clone(&self.audio.state.editor.waveform_load_channel.1),
+            std::sync::Arc::clone(&self.audio.state.runtime_preload.preload_channel.1),
+            std::sync::Arc::clone(&self.session.editor_level_import_channel.1),
+        );
     }
 
     /// Resizes the rendering surface to the new dimensions.

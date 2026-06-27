@@ -218,13 +218,15 @@ pub fn register_state_command_pipeline(world: &mut World) {
 
     // Build the per-frame schedule that drains the per-event
     // message resources into `PendingCommands`, then runs the
-    // Phase 4a render mirror bridge and the Phase 6a channel poll
-    // systems. The schedule is added to the world's scheduler so
+    // Phase 4a render mirror bridge, the Phase 6a channel poll
+    // systems, and the Phase 6b result handler systems. The
+    // schedule is added to the world's scheduler so
     // `world.run_schedule(...)` (used by `State::tick_state`) can
     // invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     crate::events::add_command_systems(&mut schedule);
-    crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
     crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
+    crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);
+    crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
     world.add_schedule(schedule);
 }

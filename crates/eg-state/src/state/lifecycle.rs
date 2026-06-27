@@ -612,7 +612,10 @@ impl State {
                 pending: false,
                 message: None,
                 refresh_started: false,
-                channel: std::sync::mpsc::channel(),
+                channel: {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+                },
             },
             gameplay: GameplaySubsystem {
                 state: game,
@@ -647,7 +650,10 @@ impl State {
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
-                editor_level_import_channel: std::sync::mpsc::channel(),
+                editor_level_import_channel: {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+                },
                 settings_restart_required: false,
                 graphics_backend_locked: false,
                 audio_backend_locked: false,
@@ -1517,7 +1523,10 @@ impl State {
                 pending: false,
                 message: None,
                 refresh_started: false,
-                channel: std::sync::mpsc::channel(),
+                channel: {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+                },
             },
             gameplay: GameplaySubsystem {
                 state: game,
@@ -1552,7 +1561,10 @@ impl State {
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
-                editor_level_import_channel: std::sync::mpsc::channel(),
+                editor_level_import_channel: {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+                },
                 settings_restart_required: false,
                 graphics_backend_locked,
                 audio_backend_locked,

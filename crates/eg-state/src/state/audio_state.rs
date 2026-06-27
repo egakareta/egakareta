@@ -19,20 +19,38 @@ use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
 use eg_types::PersistentWaveformCacheEntry;
 
+/// Receiver end of the audio-preload channel. Shared between the
+/// legacy `update_runtime_audio_preloads` (in `State::update`) and
+/// the Phase 6b `audio_preload_handler_system` (in
+/// `State::tick_state`). See [`AuthChannelReceiver`] in
+/// `state::auth_state` for the rationale.
+pub type AudioPreloadChannelReceiver =
+    std::sync::Arc<std::sync::Mutex<Receiver<AudioPreloadResult>>>;
+
 pub struct RuntimeAudioPreloadState {
     pub preloaded_audio: AudioByteCache,
     pub preloading_source_keys: HashSet<String>,
-    pub preload_channel: (Sender<AudioPreloadResult>, Receiver<AudioPreloadResult>),
+    pub preload_channel: (Sender<AudioPreloadResult>, AudioPreloadChannelReceiver),
     #[cfg(test)]
     pub last_warmup_request: Option<(String, f32)>,
 }
 
-pub type AudioImportChannel = (Sender<(String, Vec<u8>)>, Receiver<(String, Vec<u8>)>);
+/// Receiver end of the audio-import channel. Shared between the
+/// legacy `update_audio_imports` and the Phase 6b
+/// `audio_import_handler_system`.
+pub type AudioImportChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<(String, Vec<u8>)>>>;
+
+pub type AudioImportChannel = (Sender<(String, Vec<u8>)>, AudioImportChannelReceiver);
+
+/// Receiver end of the waveform-load channel. Shared between the
+/// legacy `update_waveform_loading` and the Phase 6b
+/// `waveform_handler_system`.
+pub type WaveformLoadChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<WaveformResult>>>;
 
 pub struct EditorAudioState {
     pub cache: EditorAudioCache,
     pub audio_import_channel: AudioImportChannel,
-    pub waveform_load_channel: (Sender<WaveformResult>, Receiver<WaveformResult>),
+    pub waveform_load_channel: (Sender<WaveformResult>, WaveformLoadChannelReceiver),
 }
 
 pub struct AudioState {
@@ -47,19 +65,22 @@ pub struct AudioSubsystem {
 
 impl AudioState {
     pub fn new(local_audio_cache: HashMap<String, Vec<u8>>) -> Self {
+        let (preload_tx, preload_rx) = std::sync::mpsc::channel::<AudioPreloadResult>();
+        let (audio_tx, audio_rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
+        let (waveform_tx, waveform_rx) = std::sync::mpsc::channel::<WaveformResult>();
         Self {
             runtime: AudioBackend::new(),
             runtime_preload: RuntimeAudioPreloadState {
                 preloaded_audio: AudioByteCache::default(),
                 preloading_source_keys: HashSet::new(),
-                preload_channel: std::sync::mpsc::channel(),
+                preload_channel: (preload_tx, arc_receiver(preload_rx)),
                 #[cfg(test)]
                 last_warmup_request: None,
             },
             editor: EditorAudioState {
                 cache: EditorAudioCache::from_local_files(local_audio_cache),
-                audio_import_channel: std::sync::mpsc::channel(),
-                waveform_load_channel: std::sync::mpsc::channel(),
+                audio_import_channel: (audio_tx, arc_receiver(audio_rx)),
+                waveform_load_channel: (waveform_tx, arc_receiver(waveform_rx)),
             },
         }
     }
@@ -93,12 +114,17 @@ impl AudioState {
     }
 }
 
+fn arc_receiver<T>(rx: Receiver<T>) -> std::sync::Arc<std::sync::Mutex<Receiver<T>>> {
+    std::sync::Arc::new(std::sync::Mutex::new(rx))
+}
+
 impl Default for RuntimeAudioPreloadState {
     fn default() -> Self {
+        let (tx, rx) = std::sync::mpsc::channel();
         Self {
             preloaded_audio: AudioByteCache::default(),
             preloading_source_keys: HashSet::new(),
-            preload_channel: std::sync::mpsc::channel(),
+            preload_channel: (tx, arc_receiver(rx)),
             #[cfg(test)]
             last_warmup_request: None,
         }
@@ -107,10 +133,12 @@ impl Default for RuntimeAudioPreloadState {
 
 impl Default for EditorAudioState {
     fn default() -> Self {
+        let (audio_tx, audio_rx) = std::sync::mpsc::channel();
+        let (waveform_tx, waveform_rx) = std::sync::mpsc::channel();
         Self {
             cache: EditorAudioCache::default(),
-            audio_import_channel: std::sync::mpsc::channel(),
-            waveform_load_channel: std::sync::mpsc::channel(),
+            audio_import_channel: (audio_tx, arc_receiver(audio_rx)),
+            waveform_load_channel: (waveform_tx, arc_receiver(waveform_rx)),
         }
     }
 }
@@ -238,8 +266,21 @@ impl State {
     }
 
     pub fn update_audio_imports(&mut self) {
-        while let Ok((_filename, bytes)) = self.audio.state.editor.audio_import_channel.1.try_recv()
-        {
+        // Phase 6b: see `update_waveform_loading` for the
+        // receiver-share rationale. The original code processed
+        // exactly one message per call (early return after the
+        // waveform loader runs); we preserve that semantics.
+        let guard = self
+            .audio
+            .state
+            .editor
+            .audio_import_channel
+            .1
+            .lock()
+            .expect("audio import channel mutex poisoned");
+        let first = guard.try_recv().ok();
+        drop(guard);
+        if let Some((_filename, bytes)) = first {
             let level_name = self
                 .session
                 .editor_level_name
@@ -259,14 +300,15 @@ impl State {
     }
 
     pub fn update_runtime_audio_preloads(&mut self) {
-        while let Ok((source_key, bytes)) = self
+        let guard = self
             .audio
             .state
             .runtime_preload
             .preload_channel
             .1
-            .try_recv()
-        {
+            .lock()
+            .expect("audio preload channel mutex poisoned");
+        while let Ok((source_key, bytes)) = guard.try_recv() {
             self.audio
                 .state
                 .runtime_preload
@@ -284,9 +326,20 @@ impl State {
     }
 
     pub fn update_waveform_loading(&mut self) {
-        while let Ok((source, level_name, message)) =
-            self.audio.state.editor.waveform_load_channel.1.try_recv()
-        {
+        // Phase 6b: the receiver is shared with the Phase 6b handler
+        // system via `Arc<Mutex<>>`. We hold the lock for the
+        // duration of the loop (the State-method calls in the body
+        // don't need the receiver, so the lock is uncontended in
+        // practice).
+        let guard = self
+            .audio
+            .state
+            .editor
+            .waveform_load_channel
+            .1
+            .lock()
+            .expect("waveform load channel mutex poisoned");
+        while let Ok((source, level_name, message)) = guard.try_recv() {
             let source_key = runtime_asset_source_key(&level_name, &source);
             let is_current =
                 self.audio.state.editor.cache.loading_source() == Some(source_key.as_str());
@@ -528,7 +581,9 @@ fn apply_waveform_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: Vec<f3
     samples[start_peak..end_peak].copy_from_slice(&peaks);
 }
 
-fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCacheEntry) {
+/// Phase 6b: made `pub(crate)` so the `waveform_handler_system` in
+/// `state::async_bridge` can call it from a closure.
+pub(crate) fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCacheEntry) {
     let cached = PersistentWaveformCacheEntry::new(
         entry.samples.clone(),
         entry.sample_rate,
