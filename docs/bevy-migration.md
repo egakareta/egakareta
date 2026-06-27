@@ -154,16 +154,16 @@ files in one final sweep.
 
 ### What's in Phase 3 today
 
-- 15 event submodules under vents/ (
-  avigation, uth,
-  ditor_mode, snap, lock, selection, imeline, iming,
-  pm, spawn, history, camera, misc, session,
+- 15 event submodules under events/ (
+  avigation, auth,
+  editor_mode, snap, block, selection, imeline, iming,
+  bpm, spawn, history, camera, misc, session,
   input_state, pointer).
 - One Message struct per semantic command (~85 distinct message
   types).
 - A ToLegacy trait on each message type that converts the message to
   a LegacyCommand (an AppCommand or EditorCommand enum variant).
-- A per-message drain system (one n handle\_\*(MessageReader<T>,
+- A per-message drain system (one `fn handle_*`(MessageReader<T>,
   ResMut<PendingCommands>) per message type) that stages commands in
   the PendingCommands resource.
 - A StateSchedule that bundles the per-message drain systems.
@@ -179,12 +179,12 @@ files in one final sweep.
 Bevy 0.19 uses Message (not Event) for buffered per-frame
 payloads; observer-based Events fire immediately. We use
 Message here because we want pull-based consumption by the
-per-message drain systems in [vents::CommandSet], then a single
-drain into [vents::PendingCommands] at the end of the frame. The
+per-message drain systems in [events::CommandSet], then a single
+drain into [events::PendingCommands] at the end of the frame. The
 full Bevy 0.19 pattern is:
 
 - #[derive(Message)] for the message type.
-- Messages<T> for the resource (added by pp.add_message::<T>()).
+- Messages<T> for the resource (added by app.add_message::<T>()).
 - MessageReader<T> / MessageWriter<T> for system params.
 - world.write_message(event) to send.
 - world.resource_mut::<Messages<T>>() to inspect the buffer.
@@ -196,14 +196,14 @@ full Bevy 0.19 pattern is:
 
 |
 avigation | 10 | TurnRight, ToggleEditor, GameSetPracticeMode |
-| uth | 5 | AuthSubmitSignIn, AuthSignOut, ResizeSurface |
-| ditor_mode | 5 | SetEditorMode, SetBlockId, PickBlockAt |
+| auth | 5 | AuthSubmitSignIn, AuthSignOut, ResizeSurface |
+| editor_mode | 5 | SetEditorMode, SetBlockId, PickBlockAt |
 | snap | 4 | SetSnapToGrid, SetSnapStep |
-| lock | 5 | RemoveBlock, CopyBlock, UpdateSelectedBlock |
+| block | 5 | RemoveBlock, CopyBlock, UpdateSelectedBlock |
 | selection | 3 | SnapSelectionToGrid, AddTransformTrigger |
 | imeline | 14 | ToggleTimelinePlayback, SetTimelineTime, Playtest|
 | iming | 6 | AddTimingPoint, SetTimingPointTime |
-| pm | 2 | BpmTap, BpmTapReset |
+| bpm | 2 | BpmTap, BpmTapReset |
 | spawn | 3 | SetSpawnHere, RotateSpawnDirection |
 | history | 3 | Undo, Redo, HistorySnapshot |
 | camera | 5 | AdjustZoom, SetCameraOrientation |
@@ -224,7 +224,7 @@ with the legacy EditorCommand::SetShiftHeld /
 EditorCommand::MouseButton etc. variants.
 
 REFACTOR POINT(full-bevy): the input-state + pointer events
-disappear in the full-Bevy migration; the corresponding evy_input
+disappear in the full-Bevy migration; the corresponding bevy_input
 Input<KeyCode> / ButtonInput<MouseButton> resources handle
 held-state + click events natively.
 
@@ -246,7 +246,7 @@ end-to-end on every frame.
 ick_state_drains_message_into_pending_then_dispatches test
 exercises the full pipeline (write a Message →
 State::tick_state → side effect on the legacy State).
-14 new unit tests in vents::tests cover ToLegacy conversion +
+14 new unit tests in events::tests cover ToLegacy conversion +
 PendingCommands drain semantics for representative event types.
 
 ## Phase 4a — rendering extraction scaffolding
@@ -451,3 +451,19 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 - `cargo test -p eg-state --lib` is green: **434 tests pass** (was 424 before Phase 6b, +10 new unit tests).
 - `cargo build -p eg-state` is clean.
 - `cargo clippy -p eg-state --all-targets` shows no **new** warnings introduced by Phase 6b (pre-existing baseline warnings in `transitions.rs` doc lists, `events/mod.rs` let-bindings, `command_dispatch.rs` casts, and `gizmo.rs` field-assignments are not Phase 6b regressions — they predate this phase).
+
+## Architectural shape right now
+
+- The migration so far is a **parallel mirror** strategy: the legacy `State` god-object + its subsystems (`RenderSubsystem`, `GameplaySubsystem`, `EditorSubsystem`, `AudioSubsystem`, `AuthSubsystem`, `SessionSubsystem`, `MenuSubsystem`) are **all still authoritative**. The Bevy `World` is a read-only / drain-target sidecar.
+- The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, but the final swap (delete the enums + dispatch files) is gated on Phase 5/7.
+- `Runtime` in `eg-app` does not yet own a `bevy_app::App`; the world's schedules are run by `State::tick_state` → `self.world.try_run_schedule(StateSchedule)`. The winit loop never calls `app.update()` directly.
+
+## Likely next steps
+
+The natural order (matches the plan's dependencies) is:
+
+1. **Phase 4c-4e** — finish the render extraction. This is the biggest remaining gap and the only Phase 4 sub-phase that touches the GPU path.
+2. **Phase 5** — rewrite `eg-ui` as Bevy systems (depends on Phase 3 messages being writable from `MessageWriter`, not just from `State`).
+3. **Phase 7** — flip `Runtime` to own `bevy_app::App`, let winit call `app.update()`. This is the "big bang" cut-over; everything that was a parallel mirror becomes authoritative.
+4. **Phase 8** — `TestApp` harness (parallelizable; can be done alongside 4/5/7).
+5. **Phase 9** — final docs pass.
