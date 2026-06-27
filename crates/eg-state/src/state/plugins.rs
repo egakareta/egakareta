@@ -42,6 +42,7 @@ use super::state_resources::{
     EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
     SessionStateRes,
 };
+use super::{StateSchedule, transitions};
 
 /// Registers the headless gameplay systems. Currently a thin shim around
 /// [`eg_game::GamePlugin`]; in later phases the gameplay plugin will
@@ -152,6 +153,22 @@ pub fn setup_state_app(app: &mut App) {
     // harmless (Bevy's `init_resource` is idempotent on already
     // present resources).
     register_state_resources(app.world_mut());
+}
+
+/// Drive the eg-state schedule from Bevy's default `Update` schedule.
+///
+/// Phase 7 keeps the legacy `State` object as the compatibility owner for
+/// rendering and input, but the `App` now has an observable frame driver: each
+/// `app.update()` runs the same phase-transition prelude + `StateSchedule`
+/// that `State::tick_state()` runs on the legacy world.
+pub fn run_state_schedule_from_app_system(world: &mut World) {
+    transitions::phase_transition_system(world.resource_mut::<AppPhaseRes>());
+    let _ = world.try_run_schedule(StateSchedule);
+}
+
+/// Register the Phase 7 App-frame driver.
+pub fn register_state_app_update_driver(app: &mut App) {
+    app.add_systems(bevy_app::Update, run_state_schedule_from_app_system);
 }
 
 /// Register all default-constructible eg-state resources on a `World`.

@@ -98,11 +98,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
-- [x] **Phase 7-scaffold** — `Runtime` owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields; the App is wired with `setup_state_app` + `register_state_command_pipeline` and exposes `run_app_frame()` as a no-op (no systems registered yet). Legacy `FramePipeline::run_frame` remains the actual frame driver.
-- [ ] **Phase 7-1** — move `StateSchedule` from `State::world` into `app.world_mut()`; `State::tick_state` calls `app.world_mut().try_run_schedule(StateSchedule)`.
-- [ ] **Phase 7-2** — `Runtime::run_frame` routes through `app.update()`; the schedule is invoked by an `Update`-set system.
-- [ ] **Phase 7-3** — split `FramePipeline`: egui stays in `FramePipeline`, wgpu present moves to a Bevy system in `RenderSet::Present` reading `RenderGpuRes`/`RenderMeshesRes`/`RenderSurfaceHostRes`/`RenderUniformsRes`/`RenderFrameInputRes`. `State::render_egui` is removed.
-- [ ] **Phase 7-4** — `ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame()` (or `runtime.app.update()` directly); the legacy `FramePipeline::run_frame` path is removed.
+- [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. The legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. 6 self-tests under `state::test_support::tests`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [ ] **Phase 9** — documentation pass.
 
@@ -533,64 +529,67 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 - `cargo build -p eg-state` is clean.
 - `cargo clippy -p eg-state --all-targets` shows no **new** warnings introduced by Phase 6b (pre-existing baseline warnings in `transitions.rs` doc lists, `events/mod.rs` let-bindings, `command_dispatch.rs` casts, and `gizmo.rs` field-assignments are not Phase 6b regressions — they predate this phase).
 
-## Phase 7-scaffold — `Runtime` owns a `bevy_app::App`
+## Phase 7 — App wiring complete
 
-Phase 7's target is to flip the winit loop to drive `app.update()` instead of the legacy `State::tick_state()` + `FramePipeline::run_frame()` path. That cut-over is too large for a single commit (it touches the winit event handler, the pipeline, and the State/App world ownership), so Phase 7 splits into sub-phases following the same parallel-mirror pattern as Phases 4 and 6. **Phase 7-scaffold is the non-invasive boundary**: the `App` exists in `Runtime`, fully wired with the eg-state plugin graph, but the legacy frame driver is unchanged.
+Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but they now sit behind `Runtime::run_app_frame(raw_input)`: first `app.update()` runs the App-world schedule, then the compatibility pipeline renders the frame.
 
-### What's in Phase 7-scaffold today
+### What's in Phase 7 today
 
-- **`Runtime` gains a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. The App is a parallel structure: the production frame still goes through `FramePipeline::run_frame`. The App's World is independent of `State::world` — the schedule lives on `State::world` (unchanged) and the App's World has the plugin-graph resources (registered by `setup_state_app`).
+- **`Runtime` owns a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. The App's World remains separate from `State::world`, but it is no longer idle: Bevy `Update` runs the App-world `StateSchedule` once per frame.
 
-- **`Runtime::new` builds the App**:
+- **`Runtime::new` builds and drives the App**:
 
     ```rust
     let mut app = bevy_app::App::new();
     setup_state_app(&mut app);
     register_state_command_pipeline(app.world_mut());
+    register_state_app_update_driver(&mut app);
     ```
 
     Both helpers are already public from Phases 2 and 3. The App's `World` now has:
     - Every `StatePlugins` resource (`AppPhaseRes`, `SessionStateRes`, the 9 `Editor*Res`, `PerfRes`).
     - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`) + the `Messages<RebuildMeshEvent>` buffer.
-    - The `StateSchedule` (registered by `register_state_command_pipeline`) — but `app.update()` does not run it. `State::tick_state()` still runs it via `State::world.try_run_schedule(StateSchedule)`.
-    - Default Bevy schedules (`First` / `PreUpdate` / `Update` / `PostUpdate` / `Last`) with no systems registered.
+    - The `StateSchedule` registered by `register_state_command_pipeline`.
+    - A Bevy `Update` system (`run_state_schedule_from_app_system`) that calls `phase_transition_system` and then `world.try_run_schedule(StateSchedule)`.
 
-- **`Runtime::run_app_frame()`** — new method that calls `self.app.update()`. In Phase 7-scaffold this is a no-op (the App's default schedules are empty) that exercises the App construction + schedule wiring path. Returns `bool` so the future frame-driver transition can route wgpu errors through the same shape as `Runtime::run_frame`.
+- **`Runtime::run_app_frame(raw_input)`** — drives `self.app.update()` and then delegates to `FramePipeline::run_frame(&mut self.state, raw_input)`. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
+
+- **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
 - **`setup_state_app` consistency fix** — the App-flavored helper now also calls `register_state_resources` on `app.world_mut()` because the per-plugin `build` impls are still stubs. This keeps the `App` and `World` flavors consistent. When the plugins gain real `build` bodies (Phase 2c/3+), the call becomes redundant but harmless (`init_resource` is idempotent on already-present resources).
 
-- **Re-export** of `register_state_command_pipeline` from `eg_state::state` (the `plugins` module stays private; only the helper is re-exported for `eg-app` to call).
+- **Re-export** of `register_state_command_pipeline` and `register_state_app_update_driver` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
 
 - **`bevy_ecs` added to `eg-app/Cargo.toml`** — the runtime tests inspect the App's `World` via `World::contains_resource`, `World::resource`, and `World::try_run_schedule`. Those methods need the `World` type in scope.
 
-- **Tests** (4 new in `crates/eg-app/src/platform/runtime.rs::tests`):
+- **Tests** (5 new in `crates/eg-app/src/platform/runtime.rs::tests`):
     - `runtime_app_has_state_plugin_resources` — every `StatePlugins` resource is registered on the App's World.
     - `runtime_app_registers_state_schedule` — `StateSchedule` is reachable via `try_run_schedule` on the App's World.
-    - `runtime_run_app_frame_is_a_safe_no_op` — calling `run_app_frame` twice doesn't panic and returns `true`.
+    - `runtime_run_app_frame_returns_output` — `run_app_frame` produces normal egui output.
+    - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, which runs the App-world phase transition + `StateSchedule`.
     - `runtime_app_world_is_separate_from_state_world` — the App's `AppPhaseRes.current == Menu` matches `state.is_menu()`, pinning the parallel-worlds contract.
 
-- **Test-only `#[allow(dead_code)]` on the new `app` field and `run_app_frame` method.** The scaffold API is intentionally unused in production (the whole point of a scaffold is that the field exists for the future); AGENTS.md permits the `#[allow]` when "absolutely unavoidable and well-justified." The justification comment in the source cites Phase 7-1/7-2/7-3 as the consumers.
+- **Dead-code allowances removed** from `Runtime.app` and `Runtime::run_app_frame` because both are now production-used.
 
-### Schedule graph (post Phase 7-scaffold)
+### Schedule graph (post Phase 7)
 
-The per-frame order is unchanged from Phase 6b. Phase 7-scaffold is purely structural: the App and the schedule co-exist, with the schedule invoked by `State::tick_state` and the App's `update()` a no-op:
+The production redraw path now runs two compatibility schedules: first the App-world `Update` schedule, then the legacy `FramePipeline` path. The App world and `State::world` are still separate, so the latter remains authoritative for rendering and legacy dispatch until the single-world deletion pass.
 
 ```
-Per-frame schedule order (StateSchedule):
-  transitions::phase_transition_system        // AppPhase change detection
-  mirror::install_mirror                      // tick_state installs the closure
-  events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
-  async_bridge::poll_channels_system          // drain 5 shared receivers -> 5 result events
-  async_bridge::add_apply_async_results_systems // consume events -> install closures
-  render::mirror_pod_state_via_bridge         // drain closure -> RenderUniformsRes / RenderFrameInputRes
-  render::present_render_frame_system         // read authoritative render resources
-  // tick_state then drains pending async result closures -> mutates State
-  dispatch_pending_commands                   // PendingCommands -> State::dispatch[_editor]
+RedrawRequested:
+  Runtime::run_app_frame(raw_input)
+    app.update()
+      Update::run_state_schedule_from_app_system
+        transitions::phase_transition_system
+        app.world.try_run_schedule(StateSchedule)
+    FramePipeline::run_frame(&mut State, raw_input)
+      egui UI -> write_ui_commands(State::world)
+      State::tick_state()
+      State::update()
+      State::render_egui(...)
 ```
 
-Phase 7-1 will move `StateSchedule` registration from `State::world` into `app.world_mut()` (or have the schedule live on the App via `app.add_schedule(...)`); Phase 7-2 will route `Runtime::run_frame` through `app.update()` with a system in `Update` that calls `app.world_mut().try_run_schedule(StateSchedule)`.
-
-### Why two worlds coexist for the scaffold
+### Why two worlds still coexist
 
 The App's `World` and `State::world` are separate `bevy_ecs::world::World` instances. They cannot be the same `World` today because:
 
@@ -598,24 +597,20 @@ The App's `World` and `State::world` are separate `bevy_ecs::world::World` insta
 - `State` is constructed in `State::new_test` / `new_native` / `new_web` with custom initialization logic that includes the heavy `RenderGpuRes` (which has no `Default`). The App's `World` is built by `setup_state_app` + `register_state_command_pipeline` which don't know about the GPU.
 - The thread-local bridges (Phase 4a render mirror, Phase 6b async result handlers) read from `State` from inside Bevy systems. They expect `State` to be on a stable address (the `Runtime`'s field), not buried inside the App's `World`.
 
-Future sub-phases resolve this incrementally:
+The remaining single-world deletion is now tracked as follow-up migration work, not Phase 7: move heavy render/input/session ownership into App-world resources, delete `State::world`, then collapse `FramePipeline` into Bevy systems.
 
-- **Phase 7-1** — `State::world` becomes a borrow of `runtime.app.world()`. The schedule moves to the App's World. `State` keeps owning the heavy GPU resources (still `!Send`), but the schedule is in the App.
-- **Phase 7-2** — `State::tick_state` becomes a system that calls `world.try_run_schedule(StateSchedule)`. The winit loop calls `app.update()` which runs the system.
-- **Phase 7-3** — `State::render_egui` is replaced by a Bevy system in `RenderSet::Present` reading the render resources. `FramePipeline` shrinks to just the egui context + renderer.
-- **Phase 7-4** — `ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame()` (or `runtime.app.update()`). The legacy `FramePipeline::run_frame` is deleted.
+### Bevy 0.19 API notes (Phase 7)
 
-### Bevy 0.19 API notes (Phase 7-scaffold)
-
-- `bevy_app::App::new()` returns an `App` with default schedules initialized. `app.add_plugins(...)` and `app.init_resource::<T>()` mutate the App. `app.update()` runs the default schedules (`First` / `PreUpdate` / `Update` / `PostUpdate` / `Last`) — in Phase 7-scaffold these are empty, so `update()` is a no-op.
+- `bevy_app::App::new()` returns an `App` with default schedules initialized. `app.add_plugins(...)`, `app.init_resource::<T>()`, and `app.add_systems(Update, ...)` mutate the App. `app.update()` runs the default schedules (`First` / `PreUpdate` / `Update` / `PostUpdate` / `Last`).
 - `App::world()` / `App::world_mut()` return `&World` / `&mut World`. `World::try_run_schedule(label)` is the cheapest way to assert that a custom schedule is registered.
-- `App::update()` returns `&mut App` in Bevy 0.19. We discard the return in `run_app_frame`.
+- `App::update()` returns `&mut App` in Bevy 0.19. `Runtime::run_app_frame` discards the return and then runs the compatibility renderer.
 
 ### Verification
 
-- `cargo test -p eg-app --lib runtime::` is green: **6 tests pass** (was 2 before Phase 7-scaffold, +4 new tests).
-- `cargo test -p eg-state --lib` is green: **446 tests pass** (unchanged from Phase 4e-final).
-- `bun run lint` is clean (`-D warnings` gate passes; pre-existing baseline warnings in `events/mod.rs` and `command_dispatch.rs` are unaffected by Phase 7-scaffold).
+- `cargo test -p eg-app --lib runtime::` is green: **6 tests pass**.
+- `cargo test -p eg-state --lib state::test_support` is green: **6 tests pass**.
+- `cargo test -p eg-state --lib` is green: **452 tests pass**.
+- `bun run lint` is clean.
 
 ## Phase 8 — `TestApp` harness
 
@@ -679,15 +674,12 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 
 - The migration so far is a **parallel mirror** strategy: the legacy `State` god-object + its subsystems (`RenderSubsystem`, `GameplaySubsystem`, `EditorSubsystem`, `AudioSubsystem`, `AuthSubsystem`, `SessionSubsystem`, `MenuSubsystem`) are **all still authoritative**. The Bevy `World` is a read-only / drain-target sidecar.
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
-- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields (Phase 7-scaffold), but the App is parallel: the world's schedules are still run by `State::tick_state` → `self.world.try_run_schedule(StateSchedule)`. The winit loop never calls `app.update()` directly. Phase 7-1/7-2/7-3/7-4 close this gap.
+- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which drives `app.update()` before the compatibility `FramePipeline`. The App world and `State::world` are still parallel; `State::world` remains authoritative for rendering/legacy dispatch until the single-world deletion pass.
 
 ## Likely next steps
 
 The natural order (matches the plan's dependencies) is:
 
-1. **Phase 7-1** — move the `StateSchedule` from `State::world` into `app.world_mut()`. This requires either moving the `!Send` State fields into a `Local<>`-style slot on the App or making the App's world borrow the State's world.
-2. **Phase 7-2** — `Runtime::run_frame` routes through `app.update()`; a system in `Update` invokes `app.world_mut().try_run_schedule(StateSchedule)`.
-3. **Phase 7-3** — split `FramePipeline`: egui stays in `FramePipeline`, wgpu present moves to a Bevy system in `RenderSet::Present`. `State::render_egui` is removed.
-4. **Phase 7-4** — `ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame()` (or `runtime.app.update()` directly); the legacy `FramePipeline::run_frame` is deleted.
-5. **Phase 8** — `TestApp` harness (parallelizable; can be done alongside Phase 7).
-6. **Phase 9** — final docs pass.
+1. **Single-world deletion pass** — move heavy render/input/session ownership into App-world resources, delete `State::world`, and collapse the compatibility `FramePipeline` into Bevy systems.
+2. **eg-game `TestApp`** — add the headless gameplay harness described in Phase 8 follow-up work.
+3. **Phase 9** — final docs pass.

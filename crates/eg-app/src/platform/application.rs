@@ -524,7 +524,7 @@ impl ApplicationHandler for App {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     let raw_input = egui_state.take_egui_input(window.as_ref());
-                    let full_output = runtime.run_frame(raw_input);
+                    let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
                     let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
                     let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
@@ -539,7 +539,7 @@ impl ApplicationHandler for App {
                     };
                     Self::sync_web_canvas_size(runtime, window);
                     let raw_input = egui_state.take_egui_input(window);
-                    let full_output = runtime.run_frame(raw_input);
+                    let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
                     let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
                     let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);

@@ -70,7 +70,7 @@ pub use history::EditorHistoryState;
 pub use perf::PerfState;
 pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
-    register_state_command_pipeline, setup_state_app,
+    register_state_app_update_driver, register_state_command_pipeline, setup_state_app,
 };
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
