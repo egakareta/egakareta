@@ -11,13 +11,13 @@
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
 
 use crate::{
-    show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_editor_ui_commands, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
 use eg_render::RenderSurfaceError;
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::State;
-use eg_ui::{MenuTextures, combined_ui_scale_factor};
+use eg_ui::{MenuTextures, combined_ui_scale_factor, write_ui_commands};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
@@ -86,7 +86,8 @@ impl FramePipeline {
             puffin::profile_scope!("EguiRunUi");
             self.egui_ctx.run_ui(raw_input, |root_ui| {
                 let ctx = root_ui.ctx().clone();
-                show_editor_ui(&ctx, state, &block_icon_texture_ids);
+                let editor_commands = show_editor_ui_commands(&ctx, state, &block_icon_texture_ids);
+                write_ui_commands(state.world_mut(), editor_commands);
                 {
                     let view = state.ui_view_model();
                     let mut ui_commands = Vec::new();
@@ -109,13 +110,15 @@ impl FramePipeline {
                         show_menu_favicon_ui(&ctx, &view, favicon);
                     }
                     drop(view);
-
-                    for command in ui_commands {
-                        state.dispatch(command);
-                    }
+                    write_ui_commands(state.world_mut(), ui_commands);
                 }
             })
         };
+
+        {
+            puffin::profile_scope!("StateSchedule");
+            state.tick_state();
+        }
 
         let paint_jobs = {
             puffin::profile_scope!("EguiTessellate");

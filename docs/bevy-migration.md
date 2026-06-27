@@ -95,7 +95,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 4c-final** — `RenderMeshesRes` / `RenderSurfaceHostRes` now own the actual `SceneMeshes` / `SurfaceHost`; legacy mesh/surface call sites route through `State` accessors backed by the world.
 - [x] **Phase 4d-final** — `ObjectBundle` mirror components + `Changed<>` detection now drive `mark_mesh_dirty_system`; `EditorDirtyFlags` remains as the legacy consumer until editor mutation moves into the shared World.
 - [x] **Phase 4e-final** — `present_render_frame_system` is registered in `RenderSet::Present` and reads authoritative render resources; the production `render_egui` compatibility call remains until Phase 7 gives the Bevy app ownership of the frame.
-- [ ] **Phase 5** — UI as Bevy systems.
+- [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
 - [ ] **Phase 7** — `App` wiring (winit drives `app.update()`).
@@ -378,6 +378,17 @@ The legacy `State::render` field is still authoritative. Future phases (4b/4c) d
 - The thread-local mirror slot is `Send`-unsafe by design — the closure must be `Send` only if Bevy moves the schedule to another thread. Today the schedule runs on the main thread; the thread-local is the simplest correct implementation.
 - `ResMut<T>` and `Res<T>` from `bevy_ecs::prelude::*` are the system params; `World::resource_scope` is the test-side helper for borrowing two `ResMut`s simultaneously.
 
+## Phase 5 — UI command bridge + `UiPlugin`
+
+`eg-ui` now owns the Bevy-facing UI boundary:
+
+- `crates/eg-ui/src/plugin.rs` defines `UiPlugin`, `EguiContextRes`, `UiCommandQueue`, and an exhaustive `AppCommand` / `EditorCommand` -> Bevy `Message` bridge.
+- `show_editor_ui_commands` renders the existing editor UI and returns commands instead of dispatching them internally; `show_editor_ui` remains as a compatibility wrapper.
+- `crates/eg-app/src/platform/pipeline.rs` writes editor/menu/pause UI commands into the shared `World` with `write_ui_commands(...)`, then runs `State::tick_state()` before the legacy `State::update()` so command timing remains same-frame.
+- The visual UI code still uses `UiViewModel` during the compatibility window. Phase 7 removes that final caller shape when `Runtime` owns a `bevy_app::App` and injects the egui context before `app.update()`.
+
+**Verification:** `cargo check -p eg-ui` and `cargo check -p eg-app` pass. Both runs reported recurring Windows incremental-cache finalization warnings (`Access is denied`) but exited successfully.
+
 ## Phase 6a — async bridging scaffold
 
 The plan calls for wrapping the five `mpsc` channels the legacy `State` struct owns (auth service, audio import, waveform load, audio preload, level import) in Bevy `Resource`s and adding a `PollChannelsSet` system that drains them and emits per-channel result events. Phase 6a is the **non-invasive scaffold** that establishes the boundary without disturbing the legacy `update_*` methods (Phase 6b replaces them with handler systems that consume the events).
@@ -521,15 +532,13 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 ## Architectural shape right now
 
 - The migration so far is a **parallel mirror** strategy: the legacy `State` god-object + its subsystems (`RenderSubsystem`, `GameplaySubsystem`, `EditorSubsystem`, `AudioSubsystem`, `AuthSubsystem`, `SessionSubsystem`, `MenuSubsystem`) are **all still authoritative**. The Bevy `World` is a read-only / drain-target sidecar.
-- The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, but the final swap (delete the enums + dispatch files) is gated on Phase 5/7.
+- The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
 - `Runtime` in `eg-app` does not yet own a `bevy_app::App`; the world's schedules are run by `State::tick_state` → `self.world.try_run_schedule(StateSchedule)`. The winit loop never calls `app.update()` directly.
 
 ## Likely next steps
 
 The natural order (matches the plan's dependencies) is:
 
-1. **Phase 4c-4e** — finish the render extraction. This is the biggest remaining gap and the only Phase 4 sub-phase that touches the GPU path.
-2. **Phase 5** — rewrite `eg-ui` as Bevy systems (depends on Phase 3 messages being writable from `MessageWriter`, not just from `State`).
-3. **Phase 7** — flip `Runtime` to own `bevy_app::App`, let winit call `app.update()`. This is the "big bang" cut-over; everything that was a parallel mirror becomes authoritative.
-4. **Phase 8** — `TestApp` harness (parallelizable; can be done alongside 4/5/7).
-5. **Phase 9** — final docs pass.
+1. **Phase 7** — flip `Runtime` to own `bevy_app::App`, let winit call `app.update()`. This is the "big bang" cut-over; everything that was a parallel mirror becomes authoritative.
+2. **Phase 8** — `TestApp` harness (parallelizable; can be done alongside Phase 7).
+3. **Phase 9** — final docs pass.

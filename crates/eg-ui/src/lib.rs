@@ -15,6 +15,7 @@
 pub(crate) mod components;
 pub(crate) mod menu;
 pub(crate) mod modes;
+pub mod plugin;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -37,6 +38,10 @@ use glam::{Mat3, Vec3};
 pub use menu::{
     MenuTextures, load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_practice_checkpoint_ui,
+};
+pub use plugin::{
+    EguiContextRes, UiCommandQueue, UiPlugin, enqueue_ui_command, enqueue_ui_commands,
+    write_ui_command, write_ui_commands,
 };
 
 #[derive(Clone, Copy)]
@@ -867,14 +872,14 @@ pub fn show_settings_sidebar(
 // egui 0.34 deprecates top-level Panel::show in favor of show_inside;
 // this function still renders top-level panels directly from Context.
 #[allow(deprecated)]
-pub fn show_editor_ui(
+pub fn show_editor_ui_commands(
     ctx: &egui::Context,
     state: &mut State,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-) {
+) -> Vec<AppCommand> {
     if !state.is_editor() {
         state.clear_editor_ui_input_blocking_rects();
-        return;
+        return Vec::new();
     }
 
     let view = state.ui_view_model();
@@ -1365,7 +1370,17 @@ pub fn show_editor_ui(
 
     drop(view);
     state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
-    for command in commands {
+    commands
+}
+
+/// Shows the editor UI using egui and dispatches emitted commands immediately.
+#[allow(deprecated)]
+pub fn show_editor_ui(
+    ctx: &egui::Context,
+    state: &mut State,
+    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+) {
+    for command in show_editor_ui_commands(ctx, state, block_icon_texture_ids) {
         state.dispatch(command);
     }
 }
