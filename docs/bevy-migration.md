@@ -410,7 +410,8 @@ The legacy `State::render` field is still authoritative. Future phases (4b/4c) d
 
 - `crates/eg-ui/src/plugin.rs` defines `UiPlugin`, `EguiContextRes`, `UiCommandQueue`, and an exhaustive `AppCommand` / `EditorCommand` -> Bevy `Message` bridge.
 - `show_editor_ui_commands` renders the existing editor UI and returns commands instead of dispatching them internally; `show_editor_ui` remains as a compatibility wrapper.
-- `crates/eg-app/src/platform/pipeline.rs` queues editor/menu/pause UI commands in the Runtime App world's `UiCommandQueue`, drains that queue into Bevy messages, runs `app.update()` to drain them into App-world `PendingCommands`, then applies those commands to the legacy `State` through the compatibility bridge before `State::tick_state()` and `State::update()`.
+- `crates/eg-app/src/platform/pipeline.rs` collects editor/menu/pause UI commands and returns them to `Runtime`; the pipeline no longer knows about the Bevy `App` or drains App-world `PendingCommands`.
+- `crates/eg-app/src/platform/runtime.rs` queues UI commands in the Runtime App world's `UiCommandQueue`, drains that queue into Bevy messages, runs `app.update()`, applies App-world `PendingCommands` to the legacy `State`, then runs `State::tick_state()` before the compatibility update/render path.
 - The visual UI code still uses `UiViewModel` during the compatibility window, but `Runtime::run_app_frame` now mirrors the live egui context into App-world `EguiContextRes` before the frame update. The remaining UI cut-over is replacing `UiViewModel` reads with App-world resources/queries.
 
 **Verification:** `cargo check -p eg-ui` and `cargo check -p eg-app` pass. Both runs reported recurring Windows incremental-cache finalization warnings (`Access is denied`) but exited successfully.
@@ -557,7 +558,7 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 
 ## Phase 7 — App wiring complete
 
-Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but they now sit behind `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI, writes UI commands into the App world, runs `app.update()` to drain them through the App-world schedule, bridges the resulting `PendingCommands` into legacy `State`, then renders the frame.
+Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but the App update and command drain now sit in `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI and returns UI commands, `Runtime` writes them into the App world, runs `app.update()` to drain them through the App-world schedule, applies the resulting `PendingCommands` to legacy `State`, then lets the compatibility pipeline update and render the frame.
 
 ### What's in Phase 7 today
 
@@ -583,7 +584,9 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
     - **`Runtime::process_input_event(event)`** — queues platform input into App-world `PlatformInputQueue`, then forwards the same event to the legacy `State::process_input_event` path during the compatibility window. Production winit/touch/resize/key/mouse callers now use this Runtime method instead of calling `runtime.state.process_input_event(...)` directly.
 
-    - **`Runtime::run_app_frame(raw_input)`** — delegates to `FramePipeline::run_frame(&mut self.state, &mut self.app, raw_input)`. The pipeline mirrors the live egui context into App-world `EguiContextRes`, queues UI-originated commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, and bridges App-world `PendingCommands` into the legacy `State` dispatch path. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
+    - **`Runtime::run_app_frame(raw_input)`** — mirrors the live egui context into App-world `EguiContextRes`, delegates UI rendering to `FramePipeline::run_frame(&mut self.state, raw_input, ...)`, queues returned UI commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, applies App-world `PendingCommands` to the legacy `State` dispatch path, then runs `State::tick_state()`. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
+
+    - **`FramePipeline::run_frame(...)` no longer takes `&mut App`** — it owns egui tessellation/texture/render compatibility and exposes a callback for Runtime-owned schedule work. This removes the hidden App-world command bridge from the render pipeline.
 
 - **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
@@ -601,28 +604,30 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_process_input_event_queues_app_world_input` — platform input enters App-world `PlatformInputQueue` before the legacy `State::process_input_event` compatibility path consumes it.
     - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, which runs the App-world phase transition + `StateSchedule`.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
-    - `runtime_app_world_is_separate_from_state_world` — the App's `AppPhaseRes.current == Menu` matches `state.is_menu()`, pinning the parallel-worlds contract.
+    - `runtime_app_world_is_separate_from_state_world` — App setup does not mutate legacy `State` until `Runtime` explicitly applies queued commands.
 
 - **Dead-code allowances removed** from `Runtime.app` and `Runtime::run_app_frame` because both are now production-used.
 
 ### Schedule graph (post Phase 7)
 
-The production redraw path now writes UI commands into the App world, runs the App-world `Update` schedule, bridges App-world `PendingCommands` into legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first.
+The production redraw path now writes UI commands into the App world from `Runtime`, runs the App-world `Update` schedule, applies App-world `PendingCommands` to legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first and the render pipeline no longer owns the App bridge.
 
 Production platform input is also App-world first: winit/touch/resize/key/mouse events call `Runtime::process_input_event`, which writes to `PlatformInputQueue(App::world)` before forwarding to legacy `State::process_input_event`.
 
 ```
 RedrawRequested:
   Runtime::run_app_frame(raw_input)
-    FramePipeline::run_frame(&mut State, &mut App, raw_input)
-      sync_egui_context(App::world, egui::Context)
-      egui UI -> UiCommandQueue(App::world)
+    sync_egui_context(App::world, egui::Context)
+    FramePipeline::run_frame(&mut State, raw_input, after_ui)
+      egui UI -> frame_ui_commands
+      after_ui(Runtime-owned)
+      enqueue_ui_commands(App::world, frame_ui_commands)
       drain_ui_command_queue(App::world) -> Messages<T>
       app.update()
         Update::run_state_schedule_from_app_system
           transitions::phase_transition_system
           app.world.try_run_schedule(StateSchedule)
-      State::dispatch_pending_commands_from_world(App::world)
+      Runtime::dispatch_app_pending_commands(App::world, State)
       State::tick_state()
       State::update()
       State::render_egui(...)
@@ -636,7 +641,7 @@ The App's `World` and `State::world` are separate `bevy_ecs::world::World` insta
 - `State` is constructed in `State::new_test` / `new_native` / `new_web` with custom initialization logic that includes the heavy `RenderGpuRes` (which has no `Default`). The App's `World` is built by `setup_state_app` + `register_state_command_pipeline` which don't know about the GPU.
 - The thread-local bridges (Phase 4a render mirror, Phase 6b async result handlers) read from `State` from inside Bevy systems. They expect `State` to be on a stable address (the `Runtime`'s field), not buried inside the App's `World`.
 
-The remaining single-world deletion is now tracked as follow-up migration work, not Phase 7: move heavy render/input/session ownership into App-world resources, delete `State::world`, then collapse `FramePipeline` into Bevy systems.
+The remaining single-world deletion is now the active post-Phase-7 gate: move heavy render/input/session/UI view ownership into App-world resources, delete `State::world`, delete the Runtime `PendingCommands` compatibility drain once handlers mutate resources directly, then collapse `FramePipeline` into Bevy systems. `UiViewModel` is still a legacy snapshot because the App-world resources do not yet cover available levels, auth state, selected objects, waveform slices, and every editor/runtime field the current UI reads.
 
 ### Bevy 0.19 API notes (Phase 7)
 

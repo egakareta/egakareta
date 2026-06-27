@@ -8,12 +8,16 @@
 use crate::load_menu_textures;
 use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
+use bevy_ecs::world::World;
+use eg_state::events::PendingCommands;
 use eg_state::state::State;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_app_update_driver;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::setup_state_app;
-use eg_ui::register_ui_resources_world;
+use eg_ui::{
+    drain_ui_command_queue, enqueue_ui_commands, register_ui_resources_world, sync_egui_context,
+};
 
 const SORA_TTF: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -26,11 +30,11 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 /// `pipeline: FramePipeline` fields, the runtime owns a
 /// `bevy_app::App` wired with the eg-state plugin graph (see
 /// [`setup_state_app`]). The winit redraw path now calls
-/// [`Runtime::run_app_frame`], which gives the compatibility
-/// `FramePipeline` access to the App world for UI command routing.
+/// [`Runtime::run_app_frame`], which owns the App update and command
+/// drain before handing the frame back to the compatibility renderer.
 ///
 /// The two Worlds (the App's and `State::world`) coexist during the
-/// compatibility window. The App is the production frame driver;
+/// compatibility window. The App is the production command/schedule driver;
 /// `State::world` remains the legacy render/input bridge until the
 /// single-world deletion pass moves those resources into the App.
 ///
@@ -105,8 +109,30 @@ impl Runtime {
     /// Drive one frame through the compatibility `FramePipeline` while
     /// routing UI-originated messages through Bevy's `App` world.
     pub fn run_app_frame(&mut self, raw_input: egui::RawInput) -> egui::FullOutput {
-        self.pipeline
-            .run_frame(&mut self.state, &mut self.app, raw_input)
+        let Runtime {
+            state,
+            pipeline,
+            app,
+        } = self;
+        sync_egui_context(app.world_mut(), pipeline.ctx());
+
+        pipeline.run_frame(state, raw_input, |state, ui_commands| {
+            enqueue_ui_commands(app.world_mut(), ui_commands);
+            drain_ui_command_queue(app.world_mut());
+            app.update();
+            Self::dispatch_app_pending_commands(state, app.world_mut());
+            state.tick_state();
+        })
+    }
+
+    fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {
+        let mut pending = std::mem::take(&mut *world.resource_mut::<PendingCommands>());
+        for command in pending.app_commands.drain(..) {
+            state.dispatch(command);
+        }
+        for command in pending.editor_commands.drain(..) {
+            state.dispatch_editor(command);
+        }
     }
 
     /// Queue platform input in the App world, then apply it through the
@@ -361,11 +387,10 @@ mod tests {
         assert!(runtime.state.is_editor());
     }
 
-    /// `State::world` and the `App`'s `World` are independent in
-    /// Phase 7-scaffold. The legacy `State::tick_state` path
-    /// remains authoritative; the App is a parallel structure.
-    /// Pin this so the future 7-1 sub-phase (which unifies the
-    /// worlds) is a deliberate, observable change.
+    /// `Runtime` keeps the App-world schedule and the legacy State
+    /// compatibility world isolated while the command bridge is still
+    /// being deleted. This keeps App setup from mutating legacy State
+    /// before the frame driver explicitly applies queued commands.
     #[tokio::test]
     async fn runtime_app_world_is_separate_from_state_world() {
         let state = State::new_test().await;

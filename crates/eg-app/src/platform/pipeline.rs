@@ -17,14 +17,11 @@ use crate::{
     show_editor_ui_commands, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
-use bevy_app::App;
 use eg_render::RenderSurfaceError;
 use eg_render::block_icon_cache::BlockIconCache;
+use eg_state::commands::AppCommand;
 use eg_state::state::State;
-use eg_ui::{
-    MenuTextures, combined_ui_scale_factor, drain_ui_command_queue, enqueue_ui_commands,
-    sync_egui_context,
-};
+use eg_ui::{MenuTextures, combined_ui_scale_factor};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
@@ -60,17 +57,18 @@ impl FramePipeline {
     /// 1. Runs the egui UI logic with the provided raw input
     /// 2. Tessellates the UI shapes for rendering
     /// 3. Updates egui textures on the GPU
-    /// 4. Updates the game state
-    /// 5. Renders the UI to the surface
-    /// 6. Handles surface errors if they occur
-    /// 7. Frees unused textures
+    /// 4. Lets the Runtime drive the App/State schedules
+    /// 5. Updates the game state
+    /// 6. Renders the UI to the surface
+    /// 7. Handles surface errors if they occur
+    /// 8. Frees unused textures
     ///
     /// Returns the full egui output for further processing.
     pub fn run_frame(
         &mut self,
         state: &mut State,
-        app: &mut App,
         raw_input: egui::RawInput,
+        mut after_ui: impl FnMut(&mut State, Vec<AppCommand>),
     ) -> egui::FullOutput {
         puffin::profile_scope!("PipelineFrame");
         // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
@@ -87,8 +85,6 @@ impl FramePipeline {
             self.egui_ctx.set_zoom_factor(ui_scale_factor);
         }
 
-        sync_egui_context(app.world_mut(), &self.egui_ctx);
-
         {
             puffin::profile_scope!("BlockIconCacheRefresh");
             self.block_icon_cache
@@ -96,12 +92,14 @@ impl FramePipeline {
         }
         let block_icon_texture_ids = self.block_icon_cache.texture_ids();
 
+        let mut frame_ui_commands = Vec::<AppCommand>::new();
+
         let full_output = {
             puffin::profile_scope!("EguiRunUi");
             self.egui_ctx.run_ui(raw_input, |root_ui| {
                 let ctx = root_ui.ctx().clone();
                 let editor_commands = show_editor_ui_commands(&ctx, state, &block_icon_texture_ids);
-                enqueue_ui_commands(app.world_mut(), editor_commands);
+                frame_ui_commands.extend(editor_commands);
                 {
                     let view = state.ui_view_model();
                     let mut ui_commands = Vec::new();
@@ -124,21 +122,14 @@ impl FramePipeline {
                         show_menu_favicon_ui(&ctx, &view, favicon);
                     }
                     drop(view);
-                    enqueue_ui_commands(app.world_mut(), ui_commands);
+                    frame_ui_commands.extend(ui_commands);
                 }
             })
         };
 
         {
             puffin::profile_scope!("AppUpdate");
-            drain_ui_command_queue(app.world_mut());
-            app.update();
-            state.dispatch_pending_commands_from_world(app.world_mut());
-        }
-
-        {
-            puffin::profile_scope!("StateSchedule");
-            state.tick_state();
+            after_ui(state, frame_ui_commands);
         }
 
         let paint_jobs = {
@@ -203,12 +194,8 @@ impl FramePipeline {
 #[cfg(test)]
 mod tests {
     use super::FramePipeline;
-    use bevy_app::App;
     use eg_state::state::State;
-    use eg_state::state::{
-        register_state_app_update_driver, register_state_command_pipeline, setup_state_app,
-    };
-    use eg_ui::{MenuTextures, register_ui_resources_world};
+    use eg_ui::MenuTextures;
 
     const SORA_TTF: &[u8] = include_bytes!(concat!(
         env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -245,15 +232,6 @@ mod tests {
         ctx.set_fonts(fonts);
     }
 
-    fn test_app() -> App {
-        let mut app = App::new();
-        setup_state_app(&mut app);
-        register_state_command_pipeline(app.world_mut());
-        register_ui_resources_world(app.world_mut());
-        register_state_app_update_driver(&mut app);
-        app
-    }
-
     #[tokio::test]
     async fn run_frame_executes_without_surface_and_returns_output() {
         let mut state = State::new_test().await;
@@ -261,9 +239,8 @@ mod tests {
         configure_test_fonts(&egui_ctx);
         let renderer = state.create_egui_renderer();
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
-        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
 
         assert!(output.pixels_per_point > 0.0);
         let _ctx = pipeline.ctx();
@@ -285,9 +262,8 @@ mod tests {
             ..Default::default()
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
-        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
 
         assert!(output.pixels_per_point > 0.0);
     }
@@ -314,9 +290,8 @@ mod tests {
             ..Default::default()
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
-        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
 
         assert!(output.pixels_per_point > 0.0);
     }
