@@ -125,7 +125,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
 - [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. The legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
-- [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. 6 self-tests under `state::test_support::tests`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
+- [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 
 ## Phase 1 — completed
@@ -640,7 +640,7 @@ The remaining single-world deletion is now tracked as follow-up migration work, 
 
 ## Phase 8 — `TestApp` harness
 
-The plan calls for a `TestApp` builder that lets tests assert on World resources, queries, and events without going through the legacy `State` god-object. Phase 8 lands the **scaffold** of that harness: the `TestApp::minimal()` builder + the `tick_state()` / `run_state_schedule()` / `assert_resource_exists::<T>()` helpers + 6 self-tests that exercise the API. The full migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
+The plan calls for `TestApp` builders that let tests assert on World resources, queries, and events without going through the legacy `State` / `GameState` wrappers. Phase 8 lands the **scaffold** of those harnesses: the eg-state `TestApp::minimal()` builder + the `tick_state()` / `run_state_schedule()` / `assert_resource_exists::<T>()` helpers, and the eg-game `TestApp::minimal()` builder + `tick_gameplay()` helper. The full migration of the existing `&State`/`&GameState` tests to the new harnesses is incremental and tracked in follow-up commits.
 
 ### What's in Phase 8 today
 
@@ -666,6 +666,21 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 
 - **Legacy test cross-link** — the existing `state_world_is_seeded_with_default_resources` test in `state::tests` now has a docstring pointing to the canonical `TestApp` test. The two should always agree; if one fails, the other is the regression marker.
 
+- **`TestApp`** in `crates/eg-game/src/test_app.rs`:
+    - `TestApp::minimal()` — builds a `bevy_app::App` with `GamePlugin`. No renderer, no audio, no platform services. The canonical entry point for headless gameplay ECS tests.
+    - `TestApp::with_app(app)` — build from a pre-wired `App` for custom gameplay fixtures.
+    - `TestApp::app()` / `app_mut()` / `world()` / `world_mut()` — passthrough accessors.
+    - `TestApp::tick()` — calls `app.update()`.
+    - `TestApp::tick_gameplay()` — runs `GameplaySchedule` once.
+    - `TestApp::try_tick_gameplay()` — runs `GameplaySchedule` and reports whether the schedule is present.
+    - `TestApp::assert_resource_exists::<T>()` — convenience for gameplay plugin registration assertions.
+    - `TestApp: Default` — `default()` delegates to `minimal()`.
+
+- **Tests** (3 new in `eg_game::test_app::tests`):
+    - `test_app_minimal_registers_gameplay_resources` — key `GamePlugin` resources are registered.
+    - `test_app_default_matches_minimal` — `TestApp::default()` and `TestApp::minimal()` produce equivalent Worlds.
+    - `test_app_tick_gameplay_runs_schedule` — a spawned player advances through the real `GameplaySchedule`.
+
 ### Design notes
 
 - **Why a separate `TestApp` and not just `State::new_test`?** `State::new_test()` requires a wgpu adapter (it initializes `GpuContext`, `RenderMeshes`, and `SurfaceHost` for the test fixture). Most eg-state tests don't need any of those — they only assert on World resources, queries, and events. The `TestApp` skips the heavy initialization entirely, so it's faster, more portable (works in environments without a GPU adapter), and tests are more focused.
@@ -678,8 +693,7 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 
 ### What's NOT in Phase 8 today (follow-up work)
 
-- **eg-game `TestApp`** — the plan calls for `crates/eg-game/src/test_app.rs` with a headless `TestApp` for gameplay tests. The eg-state `TestApp` lays the pattern; the eg-game version is a small extension (adds `GamePlugin` to the plugin graph + a `tick_gameplay()` method that runs `GameplaySchedule`).
-- **Test migration** — the existing 446 `&State`/`&GameState` tests stay on the legacy path. Migration is incremental; each test gets migrated when its next edit happens. The harness exists so new tests can be written Bevy-native from day one.
+- **Test migration** — the existing `&State`/`&GameState` tests stay on the legacy path. Migration is incremental; each test gets migrated when its next edit happens. The harnesses exist so new tests can be written Bevy-native from day one.
 - **`TestGpuFixture` integration** — the plan mentions using the existing `TestGpuFixture` for the harness. The current `TestApp::minimal()` doesn't need it (no heavy resources), so this is only relevant if a future `TestApp::with_gpu()` variant lands.
 
 ### Bevy 0.19 API notes (Phase 8)
@@ -702,10 +716,85 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
 - `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which drives `app.update()` before the compatibility `FramePipeline`. The App world and `State::world` are still parallel; `State::world` remains authoritative for rendering/legacy dispatch until the single-world deletion pass.
 
-## Likely next steps
+## Full-Bevy Next Roadmap
 
-The natural order (matches the plan's dependencies) is:
+The project is now App-driven, but it is not ready for the Bevy umbrella yet.
+The next work should remove the compatibility bridge first, then replace one
+platform/rendering boundary at a time. Each step should keep native + wasm
+green before moving on.
 
-1. **Single-world deletion pass** — move heavy render/input/session ownership into App-world resources, delete `State::world`, and collapse the compatibility `FramePipeline` into Bevy systems.
-2. **eg-game `TestApp`** — add the headless gameplay harness described in Phase 8 follow-up work.
-3. **Optional web smoke** — run `bun run build` / `bun run dev` and manually exercise editor/play/export when touching runtime or render ownership next.
+### 1. Delete the parallel `State::world`
+
+This is the prerequisite for every full-Bevy swap. Move the authoritative
+resources that still live behind the legacy `State` object into the App world,
+then make `State` either disappear or become a thin construction/helper layer.
+
+- Move render ownership (`RenderGpuRes`, `RenderMeshesRes`, `RenderSurfaceHostRes`) into the App world at startup.
+- Move session/editor/menu/audio/auth resources out of legacy subsystem fields and into App-world resources.
+- Route UI, async results, and input through the App world only; stop writing to `State::world`.
+- Delete `State::world`, then delete accessors that only exist to bridge between the two worlds.
+- Keep `cargo test -p eg-state --lib` and `cargo test -p eg-app --lib runtime::` green throughout.
+
+### 2. Replace legacy command dispatch
+
+Once there is one authoritative World, stop converting Bevy `Message`s back to
+`AppCommand` / `EditorCommand`.
+
+- Move each `ToLegacy` bridge into a direct handler system over resources/components.
+- Delete `PendingCommands`, `command_dispatch.rs`, and `editor_dispatch.rs` after the last handler is direct.
+- Move the input-state carve-out (`SetShiftHeld`, pointer moves, camera drag, etc.) to a real `InputSet` that writes `EditorInputRes` directly.
+- Use tests around undo/redo, selection, timeline scrub, and playtest enter/exit as the parity gate.
+
+### 3. Promote phase handling to Bevy `States`
+
+After legacy dispatch is gone, convert phase bookkeeping to Bevy state APIs.
+
+- Derive or wrap `AppPhase` as a Bevy `States` type.
+- Replace `AppPhaseRes.previous_app_phase` and `phase_transition_system` with `OnEnter` / `OnExit` schedules.
+- Attach editor/play/menu systems to state-gated sets instead of manual phase checks where practical.
+- Keep the shared object entity model: authored object components persist, while play-only runtime components are added/removed on transitions.
+
+### 4. Move egui to `bevy_egui`
+
+Do this before `bevy_render` if UI command flow is already direct, because it
+removes the manual `EguiContextRes` / `FramePipeline` coupling.
+
+- Replace `EguiContextRes` and manual `ctx.run_ui` calls with `bevy_egui` systems.
+- Let UI systems write Bevy messages/resources directly, not `UiCommandQueue` compatibility commands.
+- Delete `UiViewModel` once UI reads resources/queries directly.
+- Verify editor drag/marquee/gizmo interactions still mutate on the same frame.
+
+### 5. Move rendering to `bevy_render`
+
+Keep the visual migration conservative: preserve current mesh builders and WGSL
+semantics first, then modernize assets/materials afterward.
+
+- Convert `SceneMeshes` data into Bevy `Mesh` / `Material` assets or a custom render asset pipeline.
+- Move extraction from `RenderSet::Extract` into Bevy's render-world extract schedule.
+- Port `shader.wgsl` as a `ShaderRef` or equivalent custom material shader.
+- Replace `State::render_egui` / manual present with Bevy render graph nodes.
+- Run native and wasm visual smoke checks for menu, editor, play, game-over, and export flows.
+
+### 6. Replace runtime/window/input plumbing
+
+With UI and render in Bevy, the custom runtime becomes small enough to remove.
+
+- Replace `ApplicationHandler` with `bevy_winit` and Bevy's runner.
+- Replace `SurfaceHostRes` window/canvas ownership with Bevy window entities.
+- Replace `input_mapping.rs` with `bevy_input` resources (`ButtonInput<KeyCode>`, mouse, touch, gamepad).
+- Delete `Runtime` and `FramePipeline` once no production code depends on them.
+
+### 7. Finish time, async, audio, and tests
+
+These can happen in parallel once the single App world is authoritative.
+
+- Replace `FrameDelta`, `FixedStepConfig`, and manual clock advancement with `bevy_time` (`Time<Virtual>`, `Time<Fixed>`, `FixedUpdate`).
+- Replace mpsc channel polling and thread-local async result closures with `bevy_tasks` streams or asset events.
+- Decide whether audio stays custom behind Bevy systems or moves to `bevy_audio`.
+- Migrate old `&State` / `&GameState` tests to the eg-state and eg-game `TestApp` harnesses as files are touched.
+
+### Validation cadence
+
+- After each small cut-over: `cargo test -p <touched-crate>` and `bun run lint`.
+- After runtime/render/input changes: `cargo test -p eg-app --lib runtime::`, `cargo test -p eg-state --lib`, and `bun run build`.
+- Before calling a full-Bevy milestone done: `bun run dev`, then manually smoke test menu, level play, editor placement, playtest, audio import, export, auth-safe no-op paths, and wasm startup.

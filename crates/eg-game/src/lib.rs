@@ -14,6 +14,7 @@ pub mod simulation;
 pub mod spatial;
 pub mod state;
 pub mod systems;
+pub mod test_app;
 #[cfg(test)]
 mod tests;
 
@@ -24,3 +25,4 @@ pub use plugin::{GamePlugin, GameplaySchedule, tick_gameplay};
 pub use resources::*;
 pub use simulation::*;
 pub use state::*;
+pub use test_app::TestApp;
