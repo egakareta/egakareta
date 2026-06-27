@@ -249,6 +249,11 @@ async fn state_world_is_seeded_with_default_resources() {
     // been pre-populated with the default-constructible eg-state resources
     // via `register_state_resources`. Verify the canonical resources are
     // present and at their default values.
+    //
+    // Phase 8: the canonical Bevy-native test for this contract is the
+    // `TestApp::minimal_seeds_state_plugin_resources` test under
+    // `state::test_support`. The legacy `State`-flavored test stays
+    // here to pin the `State::new_test` path; the two should agree.
     let state = State::new_test().await;
 
     let world = state.world();

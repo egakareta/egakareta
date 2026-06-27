@@ -103,7 +103,7 @@ Cross-domain ordering constraints (sample):
 - [ ] **Phase 7-2** — `Runtime::run_frame` routes through `app.update()`; the schedule is invoked by an `Update`-set system.
 - [ ] **Phase 7-3** — split `FramePipeline`: egui stays in `FramePipeline`, wgpu present moves to a Bevy system in `RenderSet::Present` reading `RenderGpuRes`/`RenderMeshesRes`/`RenderSurfaceHostRes`/`RenderUniformsRes`/`RenderFrameInputRes`. `State::render_egui` is removed.
 - [ ] **Phase 7-4** — `ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame()` (or `runtime.app.update()` directly); the legacy `FramePipeline::run_frame` path is removed.
-- [ ] **Phase 8** — test harness migration (`TestApp` builder).
+- [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. 6 self-tests under `state::test_support::tests`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [ ] **Phase 9** — documentation pass.
 
 ## Phase 1 — completed
@@ -616,6 +616,64 @@ Future sub-phases resolve this incrementally:
 - `cargo test -p eg-app --lib runtime::` is green: **6 tests pass** (was 2 before Phase 7-scaffold, +4 new tests).
 - `cargo test -p eg-state --lib` is green: **446 tests pass** (unchanged from Phase 4e-final).
 - `bun run lint` is clean (`-D warnings` gate passes; pre-existing baseline warnings in `events/mod.rs` and `command_dispatch.rs` are unaffected by Phase 7-scaffold).
+
+## Phase 8 — `TestApp` harness
+
+The plan calls for a `TestApp` builder that lets tests assert on World resources, queries, and events without going through the legacy `State` god-object. Phase 8 lands the **scaffold** of that harness: the `TestApp::minimal()` builder + the `tick_state()` / `run_state_schedule()` / `assert_resource_exists::<T>()` helpers + 6 self-tests that exercise the API. The full migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
+
+### What's in Phase 8 today
+
+- **`TestApp`** in `crates/eg-state/src/state/test_support.rs`:
+    - `TestApp::minimal()` — builds a `bevy_app::App` with `setup_state_app` + `register_state_command_pipeline`. No GPU, no surface, no window. The canonical entry point for headless eg-state tests.
+    - `TestApp::with_app(app)` — build from a pre-wired `App` for tests that need a custom plugin set.
+    - `TestApp::app()` / `app_mut()` / `world()` / `world_mut()` — passthrough accessors.
+    - `TestApp::tick()` — calls `app.update()` (no-op today, future-proofing for Phase 7-2).
+    - `TestApp::tick_state()` — Bevy-native equivalent of `State::tick_state()`. Calls `phase_transition_system` (the free function) then runs `StateSchedule`. Mirrors the legacy ordering exactly.
+    - `TestApp::run_state_schedule()` — runs only `StateSchedule`. For tests that want message-handling in isolation, without the phase-transition prelude.
+    - `TestApp::assert_resource_exists::<T>()` — convenience for the "the plugin registered this resource" assertion. Panics with `std::any::type_name::<T>()` for readable failure output.
+    - `TestApp: Default` — `default()` delegates to `minimal()`.
+
+- **Re-export** — `pub mod test_support` under `state` (gated by `#[cfg(any(test, feature = "test-support"))]` to match the `State::new_test` gating).
+
+- **Tests** (6 new in `state::test_support::tests`):
+    - `test_app_minimal_seeds_state_plugin_resources` — every `StatePlugins` resource is registered on the App's World.
+    - `test_app_minimal_defaults_app_phase_to_menu` — `AppPhaseRes.current` defaults to `AppPhase::Menu`.
+    - `test_app_default_constructor_matches_minimal` — `TestApp::default()` and `TestApp::minimal()` produce equivalent Worlds.
+    - `test_app_tick_is_a_safe_no_op` — three `app.update()` calls don't panic.
+    - `test_app_run_state_schedule_succeeds_on_empty_world` — `run_state_schedule()` returns `true` on a freshly-constructed `TestApp`.
+    - `test_app_phase_transition_via_tick_state` — mirrors the legacy `tick_state_runs_phase_transition_system` test on the Bevy-native `TestApp`. Phase change → `previous_app_phase` updates correctly.
+
+- **Legacy test cross-link** — the existing `state_world_is_seeded_with_default_resources` test in `state::tests` now has a docstring pointing to the canonical `TestApp` test. The two should always agree; if one fails, the other is the regression marker.
+
+### Design notes
+
+- **Why a separate `TestApp` and not just `State::new_test`?** `State::new_test()` requires a wgpu adapter (it initializes `GpuContext`, `RenderMeshes`, and `SurfaceHost` for the test fixture). Most eg-state tests don't need any of those — they only assert on World resources, queries, and events. The `TestApp` skips the heavy initialization entirely, so it's faster, more portable (works in environments without a GPU adapter), and tests are more focused.
+
+- **Why call `phase_transition_system` separately in `tick_state()`?** The legacy `State::tick_state()` calls `phase_transition_system` as a free function (not a system) before running the schedule. The system version was never registered in `StateSchedule` — see `crates/eg-state/src/state/mod.rs:309-313` for the rationale. `TestApp::tick_state()` mirrors that ordering exactly so the test harness and the production path are equivalent.
+
+- **Why gate behind `#[cfg(any(test, feature = "test-support"))]`?** Same pattern as `State::new_test()`: the harness is in-tree for `cargo test` and opt-in for downstream crates that want to test eg-state integration. The `test-support` feature on `eg-state/Cargo.toml` already exists; this is the first consumer.
+
+- **Why `Default` derive?** Convenience — `TestApp::default()` reads cleaner than `TestApp::minimal()` in fixtures and parameterized tests.
+
+### What's NOT in Phase 8 today (follow-up work)
+
+- **eg-game `TestApp`** — the plan calls for `crates/eg-game/src/test_app.rs` with a headless `TestApp` for gameplay tests. The eg-state `TestApp` lays the pattern; the eg-game version is a small extension (adds `GamePlugin` to the plugin graph + a `tick_gameplay()` method that runs `GameplaySchedule`).
+- **Test migration** — the existing 446 `&State`/`&GameState` tests stay on the legacy path. Migration is incremental; each test gets migrated when its next edit happens. The harness exists so new tests can be written Bevy-native from day one.
+- **`TestGpuFixture` integration** — the plan mentions using the existing `TestGpuFixture` for the harness. The current `TestApp::minimal()` doesn't need it (no heavy resources), so this is only relevant if a future `TestApp::with_gpu()` variant lands.
+
+### Bevy 0.19 API notes (Phase 8)
+
+- `bevy_app::App::new()` + `setup_state_app(&mut app)` is the canonical "fresh `App` with eg-state plugins" path. The helper was made consistent in Phase 7-scaffold (it also calls `register_state_resources(&mut app.world_mut())` so the `App` and `World` flavors stay in sync).
+- `App::world()` / `App::world_mut()` are the standard `&World` / `&mut World` accessors.
+- `World::try_run_schedule(label)` is the cheapest way to assert schedule registration + run it.
+- `World::resource::<T>()` / `World::resource_mut::<T>()` / `World::contains_resource::<T>()` are the standard resource accessors; `contains_resource` is the right tool for "did the plugin register this resource?" assertions.
+
+### Verification
+
+- `cargo test -p eg-state --lib` is green: **452 tests pass** (was 446 before Phase 8, +6 new self-tests).
+- `cargo test -p eg-app --lib runtime::` is still green: 6 tests (unchanged from Phase 7-scaffold).
+- `cargo build -p eg-state --features test-support` is clean.
+- `bun run lint` is clean.
 
 ## Architectural shape right now
 

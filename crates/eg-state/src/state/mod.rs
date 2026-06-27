@@ -47,6 +47,9 @@ mod editor_snap_tests;
 #[cfg(test)]
 mod tests;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
+
 use std::collections::VecDeque;
 
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
