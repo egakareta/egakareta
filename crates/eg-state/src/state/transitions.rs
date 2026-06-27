@@ -8,20 +8,21 @@
 //! Phase transition systems for the eg-state `App`.
 //!
 //! Phase 2c introduces the [`AppPhaseRes`] -> legacy `State::phase` sync
-//! + a small set of transition hooks that run when the application
-//! changes phase. The transitions are driven by a `previous_app_phase`
-//! field on [`AppPhaseRes`] so the Bevy 0.19 lack of a buffered
-//! `Events<T>` doesn't get in the way. The actual `OnEnter(T)` /
-//! `OnExit(T)` system-set ergonomics from Bevy 0.13 land in Phase 3
-//! (Command/Event fragmentation).
+//!   + a small set of transition hooks that run when the application
+//!     changes phase. The transitions are driven by a `previous_app_phase`
+//!     field on [`AppPhaseRes`] so the Bevy 0.19 lack of a buffered
+//!     `Events<T>` doesn't get in the way. The actual `OnEnter(T)` /
+//!     `OnExit(T)` system-set ergonomics from Bevy 0.13 land in Phase 3
+//!     (Command/Event fragmentation).
 //!
 //! Hook contract:
-//! - [`on_enter_phase`] runs once when `AppPhaseRes` first changes to a
-//!   value. Side effects that should happen on phase entry (e.g. reset
-//!   `GameClock`, refresh menu preview) go here.
-//! - [`on_exit_phase`] runs once when `AppPhaseRes` changes away from a
-//!   value. Side effects that should happen on phase exit (e.g. stop
-//!   audio, despawn `Player`) go here.
+//!
+//!   - [`on_enter_phase`] runs once when `AppPhaseRes` first changes to a
+//!     value. Side effects that should happen on phase entry (e.g. reset
+//!     `GameClock`, refresh menu preview) go here.
+//!   - [`on_exit_phase`] runs once when `AppPhaseRes` changes away from a
+//!     value. Side effects that should happen on phase exit (e.g. stop
+//!     audio, despawn `Player`) go here.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration replaces
 //! `AppPhaseRes` with `AppPhase` itself annotated with `#[derive(States)]`

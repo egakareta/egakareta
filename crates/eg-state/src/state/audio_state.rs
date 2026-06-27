@@ -224,20 +224,19 @@ impl State {
 
         #[cfg(not(test))]
         {
-            if self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor {
-                if let Some(bytes) = self
+            if (self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor)
+                && let Some(bytes) = self
                     .audio
                     .state
                     .editor
                     .cache
                     .bytes_for_level_audio(level_name)
-                {
-                    self.audio
-                        .state
-                        .runtime
-                        .warmup_with_bytes_at(bytes, start_seconds);
-                    return;
-                }
+            {
+                self.audio
+                    .state
+                    .runtime
+                    .warmup_with_bytes_at(bytes, start_seconds);
+                return;
             }
 
             if let Some(bytes) = self
