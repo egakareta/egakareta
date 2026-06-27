@@ -11,6 +11,9 @@ use crate::state::editor_command::EditorCommand;
 use eg_editor_domain::TimingDivisionDirection;
 use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
 
+// REFACTOR POINT(full-bevy): this legacy enum dispatcher is deleted after
+// command handlers mutate Bevy resources/components directly.
+
 impl State {
     /// Central dispatcher: every `AppCommand` is routed here.
     /// This is the **only** place that maps intent → mutation,

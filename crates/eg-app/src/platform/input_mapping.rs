@@ -5,6 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+// REFACTOR POINT(full-bevy): replace winit-to-`InputEvent` string mapping with
+// `bevy_input` resources (`ButtonInput<KeyCode>`, mouse, touch, gamepad).
+
 #[cfg(test)]
 pub(crate) fn egui_key_from_key_str(key: &str) -> Option<egui::Key> {
     match key {

@@ -10,6 +10,9 @@ use super::runtime::EditorDirtyFlags;
 use crate::state::editor_command::EditorCommand;
 use eg_types::{AppPhase, EditorMode};
 
+// REFACTOR POINT(full-bevy): this legacy editor dispatcher is deleted after
+// editor command handlers become Bevy systems over resources/components.
+
 impl State {
     /// Route `EditorCommand` variants to their handler methods.
     ///

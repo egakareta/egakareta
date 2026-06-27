@@ -6,10 +6,12 @@
 
 ## Strategy
 
-**Now (Phase 0–9):** ground-up rewrite of `eg-game` + `eg-state` + `eg-ui`
-around a single `bevy_app::App` holding one shared `bevy_ecs::World`. The custom
-wgpu 29 / egui-wgpu / rodio/cpal stack is preserved behind an extraction +
-present plugin. The winit loop drives `app.update()` per frame.
+**Now (Phase 0–9 complete):** `eg-game` has a headless ECS core,
+`eg-state` exposes a Bevy `Message`/schedule/resource boundary, `eg-ui` writes
+commands into that boundary, and `eg-app` drives a `bevy_app::App` from the
+winit redraw path. The legacy `State` object, `State::world`, and
+`FramePipeline` remain as the compatibility bridge until the single-world
+deletion pass moves render/input/session ownership fully into the App world.
 
 **Later (full Bevy):** drop the custom wgpu / egui-wgpu / winit plumbing in
 favor of the Bevy umbrella. The migration is designed to be mechanical.
@@ -26,23 +28,47 @@ favor of the Bevy umbrella. The migration is designed to be mechanical.
 
 ## Refactor points (full-Bevy future)
 
-| #   | Site (code)                                                                                                          | Current                                                                 | Full-Bevy replacement                                                                |
-| --- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 1   | `crates/eg-app/src/platform/application.rs` — winit `ApplicationHandler`                                             | Custom winit event loop calls `Runtime::run_frame` on `RedrawRequested` | `bevy_winit` plugin + `App::run()`                                                   |
-| 2   | `crates/eg-app/src/platform/pipeline.rs` — manual `app.update()`                                                     | We call `bevy_app::App::update()` ourselves each frame                  | `ScheduleRunnerPlugin` drives the loop                                               |
-| 3   | `crates/eg-state/src/state/render/` (post Phase 4) — `GpuContextRes` / `SceneMeshesRes` + `ExtractSet` / `RenderSet` | Custom wgpu 29 + egui-wgpu + hand-rolled WGSL present                   | `bevy_render` render graph, `Mesh` / `Material` assets, `shader.wgsl` as `ShaderRef` |
-| 4   | `crates/eg-ui/src/plugin.rs` (post Phase 5) — `EguiContext` resource + `ctx.run_ui` inside UI systems                | Per-frame resource + manual `egui::Context` call                        | `bevy_egui` plugin                                                                   |
-| 5   | `crates/eg-state/src/state/lifecycle.rs` (post Phase 6) — mpsc channel bridges + `PollChannelsSet`                   | `(Sender, Receiver)` in resources drained each frame                    | `bevy_tasks` async runtime, Bevy asset loading, `async-compat` for I/O               |
-| 6   | `crates/eg-game/src/resources.rs` (post Phase 1) — `GameClock` + `FixedStepConfig` + manual fixed-step loop          | We tick `GameClock` ourselves in `advance_player_system`                | `bevy_time` `Time<Fixed>` + `FixedUpdate` schedule                                   |
-| 7   | `crates/eg-state/src/state/audio_state.rs` (post Phase 6) — `AudioBackendRes` (rodio/cpal)                           | Custom audio backend resource                                           | Evaluate `bevy_audio` (flag, not forced — keep custom if needed)                     |
-| 8   | `crates/eg-app/src/platform/runtime.rs` (post Phase 7) — `SurfaceHostRes` (window / canvas)                          | Hand-rolled wgpu surface + winit window                                 | `bevy_window` + `bevy_window::Window` entities                                       |
-| 9   | `crates/eg-app/src/platform/input_mapping.rs` — winit events → `InputEvent` → `InputSet`                             | We translate winit events to our own enum                               | `bevy_input` `Input<KeyCode>` / `ButtonInput<MouseButton>` / `Gamepad`               |
-| 10  | `crates/eg-state/src/state/command_dispatch.rs` + `editor_dispatch.rs` (post Phase 3)                                | One `match` per command enum drains both queues                         | N/A — Bevy `EventReader<T>` is the replacement and these files are deleted           |
+| #   | Site (code)                                                                                      | Current                                                     | Full-Bevy replacement                                                   |
+| --- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 1   | `crates/eg-app/src/platform/application.rs`                                                      | Custom winit `ApplicationHandler` owns window/canvas events | `bevy_winit` plugin + `App::run()`                                      |
+| 2   | `crates/eg-app/src/platform/runtime.rs`                                                          | `Runtime` keeps `State`/`FramePipeline` beside the App      | App resources own egui/render/window state directly                     |
+| 3   | `crates/eg-app/src/platform/pipeline.rs`                                                         | Manual egui/wgpu frame pipeline after `app.update()`        | `bevy_egui`, `bevy_render`, and Bevy schedule-driven presentation       |
+| 4   | `crates/eg-app/src/platform/input_mapping.rs`                                                    | winit input translated into project `InputEvent` strings    | `bevy_input` `ButtonInput<KeyCode>` / mouse / touch / gamepad resources |
+| 5   | `crates/eg-ui/src/plugin.rs`                                                                     | `EguiContextRes` + UI command bridge                        | `bevy_egui` systems writing Bevy events/input directly                  |
+| 6   | `crates/eg-game/src/state.rs`                                                                    | `GameState` wrapper mirrors ECS world fields                | `eg-state` consumes gameplay components/resources directly              |
+| 7   | `crates/eg-game/src/simulation.rs`                                                               | Timeline scrub uses a private `GameState` wrapper           | Shared/sub `bevy_ecs::World` + `Schedule` for editor and play views     |
+| 8   | `crates/eg-game/src/resources.rs`                                                                | `GameClock`, `FixedStepConfig`, `FrameDelta` resources      | `bevy_time` `Time<Fixed>` / `Time<Virtual>` schedules                   |
+| 9   | `crates/eg-game/src/plugin.rs`                                                                   | Custom `Schedule` + `GameplaySet`                           | Bevy `FixedUpdate` / standard gameplay schedule sets                    |
+| 10  | `crates/eg-game/src/events.rs`                                                                   | `ConsumedEventsBuffer` compatibility resource               | Normal Bevy message/event stream                                        |
+| 11  | `crates/eg-state/src/events/mod.rs`                                                              | Bevy `Message` taxonomy bridged back to legacy commands     | Direct Bevy message handlers over resources/components                  |
+| 12  | `crates/eg-state/src/events/async_results.rs` + `crates/eg-state/src/state/async_bridge.rs`      | mpsc channel polling + thread-local closure bridge          | `bevy_tasks` streams and direct resource mutation                       |
+| 13  | `crates/eg-state/src/events/mesh_rebuild.rs`                                                     | Rebuild messages bridge `Changed<>` to legacy mesh dirties  | `bevy_render` extraction / asset events drive render rebuilds           |
+| 14  | `crates/eg-state/src/state/state_resources.rs`                                                   | `AppPhaseRes` tracks current/previous phase                 | `AppPhase` derives Bevy `States`; wrapper bookkeeping disappears        |
+| 15  | `crates/eg-state/src/state/transitions.rs`                                                       | Manual phase-transition detection                           | Bevy `States`, `OnEnter`, and `OnExit` schedules                        |
+| 16  | `crates/eg-state/src/state/plugins.rs`                                                           | Project plugin shells and custom schedule labels            | Standard Bevy plugin graph and schedule labels                          |
+| 17  | `crates/eg-state/src/state/mod.rs`                                                               | Legacy `State` subsystem fields remain authoritative        | State lives in App-world resources/components                           |
+| 18  | `crates/eg-state/src/state/command_dispatch.rs` + `crates/eg-state/src/state/editor_dispatch.rs` | Legacy enum dispatchers still apply mutations               | Deleted after Bevy handlers mutate resources/components directly        |
+| 19  | `crates/eg-state/src/state/audio_state.rs`                                                       | Custom audio subsystem polled through `State`               | Bevy audio resources/systems or retained custom backend behind systems  |
+| 20  | `crates/eg-state/src/state/render/`                                                              | Custom wgpu resources, extraction, and present bridge       | `bevy_render` render graph, assets, extract schedule, `ShaderRef`       |
+| 21  | `crates/eg-state/src/state/test_support.rs`                                                      | `TestApp` wraps the compatibility plugin graph              | Thin `bevy_app::App` test harness only                                  |
+
+## Plugin replacement table
+
+| Current plugin/boundary | Current owner                                          | Full-Bevy destination                                        |
+| ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| `GameplayPlugin`        | `eg-game` ECS systems + custom `GameplaySet`           | Bevy `FixedUpdate` / gameplay schedule sets with `bevy_time` |
+| `EditorPlugin`          | `eg-state` editor resources + legacy handlers          | Bevy systems over editor resources/components                |
+| `SessionPlugin`         | `eg-state` session resources + legacy `State` fields   | App-world session resources                                  |
+| `MenuPlugin`            | `MenuStateRes` / `AppPhaseRes` compatibility resources | Bevy `States` + menu resources                               |
+| `RenderPlugin`          | Custom wgpu resources + extraction/present sets        | `bevy_render` render graph and render-world extraction       |
+| `UiPlugin`              | `EguiContextRes` + command bridge                      | `bevy_egui` systems                                          |
+| Async bridge            | mpsc receivers + `PollChannelsSet` / handlers          | `bevy_tasks` streams and asset events                        |
+| Runtime/app boundary    | winit + `Runtime::run_app_frame`                       | `bevy_winit` + `App::run()`                                  |
 
 ## Event taxonomy (post Phase 3)
 
 `AppCommand` (15 variants) + `EditorCommand` (~87 variants) fragment into Bevy
-`Event` structs, one per semantic command. 12 input-state variants
+`Message` structs, one per semantic command. 12 input-state variants
 (`SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` / `SetPan{Up,Down,Left,Right}Held`
 
 - `MouseButton` / `PrimaryClick` / `PointerMoved` / `UpdateCursorFromScreen` /
@@ -59,7 +85,7 @@ Per-frame schedule order:
   PreCommandHistorySet// snapshot ObjectBundle before mutating handlers
   ClickHandlingSet    // pointer → editor interactions
   InputSet            // winit input → EditorInput resource
-  CommandHandlerSet   // EventReader<*> → mutating systems
+  CommandHandlerSet   // MessageReader<*> → mutating systems
   SimulationSet       // eg-game systems (advance / collide / consume / trail / complete)
   UiSet               // eg-ui systems (direct-manipulation also writes here)
   HistorySet          // post-mutation history finalization
@@ -100,7 +126,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
 - [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. The legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. 6 self-tests under `state::test_support::tests`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
-- [ ] **Phase 9** — documentation pass.
+- [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 
 ## Phase 1 — completed
 
@@ -658,7 +684,7 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 
 ### Bevy 0.19 API notes (Phase 8)
 
-- `bevy_app::App::new()` + `setup_state_app(&mut app)` is the canonical "fresh `App` with eg-state plugins" path. The helper was made consistent in Phase 7-scaffold (it also calls `register_state_resources(&mut app.world_mut())` so the `App` and `World` flavors stay in sync).
+- `bevy_app::App::new()` + `setup_state_app(&mut app)` is the canonical "fresh `App` with eg-state plugins" path. The helper also calls `register_state_resources(&mut app.world_mut())` so the `App` and `World` flavors stay in sync.
 - `App::world()` / `App::world_mut()` are the standard `&World` / `&mut World` accessors.
 - `World::try_run_schedule(label)` is the cheapest way to assert schedule registration + run it.
 - `World::resource::<T>()` / `World::resource_mut::<T>()` / `World::contains_resource::<T>()` are the standard resource accessors; `contains_resource` is the right tool for "did the plugin register this resource?" assertions.
@@ -666,7 +692,7 @@ The plan calls for a `TestApp` builder that lets tests assert on World resources
 ### Verification
 
 - `cargo test -p eg-state --lib` is green: **452 tests pass** (was 446 before Phase 8, +6 new self-tests).
-- `cargo test -p eg-app --lib runtime::` is still green: 6 tests (unchanged from Phase 7-scaffold).
+- `cargo test -p eg-app --lib runtime::` is still green: 6 tests.
 - `cargo build -p eg-state --features test-support` is clean.
 - `bun run lint` is clean.
 
@@ -682,4 +708,4 @@ The natural order (matches the plan's dependencies) is:
 
 1. **Single-world deletion pass** — move heavy render/input/session ownership into App-world resources, delete `State::world`, and collapse the compatibility `FramePipeline` into Bevy systems.
 2. **eg-game `TestApp`** — add the headless gameplay harness described in Phase 8 follow-up work.
-3. **Phase 9** — final docs pass.
+3. **Optional web smoke** — run `bun run build` / `bun run dev` and manually exercise editor/play/export when touching runtime or render ownership next.

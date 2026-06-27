@@ -33,6 +33,9 @@ use eg_state::commands::InputEvent;
 use eg_state::state::State;
 use eg_types::GameCursor;
 
+// REFACTOR POINT(full-bevy): replace this custom winit `ApplicationHandler`
+// with `bevy_winit` + Bevy's app runner.
+
 struct App {
     runtime: Option<Runtime>,
     egui_state: Option<EguiWinitState>,

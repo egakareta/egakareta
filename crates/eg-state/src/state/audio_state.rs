@@ -19,6 +19,9 @@ use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
 use eg_types::PersistentWaveformCacheEntry;
 
+// REFACTOR POINT(full-bevy): `AudioSubsystem` becomes Bevy audio resources or
+// stays as a custom resource behind Bevy systems; direct `State` polling goes away.
+
 /// Receiver end of the audio-preload channel. Shared between the
 /// legacy `update_runtime_audio_preloads` (in `State::update`) and
 /// the Phase 6b `audio_preload_handler_system` (in

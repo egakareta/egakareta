@@ -6,6 +6,9 @@
 
 */
 //! Bevy UI plugin and command bridge.
+//!
+//! REFACTOR POINT(full-bevy): `EguiContextRes` and the manual command bridge
+//! are replaced by `bevy_egui` systems writing Bevy input/events directly.
 
 use bevy_app::{App, Plugin, Update};
 use bevy_ecs::prelude::*;

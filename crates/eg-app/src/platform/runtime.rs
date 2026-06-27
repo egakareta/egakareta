@@ -27,10 +27,10 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 /// [`Runtime::run_app_frame`], which drives `app.update()` before
 /// running the compatibility `FramePipeline` renderer.
 ///
-/// The two Worlds (the App's and `State::world`) coexist
-/// independently for the scaffold. Future phases will move the
-/// authoritative `State` fields into the App's world and the
-/// `State::world` will be removed.
+/// The two Worlds (the App's and `State::world`) coexist during the
+/// compatibility window. The App is the production frame driver;
+/// `State::world` remains the legacy render/input bridge until the
+/// single-world deletion pass moves those resources into the App.
 ///
 /// REFACTOR POINT(full-bevy): when full Bevy lands, the `state`
 /// and `pipeline` fields disappear; the `App` owns the egui

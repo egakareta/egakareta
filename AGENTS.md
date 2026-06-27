@@ -4,7 +4,7 @@
 
 **egakareta** is a high-performance 3D rhythm game written in Rust. It utilizes:
 
-- **Rust (2021 Edition)** as the core programming language.
+- **Rust (2024 Edition)** as the core programming language.
 - **wgpu** for cross-platform, hardware-accelerated 3D rendering.
 - **egui** (with `egui-phosphor` icons) for the user interface.
 - **wasm-pack** to target `wasm32-unknown-unknown` for the web version.
@@ -45,15 +45,17 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ## 3. Code Architecture & Layout
 
-- `crates/eg-state/src/commands.rs`: `AppCommand` is the central action dispatch pattern. Every user intent (keyboard shortcut, UI button, mouse click) becomes an `AppCommand` variant, routed through `State::dispatch()`. This decouples input from execution and enables replay/macro/test harness support. **New editor commands** should use `AppCommand::Editor(EditorCommand)` with the sub-enum in `crates/eg-state/src/state/editor_command.rs` — this keeps editor features self-contained within `eg-state`.
+- `crates/eg-app/src/platform/runtime.rs`: `Runtime` is the current frame owner. It owns a `bevy_app::App` plus the legacy `State`/`FramePipeline` compatibility bridge. `Runtime::run_app_frame(raw_input)` drives `app.update()` first, then renders through the compatibility pipeline until the single-world deletion pass removes `State::world` and `FramePipeline`.
+- `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. `AppCommand`/`EditorCommand` still exist as the legacy compatibility target, but new Bevy-facing command work should add a semantic `Message` type plus `ToLegacy` bridge while legacy dispatch remains in place.
+- `crates/eg-state/src/commands.rs`: `AppCommand` is the legacy action dispatch enum. It is still routed through `State::dispatch()` by the compatibility bridge and will be deleted after Bevy handlers mutate resources/components directly. **New editor commands** should keep editor intent self-contained (`EditorCommand` + matching Bevy message bridge) rather than adding unrelated top-level `AppCommand` variants.
 - `crates/eg-codec/src/lib.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
 - `crates/eg-level/src/import_export.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
-- `crates/eg-game/src/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It only operates on `GameState` and `LevelObject` data. This allows headless simulation in tests and the editor preview.
+- `crates/eg-game/src/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It exposes an ECS core (`GamePlugin`, gameplay components/resources/systems) plus a compatibility `GameState` wrapper for legacy callers and editor preview.
 - `crates/eg-platform/src/`: Platform services shared by app/state/audio code.
-- `crates/eg-state/src/`: Application State & Editor Logic
+- `crates/eg-state/src/`: Application State & Editor Logic. This crate owns the Bevy schedule/resource boundary (`StateSchedule`, `StatePlugins`, async/result bridges, render extraction bridge) and the legacy `State` compatibility object.
 - `crates/eg-state/src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
-- `crates/eg-state/src/state/command_dispatch.rs`: `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping.
-- `crates/eg-state/src/state/editor_dispatch.rs`: `State::dispatch_editor()` routes `EditorCommand` variants; add editor command match arms here.
+- `crates/eg-state/src/state/command_dispatch.rs`: Legacy `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping. Prefer adding Bevy message handlers first, then bridging to this file while compatibility remains.
+- `crates/eg-state/src/state/editor_dispatch.rs`: Legacy `State::dispatch_editor()` routes `EditorCommand` variants. Prefer adding Bevy message handlers first, then bridging to this file while compatibility remains.
 - `crates/eg-editor-domain/src/`: Editor Domain Logic
 - `crates/eg-ui/src/`: Egui UI Components
 - `crates/eg-mesh/src/`: Mesh Generation
@@ -105,7 +107,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ### Refactor Points (full-Bevy migration)
 
-We are mid-migration from a hand-rolled state machine to a `bevy_ecs` + `bevy_app` core (custom wgpu/egui/rodio/cpal stack kept for now). A future revision will move to the full Bevy umbrella (`bevy_render`, `bevy_winit`, `bevy_egui`, `bevy_tasks`, `bevy_time` `Time<Fixed>`, etc.). Every site that will eventually be replaced by a full-Bevy feature **MUST** be tagged with a `// REFACTOR POINT(full-bevy): <one-line summary>` doc comment and have a matching entry in [docs/bevy-migration.md](docs/bevy-migration.md). The comment is the canonical pointer; the doc is the registry. When the swap happens, both the comment and the doc entry are removed together.
+We are migrating from a hand-rolled state machine to a `bevy_ecs` + `bevy_app` core (custom wgpu/egui/rodio/cpal stack kept for now). The current production frame path already drives `bevy_app::App::update()` from winit, while legacy `State`/`FramePipeline` remain as the compatibility bridge. A future revision will move to the full Bevy umbrella (`bevy_render`, `bevy_winit`, `bevy_egui`, `bevy_tasks`, `bevy_time` `Time<Fixed>`, etc.). Every site that will eventually be replaced by a full-Bevy feature **MUST** be tagged with a `// REFACTOR POINT(full-bevy): <one-line summary>` doc comment and have a matching entry in [docs/bevy-migration.md](docs/bevy-migration.md). The comment is the canonical pointer; the doc is the registry. When the swap happens, both the comment and the doc entry are removed together.
 
 ### Block Asset Authoring
 

@@ -9,6 +9,9 @@
 //!
 //! The `FramePipeline` manages the rendering loop, integrating egui UI with the game state.
 //! It handles UI updates, tessellation, texture management, and delegates rendering to the state.
+//!
+//! REFACTOR POINT(full-bevy): this manual egui/wgpu frame pipeline is replaced
+//! by `bevy_egui`, `bevy_render`, and Bevy schedule-driven presentation.
 
 use crate::{
     show_editor_ui_commands, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
