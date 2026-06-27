@@ -21,7 +21,10 @@ use bevy_app::App;
 use eg_render::RenderSurfaceError;
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::State;
-use eg_ui::{MenuTextures, combined_ui_scale_factor, write_ui_commands};
+use eg_ui::{
+    MenuTextures, combined_ui_scale_factor, drain_ui_command_queue, enqueue_ui_commands,
+    sync_egui_context,
+};
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 /// The main frame pipeline that orchestrates UI rendering and game updates.
@@ -84,6 +87,8 @@ impl FramePipeline {
             self.egui_ctx.set_zoom_factor(ui_scale_factor);
         }
 
+        sync_egui_context(app.world_mut(), &self.egui_ctx);
+
         {
             puffin::profile_scope!("BlockIconCacheRefresh");
             self.block_icon_cache
@@ -96,7 +101,7 @@ impl FramePipeline {
             self.egui_ctx.run_ui(raw_input, |root_ui| {
                 let ctx = root_ui.ctx().clone();
                 let editor_commands = show_editor_ui_commands(&ctx, state, &block_icon_texture_ids);
-                write_ui_commands(app.world_mut(), editor_commands);
+                enqueue_ui_commands(app.world_mut(), editor_commands);
                 {
                     let view = state.ui_view_model();
                     let mut ui_commands = Vec::new();
@@ -119,13 +124,14 @@ impl FramePipeline {
                         show_menu_favicon_ui(&ctx, &view, favicon);
                     }
                     drop(view);
-                    write_ui_commands(app.world_mut(), ui_commands);
+                    enqueue_ui_commands(app.world_mut(), ui_commands);
                 }
             })
         };
 
         {
             puffin::profile_scope!("AppUpdate");
+            drain_ui_command_queue(app.world_mut());
             app.update();
             state.dispatch_pending_commands_from_world(app.world_mut());
         }
@@ -202,7 +208,7 @@ mod tests {
     use eg_state::state::{
         register_state_app_update_driver, register_state_command_pipeline, setup_state_app,
     };
-    use eg_ui::MenuTextures;
+    use eg_ui::{MenuTextures, register_ui_resources_world};
 
     const SORA_TTF: &[u8] = include_bytes!(concat!(
         env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -243,6 +249,7 @@ mod tests {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
+        register_ui_resources_world(app.world_mut());
         register_state_app_update_driver(&mut app);
         app
     }

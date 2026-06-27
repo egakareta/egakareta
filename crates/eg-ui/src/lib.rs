@@ -40,8 +40,9 @@ pub use menu::{
     show_pause_menu_ui, show_practice_checkpoint_ui,
 };
 pub use plugin::{
-    EguiContextRes, UiCommandQueue, UiPlugin, enqueue_ui_command, enqueue_ui_commands,
-    write_ui_command, write_ui_commands,
+    EguiContextRes, UiCommandQueue, UiPlugin, drain_ui_command_queue, enqueue_ui_command,
+    enqueue_ui_commands, register_ui_resources_world, sync_egui_context, write_ui_command,
+    write_ui_commands,
 };
 
 #[derive(Clone, Copy)]

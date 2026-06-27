@@ -410,8 +410,8 @@ The legacy `State::render` field is still authoritative. Future phases (4b/4c) d
 
 - `crates/eg-ui/src/plugin.rs` defines `UiPlugin`, `EguiContextRes`, `UiCommandQueue`, and an exhaustive `AppCommand` / `EditorCommand` -> Bevy `Message` bridge.
 - `show_editor_ui_commands` renders the existing editor UI and returns commands instead of dispatching them internally; `show_editor_ui` remains as a compatibility wrapper.
-- `crates/eg-app/src/platform/pipeline.rs` writes editor/menu/pause UI commands into the Runtime App world with `write_ui_commands(...)`, runs `app.update()` to drain them into App-world `PendingCommands`, then applies those commands to the legacy `State` through the compatibility bridge before `State::tick_state()` and `State::update()`.
-- The visual UI code still uses `UiViewModel` during the compatibility window. Phase 7 removes that final caller shape when `Runtime` owns a `bevy_app::App` and injects the egui context before `app.update()`.
+- `crates/eg-app/src/platform/pipeline.rs` queues editor/menu/pause UI commands in the Runtime App world's `UiCommandQueue`, drains that queue into Bevy messages, runs `app.update()` to drain them into App-world `PendingCommands`, then applies those commands to the legacy `State` through the compatibility bridge before `State::tick_state()` and `State::update()`.
+- The visual UI code still uses `UiViewModel` during the compatibility window, but `Runtime::run_app_frame` now mirrors the live egui context into App-world `EguiContextRes` before the frame update. The remaining UI cut-over is replacing `UiViewModel` reads with App-world resources/queries.
 
 **Verification:** `cargo check -p eg-ui` and `cargo check -p eg-app` pass. Both runs reported recurring Windows incremental-cache finalization warnings (`Access is denied`) but exited successfully.
 
@@ -569,16 +569,18 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     let mut app = bevy_app::App::new();
     setup_state_app(&mut app);
     register_state_command_pipeline(app.world_mut());
+    register_ui_resources_world(app.world_mut());
     register_state_app_update_driver(&mut app);
     ```
 
     Both helpers are already public from Phases 2 and 3. The App's `World` now has:
     - Every `StatePlugins` resource (`AppPhaseRes`, `SessionStateRes`, the 9 `Editor*Res`, `PerfRes`).
     - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`) + the `Messages<RebuildMeshEvent>` buffer.
+    - The UI bridge resources (`EguiContextRes`, `UiCommandQueue`) registered by `eg-ui`.
     - The `StateSchedule` registered by `register_state_command_pipeline`.
     - A Bevy `Update` system (`run_state_schedule_from_app_system`) that calls `phase_transition_system` and then `world.try_run_schedule(StateSchedule)`.
 
-- **`Runtime::run_app_frame(raw_input)`** — delegates to `FramePipeline::run_frame(&mut self.state, &mut self.app, raw_input)`. The pipeline writes UI-originated commands into the App world, runs `app.update()`, and bridges App-world `PendingCommands` into the legacy `State` dispatch path. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
+    - **`Runtime::run_app_frame(raw_input)`** — delegates to `FramePipeline::run_frame(&mut self.state, &mut self.app, raw_input)`. The pipeline mirrors the live egui context into App-world `EguiContextRes`, queues UI-originated commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, and bridges App-world `PendingCommands` into the legacy `State` dispatch path. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
 
 - **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
@@ -592,6 +594,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_app_has_state_plugin_resources` — every `StatePlugins` resource is registered on the App's World.
     - `runtime_app_registers_state_schedule` — `StateSchedule` is reachable via `try_run_schedule` on the App's World.
     - `runtime_run_app_frame_returns_output` — `run_app_frame` produces normal egui output.
+    - `runtime_run_app_frame_syncs_egui_context_to_app_world` — `run_app_frame` mirrors the live egui context into App-world `EguiContextRes`.
     - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, which runs the App-world phase transition + `StateSchedule`.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
     - `runtime_app_world_is_separate_from_state_world` — the App's `AppPhaseRes.current == Menu` matches `state.is_menu()`, pinning the parallel-worlds contract.
@@ -606,7 +609,9 @@ The production redraw path now writes UI commands into the App world, runs the A
 RedrawRequested:
   Runtime::run_app_frame(raw_input)
     FramePipeline::run_frame(&mut State, &mut App, raw_input)
-      egui UI -> write_ui_commands(App::world)
+      sync_egui_context(App::world, egui::Context)
+      egui UI -> UiCommandQueue(App::world)
+      drain_ui_command_queue(App::world) -> Messages<T>
       app.update()
         Update::run_state_schedule_from_app_system
           transitions::phase_transition_system
@@ -714,7 +719,7 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
 
 ## Architectural shape right now
 
-- The migration so far is still a **parallel mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, and UI-originated commands now enter through the Runtime App world before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until the single-world deletion pass.
+- The migration so far is still a **parallel mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until the single-world deletion pass.
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
 - `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world and run `app.update()` before legacy update/render. The App world has the real eg-state plugin graph and gameplay schedule; `State::world` remains parallel for rendering and non-UI legacy dispatch until the single-world deletion pass.
 
@@ -800,3 +805,14 @@ These can happen in parallel once the single App world is authoritative.
 - After each small cut-over: `cargo test -p <touched-crate>` and `bun run lint`.
 - After runtime/render/input changes: `cargo test -p eg-app --lib runtime::`, `cargo test -p eg-state --lib`, and `bun run build`.
 - Before calling a full-Bevy milestone done: `bun run dev`, then manually smoke test menu, level play, editor placement, playtest, audio import, export, auth-safe no-op paths, and wasm startup.
+
+The remaining gap is architectural, not just cleanup. The code still has two worlds and the compatibility bridge:
+
+- runtime.rs still owns `State`, `FramePipeline`, and `App` together.
+- mod.rs still defines the legacy `State` with subsystem fields plus `State::world`.
+- mod.rs still drains App-world `PendingCommands` into `State::dispatch` / `dispatch_editor`.
+- mod.rs explicitly says messages still convert back to legacy commands.
+- lib.rs still uses `UiViewModel`.
+- pipeline.rs still renders UI from legacy `State`, but the live egui context and UI command queue now live in the App world during the frame.
+
+So the status is: Phase 7 and Phase 8 are meaningfully improved, and the branch is now App-driven for frame/update, App-world egui context sync, and queued UI command ingress. But it is still a parallel-mirror migration, not the single shared World rewrite described in the original plan. The next real milestone is the single-world deletion pass described in bevy-migration.md.

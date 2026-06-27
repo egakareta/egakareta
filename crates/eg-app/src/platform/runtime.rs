@@ -12,6 +12,7 @@ use eg_state::state::State;
 use eg_state::state::register_state_app_update_driver;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::setup_state_app;
+use eg_ui::register_ui_resources_world;
 
 const SORA_TTF: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -90,6 +91,7 @@ impl Runtime {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
+        register_ui_resources_world(app.world_mut());
         register_state_app_update_driver(&mut app);
 
         Self {
@@ -116,6 +118,7 @@ mod tests {
         EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
         SessionStateRes,
     };
+    use eg_ui::EguiContextRes;
 
     #[tokio::test]
     async fn test_runtime_new() {
@@ -197,6 +200,10 @@ mod tests {
             world.contains_resource::<PerfRes>(),
             "PerfRes registered by EditorPlugin"
         );
+        assert!(
+            world.contains_resource::<EguiContextRes>(),
+            "EguiContextRes registered by Runtime UI bridge"
+        );
     }
 
     /// `register_state_command_pipeline` adds the per-frame
@@ -249,6 +256,32 @@ mod tests {
 
         let output = runtime.run_app_frame(egui::RawInput::default());
         assert!(output.pixels_per_point > 0.0);
+    }
+
+    /// `Runtime::run_app_frame` mirrors the live egui context into the
+    /// App's World before the frame update. This gives Bevy UI systems
+    /// an App-world anchor while the compatibility renderer still owns
+    /// actual egui painting.
+    #[tokio::test]
+    async fn runtime_run_app_frame_syncs_egui_context_to_app_world() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        assert!(
+            runtime.app.world().resource::<EguiContextRes>().0.is_none(),
+            "egui context starts empty before the first frame"
+        );
+
+        let output = runtime.run_app_frame(egui::RawInput::default());
+        let app_ctx = runtime
+            .app
+            .world()
+            .resource::<EguiContextRes>()
+            .0
+            .as_ref()
+            .expect("egui context mirrored into App World");
+
+        assert_eq!(app_ctx.pixels_per_point(), output.pixels_per_point);
     }
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,

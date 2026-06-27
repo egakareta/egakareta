@@ -67,6 +67,17 @@ impl Plugin for UiPlugin {
     }
 }
 
+/// Register UI resources on a bare World without adding App-level systems.
+pub fn register_ui_resources_world(world: &mut World) {
+    world.init_resource::<EguiContextRes>();
+    world.init_resource::<UiCommandQueue>();
+}
+
+/// Mirror the current egui context into the App World for UI systems.
+pub fn sync_egui_context(world: &mut World, ctx: &egui::Context) {
+    world.resource_mut::<EguiContextRes>().0 = Some(ctx.clone());
+}
+
 /// Queue one UI command directly into a world-backed command queue.
 pub fn enqueue_ui_command(world: &mut World, command: AppCommand) {
     world.resource_mut::<UiCommandQueue>().push(command);
@@ -137,6 +148,11 @@ pub fn write_ui_command(world: &mut World, command: AppCommand) {
 }
 
 fn drain_ui_command_queue_system(world: &mut World) {
+    drain_ui_command_queue(world);
+}
+
+/// Drain queued UI commands into Bevy messages immediately.
+pub fn drain_ui_command_queue(world: &mut World) {
     let commands = {
         let mut queue = world.resource_mut::<UiCommandQueue>();
         queue.drain().collect::<Vec<_>>()
