@@ -455,7 +455,25 @@ impl State {
     /// [`State::dispatch_editor`]. The buffer is cleared once the
     /// commands have been forwarded.
     fn dispatch_pending_commands(&mut self) {
-        let mut pending = std::mem::take(&mut *self.world.resource_mut::<PendingCommands>());
+        let mut pending = Self::take_pending_commands_from_world(&mut self.world);
+        self.dispatch_pending_commands_buffer(&mut pending);
+    }
+
+    /// Forward staged `AppCommand` / `EditorCommand` payloads from an
+    /// external App world into the legacy dispatch path.
+    ///
+    /// This keeps the App world as the message source during the
+    /// compatibility window. Full-Bevy direct handlers delete this bridge.
+    pub fn dispatch_pending_commands_from_world(&mut self, world: &mut bevy_ecs::world::World) {
+        let mut pending = Self::take_pending_commands_from_world(world);
+        self.dispatch_pending_commands_buffer(&mut pending);
+    }
+
+    fn take_pending_commands_from_world(world: &mut bevy_ecs::world::World) -> PendingCommands {
+        std::mem::take(&mut *world.resource_mut::<PendingCommands>())
+    }
+
+    fn dispatch_pending_commands_buffer(&mut self, pending: &mut PendingCommands) {
         for cmd in pending.app_commands.drain(..) {
             self.dispatch(cmd);
         }

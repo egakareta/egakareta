@@ -17,6 +17,7 @@ use crate::{
     show_editor_ui_commands, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
+use bevy_app::App;
 use eg_render::RenderSurfaceError;
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::State;
@@ -62,7 +63,12 @@ impl FramePipeline {
     /// 7. Frees unused textures
     ///
     /// Returns the full egui output for further processing.
-    pub fn run_frame(&mut self, state: &mut State, raw_input: egui::RawInput) -> egui::FullOutput {
+    pub fn run_frame(
+        &mut self,
+        state: &mut State,
+        app: &mut App,
+        raw_input: egui::RawInput,
+    ) -> egui::FullOutput {
         puffin::profile_scope!("PipelineFrame");
         // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
         // Screen points (raw_input.screen_rect) depend on the current zoom factor,
@@ -90,7 +96,7 @@ impl FramePipeline {
             self.egui_ctx.run_ui(raw_input, |root_ui| {
                 let ctx = root_ui.ctx().clone();
                 let editor_commands = show_editor_ui_commands(&ctx, state, &block_icon_texture_ids);
-                write_ui_commands(state.world_mut(), editor_commands);
+                write_ui_commands(app.world_mut(), editor_commands);
                 {
                     let view = state.ui_view_model();
                     let mut ui_commands = Vec::new();
@@ -113,10 +119,16 @@ impl FramePipeline {
                         show_menu_favicon_ui(&ctx, &view, favicon);
                     }
                     drop(view);
-                    write_ui_commands(state.world_mut(), ui_commands);
+                    write_ui_commands(app.world_mut(), ui_commands);
                 }
             })
         };
+
+        {
+            puffin::profile_scope!("AppUpdate");
+            app.update();
+            state.dispatch_pending_commands_from_world(app.world_mut());
+        }
 
         {
             puffin::profile_scope!("StateSchedule");
@@ -185,7 +197,11 @@ impl FramePipeline {
 #[cfg(test)]
 mod tests {
     use super::FramePipeline;
+    use bevy_app::App;
     use eg_state::state::State;
+    use eg_state::state::{
+        register_state_app_update_driver, register_state_command_pipeline, setup_state_app,
+    };
     use eg_ui::MenuTextures;
 
     const SORA_TTF: &[u8] = include_bytes!(concat!(
@@ -223,6 +239,14 @@ mod tests {
         ctx.set_fonts(fonts);
     }
 
+    fn test_app() -> App {
+        let mut app = App::new();
+        setup_state_app(&mut app);
+        register_state_command_pipeline(app.world_mut());
+        register_state_app_update_driver(&mut app);
+        app
+    }
+
     #[tokio::test]
     async fn run_frame_executes_without_surface_and_returns_output() {
         let mut state = State::new_test().await;
@@ -230,8 +254,9 @@ mod tests {
         configure_test_fonts(&egui_ctx);
         let renderer = state.create_egui_renderer();
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
+        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
 
         assert!(output.pixels_per_point > 0.0);
         let _ctx = pipeline.ctx();
@@ -253,8 +278,9 @@ mod tests {
             ..Default::default()
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
+        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
 
         assert!(output.pixels_per_point > 0.0);
     }
@@ -281,8 +307,9 @@ mod tests {
             ..Default::default()
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
+        let mut app = test_app();
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default());
+        let output = pipeline.run_frame(&mut state, &mut app, egui::RawInput::default());
 
         assert!(output.pixels_per_point > 0.0);
     }

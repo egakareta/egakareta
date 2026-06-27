@@ -24,8 +24,8 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 /// `pipeline: FramePipeline` fields, the runtime owns a
 /// `bevy_app::App` wired with the eg-state plugin graph (see
 /// [`setup_state_app`]). The winit redraw path now calls
-/// [`Runtime::run_app_frame`], which drives `app.update()` before
-/// running the compatibility `FramePipeline` renderer.
+/// [`Runtime::run_app_frame`], which gives the compatibility
+/// `FramePipeline` access to the App world for UI command routing.
 ///
 /// The two Worlds (the App's and `State::world`) coexist during the
 /// compatibility window. The App is the production frame driver;
@@ -99,11 +99,11 @@ impl Runtime {
         }
     }
 
-    /// Drive one frame through Bevy's `App` and then render via the
-    /// compatibility `FramePipeline`.
+    /// Drive one frame through the compatibility `FramePipeline` while
+    /// routing UI-originated messages through Bevy's `App` world.
     pub fn run_app_frame(&mut self, raw_input: egui::RawInput) -> egui::FullOutput {
-        self.app.update();
-        self.pipeline.run_frame(&mut self.state, raw_input)
+        self.pipeline
+            .run_frame(&mut self.state, &mut self.app, raw_input)
     }
 }
 
@@ -270,6 +270,25 @@ mod tests {
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
         assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
+    }
+
+    /// `Runtime::run_app_frame` drains App-world messages and applies
+    /// the recovered legacy command to `State` during the compatibility
+    /// window. UI commands now enter through this path instead of
+    /// `State::world`.
+    #[tokio::test]
+    async fn runtime_run_app_frame_dispatches_app_world_commands() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(eg_state::events::navigation::ToggleEditor);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(runtime.state.is_editor());
     }
 
     /// `State::world` and the `App`'s `World` are independent in
