@@ -43,7 +43,11 @@ use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{Schedule, SystemSet};
 
-use super::resources::{RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes};
+use super::resources::{
+    RenderFrameInputRes, RenderMeshesRes, RenderResizeRequest, RenderSurfaceHostRes,
+    RenderUniformsRes,
+};
+use crate::events::mesh_rebuild::RebuildMeshEvent;
 
 /// System sets for the rendering extraction plugin.
 ///
@@ -53,6 +57,7 @@ use super::resources::{RenderFrameInputRes, RenderResizeRequest, RenderUniformsR
 ///
 /// Ordering contract (see `docs/bevy-migration.md` Phase 4):
 /// ```text
+///   RebuildMeshSet      // Changed<> detection -> RebuildMeshEvent
 ///   RenderExtractSet    // build SceneMeshes + uniform values
 ///   RenderPresentSet    // issue the wgpu present (no-op in Phase 4a)
 /// ```
@@ -63,6 +68,16 @@ use super::resources::{RenderFrameInputRes, RenderResizeRequest, RenderUniformsR
 #[allow(dead_code)]
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RenderSet {
+    /// Phase 4d: detect `Changed<Position|Rotation|Size>` on object
+    /// entities and emit a [`RebuildMeshEvent`].
+    ///
+    /// Today (Phase 4d-scaffold) this is a no-op system — there
+    /// are no Bevy components yet (the legacy `LevelObject` struct
+    /// is not a component). A future commit introduces the
+    /// `ObjectBundle` components + entities and flips this set
+    /// on. The system set + `RebuildMeshEvent` event type are
+    /// in place so the schedule graph is final.
+    RebuildMesh,
     /// Snapshot the world into render resources.
     ///
     /// Today (Phase 4a) this only mirrors POD uniform values from
@@ -75,12 +90,15 @@ pub enum RenderSet {
     Extract,
     /// Issue the wgpu present.
     ///
-    /// Today (Phase 4a) this is empty — the actual present is called
-    /// by `eg-app/src/platform/pipeline.rs::render_frame` via
-    /// `State::render()`. Phase 4e replaces the `State::render()` call
-    /// with a `present_frame_system` that reads from
-    /// [`RenderGpuRes`] + [`RenderMeshesRes`] + [`RenderUniformsRes`]
-    /// + [`RenderFrameInputRes`].
+    /// Today (Phase 4e-scaffold) the placeholder
+    /// `present_frame_placeholder_system` is registered. It reads
+    /// the POD resources and verifies they're populated, but does
+    /// not submit a wgpu pass. The actual present is called by
+    /// `eg-app/src/platform/pipeline.rs::render_frame` via
+    /// `State::render()`. Phase 4e-final replaces the
+    /// `State::render()` call with a real `present_frame_system`
+    /// that reads from [`RenderGpuRes`] + [`RenderMeshesRes`] +
+    /// [`RenderUniformsRes`] + [`RenderFrameInputRes`].
     Present,
 }
 
@@ -95,12 +113,14 @@ impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderUniformsRes>()
             .init_resource::<RenderFrameInputRes>()
-            .init_resource::<RenderResizeRequest>();
-        // The heavy resources (RenderGpuRes, RenderMeshesRes,
-        // RenderSurfaceHostRes) are intentionally NOT registered here
-        // in Phase 4a. They are defined in `super::resources` for
-        // type stability but inserted in Phase 4b/4c once the
-        // ownership transfer is implemented.
+            .init_resource::<RenderResizeRequest>()
+            .init_resource::<RenderMeshesRes>()
+            .init_resource::<RenderSurfaceHostRes>()
+            .add_message::<RebuildMeshEvent>();
+        // `RenderGpuRes` is still deferred to Phase 4b. It owns the
+        // raw `wgpu::Device` + `wgpu::Queue` handles which can't be
+        // cheaply mirrored (the legacy `State::render.gpu` field is
+        // authoritative; moving ownership is a 440-site refactor).
     }
 }
 
@@ -111,6 +131,15 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();
     world.init_resource::<RenderResizeRequest>();
+    // Phase 4c: insert the heavy resources with default values so
+    // Bevy systems can query them. The actual data ownership stays
+    // in `State::render` for now (a future Phase 4c-final swaps
+    // the storage location). The defaults are empty / `None` so the
+    // resources are zero-cost in tests.
+    world.init_resource::<RenderMeshesRes>();
+    world.init_resource::<RenderSurfaceHostRes>();
+    // Phase 4d: register the RebuildMeshEvent message buffer.
+    world.init_resource::<Messages<RebuildMeshEvent>>();
 }
 
 /// Empty `RenderSet::Present` placeholder.
@@ -119,8 +148,35 @@ pub fn register_render_pod_resources(world: &mut World) {
 /// add a real `present_frame_system` that drains the render
 /// resources and submits the wgpu present). Today it does nothing
 /// because the actual present is invoked from `eg-app`.
-pub fn present_render_frame_placeholder_system() {
-    // Intentionally empty. See module docs.
+pub fn present_render_frame_placeholder_system(
+    uniforms: Res<RenderUniformsRes>,
+    frame_input: Res<RenderFrameInputRes>,
+) {
+    // Phase 4e-scaffold: read the POD resources to confirm they're
+    // populated. The `let _ =` is a deliberate no-op sink that makes
+    // the function consume its args so the system stays in the
+    // schedule graph. Future phases replace this with the real
+    // `present_frame_system` that reads from `RenderGpuRes` +
+    // `RenderMeshesRes` + `RenderUniformsRes` + `RenderFrameInputRes`
+    // and submits the wgpu pass.
+    let _ = (&uniforms, &frame_input);
+}
+
+/// Phase 4d-scaffold: detect mesh-rebuild changes and emit events.
+///
+/// Today this is a **no-op**: there are no Bevy components on object
+/// entities yet (the legacy `LevelObject` is not a component). The
+/// `RebuildMeshEvent` event type + the `RebuildMeshSet` system set
+/// are in place so a future commit can introduce `ObjectBundle`
+/// components + a `Query<Changed<Position>, Changed<Rotation>,
+/// Changed<Size>>` and emit one event per dirty entity.
+///
+/// The system takes `MessageWriter<RebuildMeshEvent>` so the future
+/// implementation has a place to write events. The `Message` is
+/// registered by [`RenderPlugin::build`].
+pub fn mark_mesh_dirty_placeholder_system(mut _writer: MessageWriter<RebuildMeshEvent>) {
+    // Intentionally empty in Phase 4d-scaffold.
+    let _ = &mut _writer;
 }
 
 /// Add the per-frame mirror system to a [`Schedule`].
@@ -135,6 +191,10 @@ pub fn present_render_frame_placeholder_system() {
 /// the placeholder).
 pub fn add_mirror_render_systems(schedule: &mut Schedule) {
     schedule.add_systems((
+        // Phase 4d-scaffold: a no-op system in `RebuildMeshSet`. The
+        // event + system set are in place so a future commit can
+        // introduce `Changed<>` detection + event emission.
+        mark_mesh_dirty_placeholder_system.in_set(RenderSet::RebuildMesh),
         // The mirror is a closure-driven system (see the docs on
         // `mirror_render_pod_state_system`). The closure is provided
         // by `State::tick_state` so the system can reach the legacy
@@ -148,8 +208,9 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
         // `OnceLock<RenderMirrorState>` shared with `tick_state`.
         // See `state/render/mirror.rs` for the bridge.
         mirror_pod_state_via_bridge,
-        // Phase 4a: the present set is a no-op. Future phases add
-        // the real `present_frame_system` here.
+        // Phase 4e-scaffold: the present set is a no-op that reads
+        // the POD resources. Future phases add the real
+        // `present_frame_system` here.
         present_render_frame_placeholder_system.in_set(RenderSet::Present),
     ));
 }
@@ -183,6 +244,7 @@ fn mirror_pod_state_via_bridge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};
     use crate::state::render::resources::{
         mirror_render_pod_state, render_heavy_resources_present, render_pod_resources_present,
     };
@@ -206,11 +268,25 @@ mod tests {
         assert!(render_pod_resources_present(&world));
     }
 
+    /// Phase 4c-scaffold: `RenderMeshesRes` + `RenderSurfaceHostRes`
+    /// are inserted (with default values) by
+    /// `register_render_pod_resources`. `RenderGpuRes` is still
+    /// deferred (Phase 4b).
+    #[test]
+    fn register_inserts_phase4c_heavy_resources() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+        assert!(world.contains_resource::<RenderMeshesRes>());
+        assert!(world.contains_resource::<RenderSurfaceHostRes>());
+        // Phase 4b deferred: still no RenderGpuRes.
+        assert!(!world.contains_resource::<RenderGpuRes>());
+    }
+
+    /// Phase 4b guard: `render_heavy_resources_present` returns
+    /// `false` because `RenderGpuRes` is still not inserted. When
+    /// Phase 4b lands, this assertion will flip to `true`.
     #[test]
     fn render_heavy_resources_present_returns_false_in_phase_4a() {
-        // The heavy resources are defined but not inserted in Phase
-        // 4a. This test guards the contract: a Phase 4b commit that
-        // adds the insert path will flip this to true.
         let mut world = World::new();
         register_render_pod_resources(&mut world);
         assert!(!render_heavy_resources_present(&world));
@@ -249,5 +325,42 @@ mod tests {
             world.resource::<RenderFrameInputRes>().0.phase,
             AppPhase::Playing
         );
+    }
+
+    /// Phase 4d-scaffold: the `mark_mesh_dirty_placeholder_system`
+    /// is wired into the `RenderSet::RebuildMesh` set. The system
+    /// takes a `MessageWriter<RebuildMeshEvent>` so the future
+    /// `Changed<>`-detection implementation has a place to write
+    /// events. This test asserts the system compiles + is
+    /// registered as a Bevy system (not just a free function).
+    #[test]
+    fn mark_mesh_dirty_placeholder_system_is_registered() {
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        add_mirror_render_systems(&mut schedule);
+        // The schedule compiled + the system was added without
+        // panicking. The actual `Changed<>` detection requires
+        // Phase 4d-final (ObjectBundle components).
+        let _ = schedule;
+    }
+
+    /// Phase 4e-scaffold: the `present_render_frame_placeholder_system`
+    /// reads the POD render resources to confirm they're populated.
+    /// The `let _ =` sink inside the system means the function
+    /// doesn't actually use the resources, but it does require
+    /// them to be present in the World. This test asserts the
+    /// system runs without panicking when the resources are
+    /// registered.
+    #[test]
+    fn present_render_frame_placeholder_system_runs() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+
+        // Run the system in isolation. The system takes the two
+        // POD resources as system params; if they're missing the
+        // system would panic at registration time. Today (Phase
+        // 4e-scaffold) the system just consumes the args.
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(present_render_frame_placeholder_system);
+        schedule.run(&mut world);
     }
 }

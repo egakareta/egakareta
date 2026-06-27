@@ -237,6 +237,12 @@ pub enum MeshSlot {
     },
 }
 
+impl Default for MeshSlot {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum MeshDrawData<'a> {
     Vertices {
@@ -762,6 +768,39 @@ pub struct SceneMeshes {
     pub editor_preview_player: MeshSlot,
     pub editor_hitbox_visualization: MeshSlot,
     pub camera_arrow: MeshSlot,
+}
+
+impl Default for SceneMeshes {
+    fn default() -> Self {
+        Self {
+            floor: MeshSlot::Empty,
+            grid: MeshSlot::Empty,
+            trail: MeshSlot::Empty,
+            gem_shatter_effects: MeshSlot::Empty,
+            practice_checkpoints: MeshSlot::Empty,
+            blocks: MeshSlot::Empty,
+            blocks_chunked: ChunkedBlockMeshSlot::default(),
+            blocks_instanced: InstancedMeshSlot::default(),
+            blocks_static: MeshSlot::Empty,
+            blocks_static_chunked: ChunkedBlockMeshSlot::default(),
+            blocks_static_instanced: InstancedMeshSlot::default(),
+            blocks_selected: MeshSlot::Empty,
+            editor_cursor: MeshSlot::Empty,
+            editor_hover_stencil: MeshSlot::Empty,
+            editor_hover_outline: MeshSlot::Empty,
+            editor_selection_stencil: MeshSlot::Empty,
+            editor_selection_outline: MeshSlot::Empty,
+            editor_selection_outline_instances: Vec::new(),
+            editor_gizmo: MeshSlot::Empty,
+            tap_indicators: MeshSlot::Empty,
+            transform_trigger_markers: MeshSlot::Empty,
+            spawn_marker: MeshSlot::Empty,
+            camera_trigger_markers: MeshSlot::Empty,
+            editor_preview_player: MeshSlot::Empty,
+            editor_hitbox_visualization: MeshSlot::Empty,
+            camera_arrow: MeshSlot::Empty,
+        }
+    }
 }
 
 impl SceneMeshes {

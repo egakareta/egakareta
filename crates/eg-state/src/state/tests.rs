@@ -587,23 +587,40 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     ));
 }
 
+/// Phase 4c-scaffold: `RenderMeshesRes` and `RenderSurfaceHostRes`
+/// are now inserted with their `Default` values during `State`
+/// construction. Bevy systems can query for their presence.
+///
+/// `RenderGpuRes` is still NOT inserted (Phase 4b is deferred —
+/// moving `wgpu::Device` + `wgpu::Queue` ownership touches ~440
+/// call sites of `state.render.gpu.*`).
 #[tokio::test]
-async fn tick_state_does_not_insert_heavy_render_resources_yet() {
-    use crate::state::render::resources::render_heavy_resources_present;
+async fn tick_state_inserts_heavy_render_resources_phase4c() {
     use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};
 
     let state = State::new_test().await;
     let world = state.world();
 
-    // Phase 4a guard: the heavy resources are defined but not yet
-    // inserted. The legacy `State::render` field remains the
-    // authoritative source of `GpuContext` / `SceneMeshes` /
-    // `SurfaceHost` until Phase 4b/4c moves ownership into the
-    // world.
-    assert!(!render_heavy_resources_present(world));
+    // Phase 4c-scaffold: meshes + surface_host are inserted.
+    assert!(world.contains_resource::<RenderMeshesRes>());
+    assert!(world.contains_resource::<RenderSurfaceHostRes>());
+
+    // Phase 4b deferred: gpu is still NOT inserted.
     assert!(!world.contains_resource::<RenderGpuRes>());
-    assert!(!world.contains_resource::<RenderMeshesRes>());
-    assert!(!world.contains_resource::<RenderSurfaceHostRes>());
+
+    // The default `RenderSurfaceHostRes` is `None` (the
+    // `SurfaceHost` lives on the legacy `State::render` field for
+    // now).
+    let surface = world.resource::<RenderSurfaceHostRes>();
+    assert!(surface.0.is_none());
+
+    // The default `RenderMeshesRes` is `SceneMeshes::default()` —
+    // all `MeshSlot::Empty`. We assert a few key slots to confirm
+    // the default is well-formed.
+    let meshes = world.resource::<RenderMeshesRes>();
+    assert!(matches!(meshes.0.floor, eg_render::MeshSlot::Empty));
+    assert!(matches!(meshes.0.trail, eg_render::MeshSlot::Empty));
+    assert!(matches!(meshes.0.blocks, eg_render::MeshSlot::Empty));
 }
 
 #[tokio::test]

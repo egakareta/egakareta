@@ -71,6 +71,7 @@ pub mod camera;
 pub mod editor_mode;
 pub mod history;
 pub mod input_state;
+pub mod mesh_rebuild;
 pub mod misc;
 pub mod navigation;
 pub mod pointer;
