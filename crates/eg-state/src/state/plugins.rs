@@ -143,6 +143,15 @@ impl Plugin for StatePlugins {
 /// `configure_sets` will be wired in Phase 2c.
 pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
+    // Phase 7-scaffold: the per-plugin `build` impls are stubs
+    // (Phase 2c will move the actual resource registration into
+    // the plugin `build` methods). Until then, mirror the
+    // World-flavored `register_state_resources` helper so the
+    // `App` and `World` flavors stay consistent. When the plugins
+    // gain real `build` bodies, this call becomes redundant but
+    // harmless (Bevy's `init_resource` is idempotent on already
+    // present resources).
+    register_state_resources(app.world_mut());
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
