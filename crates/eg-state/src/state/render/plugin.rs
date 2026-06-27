@@ -122,6 +122,24 @@ pub fn present_render_frame_system(
     let _ = (&gpu, &meshes, &surface_host, &uniforms, &frame_input);
 }
 
+/// Bevy [`QueryFilter`] for the authored object fields that trigger
+/// a mesh rebuild on change.
+///
+/// Factored into a type alias to keep the
+/// [`mark_mesh_dirty_system`] signature readable and to stay under
+/// the `clippy::type_complexity` threshold without `#[allow]`s.
+type AuthoredObjectChangedFilter = (
+    With<eg_game::Object>,
+    Or<(
+        Changed<eg_game::ObjectData>,
+        Changed<eg_game::Position>,
+        Changed<eg_game::Rotation>,
+        Changed<eg_game::Size>,
+        Changed<eg_game::BlockId>,
+        Changed<eg_game::ColorTint>,
+    )>,
+);
+
 /// Detect authored object changes and emit mesh rebuild events.
 ///
 /// This bridges ECS change detection to the current coarse rebuild
@@ -130,20 +148,7 @@ pub fn present_render_frame_system(
 /// consumer itself into a Bevy system that writes [`RenderMeshesRes`]
 /// directly.
 pub fn mark_mesh_dirty_system(
-    changed_objects: Query<
-        (),
-        (
-            With<eg_game::Object>,
-            Or<(
-                Changed<eg_game::ObjectData>,
-                Changed<eg_game::Position>,
-                Changed<eg_game::Rotation>,
-                Changed<eg_game::Size>,
-                Changed<eg_game::BlockId>,
-                Changed<eg_game::ColorTint>,
-            )>,
-        ),
-    >,
+    changed_objects: Query<(), AuthoredObjectChangedFilter>,
     mut writer: MessageWriter<RebuildMeshEvent>,
 ) {
     if changed_objects.iter().next().is_none() {
