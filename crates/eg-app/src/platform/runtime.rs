@@ -141,15 +141,18 @@ mod tests {
 
     /// `Runtime::new` builds an `App` whose `World` contains every
     /// resource that `StatePlugins` is responsible for registering.
-    /// `AppPhaseRes` is the only one that defaults to a meaningful
-    /// value (`AppPhase::Menu`); the rest are `Default::default()`
-    /// and exist as placeholders for Phase 2c+ systems.
+    /// `AppPhaseRes` defaults to `AppPhase::Menu`; gameplay, editor,
+    /// session, and render resources are installed by their plugins.
     #[tokio::test]
     async fn runtime_app_has_state_plugin_resources() {
         let state = State::new_test().await;
         let runtime = Runtime::new(state);
 
         let world = runtime.app.world();
+        assert!(
+            world.contains_resource::<eg_game::GameClock>(),
+            "GameClock registered by GameplayPlugin"
+        );
         assert!(
             world.contains_resource::<AppPhaseRes>(),
             "AppPhaseRes registered by MenuPlugin"
@@ -215,6 +218,25 @@ mod tests {
         assert!(
             result.is_ok(),
             "StateSchedule should be registered on the App's World"
+        );
+    }
+
+    /// `GameplayPlugin` installs the real eg-game ECS schedule into
+    /// the App's World. This is the first single-source cut: gameplay
+    /// resources and systems exist on the App, not only in the legacy
+    /// `GameState` wrapper path.
+    #[tokio::test]
+    async fn runtime_app_registers_gameplay_schedule() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let result = runtime
+            .app
+            .world_mut()
+            .try_run_schedule(eg_game::GameplaySchedule);
+        assert!(
+            result.is_ok(),
+            "GameplaySchedule should be registered on the App's World"
         );
     }
 

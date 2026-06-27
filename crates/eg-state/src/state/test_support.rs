@@ -184,6 +184,7 @@ mod tests {
     #[test]
     fn test_app_minimal_seeds_state_plugin_resources() {
         let app = TestApp::minimal();
+        app.assert_resource_exists::<eg_game::GameClock>();
         app.assert_resource_exists::<AppPhaseRes>();
         app.assert_resource_exists::<SessionStateRes>();
         app.assert_resource_exists::<EditorInputRes>();
@@ -225,6 +226,16 @@ mod tests {
     fn test_app_run_state_schedule_succeeds_on_empty_world() {
         let mut app = TestApp::minimal();
         assert!(app.run_state_schedule());
+    }
+
+    #[test]
+    fn test_app_registers_gameplay_schedule() {
+        let mut app = TestApp::minimal();
+        assert!(
+            app.world_mut()
+                .try_run_schedule(eg_game::GameplaySchedule)
+                .is_ok()
+        );
     }
 
     #[test]

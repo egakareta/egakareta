@@ -124,7 +124,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
-- [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. The legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
+- [x] **Phase 7** — `Runtime` owns a `bevy_app::App`; `register_state_app_update_driver` runs the App-world `StateSchedule` from Bevy `Update`; `Runtime::run_app_frame(raw_input)` drives `app.update()` before the compatibility `FramePipeline`; `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` now install default App resources directly, including `eg_game::GamePlugin`; the legacy `State` world and render pipeline remain as a compatibility bridge until the single-world deletion pass.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 
@@ -582,7 +582,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
 - **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
-- **`setup_state_app` consistency fix** — the App-flavored helper now also calls `register_state_resources` on `app.world_mut()` because the per-plugin `build` impls are still stubs. This keeps the `App` and `World` flavors consistent. When the plugins gain real `build` bodies (Phase 2c/3+), the call becomes redundant but harmless (`init_resource` is idempotent on already-present resources).
+- **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` now adds `eg_game::GamePlugin`, so the App world owns `GameClock` and `GameplaySchedule`. The bare-`World` `register_state_resources` helper remains only for legacy `State::world` construction and focused tests.
 
 - **Re-export** of `register_state_command_pipeline` and `register_state_app_update_driver` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
 
@@ -712,9 +712,9 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
 
 ## Architectural shape right now
 
-- The migration so far is a **parallel mirror** strategy: the legacy `State` god-object + its subsystems (`RenderSubsystem`, `GameplaySubsystem`, `EditorSubsystem`, `AudioSubsystem`, `AuthSubsystem`, `SessionSubsystem`, `MenuSubsystem`) are **all still authoritative**. The Bevy `World` is a read-only / drain-target sidecar.
+- The migration so far is still a **parallel mirror** strategy for rendering, UI, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are now installed by the App's `GameplayPlugin`, but the legacy `State` / `GameState` compatibility fields still drive production behavior until the single-world deletion pass.
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
-- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which drives `app.update()` before the compatibility `FramePipeline`. The App world and `State::world` are still parallel; `State::world` remains authoritative for rendering/legacy dispatch until the single-world deletion pass.
+- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which drives `app.update()` before the compatibility `FramePipeline`. The App world has the real eg-state plugin graph and gameplay schedule; `State::world` remains parallel for rendering/legacy dispatch until the single-world deletion pass.
 
 ## Full-Bevy Next Roadmap
 

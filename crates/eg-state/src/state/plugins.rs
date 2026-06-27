@@ -51,11 +51,8 @@ use super::{StateSchedule, transitions};
 pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
-    fn build(&self, _app: &mut App) {
-        // The eg-game plugin registers its own resources and systems.
-        // We don't currently re-expose them here; once eg-state reads
-        // them via the world (Phase 2b) we will add
-        // `app.add_plugins(eg_game::GamePlugin)` here.
+    fn build(&self, app: &mut App) {
+        app.add_plugins(eg_game::GamePlugin);
     }
 }
 
@@ -99,10 +96,10 @@ impl Plugin for SessionPlugin {
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
-    fn build(&self, _app: &mut App) {
-        // `AppPhaseRes` is auto-registered here; `MenuStateRes` is added
-        // by the `State` constructor (it needs level names from
-        // `eg-level`).
+    fn build(&self, app: &mut App) {
+        app.init_resource::<AppPhaseRes>();
+        // `MenuStateRes` is added by the `State` constructor because it
+        // needs level names from `eg-level`.
     }
 }
 
@@ -144,15 +141,6 @@ impl Plugin for StatePlugins {
 /// `configure_sets` will be wired in Phase 2c.
 pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
-    // Phase 7-scaffold: the per-plugin `build` impls are stubs
-    // (Phase 2c will move the actual resource registration into
-    // the plugin `build` methods). Until then, mirror the
-    // World-flavored `register_state_resources` helper so the
-    // `App` and `World` flavors stay consistent. When the plugins
-    // gain real `build` bodies, this call becomes redundant but
-    // harmless (Bevy's `init_resource` is idempotent on already
-    // present resources).
-    register_state_resources(app.world_mut());
 }
 
 /// Drive the eg-state schedule from Bevy's default `Update` schedule.
