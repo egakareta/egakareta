@@ -84,9 +84,9 @@ use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, EditorInputState, EditorMode, LevelObject,
-    LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
-    SpawnMetadata,
+    AppPhase, AppSettings, BasicLevelMetadata, CameraUniform, ColorSpaceUniform, Direction,
+    EditorInputState, EditorMode, LevelObject, LevelPreviewCameraMetadata, LineUniform, MenuState,
+    MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -259,17 +259,19 @@ impl State {
         transitions::phase_transition_system(
             self.world.resource_mut::<state_resources::AppPhaseRes>(),
         );
-        // Phase 4a: install the per-frame mirror closure. The
-        // closure captures only the `Copy` values it needs (phase,
-        // editor mode, sky color, gamma toggle) — `State` itself
-        // is `!Send` because it owns a `mpsc::Receiver` for auth
-        // results, so the closure cannot borrow `&self`. The
+        // Phase 4a/4b: install the per-frame mirror closure. The
+        // closure captures only the `Copy` values it needs (uniforms,
+        // phase, editor mode, sky color, gamma toggle) — `State`
+        // itself is `!Send` because it owns a `mpsc::Receiver` for
+        // auth results, so the closure cannot borrow `&self`. The
         // captured values are refreshed every frame. The closure
         // runs once and is consumed (taken) by the schedule's
         // `mirror_pod_state_via_bridge` system. See
         // `state::render::mirror` for the bridge protocol.
         let frame_input_snapshot = self.compute_frame_input_snapshot();
-        render::mirror::install_mirror(move |_uniforms, frame_input| {
+        let uniforms_snapshot = self.compute_render_uniforms_snapshot();
+        render::mirror::install_mirror(move |uniforms, frame_input| {
+            *uniforms = uniforms_snapshot;
             frame_input.0 = frame_input_snapshot;
         });
         // Phase 6b: the channel wrappers are auto-installed from
@@ -319,6 +321,70 @@ impl State {
             },
             grid_center: [0.0, 0.0],
             apply_gamma_correction: self.render.gpu.apply_gamma_correction,
+        }
+    }
+
+    /// Compute the current POD render uniforms for the ECS mirror.
+    /// This mirrors the same values uploaded by `State::update` while
+    /// heavy GPU buffers still live on the legacy `RenderSubsystem`.
+    fn compute_render_uniforms_snapshot(&self) -> render::resources::RenderUniformsRes {
+        let aspect = self.render.gpu.config.width as f32 / self.render.gpu.config.height as f32;
+        let (eye, target) = match self.phase {
+            AppPhase::Menu => (
+                glam::Vec3::from_array(self.menu.state.preview_camera_position),
+                glam::Vec3::from_array(self.menu.state.preview_camera_target),
+            ),
+            AppPhase::Playing | AppPhase::GameOver => self.playing_camera_view(),
+            AppPhase::Editor => {
+                if self.editor_is_playing() {
+                    let (eye, target) = self.editor_preview_camera_view();
+                    (glam::Vec3::from_array(eye), glam::Vec3::from_array(target))
+                } else {
+                    let target = glam::Vec3::new(
+                        self.editor.camera.editor_pan[0],
+                        self.editor.camera.editor_target_z,
+                        self.editor.camera.editor_pan[1],
+                    );
+                    (target + self.editor_camera_offset(), target)
+                }
+            }
+        };
+        let view = glam::Mat4::look_at_rh(eye, target, glam::Vec3::Y);
+        let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+
+        let mut line = self.frame_runtime.player_render.line_uniform;
+        if matches!(self.phase, AppPhase::Playing | AppPhase::GameOver) {
+            line = LineUniform {
+                offset: [
+                    (self.gameplay.state.position[0] * 100.0).round() / 100.0,
+                    (self.gameplay.state.position[2] * 100.0).round() / 100.0,
+                ],
+                rotation: match self.gameplay.state.direction {
+                    Direction::Forward => 0.0,
+                    Direction::Right => -std::f32::consts::FRAC_PI_2,
+                },
+                _pad: 0.0,
+            };
+        }
+
+        render::resources::RenderUniformsRes {
+            camera: CameraUniform {
+                view_proj: (proj * view).to_cols_array_2d(),
+                camera_position: [eye.x, eye.y, eye.z, 0.0],
+            },
+            line,
+            color_space: ColorSpaceUniform {
+                apply_gamma_correction: if self.render.gpu.apply_gamma_correction {
+                    1.0
+                } else {
+                    0.0
+                },
+                time_seconds: self.frame_runtime.global_time_seconds,
+                viewport_size: [
+                    self.render.gpu.config.width.max(1) as f32,
+                    self.render.gpu.config.height.max(1) as f32,
+                ],
+            },
         }
     }
 

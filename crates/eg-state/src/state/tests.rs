@@ -633,6 +633,32 @@ async fn tick_state_mirror_bridge_consumes_closure() {
 }
 
 #[tokio::test]
+async fn tick_state_mirrors_render_uniforms() {
+    use crate::state::render::resources::RenderUniformsRes;
+
+    let mut state = State::new_test().await;
+    let expected_camera_position = state.menu.state.preview_camera_position;
+    let expected_viewport = [
+        state.render.gpu.config.width.max(1) as f32,
+        state.render.gpu.config.height.max(1) as f32,
+    ];
+
+    state.tick_state();
+
+    let uniforms = state.world().resource::<RenderUniformsRes>();
+    assert_eq!(
+        uniforms.camera.camera_position,
+        [
+            expected_camera_position[0],
+            expected_camera_position[1],
+            expected_camera_position[2],
+            0.0
+        ]
+    );
+    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
+}
+
+#[tokio::test]
 async fn dirty_flags_from_object_sync_sets_all() {
     let flags = EditorDirtyFlags::from_object_sync();
     assert!(flags.sync_game_objects);
