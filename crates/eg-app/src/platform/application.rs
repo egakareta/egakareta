@@ -143,7 +143,7 @@ impl App {
             egui_consumed,
             touch_event,
         ) {
-            runtime.state.process_input_event(event);
+            runtime.process_input_event(event);
         }
     }
 
@@ -315,9 +315,7 @@ impl App {
             ),
         );
 
-        runtime
-            .state
-            .process_input_event(InputEvent::Resize { width, height });
+        runtime.process_input_event(InputEvent::Resize { width, height });
     }
 }
 
@@ -445,7 +443,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(physical_size) => {
-                runtime.state.process_input_event(InputEvent::Resize {
+                runtime.process_input_event(InputEvent::Resize {
                     width: physical_size.width,
                     height: physical_size.height,
                 });
@@ -463,20 +461,20 @@ impl ApplicationHandler for App {
 
                 runtime.state.ensure_device();
                 let button_idx = mouse_button_index_from_winit(button);
-                runtime.state.process_input_event(InputEvent::MouseButton {
+                runtime.process_input_event(InputEvent::MouseButton {
                     button: button_idx,
                     pressed,
                 });
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if should_route_pointer_input(egui_consumed, ui_wants_pointer) {
-                    runtime.state.process_input_event(InputEvent::PointerMoved {
+                    runtime.process_input_event(InputEvent::PointerMoved {
                         x: position.x,
                         y: position.y,
                     });
 
                     if let Some(last) = self.last_cursor_pos {
-                        runtime.state.process_input_event(InputEvent::CameraDrag {
+                        runtime.process_input_event(InputEvent::CameraDrag {
                             dx: position.x - last.x,
                             dy: position.y - last.y,
                         });
@@ -488,9 +486,7 @@ impl ApplicationHandler for App {
                 if should_route_pointer_input(egui_consumed, ui_wants_pointer) =>
             {
                 let zoom_delta = zoom_delta_from_winit(delta);
-                runtime
-                    .state
-                    .process_input_event(InputEvent::Zoom(zoom_delta));
+                runtime.process_input_event(InputEvent::Zoom(zoom_delta));
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !should_route_keyboard_input(
@@ -505,7 +501,7 @@ impl ApplicationHandler for App {
                 let just_pressed = pressed && !event.repeat;
 
                 let key_str = key_str_from_winit(&event.logical_key);
-                runtime.state.process_input_event(InputEvent::Key {
+                runtime.process_input_event(InputEvent::Key {
                     key: key_str,
                     pressed,
                     just_pressed,

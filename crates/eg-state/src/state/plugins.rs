@@ -73,6 +73,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorRuntimeRes>()
             .init_resource::<EditorHistoryRes>()
             .init_resource::<PerfRes>();
+        super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
 
@@ -179,6 +180,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorRuntimeRes>();
     world.init_resource::<EditorHistoryRes>();
     world.init_resource::<PerfRes>();
+    super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
     // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,
     // `RenderSurfaceHostRes`) are not registered here — they are

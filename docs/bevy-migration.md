@@ -575,10 +575,13 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
     Both helpers are already public from Phases 2 and 3. The App's `World` now has:
     - Every `StatePlugins` resource (`AppPhaseRes`, `SessionStateRes`, the 9 `Editor*Res`, `PerfRes`).
+    - The platform input queue (`PlatformInputQueue`) registered by `EditorPlugin`.
     - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`) + the `Messages<RebuildMeshEvent>` buffer.
     - The UI bridge resources (`EguiContextRes`, `UiCommandQueue`) registered by `eg-ui`.
     - The `StateSchedule` registered by `register_state_command_pipeline`.
     - A Bevy `Update` system (`run_state_schedule_from_app_system`) that calls `phase_transition_system` and then `world.try_run_schedule(StateSchedule)`.
+
+    - **`Runtime::process_input_event(event)`** — queues platform input into App-world `PlatformInputQueue`, then forwards the same event to the legacy `State::process_input_event` path during the compatibility window. Production winit/touch/resize/key/mouse callers now use this Runtime method instead of calling `runtime.state.process_input_event(...)` directly.
 
     - **`Runtime::run_app_frame(raw_input)`** — delegates to `FramePipeline::run_frame(&mut self.state, &mut self.app, raw_input)`. The pipeline mirrors the live egui context into App-world `EguiContextRes`, queues UI-originated commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, and bridges App-world `PendingCommands` into the legacy `State` dispatch path. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
 
@@ -595,6 +598,7 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_app_registers_state_schedule` — `StateSchedule` is reachable via `try_run_schedule` on the App's World.
     - `runtime_run_app_frame_returns_output` — `run_app_frame` produces normal egui output.
     - `runtime_run_app_frame_syncs_egui_context_to_app_world` — `run_app_frame` mirrors the live egui context into App-world `EguiContextRes`.
+    - `runtime_process_input_event_queues_app_world_input` — platform input enters App-world `PlatformInputQueue` before the legacy `State::process_input_event` compatibility path consumes it.
     - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, which runs the App-world phase transition + `StateSchedule`.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
     - `runtime_app_world_is_separate_from_state_world` — the App's `AppPhaseRes.current == Menu` matches `state.is_menu()`, pinning the parallel-worlds contract.
@@ -604,6 +608,8 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 ### Schedule graph (post Phase 7)
 
 The production redraw path now writes UI commands into the App world, runs the App-world `Update` schedule, bridges App-world `PendingCommands` into legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first.
+
+Production platform input is also App-world first: winit/touch/resize/key/mouse events call `Runtime::process_input_event`, which writes to `PlatformInputQueue(App::world)` before forwarding to legacy `State::process_input_event`.
 
 ```
 RedrawRequested:
@@ -814,5 +820,6 @@ The remaining gap is architectural, not just cleanup. The code still has two wor
 - mod.rs explicitly says messages still convert back to legacy commands.
 - lib.rs still uses `UiViewModel`.
 - pipeline.rs still renders UI from legacy `State`, but the live egui context and UI command queue now live in the App world during the frame.
+- application.rs still translates winit input to legacy `InputEvent`, but those events now enter App-world `PlatformInputQueue` before the compatibility State input path consumes them.
 
-So the status is: Phase 7 and Phase 8 are meaningfully improved, and the branch is now App-driven for frame/update, App-world egui context sync, and queued UI command ingress. But it is still a parallel-mirror migration, not the single shared World rewrite described in the original plan. The next real milestone is the single-world deletion pass described in bevy-migration.md.
+So the status is: Phase 7 and Phase 8 are meaningfully improved, and the branch is now App-driven for frame/update, App-world egui context sync, queued UI command ingress, and App-world platform input ingress. But it is still a parallel-mirror migration, not the single shared World rewrite described in the original plan. The next real milestone is the single-world deletion pass described in bevy-migration.md.

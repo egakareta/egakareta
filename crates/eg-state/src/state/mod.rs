@@ -21,6 +21,7 @@ mod editor_timeline;
 mod editor_timing;
 mod editor_triggers;
 mod history;
+mod input_bridge;
 mod level_management;
 mod lifecycle;
 mod perf;
@@ -67,6 +68,9 @@ pub use editor_timeline::EditorTimelineState;
 pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
 pub use history::EditorHistoryState;
+pub use input_bridge::{
+    PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
+};
 pub use perf::PerfState;
 pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,

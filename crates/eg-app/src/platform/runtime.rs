@@ -9,6 +9,7 @@ use crate::load_menu_textures;
 use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
 use eg_state::state::State;
+use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_app_update_driver;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::setup_state_app;
@@ -107,6 +108,13 @@ impl Runtime {
         self.pipeline
             .run_frame(&mut self.state, &mut self.app, raw_input)
     }
+
+    /// Queue platform input in the App world, then apply it through the
+    /// legacy State input path during the compatibility window.
+    pub fn process_input_event(&mut self, event: eg_state::commands::InputEvent) {
+        enqueue_platform_input(self.app.world_mut(), event.clone());
+        self.state.process_input_event(event);
+    }
 }
 
 #[cfg(test)]
@@ -116,7 +124,7 @@ mod tests {
     use eg_state::state::{
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
-        SessionStateRes,
+        PlatformInputQueue, SessionStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -201,6 +209,10 @@ mod tests {
             "PerfRes registered by EditorPlugin"
         );
         assert!(
+            world.contains_resource::<PlatformInputQueue>(),
+            "PlatformInputQueue registered by EditorPlugin"
+        );
+        assert!(
             world.contains_resource::<EguiContextRes>(),
             "EguiContextRes registered by Runtime UI bridge"
         );
@@ -282,6 +294,31 @@ mod tests {
             .expect("egui context mirrored into App World");
 
         assert_eq!(app_ctx.pixels_per_point(), output.pixels_per_point);
+    }
+
+    /// Platform input now enters the App world before the legacy
+    /// `State::process_input_event` compatibility path consumes it.
+    #[tokio::test]
+    async fn runtime_process_input_event_queues_app_world_input() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.process_input_event(eg_state::commands::InputEvent::Resize {
+            width: 640,
+            height: 360,
+        });
+
+        let queue = runtime.app.world().resource::<PlatformInputQueue>();
+        assert_eq!(queue.len(), 1);
+        assert!(matches!(
+            queue.events()[0],
+            eg_state::commands::InputEvent::Resize {
+                width: 640,
+                height: 360
+            }
+        ));
+        assert_eq!(runtime.state.surface_width(), 640);
+        assert_eq!(runtime.state.surface_height(), 360);
     }
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,
