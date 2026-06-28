@@ -38,6 +38,51 @@ pub struct EditorCameraState {
     pub transition: Option<CameraTransition>,
 }
 
+// Manual `Clone` impl because `EditorCameraState` contains an
+// `Option<CameraTransition>` and we want the whole struct to be
+// `Clone` for the Phase 3.11 camera carve-out (the
+// `Runtime::sync_app_editor_camera_state` helper clones the
+// resource to feed the legacy setter).
+impl Clone for EditorCameraState {
+    fn clone(&self) -> Self {
+        Self {
+            editor_pan: self.editor_pan,
+            editor_target_z: self.editor_target_z,
+            editor_yaw: self.editor_yaw,
+            editor_pitch: self.editor_pitch,
+            playing_rotation: self.playing_rotation,
+            playing_pitch: self.playing_pitch,
+            transition: self.transition.clone(),
+        }
+    }
+}
+
+impl EditorCameraState {
+    /// Install a new camera transition (Phase 3.11 carve-out
+    /// helper). Equivalent to constructing
+    /// `CameraTransition { ... }` and assigning it to
+    /// `self.transition`, but exposed as a method so callers
+    /// outside the `editor_camera` module can set the transition
+    /// without depending on the private `CameraTransition` type.
+    pub fn set_transition(
+        &mut self,
+        start_yaw: f32,
+        start_pitch: f32,
+        target_yaw: f32,
+        target_pitch: f32,
+        duration: f32,
+    ) {
+        self.transition = Some(CameraTransition {
+            start_yaw,
+            start_pitch,
+            target_yaw,
+            target_pitch,
+            elapsed: 0.0,
+            duration,
+        });
+    }
+}
+
 impl Default for EditorCameraState {
     fn default() -> Self {
         Self {
@@ -59,6 +104,19 @@ pub struct CameraTransition {
     pub target_pitch: f32,
     pub elapsed: f32,
     pub duration: f32,
+}
+
+impl Clone for CameraTransition {
+    fn clone(&self) -> Self {
+        Self {
+            start_yaw: self.start_yaw,
+            start_pitch: self.start_pitch,
+            target_yaw: self.target_yaw,
+            target_pitch: self.target_pitch,
+            elapsed: self.elapsed,
+            duration: self.duration,
+        }
+    }
 }
 
 fn offset_from_rotation_pitch(rotation: f32, pitch: f32, distance: f32) -> Vec3 {

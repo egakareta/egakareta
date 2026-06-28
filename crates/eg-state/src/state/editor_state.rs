@@ -1631,6 +1631,22 @@ impl State {
         &self.editor.timing.bpm_tap_times
     }
 
+    /// Replace the timing-point list and the selected index directly.
+    /// Used by the carve-out sync from `EditorTimingRes` (see
+    /// `events::timing` and `Runtime::sync_app_editor_timing_state`).
+    /// The legacy `editor_add_timing_point` /
+    /// `editor_update_timing_point_time` / ... paths record history
+    /// each call; the sync writes the precomputed list in one shot
+    /// (the carve-out skips history, matching the bpm-tap pattern).
+    pub fn set_editor_timing_state(
+        &mut self,
+        timing_points: Vec<eg_types::TimingPoint>,
+        timing_selected_index: Option<usize>,
+    ) {
+        self.editor.timing.timing_points = timing_points;
+        self.editor.timing.timing_selected_index = timing_selected_index;
+    }
+
     pub fn editor_add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
         self.record_editor_history_state();
         self.editor.add_timing_point(time_seconds, bpm);
@@ -1681,6 +1697,153 @@ impl State {
 
     pub fn editor_bpm_tap_reset(&mut self) {
         self.editor.bpm_tap_reset();
+    }
+
+    // --- Spawn + placement-preview carve-out accessors / setters ---
+
+    /// Read-only view of the current spawn position.
+    pub fn editor_spawn_position(&self) -> [f32; 3] {
+        self.editor.spawn.position
+    }
+
+    /// Read-only view of the current spawn direction.
+    pub fn editor_spawn_direction(&self) -> eg_types::Direction {
+        self.editor.spawn.direction
+    }
+
+    /// Snapshot the legacy `State.editor.spawn` into an
+    /// [`super::EditorSpawnRes`] so the App world can be seeded from
+    /// the legacy state at construction time. Used for the spawn
+    /// carve-out (see `events::spawn`): the `SetSpawnHere` and
+    /// `RotateSpawnDirection` messages write to the resource
+    /// directly, and `Runtime::new` seeds the resource from the
+    /// legacy state so the change-guarded
+    /// `sync_app_editor_spawn_state` is a no-op on the first frame
+    /// for unchanged fields.
+    pub fn editor_spawn_resource(&self) -> super::EditorSpawnRes {
+        super::EditorSpawnRes(self.editor.spawn.clone())
+    }
+
+    /// Replace the legacy `State.editor.spawn` directly. Used by the
+    /// carve-out sync from `EditorSpawnRes` (see `events::spawn` and
+    /// `Runtime::sync_app_editor_spawn_state`). Mirrors
+    /// `set_editor_bpm_tap_state` / `set_editor_timing_state`: the
+    /// legacy `editor_set_spawn_here` /
+    /// `editor_rotate_spawn_direction` paths record history each
+    /// call; the sync writes the precomputed spawn state in one shot
+    /// (the carve-out skips history, matching the bpm-tap pattern).
+    pub fn set_editor_spawn_state(&mut self, spawn: eg_types::SpawnMetadata) {
+        self.editor.spawn = spawn;
+    }
+
+    // --- Placement-preview rotation carve-out accessors / setter ---
+
+    /// Read-only view of the current block-placement preview
+    /// rotation (degrees). The `[1]` index is the yaw
+    /// (`RotatePlacementPreview` cycles it in 90-degree
+    /// increments). The legacy `state.editor.config.selected_block_rotation_degrees`
+    /// is mirrored from `EditorConfigRes.0.selected_block_rotation_degrees`
+    /// by `Runtime::sync_app_editor_config_state` (Phase 3.10
+    /// carve-out: the `RotatePlacementPreview` handler in
+    /// `events::spawn` mutates the resource directly).
+    pub fn editor_selected_block_rotation_degrees(&self) -> [f32; 3] {
+        self.editor.config.selected_block_rotation_degrees
+    }
+
+    /// Replace the block-placement preview rotation directly. Used
+    /// by the carve-out sync from `EditorConfigRes` (see
+    /// `events::spawn::handle_rotate_placement_preview` and
+    /// `Runtime::sync_app_editor_config_state`).
+    pub fn set_editor_selected_block_rotation_degrees(&mut self, degrees: [f32; 3]) {
+        self.editor.config.selected_block_rotation_degrees = degrees;
+    }
+
+    // --- Camera + trigger-selected carve-out accessors / setters ---
+
+    /// Snapshot the legacy `State.editor.camera` into an
+    /// [`super::EditorCameraRes`] so the App world can be seeded
+    /// from the legacy state at construction time. Used for the
+    /// camera carve-out (see `events::camera`): the `AdjustZoom`
+    /// and `SetCameraOrientation` messages write to the resource
+    /// directly, and `Runtime::new` seeds the resource from the
+    /// legacy state so the change-guarded
+    /// `sync_app_editor_camera_state` is a no-op on the first
+    /// frame for unchanged fields.
+    pub fn editor_camera_resource(&self) -> super::EditorCameraRes {
+        super::EditorCameraRes(self.editor.camera.clone())
+    }
+
+    /// Read-only view of the current editor camera pan.
+    pub fn editor_camera_pan(&self) -> [f32; 2] {
+        self.editor.camera.editor_pan
+    }
+
+    /// Read-only view of the current editor camera target Z.
+    pub fn editor_camera_target_z(&self) -> f32 {
+        self.editor.camera.editor_target_z
+    }
+
+    /// Read-only view of the current editor camera yaw (radians).
+    pub fn editor_camera_yaw(&self) -> f32 {
+        self.editor.camera.editor_yaw
+    }
+
+    /// Read-only view of the current editor camera pitch (radians).
+    pub fn editor_camera_pitch(&self) -> f32 {
+        self.editor.camera.editor_pitch
+    }
+
+    /// Replace the legacy `State.editor.camera` directly. Used by
+    /// the carve-out sync from `EditorCameraRes` (see
+    /// `events::camera` and
+    /// `Runtime::sync_app_editor_camera_state`). Mirrors
+    /// `set_editor_bpm_tap_state` / `set_editor_timing_state`:
+    /// the legacy `adjust_editor_zoom` /
+    /// `set_editor_camera_orientation` paths record history each
+    /// call; the sync writes the precomputed camera state in one
+    /// shot (the carve-out skips history, matching the bpm-tap
+    /// pattern). The sync also skips the `EditorDirtyFlags`
+    /// `camera_changed()` mark — the legacy render code reads
+    /// from the resource directly via the Phase 4b mirror, so
+    /// the dirty bit is no longer needed.
+    pub fn set_editor_camera_state(
+        &mut self,
+        camera: crate::state::editor_camera::EditorCameraState,
+    ) {
+        self.editor.camera = camera;
+    }
+
+    /// Snapshot the legacy `State.editor.triggers` into an
+    /// [`super::EditorTriggerRes`] so the App world can be seeded
+    /// from the legacy state at construction time. Used for the
+    /// trigger-selected carve-out (see
+    /// `events::camera::handle_set_trigger_selected`).
+    pub fn editor_trigger_resource(&self) -> super::EditorTriggerRes {
+        super::EditorTriggerRes(crate::state::editor_triggers::EditorTriggerState {
+            selected_index: self.editor.triggers.selected_index,
+        })
+    }
+
+    /// Read-only view of the current selected trigger index.
+    pub fn editor_selected_trigger_index_value(&self) -> Option<usize> {
+        self.editor.triggers.selected_index
+    }
+
+    /// Replace the legacy `State.editor.triggers.selected_index`
+    /// directly. Used by the carve-out sync from `EditorTriggerRes`
+    /// (see `events::camera` and
+    /// `Runtime::sync_app_editor_trigger_state`).
+    pub fn set_editor_trigger_selected_index(&mut self, index: Option<usize>) {
+        self.editor.triggers.selected_index = index;
+    }
+
+    /// Number of camera/transform trigger objects currently in the
+    /// level. Used by tests that verify the legacy
+    /// `AddCameraTrigger` / `AddCameraFollowTrigger` path still
+    /// grows the object store (Phase 3.11 carve-out leaves these
+    /// two messages on the legacy `PendingCommands` path).
+    pub fn editor_trigger_object_count(&self) -> usize {
+        self.editor.trigger_object_count()
     }
 }
 

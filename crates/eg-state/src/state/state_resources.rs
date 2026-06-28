@@ -33,6 +33,8 @@ use crate::state::history::EditorHistoryState;
 use crate::state::perf::PerfState;
 use crate::state::runtime::EditorRuntimeState;
 
+use eg_types::SpawnMetadata;
+
 // ---------------------------------------------------------------------------
 // AppPhase (Bevy States target)
 // ---------------------------------------------------------------------------
@@ -153,6 +155,26 @@ pub struct EditorTimelineRes(pub EditorTimelineState);
 /// `EditorTimingState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorTimingRes(pub EditorTimingState);
+
+/// `EditorSubsystem.spawn: SpawnMetadata` mirrored as a resource.
+/// Default value is `position = [0, 0, 0], direction = Forward`,
+/// matching the in-place default that `EditorSubsystem` provides
+/// when constructed through `Default::default()`. The legacy field
+/// is seeded from this resource at `Runtime::new` via the
+/// `set_editor_spawn_state` setter, and the resource is the
+/// authoritative value of the editor spawn state during the
+/// Phase 3.10 compatibility window.
+///
+/// Phase 3.10 carve-out: the `SetSpawnHere` and
+/// `RotateSpawnDirection` messages in `events::spawn` write to
+/// this resource directly instead of staging a legacy
+/// `EditorCommand`. The `Runtime::sync_app_editor_spawn_state`
+/// helper propagates the resource back to the legacy
+/// `State.editor.spawn` field with a change guard, so the legacy
+/// `editor_set_spawn_here` / `editor_rotate_spawn_direction` paths
+/// remain reachable from non-message call sites.
+#[derive(Resource, Default)]
+pub struct EditorSpawnRes(pub SpawnMetadata);
 
 /// `EditorRuntimeState` (dirty flags, history, interaction, gizmo) mirrored
 /// as a resource. Only the default-constructible subset is exposed for

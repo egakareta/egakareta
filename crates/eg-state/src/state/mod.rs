@@ -80,8 +80,8 @@ pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, MenuStateRes, PerfRes,
-    SessionStateRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    MenuStateRes, PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::UiStateSnapshot;
 

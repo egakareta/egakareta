@@ -9,7 +9,7 @@ use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
 }
@@ -228,6 +228,14 @@ impl EditorSubsystem {
     pub fn set_trigger_selected(&mut self, selected: Option<usize>) {
         let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
+    }
+
+    /// Number of camera/transform trigger objects currently in the
+    /// level. Used by tests that verify the legacy
+    /// `AddCameraTrigger` / `AddCameraFollowTrigger` path still
+    /// grows the object store.
+    pub fn trigger_object_count(&self) -> usize {
+        self.trigger_objects().len()
     }
 }
 

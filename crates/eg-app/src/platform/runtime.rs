@@ -139,6 +139,33 @@ impl Runtime {
         app.world_mut()
             .insert_resource(state.session_state_resource());
 
+        // Seed `EditorSpawnRes` from the legacy `State.editor.spawn`
+        // for the spawn carve-out (see `events::spawn`). Without
+        // seeding, the change-guarded
+        // `sync_app_editor_spawn_state` would see a
+        // `SpawnMetadata::default()`-vs-legacy diff on the first
+        // frame and clobber any user-set spawn position/direction.
+        // Seeding once at construction makes the first frame a
+        // no-op for unchanged fields.
+        app.world_mut()
+            .insert_resource(state.editor_spawn_resource());
+
+        // Seed `EditorCameraRes` from the legacy `State.editor.camera`
+        // for the camera carve-out (see `events::camera`). Without
+        // seeding, the change-guarded
+        // `sync_app_editor_camera_state` would see a default-vs-legacy
+        // diff on the first frame and clobber any user-set camera
+        // position / yaw / pitch. Seeding once at construction makes
+        // the first frame a no-op for unchanged fields.
+        app.world_mut()
+            .insert_resource(state.editor_camera_resource());
+
+        // Seed `EditorTriggerRes` from the legacy
+        // `State.editor.triggers` for the trigger-selected carve-out
+        // (see `events::camera::handle_set_trigger_selected`).
+        app.world_mut()
+            .insert_resource(state.editor_trigger_resource());
+
         Self {
             state,
             pipeline,
@@ -165,6 +192,9 @@ impl Runtime {
             Self::sync_app_editor_input_state(state, app.world());
             Self::sync_app_editor_config_state(state, app.world());
             Self::sync_app_editor_timing_state(state, app.world());
+            Self::sync_app_editor_spawn_state(state, app.world());
+            Self::sync_app_editor_camera_state(state, app.world());
+            Self::sync_app_editor_trigger_state(state, app.world());
             Self::sync_app_session_state(state, app.world());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
@@ -192,10 +222,12 @@ impl Runtime {
 
     /// Sync the legacy `State.editor.config` from the App-world
     /// `EditorConfigRes`. The `snap_*` fields (carved out in
-    /// `events::snap`) and `selected_block_id` (carved out in
-    /// `events::editor_mode::handle_set_block_id`) are written to the
-    /// resource directly by their Bevy handlers, so the resource is the
-    /// source of truth at this point in the frame.
+    /// `events::snap`), `selected_block_id` (carved out in
+    /// `events::editor_mode::handle_set_block_id`), and
+    /// `selected_block_rotation_degrees` (carved out in
+    /// `events::spawn::handle_rotate_placement_preview`) are written
+    /// to the resource directly by their Bevy handlers, so the
+    /// resource is the source of truth at this point in the frame.
     ///
     /// Unlike the modifier-held sync above, the legacy setters for
     /// these fields have side effects (persist `app_settings` to disk,
@@ -224,25 +256,113 @@ impl Runtime {
         if state.editor_snap_rotation_step_degrees() != config.snap_rotation_step_degrees {
             state.set_editor_snap_rotation_step(config.snap_rotation_step_degrees);
         }
+        if state.editor_selected_block_rotation_degrees() != config.selected_block_rotation_degrees
+        {
+            state
+                .set_editor_selected_block_rotation_degrees(config.selected_block_rotation_degrees);
+        }
     }
 
-    /// Sync the legacy `State.editor.timing.bpm_tap_*` from the
-    /// App-world `EditorTimingRes`. The `bpm_tap_times` and
-    /// `bpm_tap_result` fields are carved out in `events::bpm`:
-    /// their handlers compute the new state in the App world and
-    /// write the resource directly.
+    /// Sync the legacy `State.editor.timing.{bpm_tap_*,timing_points,
+    /// timing_selected_index}` from the App-world `EditorTimingRes`.
+    /// The carved-out fields are:
+    /// - `bpm_tap_times` / `bpm_tap_result` (`events::bpm`)
+    /// - `timing_points` / `timing_selected_index` (`events::timing`)
+    ///   The handlers compute the new state in the App world and write
+    ///   the resource directly.
     ///
-    /// The sync is change-guarded so a no-op frame does not
-    /// re-invoke the (relatively cheap, but still mutating) legacy
-    /// setter. The resource is seeded at `Runtime::new` from the
-    /// legacy state, so the first frame after construction is a
-    /// no-op for unchanged fields.
+    /// The sync is change-guarded so a no-op frame does not re-invoke
+    /// the (relatively cheap, but still mutating) legacy setters. The
+    /// resource is seeded at `Runtime::new` from the legacy state, so
+    /// the first frame after construction is a no-op for unchanged
+    /// fields.
     fn sync_app_editor_timing_state(state: &mut State, world: &World) {
         let timing = &world.resource::<EditorTimingRes>().0;
         if state.editor_bpm_tap_times() != timing.bpm_tap_times.as_slice()
             || state.editor_bpm_tap_result() != timing.bpm_tap_result
         {
             state.set_editor_bpm_tap_state(timing.bpm_tap_times.clone(), timing.bpm_tap_result);
+        }
+        if state.editor_timing_points() != timing.timing_points.as_slice()
+            || state.editor_timing_selected_index() != timing.timing_selected_index
+        {
+            state.set_editor_timing_state(
+                timing.timing_points.clone(),
+                timing.timing_selected_index,
+            );
+        }
+    }
+
+    /// Sync the legacy `State.editor.spawn` from the App-world
+    /// `EditorSpawnRes`. The carved-out fields are
+    /// `position` + `direction` (`events::spawn`): the
+    /// `SetSpawnHere` and `RotateSpawnDirection` handlers write
+    /// the resource directly. The `RotatePlacementPreview`
+    /// handler writes to `EditorConfigRes` (handled by
+    /// `sync_app_editor_config_state`).
+    ///
+    /// The sync is change-guarded so a no-op frame does not
+    /// re-invoke the legacy setter (which records history and
+    /// rebuilds spawn-marker vertices — both heavy). The
+    /// resource is seeded at `Runtime::new` from the legacy
+    /// state, so the first frame after construction is a no-op
+    /// for unchanged fields.
+    fn sync_app_editor_spawn_state(state: &mut State, world: &World) {
+        use eg_state::state::EditorSpawnRes;
+        let spawn = &world.resource::<EditorSpawnRes>().0;
+        if state.editor_spawn_position() != spawn.position
+            || state.editor_spawn_direction() != spawn.direction
+        {
+            state.set_editor_spawn_state(spawn.clone());
+        }
+    }
+
+    /// Sync the legacy `State.editor.camera` from the App-world
+    /// `EditorCameraRes`. The carved-out fields are
+    /// `editor_pan` + `editor_target_z` + `editor_yaw` +
+    /// `editor_pitch` + `transition` (`events::camera`): the
+    /// `AdjustZoom` and `SetCameraOrientation` handlers write
+    /// the resource directly. The `AddCameraTrigger` and
+    /// `AddCameraFollowTrigger` messages keep the legacy
+    /// `PendingCommands` path because they push to
+    /// `editor.objects` (a `Vec<LevelObject>`), which is out
+    /// of scope for the Phase 3.11 carve-out.
+    ///
+    /// The sync is change-guarded so a no-op frame does not
+    /// re-invoke the legacy setter (which records history and
+    /// marks `EditorDirtyFlags::camera_changed()` — both
+    /// undesirable per-frame). The resource is seeded at
+    /// `Runtime::new` from the legacy state, so the first
+    /// frame after construction is a no-op for unchanged
+    /// fields.
+    fn sync_app_editor_camera_state(state: &mut State, world: &World) {
+        use eg_state::state::EditorCameraRes;
+        let camera = &world.resource::<EditorCameraRes>().0;
+        if state.editor_camera_pan() != camera.editor_pan
+            || state.editor_camera_target_z() != camera.editor_target_z
+            || state.editor_camera_yaw() != camera.editor_yaw
+            || state.editor_camera_pitch() != camera.editor_pitch
+        {
+            state.set_editor_camera_state(camera.clone());
+        }
+    }
+
+    /// Sync the legacy `State.editor.triggers.selected_index`
+    /// from the App-world `EditorTriggerRes`. The carved-out
+    /// field is `selected_index`
+    /// (`events::camera::handle_set_trigger_selected`).
+    ///
+    /// The sync is change-guarded so a no-op frame does not
+    /// re-invoke the legacy setter (which has side effects:
+    /// block-selection replacement, hover index, dirty flags).
+    /// The resource is seeded at `Runtime::new` from the
+    /// legacy state, so the first frame after construction is
+    /// a no-op for unchanged fields.
+    fn sync_app_editor_trigger_state(state: &mut State, world: &World) {
+        use eg_state::state::EditorTriggerRes;
+        let trigger = &world.resource::<EditorTriggerRes>().0;
+        if state.editor_selected_trigger_index_value() != trigger.selected_index {
+            state.set_editor_trigger_selected_index(trigger.selected_index);
         }
     }
 
@@ -1397,5 +1517,743 @@ mod tests {
             runtime.state.editor_keybind_capture_action(),
             Some(&("editor.place".to_string(), 0))
         );
+    }
+
+    // ---- Phase 3.9 timing carve-out tests ----
+    //
+    // All 6 `events::timing::*` messages are carve-outs that mutate
+    // `EditorTimingRes.0.{timing_points, timing_selected_index}`
+    // directly. The runtime tests below pin the end-to-end path:
+    // message → App-world resource → legacy State field.
+
+    use eg_state::events::timing::{
+        AddTimingPoint, RemoveTimingPoint, SetTimingPointBpm, SetTimingPointTime,
+        SetTimingPointTimeSignature, SetTimingSelected,
+    };
+
+    /// `AddTimingPoint` end-to-end: the message reaches the App world,
+    /// mutates `EditorTimingRes.0.timing_points`, and the per-frame
+    /// sync propagates the new list to the legacy `State.editor.timing`.
+    #[tokio::test]
+    async fn runtime_carve_out_add_timing_point_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Precondition: empty list on both sides (the seed is empty for
+        // a fresh State::new_test).
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_points
+                .is_empty()
+        );
+        assert!(runtime.state.editor_timing_points().is_empty());
+
+        runtime.app.world_mut().write_message(AddTimingPoint {
+            time_seconds: 1.0,
+            bpm: 120.0,
+        });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Resource holds the new point.
+        let timing = &runtime.app.world().resource::<EditorTimingRes>().0;
+        assert_eq!(timing.timing_points.len(), 1);
+        assert_eq!(timing.timing_points[0].time_seconds, 1.0);
+        // Legacy state matches the resource after the sync.
+        assert_eq!(runtime.state.editor_timing_points().len(), 1);
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_timing_points()[0].time_seconds,
+            1.0,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_timing_points()[0].bpm,
+            120.0,
+            epsilon = 1e-6
+        );
+    }
+
+    /// `RemoveTimingPoint` end-to-end: list shrinks via the resource,
+    /// the legacy state mirrors it after the sync.
+    #[tokio::test]
+    async fn runtime_carve_out_remove_timing_point_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Pre-populate both sides with a single timing point so we can
+        // remove it through the Bevy path.
+        let initial = eg_types::TimingPoint {
+            time_seconds: 0.5,
+            bpm: 90.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        };
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimingRes>()
+            .0
+            .timing_points = vec![initial.clone()];
+        runtime
+            .state
+            .set_editor_timing_state(vec![initial.clone()], None);
+
+        runtime.app.world_mut().write_message(RemoveTimingPoint(0));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_points
+                .is_empty()
+        );
+        assert!(runtime.state.editor_timing_points().is_empty());
+    }
+
+    /// `SetTimingPointTime` end-to-end: the timestamp update flows
+    /// through the resource and the legacy state picks it up via the
+    /// change-guarded sync.
+    #[tokio::test]
+    async fn runtime_carve_out_set_timing_point_time_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let initial = eg_types::TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        };
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimingRes>()
+            .0
+            .timing_points = vec![initial.clone()];
+        runtime
+            .state
+            .set_editor_timing_state(vec![initial.clone()], None);
+
+        runtime.app.world_mut().write_message(SetTimingPointTime {
+            index: 0,
+            time: 2.5,
+        });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        approx::assert_abs_diff_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_points[0]
+                .time_seconds,
+            2.5,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_timing_points()[0].time_seconds,
+            2.5,
+            epsilon = 1e-6
+        );
+    }
+
+    /// `SetTimingPointBpm` end-to-end: BPM update propagates with
+    /// the >= 1.0 clamp.
+    #[tokio::test]
+    async fn runtime_carve_out_set_timing_point_bpm_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let initial = eg_types::TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        };
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimingRes>()
+            .0
+            .timing_points = vec![initial.clone()];
+        runtime
+            .state
+            .set_editor_timing_state(vec![initial.clone()], None);
+
+        runtime.app.world_mut().write_message(SetTimingPointBpm {
+            index: 0,
+            bpm: 0.25,
+        });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_timing_points()[0].bpm,
+            1.0,
+            epsilon = 1e-6
+        );
+    }
+
+    /// `SetTimingPointTimeSignature` end-to-end: the time-signature
+    /// fields update on both sides.
+    #[tokio::test]
+    async fn runtime_carve_out_set_timing_point_time_signature_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let initial = eg_types::TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        };
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimingRes>()
+            .0
+            .timing_points = vec![initial.clone()];
+        runtime
+            .state
+            .set_editor_timing_state(vec![initial.clone()], None);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(SetTimingPointTimeSignature {
+                index: 0,
+                numerator: 3,
+                denominator: 8,
+            });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.state.editor_timing_points()[0].time_signature_numerator,
+            3
+        );
+        assert_eq!(
+            runtime.state.editor_timing_points()[0].time_signature_denominator,
+            8
+        );
+    }
+
+    /// `SetTimingSelected` end-to-end: the selected-index update
+    /// propagates to the legacy state.
+    #[tokio::test]
+    async fn runtime_carve_out_set_timing_selected_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Initial: None on both sides.
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_selected_index,
+            None
+        );
+        assert_eq!(runtime.state.editor_timing_selected_index(), None);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(SetTimingSelected(Some(2)));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_selected_index,
+            Some(2)
+        );
+        assert_eq!(runtime.state.editor_timing_selected_index(), Some(2));
+    }
+
+    /// No-op frame: when no timing message is written and the
+    /// resource matches the legacy state (the seeded invariant), the
+    /// sync must not re-invoke `set_editor_timing_state`. Pin the
+    /// list length stays the same.
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_timing() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let initial = eg_types::TimingPoint {
+            time_seconds: 0.0,
+            bpm: 120.0,
+            time_signature_numerator: 4,
+            time_signature_denominator: 4,
+        };
+        {
+            let mut res = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![initial.clone()];
+            res.0.timing_selected_index = Some(0);
+        }
+        runtime
+            .state
+            .set_editor_timing_state(vec![initial.clone()], Some(0));
+
+        // Pre-condition: both sides match.
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_points
+                .len(),
+            1
+        );
+        assert_eq!(runtime.state.editor_timing_points().len(), 1);
+        assert_eq!(runtime.state.editor_timing_selected_index(), Some(0));
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Post-condition: still matching, no extra writes.
+        assert_eq!(runtime.state.editor_timing_points().len(), 1);
+        assert_eq!(runtime.state.editor_timing_selected_index(), Some(0));
+    }
+
+    /// Regression: `EditorTimingRes` is seeded from the legacy
+    /// `State` at `Runtime::new` (this is what the bpm-tap carve-out
+    /// added). The new timing-points fields ride on the same
+    /// resource, so the same seeding covers them: a non-default
+    /// list on the legacy state at construction time must survive
+    /// the first frame even when no timing message is written.
+    #[tokio::test]
+    async fn runtime_seeds_editor_timing_res_for_timing_points_no_first_frame_clobber() {
+        let mut state = State::new_test().await;
+        let user_points = vec![
+            eg_types::TimingPoint {
+                time_seconds: 0.0,
+                bpm: 140.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            },
+            eg_types::TimingPoint {
+                time_seconds: 4.0,
+                bpm: 160.0,
+                time_signature_numerator: 3,
+                time_signature_denominator: 4,
+            },
+        ];
+        state.set_editor_timing_state(user_points.clone(), Some(1));
+        let mut runtime = Runtime::new(state);
+
+        // Seeding: the resource reflects the legacy user value.
+        let seeded = &runtime.app.world().resource::<EditorTimingRes>().0;
+        assert_eq!(seeded.timing_points.len(), 2);
+        assert_eq!(seeded.timing_points[0].bpm, 140.0);
+        assert_eq!(seeded.timing_points[1].bpm, 160.0);
+        assert_eq!(seeded.timing_selected_index, Some(1));
+
+        // No-op frame: the change-guarded sync sees no diff and
+        // does not clobber the user value.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_timing_points().len(), 2);
+        assert_eq!(runtime.state.editor_timing_selected_index(), Some(1));
+    }
+
+    // ---- Phase 3.10 spawn carve-out tests ----
+    //
+    // All 3 `events::spawn::*` messages are carve-outs that mutate
+    // `EditorSpawnRes.0` (SetSpawnHere, RotateSpawnDirection) or
+    // `EditorConfigRes.0.selected_block_rotation_degrees[1]`
+    // (RotatePlacementPreview) directly. The runtime tests below
+    // pin the end-to-end path: message → App-world resource → legacy
+    // State field.
+
+    use eg_state::events::spawn::{RotatePlacementPreview, RotateSpawnDirection, SetSpawnHere};
+    use eg_state::state::EditorSpawnRes;
+    use eg_types::Direction;
+
+    /// `SetSpawnHere` end-to-end: writing the message reaches the App
+    /// world, mutates `EditorSpawnRes.0.position` to the current
+    /// editor cursor (read from `EditorInputRes.0.cursor`), and the
+    /// per-frame sync propagates the value to the legacy
+    /// `State.editor.spawn.position`.
+    #[tokio::test]
+    async fn runtime_carve_out_set_spawn_here_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Set a non-default cursor and spawn position on both sides
+        // so the message has something to flow through.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .cursor = [3.0, 6.0, 9.0];
+        let initial = eg_types::SpawnMetadata {
+            position: [0.0, 0.0, 0.0],
+            direction: Direction::Forward,
+        };
+        runtime
+            .app
+            .world_mut()
+            .insert_resource(EditorSpawnRes(initial.clone()));
+        runtime.state.set_editor_spawn_state(initial.clone());
+
+        runtime.app.world_mut().write_message(SetSpawnHere);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Resource holds the new spawn position (the cursor).
+        assert_eq!(
+            runtime.app.world().resource::<EditorSpawnRes>().0.position,
+            [3.0, 6.0, 9.0]
+        );
+        // Legacy state matches the resource after the sync.
+        assert_eq!(runtime.state.editor_spawn_position(), [3.0, 6.0, 9.0]);
+    }
+
+    /// `RotateSpawnDirection` end-to-end: the direction update
+    /// propagates to the legacy state.
+    #[tokio::test]
+    async fn runtime_carve_out_rotate_spawn_direction_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Pin the initial state on both sides.
+        let initial = eg_types::SpawnMetadata {
+            position: [0.0, 0.0, 0.0],
+            direction: Direction::Forward,
+        };
+        runtime
+            .app
+            .world_mut()
+            .insert_resource(EditorSpawnRes(initial.clone()));
+        runtime.state.set_editor_spawn_state(initial.clone());
+
+        runtime.app.world_mut().write_message(RotateSpawnDirection);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<EditorSpawnRes>().0.direction,
+            Direction::Right
+        );
+        assert_eq!(runtime.state.editor_spawn_direction(), Direction::Right);
+    }
+
+    /// `RotatePlacementPreview` end-to-end: the block-placement
+    /// preview yaw update flows through `EditorConfigRes.0` and the
+    /// per-frame `sync_app_editor_config_state` propagates it to the
+    /// legacy `State.editor.config.selected_block_rotation_degrees`.
+    #[tokio::test]
+    async fn runtime_carve_out_rotate_placement_preview_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Initial yaw 0.0 on both sides.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorConfigRes>()
+            .0
+            .selected_block_rotation_degrees = [0.0, 0.0, 0.0];
+        // The seeded resource matches the legacy state default
+        // (zeroed rotation), so the first frame is a no-op.
+        runtime
+            .app
+            .world_mut()
+            .write_message(RotatePlacementPreview);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Resource holds the new rotation.
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorConfigRes>()
+                .0
+                .selected_block_rotation_degrees,
+            [0.0, 90.0, 0.0]
+        );
+        // Legacy state matches the resource after the sync.
+        assert_eq!(
+            runtime.state.editor_selected_block_rotation_degrees(),
+            [0.0, 90.0, 0.0]
+        );
+    }
+
+    /// No-op frame for spawn: when no spawn message is written and
+    /// the resource matches the legacy state (the seeded invariant),
+    /// the sync must not re-invoke `set_editor_spawn_state`.
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_spawn() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let user_spawn = eg_types::SpawnMetadata {
+            position: [2.0, 4.0, 6.0],
+            direction: Direction::Right,
+        };
+        runtime
+            .app
+            .world_mut()
+            .insert_resource(EditorSpawnRes(user_spawn.clone()));
+        runtime.state.set_editor_spawn_state(user_spawn.clone());
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Both sides still match.
+        assert_eq!(runtime.state.editor_spawn_position(), [2.0, 4.0, 6.0]);
+        assert_eq!(runtime.state.editor_spawn_direction(), Direction::Right);
+    }
+
+    /// Regression: `EditorSpawnRes` is seeded from the legacy
+    /// `State.editor.spawn` at `Runtime::new`. A non-default spawn
+    /// on the legacy state at construction time must survive the
+    /// first frame even when no spawn message is written.
+    #[tokio::test]
+    async fn runtime_seeds_editor_spawn_res_from_legacy_state_no_first_frame_clobber() {
+        let mut state = State::new_test().await;
+        let user_spawn = eg_types::SpawnMetadata {
+            position: [5.0, 10.0, 15.0],
+            direction: Direction::Right,
+        };
+        state.set_editor_spawn_state(user_spawn.clone());
+        let mut runtime = Runtime::new(state);
+
+        // Seeding: the resource reflects the legacy user value.
+        assert_eq!(
+            runtime.app.world().resource::<EditorSpawnRes>().0.position,
+            [5.0, 10.0, 15.0]
+        );
+        assert_eq!(
+            runtime.app.world().resource::<EditorSpawnRes>().0.direction,
+            Direction::Right
+        );
+
+        // No-op frame: the change-guarded sync sees no diff and
+        // does not clobber the user value.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_spawn_position(), [5.0, 10.0, 15.0]);
+        assert_eq!(runtime.state.editor_spawn_direction(), Direction::Right);
+    }
+
+    // ---- Phase 3.11 camera + trigger-selected carve-out tests ----
+    //
+    // 3 of the 5 `events::camera::*` messages are carve-outs that
+    // mutate `EditorCameraRes.0` (AdjustZoom, SetCameraOrientation)
+    // or `EditorTriggerRes.0.selected_index` (SetTriggerSelected)
+    // directly. The runtime tests below pin the end-to-end path:
+    // message → App-world resource → legacy State field. The
+    // `AddCameraTrigger` and `AddCameraFollowTrigger` messages
+    // keep the legacy `PendingCommands` path because they push to
+    // `editor.objects` (out of scope for the Phase 3.11 carve-out).
+
+    use eg_state::events::camera::{AdjustZoom, SetCameraOrientation, SetTriggerSelected};
+
+    /// `AdjustZoom` end-to-end: the zoom delta flows through the
+    /// resource, the per-frame sync propagates the new pan to the
+    /// legacy `State.editor.camera`.
+    #[tokio::test]
+    async fn runtime_carve_out_adjust_zoom_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Pin the seeded initial pan + target_z on both sides.
+        let initial_pan = runtime.state.editor_camera_pan();
+        let initial_z = runtime.state.editor_camera_target_z();
+
+        runtime.app.world_mut().write_message(AdjustZoom(1.0));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Resource reflects the new pan (some component should have
+        // moved).
+        let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
+        assert!(
+            camera.editor_pan != initial_pan || camera.editor_target_z != initial_z,
+            "AdjustZoom handler must move the editor camera"
+        );
+        // Legacy state matches the resource after the sync.
+        assert_eq!(runtime.state.editor_camera_pan(), camera.editor_pan);
+        assert_eq!(
+            runtime.state.editor_camera_target_z(),
+            camera.editor_target_z
+        );
+    }
+
+    /// `SetCameraOrientation` (no transition) end-to-end: the
+    /// yaw/pitch update flows through the resource, the per-frame
+    /// sync propagates it to the legacy state.
+    #[tokio::test]
+    async fn runtime_carve_out_set_camera_orientation_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        let new_yaw = 1.5_f32;
+        let new_pitch = 0.4_f32;
+        runtime.app.world_mut().write_message(SetCameraOrientation {
+            rotation: new_yaw,
+            pitch: new_pitch,
+            transition_seconds: None,
+        });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        approx::assert_abs_diff_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorCameraRes>()
+                .0
+                .editor_yaw,
+            new_yaw,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorCameraRes>()
+                .0
+                .editor_pitch,
+            new_pitch,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(runtime.state.editor_camera_yaw(), new_yaw, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_camera_pitch(),
+            new_pitch,
+            epsilon = 1e-6
+        );
+    }
+
+    /// `SetTriggerSelected` end-to-end: the index update flows
+    /// through the resource, the per-frame sync propagates it.
+    #[tokio::test]
+    async fn runtime_carve_out_set_trigger_selected_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(SetTriggerSelected(Some(1)));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTriggerRes>()
+                .0
+                .selected_index,
+            Some(1)
+        );
+        assert_eq!(runtime.state.editor_selected_trigger_index_value(), Some(1));
+    }
+
+    /// No-op frame: when no camera message is written and the
+    /// resource matches the legacy state (the seeded invariant),
+    /// the sync must not re-invoke the legacy setters.
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_camera() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Capture the seeded initial state.
+        let initial_pan = runtime.state.editor_camera_pan();
+        let initial_yaw = runtime.state.editor_camera_yaw();
+        let initial_pitch = runtime.state.editor_camera_pitch();
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Post-condition: camera unchanged.
+        assert_eq!(runtime.state.editor_camera_pan(), initial_pan);
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_camera_yaw(),
+            initial_yaw,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_camera_pitch(),
+            initial_pitch,
+            epsilon = 1e-6
+        );
+    }
+
+    /// Regression: `EditorCameraRes` and `EditorTriggerRes` are
+    /// seeded from the legacy `State.editor.camera` and
+    /// `State.editor.triggers` at `Runtime::new`. Non-default
+    /// values on the legacy state at construction time must
+    /// survive the first frame.
+    #[tokio::test]
+    async fn runtime_seeds_editor_camera_and_trigger_res_no_first_frame_clobber() {
+        use eg_state::state::EditorCameraState;
+        let mut state = State::new_test().await;
+        // Modify the camera to a non-default pose.
+        state.set_editor_camera_state(EditorCameraState {
+            editor_pan: [10.0, 20.0],
+            editor_target_z: 30.0,
+            editor_yaw: 1.0,
+            editor_pitch: 0.4,
+            playing_rotation: 0.0,
+            playing_pitch: 0.0,
+            transition: None,
+        });
+        // And the trigger selection.
+        state.set_editor_trigger_selected_index(Some(2));
+        let mut runtime = Runtime::new(state);
+
+        // Seeding: the resources reflect the legacy user values.
+        let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [10.0, 20.0]);
+        approx::assert_abs_diff_eq!(camera.editor_target_z, 30.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.editor_yaw, 1.0, epsilon = 1e-6);
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTriggerRes>()
+                .0
+                .selected_index,
+            Some(2)
+        );
+
+        // No-op frame: the change-guarded syncs see no diff and
+        // do not clobber the user values.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_camera_pan(), [10.0, 20.0]);
+        assert_eq!(runtime.state.editor_selected_trigger_index_value(), Some(2));
+    }
+
+    /// `AddCameraTrigger` and `AddCameraFollowTrigger` are NOT
+    /// carve-outs: they keep the legacy `PendingCommands` path
+    /// because the legacy setters push to `editor.objects` (a
+    /// complex store with history + sync side effects). The
+    /// schedule-level test `add_camera_trigger_still_uses_pending_commands`
+    /// in `events::tests` pins the dispatch path. The
+    /// `editor_dispatch` integration tests in
+    /// `state::editor_dispatch` cover the full legacy path. This
+    /// carve-out test set focuses on the 3 messages that DO
+    /// carve out (AdjustZoom, SetCameraOrientation,
+    /// SetTriggerSelected); the legacy-path messages are
+    /// covered elsewhere.
+    #[tokio::test]
+    async fn runtime_add_camera_trigger_not_a_carve_out_note() {
+        // This is a placeholder test that documents why we
+        // intentionally did not add a runtime-level test for
+        // AddCameraTrigger/AddCameraFollowTrigger. The legacy
+        // path is covered by `events::tests::add_camera_trigger_still_uses_pending_commands`
+        // and the existing `editor_dispatch` integration tests.
+        // The placeholder pins the carve-out decision so a
+        // future refactor that flips the message to a carve-out
+        // knows to also move the test.
     }
 }

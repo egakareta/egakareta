@@ -557,11 +557,18 @@ mod tests {
         // `snap` carve-out reaches for `EditorConfigRes`; the `bpm`
         // carve-out reaches for `EditorTimingRes`; the `session`
         // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
-        // `SessionStateRes`. The rest of the schedule only reads
-        // message buffers + the `PendingCommands` accumulator.
+        // `SessionStateRes`; the `timing` carve-out reaches for
+        // `EditorTimingRes`; the `spawn` carve-out reaches for
+        // `EditorInputRes` (cursor) + `EditorSpawnRes` +
+        // `EditorConfigRes`; the `camera` carve-out reaches for
+        // `EditorCameraRes` + `EditorTriggerRes`. The rest of the
+        // schedule only reads message buffers + the `PendingCommands`
+        // accumulator.
         world.init_resource::<crate::state::EditorInputRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
         world.init_resource::<crate::state::EditorConfigRes>();
+        world.init_resource::<crate::state::EditorSpawnRes>();
+        world.init_resource::<crate::state::EditorTriggerRes>();
         world.init_resource::<crate::state::EditorTimingRes>();
         world.init_resource::<crate::state::SessionStateRes>();
         world.init_resource::<crate::state::AppPhaseRes>();
@@ -978,5 +985,490 @@ mod tests {
         );
         let pending = world.resource::<PendingCommands>();
         assert!(pending.editor_commands.is_empty());
+    }
+
+    // --- Timing carve-out pattern ---
+    //
+    // All 6 `events::timing::*` messages are carve-outs: their handlers
+    // mutate `EditorTimingRes.0.{timing_points,timing_selected_index}`
+    // directly. Pin the resource is updated and no legacy command is
+    // queued.
+
+    use crate::events::timing::{
+        AddTimingPoint, RemoveTimingPoint, SetTimingPointBpm, SetTimingPointTime,
+        SetTimingPointTimeSignature, SetTimingSelected,
+    };
+
+    /// `AddTimingPoint` appends to the list and sorts ascending by
+    /// `time_seconds` (mirroring `EditorSubsystem::add_timing_point`).
+    /// Pin the list grows, the revision bumps, and no legacy command
+    /// is staged.
+    #[test]
+    fn carve_out_add_timing_point_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        assert!(
+            world
+                .resource::<EditorTimingRes>()
+                .0
+                .timing_points
+                .is_empty()
+        );
+        let prev_revision = world.resource::<EditorTimingRes>().0.revision;
+
+        // Add out of order to confirm the handler re-sorts.
+        world.write_message(AddTimingPoint {
+            time_seconds: 2.0,
+            bpm: 120.0,
+        });
+        world.write_message(AddTimingPoint {
+            time_seconds: 0.5,
+            bpm: 90.0,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.timing_points.len(), 2);
+        assert_eq!(timing.timing_points[0].time_seconds, 0.5);
+        assert_eq!(timing.timing_points[1].time_seconds, 2.0);
+        assert!(
+            timing.revision > prev_revision,
+            "AddTimingPoint handler must bump the revision"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "AddTimingPoint must not stage a legacy editor command"
+        );
+    }
+
+    /// `RemoveTimingPoint` removes the entry at the given index (or
+    /// no-ops if out of range) and bumps the revision. Pin the list
+    /// shrinks and no legacy command is staged.
+    #[test]
+    fn carve_out_remove_timing_point_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        // Pre-populate the resource with two timing points.
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![
+                eg_types::TimingPoint {
+                    time_seconds: 0.0,
+                    bpm: 120.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+                eg_types::TimingPoint {
+                    time_seconds: 1.0,
+                    bpm: 120.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+            ];
+        }
+        let prev_revision = world.resource::<EditorTimingRes>().0.revision;
+
+        world.write_message(RemoveTimingPoint(0));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.timing_points.len(), 1);
+        assert_eq!(timing.timing_points[0].time_seconds, 1.0);
+        assert!(timing.revision > prev_revision);
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `RemoveTimingPoint` with an out-of-range index is a no-op and
+    /// must not bump the revision.
+    #[test]
+    fn carve_out_remove_timing_point_out_of_range_is_noop() {
+        let mut world = build_event_world();
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![eg_types::TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+        }
+        let prev_revision = world.resource::<EditorTimingRes>().0.revision;
+
+        world.write_message(RemoveTimingPoint(99));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(world.resource::<EditorTimingRes>().0.timing_points.len(), 1);
+        assert_eq!(
+            world.resource::<EditorTimingRes>().0.revision,
+            prev_revision
+        );
+    }
+
+    /// `SetTimingPointTime` updates the time of the point at `index`
+    /// and re-sorts the list ascending by `time_seconds`.
+    #[test]
+    fn carve_out_set_timing_point_time_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![
+                eg_types::TimingPoint {
+                    time_seconds: 0.0,
+                    bpm: 120.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+                eg_types::TimingPoint {
+                    time_seconds: 1.0,
+                    bpm: 120.0,
+                    time_signature_numerator: 4,
+                    time_signature_denominator: 4,
+                },
+            ];
+        }
+
+        // Move index 0 to time 5.0 — the new order should be 1.0, 5.0.
+        world.write_message(SetTimingPointTime {
+            index: 0,
+            time: 5.0,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.timing_points.len(), 2);
+        assert_eq!(timing.timing_points[0].time_seconds, 1.0);
+        assert_eq!(timing.timing_points[1].time_seconds, 5.0);
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `SetTimingPointBpm` updates the BPM (clamped to >= 1.0).
+    #[test]
+    fn carve_out_set_timing_point_bpm_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![eg_types::TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+        }
+
+        world.write_message(SetTimingPointBpm { index: 0, bpm: 0.5 });
+        world.run_schedule(crate::state::StateSchedule);
+
+        // Clamped to >= 1.0.
+        assert!(
+            (world.resource::<EditorTimingRes>().0.timing_points[0].bpm - 1.0).abs() < 1e-6,
+            "SetTimingPointBpm must clamp BPM to >= 1.0"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `SetTimingPointTimeSignature` updates the numerator/denominator
+    /// (clamped to >= 1) and bumps the revision.
+    #[test]
+    fn carve_out_set_timing_point_time_signature_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.timing_points = vec![eg_types::TimingPoint {
+                time_seconds: 0.0,
+                bpm: 120.0,
+                time_signature_numerator: 4,
+                time_signature_denominator: 4,
+            }];
+        }
+
+        world.write_message(SetTimingPointTimeSignature {
+            index: 0,
+            numerator: 0,
+            denominator: 0,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let tp = &world.resource::<EditorTimingRes>().0.timing_points[0];
+        assert_eq!(tp.time_signature_numerator, 1, "clamped to >= 1");
+        assert_eq!(tp.time_signature_denominator, 1, "clamped to >= 1");
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `SetTimingSelected` updates the selected timing-point index.
+    #[test]
+    fn carve_out_set_timing_selected_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        assert_eq!(
+            world.resource::<EditorTimingRes>().0.timing_selected_index,
+            None
+        );
+
+        world.write_message(SetTimingSelected(Some(2)));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<EditorTimingRes>().0.timing_selected_index,
+            Some(2)
+        );
+
+        world.write_message(SetTimingSelected(None));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<EditorTimingRes>().0.timing_selected_index,
+            None
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    // --- Spawn carve-out pattern ---
+    //
+    // All 3 `events::spawn::*` messages are carve-outs: their handlers
+    // mutate `EditorSpawnRes.0` (SetSpawnHere, RotateSpawnDirection)
+    // or `EditorConfigRes.0.selected_block_rotation_degrees[1]`
+    // (RotatePlacementPreview) directly. Pin the resource is
+    // updated and no legacy command is queued.
+
+    use crate::events::spawn::{RotatePlacementPreview, RotateSpawnDirection, SetSpawnHere};
+    use crate::state::EditorSpawnRes;
+    use eg_types::Direction;
+
+    /// `SetSpawnHere` mutates `EditorSpawnRes.0.position` to the
+    /// current editor cursor (read from `EditorInputRes.0.cursor`).
+    /// Pin the resource is updated and no legacy command is staged.
+    #[test]
+    fn carve_out_set_spawn_here_mutates_editor_spawn_resource() {
+        let mut world = build_event_world();
+        // Seed the resource with an initial spawn position and the
+        // input with a different cursor.
+        world.resource_mut::<EditorSpawnRes>().0.position = [0.0, 0.0, 0.0];
+        world.resource_mut::<EditorInputRes>().0.cursor = [4.0, 8.0, 12.0];
+
+        world.write_message(SetSpawnHere);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<EditorSpawnRes>().0.position,
+            [4.0, 8.0, 12.0],
+            "SetSpawnHere handler must copy cursor into EditorSpawnRes.position"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetSpawnHere must not stage a legacy editor command"
+        );
+    }
+
+    /// `RotateSpawnDirection` cycles `EditorSpawnRes.0.direction`
+    /// Forward → Right → Forward.
+    #[test]
+    fn carve_out_rotate_spawn_direction_cycles_editor_spawn_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorSpawnRes>().0.direction = Direction::Forward;
+
+        world.write_message(RotateSpawnDirection);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<EditorSpawnRes>().0.direction,
+            Direction::Right
+        );
+
+        world.write_message(RotateSpawnDirection);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<EditorSpawnRes>().0.direction,
+            Direction::Forward
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "RotateSpawnDirection must not stage a legacy editor command"
+        );
+    }
+
+    /// `RotatePlacementPreview` increments
+    /// `EditorConfigRes.0.selected_block_rotation_degrees[1]` by 90,
+    /// wrapping into `0..360`.
+    #[test]
+    fn carve_out_rotate_placement_preview_mutates_editor_config_resource() {
+        let mut world = build_event_world();
+        // Start at 0; the first rotate should produce 90.
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .selected_block_rotation_degrees = [0.0, 0.0, 0.0];
+
+        for expected in [90.0, 180.0, 270.0, 0.0] {
+            world.write_message(RotatePlacementPreview);
+            world.run_schedule(crate::state::StateSchedule);
+            assert!(
+                (world
+                    .resource::<crate::state::EditorConfigRes>()
+                    .0
+                    .selected_block_rotation_degrees[1]
+                    - expected)
+                    .abs()
+                    < 1e-6,
+                "RotatePlacementPreview handler must rotate yaw by 90 (got {})",
+                world
+                    .resource::<crate::state::EditorConfigRes>()
+                    .0
+                    .selected_block_rotation_degrees[1]
+            );
+        }
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "RotatePlacementPreview must not stage a legacy editor command"
+        );
+    }
+
+    // --- Camera + TriggerSelected carve-out pattern ---
+    //
+    // 3 of the 5 `events::camera::*` messages are carve-outs:
+    // their handlers mutate `EditorCameraRes.0` (AdjustZoom,
+    // SetCameraOrientation) or `EditorTriggerRes.0.selected_index`
+    // (SetTriggerSelected) directly. The other 2
+    // (AddCameraTrigger, AddCameraFollowTrigger) keep the legacy
+    // PendingCommands path because they push to `editor.objects`.
+
+    use crate::events::camera::{
+        AddCameraTrigger, AdjustZoom, SetCameraOrientation, SetTriggerSelected,
+    };
+    use crate::state::EditorCameraRes;
+    use crate::state::EditorTriggerRes;
+
+    /// `AdjustZoom(delta)` moves the editor camera along its look
+    /// vector by `delta * 2` units. Pin the resource pan /
+    /// target_z update and no legacy command is staged.
+    #[test]
+    fn carve_out_adjust_zoom_mutates_editor_camera_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorCameraRes>().0.editor_pan = [0.0, 0.0];
+        world.resource_mut::<EditorCameraRes>().0.editor_target_z = 0.0;
+
+        // Positive zoom should move the pan by some non-zero amount.
+        world.write_message(AdjustZoom(1.0));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<EditorCameraRes>().0;
+        assert!(
+            camera.editor_pan[0] != 0.0
+                || camera.editor_pan[1] != 0.0
+                || camera.editor_target_z != 0.0,
+            "AdjustZoom handler must move the editor camera"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "AdjustZoom must not stage a legacy editor command"
+        );
+    }
+
+    /// `SetCameraOrientation` (no transition) sets the yaw +
+    /// pitch directly, clamping pitch to `[-89.9°, 89.9°]` and
+    /// clearing any active transition. Pin the resource update
+    /// and no legacy command is staged.
+    #[test]
+    fn carve_out_set_camera_orientation_mutates_editor_camera_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorCameraRes>().0.editor_yaw = 0.0;
+        world.resource_mut::<EditorCameraRes>().0.editor_pitch = 0.0;
+        world.resource_mut::<EditorCameraRes>().0.transition = None;
+
+        world.write_message(SetCameraOrientation {
+            rotation: 1.0,
+            pitch: 0.5,
+            transition_seconds: None,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<EditorCameraRes>().0;
+        approx::assert_abs_diff_eq!(camera.editor_yaw, 1.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.editor_pitch, 0.5, epsilon = 1e-6);
+        assert!(camera.transition.is_none());
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `SetCameraOrientation` with a positive `transition_seconds`
+    /// installs a `CameraTransition` instead of snapping directly.
+    #[test]
+    fn carve_out_set_camera_orientation_with_transition_installs_transition() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorCameraRes>().0.editor_yaw = 0.0;
+        world.resource_mut::<EditorCameraRes>().0.editor_pitch = 0.0;
+        world.resource_mut::<EditorCameraRes>().0.transition = None;
+
+        world.write_message(SetCameraOrientation {
+            rotation: 2.0,
+            pitch: 0.3,
+            transition_seconds: Some(0.5),
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<EditorCameraRes>().0;
+        // Yaw/pitch are NOT directly updated when a transition is
+        // requested — they interpolate over the transition.
+        assert!(camera.transition.is_some());
+        approx::assert_abs_diff_eq!(
+            camera.transition.as_ref().unwrap().elapsed,
+            0.0,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            camera.transition.as_ref().unwrap().duration,
+            0.5,
+            epsilon = 1e-6
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `SetTriggerSelected` mutates
+    /// `EditorTriggerRes.0.selected_index`. Pin the resource
+    /// update and no legacy command is staged.
+    #[test]
+    fn carve_out_set_trigger_selected_mutates_editor_trigger_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorTriggerRes>().0.selected_index = None;
+
+        world.write_message(SetTriggerSelected(Some(2)));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<EditorTriggerRes>().0.selected_index,
+            Some(2)
+        );
+
+        world.write_message(SetTriggerSelected(None));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(world.resource::<EditorTriggerRes>().0.selected_index, None);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    /// `AddCameraTrigger` is **not** a carve-out: the handler
+    /// stages a legacy `EditorCommand::AddCameraTrigger` because
+    /// the legacy setter pushes to `editor.objects` (a complex
+    /// store with history + sync side effects). Pin the legacy
+    /// command is staged.
+    #[test]
+    fn add_camera_trigger_still_uses_pending_commands() {
+        let mut world = build_event_world();
+
+        world.write_message(AddCameraTrigger);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let pending = world.resource::<PendingCommands>();
+        assert_eq!(
+            pending.editor_commands,
+            vec![crate::state::editor_command::EditorCommand::AddCameraTrigger],
+            "AddCameraTrigger must still stage a legacy editor command"
+        );
     }
 }

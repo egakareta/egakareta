@@ -77,6 +77,18 @@ favor of the Bevy umbrella. The migration is designed to be mechanical.
   makes for ~85 legacy-routed messages + ~12 direct resource writes. See the
   system-set graph below for ordering.
 
+    After Phases 3.5–3.11 the count shifts: 4 snap messages + 1
+    block-id message + 2 bpm messages + 5 session messages + 6
+    timing messages + 3 spawn messages + 3 camera messages + 1
+    trigger-selected message = **23 additional carve-outs** move
+    from the legacy-routed bucket to the direct-resource-write
+    bucket. The current counts are **~62 legacy-routed messages +
+    ~35 direct resource writes**. The pending
+    `AddCameraTrigger` / `AddCameraFollowTrigger` (and the
+    remaining 17 session messages) stay in the legacy-routed
+    bucket because they push to `editor.objects` or have
+    out-of-process side effects.
+
 ## System set graph (post Phase 7)
 
 ```
@@ -141,6 +153,9 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 3.6 / Block-id carve-out + `EditorConfigRes` seeding** — `events::editor_mode::handle_set_block_id` migrated to write `EditorConfigRes.0.selected_block_id` directly; `sync_app_editor_config_state` extended with a change-guarded `selected_block_id` sync whose legacy setter (`set_editor_block_id`) remembers the block in `recent_block_ids`, persists `app_settings`, and rebuilds cursor vertices. `Runtime::new` now seeds `EditorConfigRes` from the legacy `State` via `State::editor_config_resource()`, fixing a latent first-frame clobber where the Default-initialized resource would overwrite user-loaded `app_settings` snap/block config on the first frame. 1 schedule-level test in `events::tests` + 3 end-to-end tests in `runtime::tests` (block-id propagation, no-op resync guard, first-frame no-clobber regression).
 - [x] **Phase 3.7 / BPM carve-out + `EditorTimingRes` seeding** — `events::bpm::handle_bpm_tap` and `handle_bpm_tap_reset` migrated to write `EditorTimingRes.0.bpm_tap_times` / `bpm_tap_result` directly. The bpm-tap calculation (wall-clock-time read, append to history, recompute running BPM as 60 / average diff, truncate to 16 entries) is now performed in the App world, mirroring the legacy `State::editor_bpm_tap` logic. `Runtime::sync_app_editor_timing_state` change-guarded sync propagates the resource to the legacy `State.editor.timing` fields. `Runtime::new` seeds `EditorTimingRes` from the legacy state via `State::editor_timing_resource()` (which required `EditorTimingState: Clone`), so the first frame is a no-op for an in-flight tap history. 2 schedule-level tests in `events::tests` (`carve_out_bpm_tap_mutates_editor_timing_resource`, `carve_out_bpm_tap_reset_clears_editor_timing_resource`) + 4 end-to-end tests in `runtime::tests` (BpmTap propagation, BpmTapReset propagation, no-op resync guard, first-frame no-clobber regression).
 - [x] **Phase 3.8 / Session carve-out + `SessionStateRes` seeding** — `events::session::handle_set_show_metadata`, `handle_set_show_settings`, `handle_toggle_settings`, `handle_set_settings_section`, and `handle_set_keybind_capture` migrated to write `SessionStateRes` fields directly. The other 17 session events (`LoadLevel`, `RenameLevel`, `SetKeybind`, `SetGraphicsBackend`, `SetAudioBackend`, `UpdateMusic`, ...) keep the legacy `PendingCommands` path because their legacy setters have out-of-process side effects (level load, file IO, settings persist, audio backend switch). `Runtime::sync_app_session_state` change-guarded sync propagates the carved-out fields. `Runtime::new` seeds `SessionStateRes` (carved-out fields only) from the legacy `State.session` via `State::session_state_resource()`. 5 schedule-level tests in `events::tests` (one per carve-out message, plus a `ToggleSettings` flip-pair test) + 6 end-to-end tests in `runtime::tests` (per-message propagation + a first-frame no-clobber regression that exercises all four carved-out fields).
+- [x] **Phase 3.9 / Timing carve-out (extends `EditorTimingRes`)** — `events::timing::handle_add_timing_point`, `handle_remove_timing_point`, `handle_set_timing_point_time`, `handle_set_timing_point_bpm`, `handle_set_timing_point_time_signature`, and `handle_set_timing_selected` migrated to write `EditorTimingRes.0.timing_points` and `timing_selected_index` directly. The bpm-tap fields (Phase 3.7) + the timing-points fields now share the same `EditorTimingRes` resource and the same `Runtime::sync_app_editor_timing_state` change-guarded sync. The handlers mirror the legacy `EditorSubsystem::add_timing_point` / `update_timing_point_time` / ... behavior (sort ascending by `time_seconds`, clamp BPM to `>= 1.0`, clamp time-signature numerator/denominator to `>= 1`, bump `revision` on every change). The `ToLegacy` impls are preserved so the legacy dispatch path remains reachable from non-message call sites (the existing `editor_dispatch` tests continue to drive `State::dispatch_editor(EditorCommand::AddTimingPoint)` directly). 7 schedule-level tests in `events::tests` (one per carve-out message, plus an out-of-range RemoveTimingPoint no-op test) + 8 end-to-end tests in `runtime::tests` (per-message propagation, no-op resync guard, first-frame no-clobber regression that exercises both `timing_points` and `timing_selected_index`).
+- [x] **Phase 3.10 / Spawn carve-out + new `EditorSpawnRes` resource** — `events::spawn::handle_set_spawn_here` and `handle_rotate_spawn_direction` migrated to write `EditorSpawnRes.0.position` and `.direction` directly. `events::spawn::handle_rotate_placement_preview` writes `EditorConfigRes.0.selected_block_rotation_degrees[1]` directly (extending the existing config carve-out with the placement-preview yaw field). The new `EditorSpawnRes` resource wraps `SpawnMetadata`; `State::editor_spawn_resource()` seeds it from the legacy `State.editor.spawn` at `Runtime::new`; `Runtime::sync_app_editor_spawn_state` change-guarded sync propagates the carved-out fields. `sync_app_editor_config_state` extended with a change-guarded `selected_block_rotation_degrees` sync. 3 schedule-level tests in `events::tests` (one per carve-out message) + 5 end-to-end tests in `runtime::tests` (per-message propagation + a no-op resync guard + a first-frame no-clobber regression that exercises the spawn position + direction).
+- [x] **Phase 3.11 / Camera + trigger-selected carve-out (partial) + new `EditorCameraRes` Clone** — 3 of the 5 `events::camera::*` messages migrated to carve-outs: `handle_adjust_zoom` writes `EditorCameraRes.0.editor_pan` / `editor_target_z`; `handle_set_camera_orientation` writes `EditorCameraRes.0.editor_yaw` / `editor_pitch` / `transition`; `handle_set_trigger_selected` writes `EditorTriggerRes.0.selected_index`. The other 2 (`AddCameraTrigger`, `AddCameraFollowTrigger`) keep the legacy `PendingCommands` path because the legacy setters push to `editor.objects` (a `Vec<LevelObject>`), which is out of scope for the Phase 3.11 carve-out (Phase 4d-final moves the editor object store to entities). `EditorCameraState` and `CameraTransition` now derive manual `Clone` impls (the previous `Default` impl was hand-rolled and `Clone` was missing). `State::editor_camera_resource()` and `State::editor_trigger_resource()` seed the new resources at `Runtime::new`; `Runtime::sync_app_editor_camera_state` and `Runtime::sync_app_editor_trigger_state` change-guarded syncs propagate the carved-out fields. 5 schedule-level tests in `events::tests` (one per carve-out message, plus a SetCameraOrientation-with-transition test, plus a `add_camera_trigger_still_uses_pending_commands` regression test that pins the carve-out decision for `AddCameraTrigger`) + 6 end-to-end tests in `runtime::tests` (per-message propagation + a no-op resync guard + a first-frame no-clobber regression that exercises both `EditorCameraRes` and `EditorTriggerRes`).
 
 ## Phase 1 — completed
 
@@ -412,6 +427,128 @@ end-to-end tests in `runtime::tests` (per-message propagation
 
 - a first-frame no-clobber regression that exercises all four
   carved-out fields).
+
+### Timing carve-out (extends `EditorTimingRes`)
+
+All 6 `events::timing::*` messages are carve-outs (the
+**fourth stateful-resource carve-out** after snap, block-id, and
+bpm). The handlers write `EditorTimingRes.0.timing_points` and
+`timing_selected_index` directly. The bpm-tap fields (Phase 3.7)
+and the timing-points fields share the same `EditorTimingRes`
+resource and the same `Runtime::sync_app_editor_timing_state`
+change-guarded sync. The handlers mirror the legacy
+`EditorSubsystem::add_timing_point` / `update_timing_point_time` /
+`update_timing_point_bpm` / `update_timing_point_time_signature` /
+`set_timing_selected_index` behavior (sort ascending by
+`time_seconds`, clamp BPM to `>= 1.0`, clamp time-signature
+numerator/denominator to `>= 1`, bump `revision` on every
+change). The `ToLegacy` impls are preserved so the legacy
+dispatch path remains reachable from non-message call sites
+(the existing `editor_dispatch` tests continue to drive
+`State::dispatch_editor(EditorCommand::AddTimingPoint)`
+directly).
+
+`Runtime::new` already seeds `EditorTimingRes` from the legacy
+state via `State::editor_timing_resource()` (added in Phase 3.7
+for the bpm carve-out); the new fields ride on the same
+resource, so the same seeding covers them. Without seeding, the
+change-guarded sync would clobber a user-edited timing-point
+list on the first frame, just like the bpm-tap clobber bug from
+Phase 3.7. The `runtime_seeds_editor_timing_res_for_timing_points_no_first_frame_clobber`
+test pins the no-clobber property for both `timing_points` and
+`timing_selected_index`.
+
+Tests: 7 schedule-level tests in `events::tests` (one per
+carve-out message, plus an out-of-range `RemoveTimingPoint` no-op
+test) + 8 end-to-end tests in `runtime::tests` (per-message
+propagation, no-op resync guard, first-frame no-clobber
+regression that exercises both `timing_points` and
+`timing_selected_index`).
+
+### Spawn carve-out + `EditorSpawnRes` resource
+
+All 3 `events::spawn::*` messages are carve-outs. The
+`SetSpawnHere` handler reads `EditorInputRes.0.cursor` and writes
+`EditorSpawnRes.0.position`; the `RotateSpawnDirection` handler
+cycles `EditorSpawnRes.0.direction` (using the existing
+`eg_editor_domain::toggle_spawn_direction` helper). The
+`RotatePlacementPreview` handler increments
+`EditorConfigRes.0.selected_block_rotation_degrees[1]` by 90
+degrees (wrapping into `0..360`), extending the existing
+config carve-out.
+
+A new `EditorSpawnRes` resource wraps `SpawnMetadata` (derived
+`Default` for the `position = [0, 0, 0]`, `direction = Forward`
+case). `State::editor_spawn_resource()` seeds it from the legacy
+`State.editor.spawn` at `Runtime::new`; `Runtime::sync_app_editor_spawn_state`
+change-guarded sync propagates the carved-out fields. Without
+seeding, the change-guarded sync would clobber a user-set spawn
+position/direction on the first frame (the same first-frame
+clobber pattern that motivated the bpm + session + config
+seeding). The `runtime_seeds_editor_spawn_res_from_legacy_state_no_first_frame_clobber`
+test pins the no-clobber property for both `position` and
+`direction`. `sync_app_editor_config_state` is extended with a
+change-guarded `selected_block_rotation_degrees` sync to keep
+the legacy `State.editor.config.selected_block_rotation_degrees`
+field in lockstep with the resource (without re-running the
+legacy setters' side effects every frame).
+
+Tests: 3 schedule-level tests in `events::tests` (one per
+carve-out message) + 5 end-to-end tests in `runtime::tests`
+(per-message propagation + a no-op resync guard + a first-frame
+no-clobber regression that exercises the spawn position +
+direction).
+
+### Camera + trigger-selected carve-out (partial)
+
+3 of the 5 `events::camera::*` messages are carve-outs (the
+**fifth stateful-resource carve-out** after snap, block-id, bpm,
+session, timing, and spawn). The carved-out messages:
+
+- `AdjustZoom(delta)` writes `EditorCameraRes.0.editor_pan` and
+  `.editor_target_z` (mirroring `EditorSubsystem::adjust_zoom`).
+- `SetCameraOrientation { rotation, pitch, transition_seconds }`
+  writes `EditorCameraRes.0.editor_yaw`, `.editor_pitch`, and
+  optionally installs a `CameraTransition` (mirroring
+  `EditorSubsystem::set_editor_camera_orientation` in
+  `state/editor_interaction/camera.rs`).
+- `SetTriggerSelected(Option<usize>)` writes
+  `EditorTriggerRes.0.selected_index` (mirroring
+  `EditorSubsystem::set_trigger_selected`).
+
+The other 2 messages (`AddCameraTrigger`,
+`AddCameraFollowTrigger`) keep the legacy `PendingCommands` path
+because the legacy setters push to `editor.objects` (a
+`Vec<LevelObject>`), which is out of scope for the Phase 3.11
+carve-out — Phase 4d-final moves the editor object store to
+entities. The `events::tests::add_camera_trigger_still_uses_pending_commands`
+test pins the carve-out decision so a future refactor that
+flips the message to a carve-out knows to also move the test.
+
+To support the carve-out, `EditorCameraState` and
+`CameraTransition` now derive manual `Clone` impls (the previous
+hand-rolled `Default` impl was already in place; `Clone` was
+missing). `EditorCameraState::set_transition(...)` is a small
+public helper that lets callers outside the `editor_camera`
+module install a transition without depending on the private
+`CameraTransition` type. `State::editor_camera_resource()` and
+`State::editor_trigger_resource()` seed the new resources at
+`Runtime::new`; `Runtime::sync_app_editor_camera_state` and
+`Runtime::sync_app_editor_trigger_state` change-guarded syncs
+propagate the carved-out fields. The `EditorTriggerState` type
+also gained `Clone` (it was `Default` but not `Clone`; the
+`EditorTriggerRes` resource needs to be cloned by the seeding
+helper).
+
+Tests: 5 schedule-level tests in `events::tests` (one per
+carve-out message, plus a `SetCameraOrientation` with transition
+test, plus the `add_camera_trigger_still_uses_pending_commands`
+regression test) + 6 end-to-end tests in `runtime::tests`
+(per-message propagation + a no-op resync guard + a first-frame
+no-clobber regression that exercises both `EditorCameraRes` and
+`EditorTriggerRes` + a placeholder test documenting why the
+`AddCameraTrigger` / `AddCameraFollowTrigger` legacy path
+doesn't get a runtime-level test in this phase).
 
 ### Schedule graph (post Phase 3)
 
@@ -884,6 +1021,21 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
 - The migration so far is still a **compatibility mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until direct handlers and App-world ownership replace them.
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
 - `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world, run `app.update()`, prepare App-world mirror resources, run `StateSchedule`, and drain pending commands before legacy update/render. The App world has the real eg-state plugin graph and gameplay schedule; direct render ownership remains on legacy `State` through `StateRenderResources` until the render swap.
+- **Phases 3.5–3.11 carve-out status** (as of `be4d965` +
+  this branch's continuation): 23 of the ~85 legacy-routed
+  `EditorCommand` messages have been carved out to direct
+  resource writes. The carved-out domains and their App-world
+  resources are:
+    - `events::snap` (4 messages) → `EditorConfigRes.0.snap_*`
+    - `events::editor_mode::handle_set_block_id` (1 message) →
+      `EditorConfigRes.0.selected_block_id`
+    - `events::bpm` (2 messages) → `EditorTimingRes.0.bpm_tap_*`
+    - `events::session::SetShowMetadata / SetShowSettings / ToggleSettings / SetSettingsSection / SetKeybindCapture` (5 messages) → `SessionStateRes` fields
+    - `events::timing` (6 messages) → `EditorTimingRes.0.timing_points` + `timing_selected_index`
+    - `events::spawn` (3 messages) → `EditorSpawnRes.0` (SetSpawnHere, RotateSpawnDirection) + `EditorConfigRes.0.selected_block_rotation_degrees[1]` (RotatePlacementPreview)
+    - `events::camera::AdjustZoom / SetCameraOrientation / SetTriggerSelected` (3 messages) → `EditorCameraRes.0` + `EditorTriggerRes.0.selected_index`
+    - All carved-out resources are seeded from the legacy `State` at `Runtime::new` to prevent first-frame clobbers, and the `Runtime::sync_app_*_state` helpers are change-guarded to keep the legacy setters' side effects from re-firing every frame.
+    - The `ToLegacy` impls on the carve-out messages are preserved so the legacy dispatch path remains reachable from non-message call sites (the existing `editor_dispatch` tests continue to drive `State::dispatch_editor(EditorCommand::SetBlockId)` directly).
 
 ## Full-Bevy Next Roadmap
 
