@@ -23,7 +23,9 @@
 //! a single Bevy system per message type drains that message into the
 //! [`PendingCommands`] resource. `State::tick_state` can still run the
 //! schedule on the legacy State-owned world, but it no longer drains
-//! those commands into `State::dispatch`.
+//! those commands into `State::dispatch`. Input-state messages are the
+//! first direct-handler carve-out: they update `EditorInputRes` instead
+//! of staging legacy editor commands.
 //!
 //! ## Why messages?
 //!
@@ -42,12 +44,13 @@
 //! ## Input-state carve-out
 //!
 //! Per the migration plan, the following 12 editor command variants are
-//! **not** commands — they are *input state*. They will move to direct
-//! `EditorInput` resource writes in a follow-up phase; for now they
-//! remain routed through `dispatch_editor` to preserve test parity.
+//! **not** commands — they are *input state*. Modifier/pan held state now
+//! writes directly to `EditorInputRes`; pointer/camera drag events remain
+//! routed through `dispatch_editor` until their interaction handlers move
+//! over as a group.
 //!
-//! - `SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` (modifier held state)
-//! - `SetPan{Up,Down,Left,Right}Held` (camera pan held state)
+//! - `SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` (direct resource writes)
+//! - `SetPan{Up,Down,Left,Right}Held` (direct resource writes)
 //! - `MouseButton` / `PrimaryClick` / `PointerMoved` /
 //!   `UpdateCursorFromScreen` / `CameraDrag` (pointer / camera drag)
 //!
@@ -113,10 +116,11 @@ pub trait ToLegacy {
 /// Per-frame buffer of legacy commands recovered from Bevy messages.
 ///
 /// The Bevy schedule's per-message drain systems write into this
-/// resource. `State::tick_state` then takes the resource and calls
+/// resource. Runtime takes the App-world resource and calls
 /// `State::dispatch` / `State::dispatch_editor` for each buffered
-/// command. The buffer is cleared by `State::tick_state` once the
-/// commands have been forwarded to the legacy dispatch path.
+/// command during the compatibility window. The State-owned world can
+/// still stage commands for tests, but `State::tick_state` no longer
+/// forwards them to legacy dispatch.
 #[derive(Resource, Default, Debug)]
 pub struct PendingCommands {
     /// Commands to route through `State::dispatch`.
@@ -136,8 +140,7 @@ impl PendingCommands {
         self.app_commands.len() + self.editor_commands.len()
     }
 
-    /// Clear the buffer. Called by `State::tick_state` after the
-    /// commands have been forwarded.
+    /// Clear the buffer.
     pub fn clear(&mut self) {
         self.app_commands.clear();
         self.editor_commands.clear();
@@ -148,8 +151,7 @@ impl PendingCommands {
 ///
 /// All systems in this set read a single `MessageReader<T>` and write
 /// [`PendingCommands`]. They run as part of the `StateSchedule` and
-/// feed `State::tick_state` with the commands to apply to the legacy
-/// subsystems.
+/// feed Runtime with the commands to apply to the legacy subsystems.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandSet;
 
@@ -296,7 +298,7 @@ pub fn register_command_events_world(world: &mut World) {
     world.init_resource::<Messages<session::TriggerAudioImport>>();
     world.init_resource::<Messages<session::CaptureMenuPreviewCamera>>();
     world.init_resource::<Messages<session::UseAutoMenuPreviewCamera>>();
-    // Input state (deprecated; see events module docs).
+    // Input state (direct resource writes for held state; see module docs).
     world.init_resource::<Messages<input_state::SetShiftHeld>>();
     world.init_resource::<Messages<input_state::SetCtrlHeld>>();
     world.init_resource::<Messages<input_state::SetAltHeld>>();
@@ -458,8 +460,8 @@ pub fn add_command_systems(schedule: &mut Schedule) {
             session::handle_capture_menu_preview_camera,
             session::handle_use_auto_menu_preview_camera,
         ))
-        // Input state (modifier / pan held). Deprecated in the plan;
-        // see the module-level docs for the input-state carve-out.
+        // Input state (modifier / pan held). These write directly to
+        // EditorInputRes instead of staging legacy commands.
         .add_systems((
             input_state::handle_set_shift_held,
             input_state::handle_set_ctrl_held,
@@ -548,12 +550,10 @@ mod tests {
     }
 
     /// Build a `World` that has the message resources + the per-message
-    /// drain schedule. The test does not need the legacy eg-state
-    /// `AppPhaseRes` / `EditorInputRes` resources — those live on the
-    /// legacy `State` struct and are not consulted by the per-message
-    /// drain systems.
+    /// drain schedule.
     fn build_event_world() -> bevy_ecs::world::World {
         let mut world = bevy_ecs::world::World::new();
+        world.init_resource::<crate::state::EditorInputRes>();
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         add_command_systems(&mut schedule);

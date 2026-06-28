@@ -40,10 +40,8 @@ pub enum StateSet {
     /// Drains platform `InputEvent`s into `EditorInput` resource. Runs at
     /// the top of the frame so all downstream systems see the latest input.
     Input,
-    /// Drains queued `AppCommand` / `EditorCommand` events from a buffer
-    /// resource and routes them to handler systems. Splitting command
-    /// processing into a buffer is the Phase 3 work; this set is currently
-    /// unused (commands go through `State::dispatch`).
+    /// Drains queued semantic messages into direct handlers or the legacy
+    /// command buffer while the compatibility bridge is still active.
     Command,
     /// Snapshots editor state for undo/redo before mutating commands commit.
     /// Runs before the editor mutation set so undo history reflects the

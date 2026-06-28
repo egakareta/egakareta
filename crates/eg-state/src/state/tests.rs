@@ -375,6 +375,29 @@ async fn tick_state_stages_messages_without_dispatching() {
 }
 
 #[tokio::test]
+async fn tick_state_writes_input_state_without_staging_commands() {
+    use crate::events::PendingCommands;
+    use crate::events::input_state::{SetCtrlHeld, SetPanRightHeld, SetShiftHeld};
+
+    let mut state = State::new_test().await;
+
+    state.world_mut().write_message(SetShiftHeld(true));
+    state.world_mut().write_message(SetCtrlHeld(true));
+    state.world_mut().write_message(SetPanRightHeld(true));
+
+    state.tick_state();
+
+    let input = &state.world().resource::<EditorInputRes>().0;
+    assert!(input.shift_held);
+    assert!(input.ctrl_held);
+    assert!(input.pan_right_held);
+    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert!(!state.editor.input.shift_held);
+    assert!(!state.editor.input.ctrl_held);
+    assert!(!state.editor.input.pan_right_held);
+}
+
+#[tokio::test]
 async fn tick_state_stages_undo_without_dispatching() {
     // Verify that the editor Undo message routes through the State-owned
     // drain systems without calling `State::editor_undo`.

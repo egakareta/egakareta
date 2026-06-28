@@ -193,8 +193,9 @@ pub fn register_state_resources(world: &mut World) {
 /// [`crate::events::PendingCommands`] resource, then adds the
 /// [`StateSchedule`] to the world. The schedule contains the
 /// per-message drain systems that convert events to legacy commands
-/// and stage them in `PendingCommands` for `State::tick_state` to
-/// forward to `State::dispatch` / `State::dispatch_editor`.
+/// and stage them in `PendingCommands` for Runtime to forward to
+/// `State::dispatch` / `State::dispatch_editor` during the compatibility
+/// window.
 ///
 /// Phase 4a: the schedule also contains the
 /// `mirror_pod_state_via_bridge` system from

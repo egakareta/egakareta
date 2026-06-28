@@ -10,6 +10,7 @@ use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
 use bevy_ecs::world::World;
 use eg_state::events::PendingCommands;
+use eg_state::state::EditorInputRes;
 use eg_state::state::State;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
@@ -120,9 +121,29 @@ impl Runtime {
             drain_ui_command_queue(app.world_mut());
             app.update();
             run_state_schedule_in_world(app.world_mut());
+            Self::sync_app_editor_input_state(state, app.world());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.tick_state();
         })
+    }
+
+    fn sync_app_editor_input_state(state: &mut State, world: &World) {
+        let input = &world.resource::<EditorInputRes>().0;
+        let shift_held = input.shift_held;
+        let ctrl_held = input.ctrl_held;
+        let alt_held = input.alt_held;
+        let pan_up_held = input.pan_up_held;
+        let pan_down_held = input.pan_down_held;
+        let pan_left_held = input.pan_left_held;
+        let pan_right_held = input.pan_right_held;
+
+        state.set_editor_shift_held(shift_held);
+        state.set_editor_ctrl_held(ctrl_held);
+        state.set_editor_alt_held(alt_held);
+        state.set_editor_pan_up_held(pan_up_held);
+        state.set_editor_pan_down_held(pan_down_held);
+        state.set_editor_pan_left_held(pan_left_held);
+        state.set_editor_pan_right_held(pan_right_held);
     }
 
     fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {
