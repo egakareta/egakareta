@@ -763,6 +763,15 @@ impl State {
     /// legacy state so the change-guarded
     /// `sync_app_session_state` is a no-op on the first frame for
     /// unchanged fields.
+    ///
+    /// Also seeds `practice_mode_enabled` (Phase 3.15 navigation
+    /// carve-out — see `events::navigation::handle_game_set_practice_mode`).
+    /// Without this seed, a user who toggled practice mode on a
+    /// previous frame would see the resource reset to `false` on
+    /// the first frame, and the change-guarded sync would then
+    /// fire the legacy `set_practice_mode_enabled(false)` setter
+    /// (which calls `restart_level` + `resume_game` — both heavy
+    /// side effects).
     pub fn session_state_resource(&self) -> super::SessionStateRes {
         super::SessionStateRes {
             editor_level_name: self.session.editor_level_name.clone(),
@@ -775,6 +784,7 @@ impl State {
             editor_show_settings: self.session.editor_show_settings,
             editor_settings_section: self.session.editor_settings_section,
             editor_keybind_capture_action: self.session.editor_keybind_capture_action.clone(),
+            practice_mode_enabled: self.is_practice_mode_enabled(),
             ..Default::default()
         }
     }
@@ -1547,6 +1557,32 @@ impl State {
     pub fn set_editor_hitbox_visualization(&mut self, enabled: bool) {
         self.editor.input.show_hitbox_visualization = enabled;
         self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
+    }
+
+    /// Read-only accessor for the raw `session.practice_mode_enabled`
+    /// flag (the underlying boolean regardless of phase). Mirrors the
+    /// legacy `session.practice_mode_enabled` field. Exposed in
+    /// non-test builds because the Phase 3.15 navigation carve-out
+    /// syncs the value from `SessionStateRes.practice_mode_enabled`
+    /// into this field (see `Runtime::sync_app_session_state`).
+    /// The phase-aware accessor is `is_practice_mode_enabled()`.
+    pub fn practice_mode_enabled_value(&self) -> bool {
+        self.session.practice_mode_enabled
+    }
+
+    /// Setter for the practice-mode toggle. The Phase 3.15
+    /// navigation carve-out syncs
+    /// `SessionStateRes.practice_mode_enabled` into this field via
+    /// `Runtime::sync_app_session_state`; the change guard in the
+    /// runtime ensures the heavy side effects (clears
+    /// `practice_checkpoints`, calls
+    /// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
+    /// `resume_game`) fire only on real user-driven changes.
+    pub fn set_practice_mode_enabled(&mut self, enabled: bool) {
+        // Delegate to the existing private setter in `command_dispatch`
+        // so the side-effect ordering (clear checkpoints → maybe resume
+        // → else rebuild + restart + resume) is preserved.
+        self.set_practice_mode_enabled_internal(enabled);
     }
 
     pub fn toggle_editor_hitbox_visualization(&mut self) {

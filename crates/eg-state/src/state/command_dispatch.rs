@@ -28,7 +28,9 @@ impl State {
             AppCommand::ToggleEditor => self.toggle_editor(),
             AppCommand::GameResume => self.resume_game(),
             AppCommand::GameRestartLevel => self.restart_game_from_pause(),
-            AppCommand::GameSetPracticeMode(enabled) => self.set_practice_mode_enabled(enabled),
+            AppCommand::GameSetPracticeMode(enabled) => {
+                self.set_practice_mode_enabled_internal(enabled)
+            }
             AppCommand::GameSetPracticeCheckpoint => self.set_practice_checkpoint(),
             AppCommand::GameRemovePracticeCheckpoint => self.remove_practice_checkpoint(),
             AppCommand::GameQuitToMenu => self.quit_game_from_pause(),
@@ -95,7 +97,14 @@ impl State {
         self.restart_level();
     }
 
-    fn set_practice_mode_enabled(&mut self, enabled: bool) {
+    /// Phase 3.15: this method is now invoked by the public
+    /// `State::set_practice_mode_enabled` setter (in `editor_state.rs`)
+    /// which the App-world `Runtime::sync_app_session_state` calls.
+    /// The internal name + `pub(super)` visibility keeps the legacy
+    /// dispatch path (`AppCommand::GameSetPracticeMode`) and the
+    /// change-guarded runtime sync in lockstep on the same side
+    /// effects.
+    pub(super) fn set_practice_mode_enabled_internal(&mut self, enabled: bool) {
         if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
             return;
         }

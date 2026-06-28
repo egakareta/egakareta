@@ -1498,7 +1498,9 @@ mod tests {
     // `handle_editor_escape` is a multi-step context-sensitive
     // state machine.
 
-    use crate::events::misc::{Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow};
+    use crate::events::misc::{
+        Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow,
+    };
 
     /// `ToggleHitboxVisualization` is a carve-out: the handler
     /// mutates `EditorInputRes.0.show_hitbox_visualization`
@@ -1507,20 +1509,36 @@ mod tests {
     #[test]
     fn carve_out_toggle_hitbox_visualization_mutates_editor_input_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<EditorInputRes>().0.show_hitbox_visualization = false;
-        assert!(!world.resource::<EditorInputRes>().0.show_hitbox_visualization);
+        world
+            .resource_mut::<EditorInputRes>()
+            .0
+            .show_hitbox_visualization = false;
+        assert!(
+            !world
+                .resource::<EditorInputRes>()
+                .0
+                .show_hitbox_visualization
+        );
 
         world.write_message(ToggleHitboxVisualization);
         world.run_schedule(crate::state::StateSchedule);
         assert!(
-            world.resource::<EditorInputRes>().0.show_hitbox_visualization,
+            world
+                .resource::<EditorInputRes>()
+                .0
+                .show_hitbox_visualization,
             "ToggleHitboxVisualization handler must mutate EditorInputRes"
         );
 
         // Toggle back.
         world.write_message(ToggleHitboxVisualization);
         world.run_schedule(crate::state::StateSchedule);
-        assert!(!world.resource::<EditorInputRes>().0.show_hitbox_visualization);
+        assert!(
+            !world
+                .resource::<EditorInputRes>()
+                .0
+                .show_hitbox_visualization
+        );
 
         let pending = world.resource::<PendingCommands>();
         assert!(
@@ -1535,7 +1553,10 @@ mod tests {
     #[test]
     fn carve_out_toggle_perf_overlay_mutates_perf_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<crate::state::PerfRes>().0.overlay_enabled = false;
+        world
+            .resource_mut::<crate::state::PerfRes>()
+            .0
+            .overlay_enabled = false;
         assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
 
         world.write_message(TogglePerfOverlay);
@@ -1563,20 +1584,32 @@ mod tests {
     #[test]
     fn carve_out_toggle_place_window_mutates_session_state_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<crate::state::SessionStateRes>().editor_show_place_window = false;
-        assert!(!world.resource::<crate::state::SessionStateRes>().editor_show_place_window);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_show_place_window = false;
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .editor_show_place_window
+        );
 
         world.write_message(TogglePlaceWindow);
         world.run_schedule(crate::state::StateSchedule);
         assert!(
-            world.resource::<crate::state::SessionStateRes>().editor_show_place_window,
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .editor_show_place_window,
             "TogglePlaceWindow handler must mutate SessionStateRes"
         );
 
         // Toggle back.
         world.write_message(TogglePlaceWindow);
         world.run_schedule(crate::state::StateSchedule);
-        assert!(!world.resource::<crate::state::SessionStateRes>().editor_show_place_window);
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .editor_show_place_window
+        );
 
         let pending = world.resource::<PendingCommands>();
         assert!(
@@ -1669,10 +1702,14 @@ mod tests {
         // ids that resolve to known blocks.
         let first = eg_blocks::BlockId::new("core/stone");
         let second = eg_blocks::BlockId::new("core/wood");
-        world.resource_mut::<crate::state::EditorConfigRes>().0.recent_block_ids =
-            vec![first.clone(), second.clone()];
-        world.resource_mut::<crate::state::EditorConfigRes>().0.selected_block_id =
-            eg_blocks::BlockId::default();
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .recent_block_ids = vec![first.clone(), second.clone()];
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .selected_block_id = eg_blocks::BlockId::default();
 
         // Out-of-range index: no-op, no legacy command staged.
         world.write_message(SelectRecentBlock(10));
@@ -1724,6 +1761,64 @@ mod tests {
         assert!(
             pending.editor_commands.is_empty(),
             "SelectRecentBlock must not stage a legacy editor command"
+        );
+    }
+
+    // --- Phase 3.15 / Navigation carve-out test ---
+    //
+    // `GameSetPracticeMode` is a carve-out: its handler in
+    // `events::navigation` mutates
+    // `SessionStateRes.practice_mode_enabled` directly instead
+    // of staging a legacy `AppCommand`. The change-guarded
+    // runtime sync (`Runtime::sync_app_session_state`) invokes
+    // the legacy `set_practice_mode_enabled` setter (which has
+    // heavy side effects: clear practice checkpoints, rebuild
+    // checkpoint vertices, restart level, resume game) only on
+    // real user-driven changes. The schedule-level test pins
+    // the resource write + the absence of any staged legacy
+    // command; the runtime tests in `eg-app` pin the full
+    // message → resource → sync → legacy state pipeline.
+
+    use crate::events::navigation::GameSetPracticeMode;
+
+    /// `GameSetPracticeMode(enabled)` is a carve-out: the
+    /// handler writes the bool directly to
+    /// `SessionStateRes.practice_mode_enabled` instead of
+    /// staging a legacy `AppCommand::GameSetPracticeMode`. Pin
+    /// the resource is updated and no legacy command is queued.
+    #[test]
+    fn carve_out_game_set_practice_mode_mutates_session_resource() {
+        let mut world = build_event_world();
+        // Start from a known state (the seeded resource has
+        // `practice_mode_enabled = false` because the
+        // `Default` impl is used; we explicitly reset here
+        // to make the test self-contained).
+        world
+            .resource_mut::<SessionStateRes>()
+            .practice_mode_enabled = false;
+        assert!(!world.resource::<SessionStateRes>().practice_mode_enabled);
+
+        // Enable practice mode.
+        world.write_message(GameSetPracticeMode { enabled: true });
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world.resource::<SessionStateRes>().practice_mode_enabled,
+            "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
+        );
+
+        // Disable practice mode.
+        world.write_message(GameSetPracticeMode { enabled: false });
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            !world.resource::<SessionStateRes>().practice_mode_enabled,
+            "GameSetPracticeMode(false) handler must mutate SessionStateRes.practice_mode_enabled"
+        );
+
+        // No legacy command is staged for either write.
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameSetPracticeMode must not stage any legacy command (carve-out)"
         );
     }
 }

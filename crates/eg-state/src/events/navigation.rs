@@ -7,12 +7,30 @@
 */
 //! Navigation / phase events. One per `AppCommand` variant under
 //! `AppCommand::Navigation / Phase` in the legacy enum.
+//!
+//! `GameSetPracticeMode` is a **carve-out** from the `PendingCommands`
+//! pipeline (same pattern as `events::snap`, `events::session`, ...).
+//! The handler mutates `SessionStateRes.practice_mode_enabled`
+//! directly, and the legacy `State.session.practice_mode_enabled` is
+//! synced from the resource at the top of the per-frame
+//! `StateSchedule`. The legacy setter
+//! (`set_practice_mode_enabled`) has heavy side effects (clears
+//! practice checkpoints, rebuilds vertices, restarts the level,
+//! resumes the game), so the change guard in
+//! `Runtime::sync_app_session_state` invokes the legacy setter only
+//! on real user-driven changes.
+//!
+//! The `ToLegacy` impl is kept so the legacy dispatch path remains
+//! reachable from non-message call sites (the existing
+//! `command_dispatch` tests continue to drive
+//! `State::dispatch(AppCommand::GameSetPracticeMode(...))` directly).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
 use crate::commands::AppCommand;
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::state::SessionStateRes;
 
 /// Primary action: in menu → start level, in game → turn, in editor → place block.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -190,14 +208,23 @@ pub fn handle_game_restart_level(
     }
 }
 
+/// `GameSetPracticeMode` is a carve-out: the handler writes the
+/// enabled flag directly to `SessionStateRes.practice_mode_enabled`
+/// instead of staging a legacy `AppCommand`. The legacy
+/// `set_practice_mode_enabled` (in `State::command_dispatch`) has
+/// heavy side effects (clears `practice_checkpoints`, calls
+/// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
+/// `resume_game`); the change-guarded sync in
+/// `Runtime::sync_app_session_state` invokes the legacy setter only
+/// on real user-driven changes. The `ToLegacy` impl is preserved so
+/// the legacy dispatch path remains reachable from non-message call
+/// sites.
 pub fn handle_game_set_practice_mode(
     mut events: MessageReader<GameSetPracticeMode>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .app_commands
-            .push(AppCommand::GameSetPracticeMode(event.enabled));
+        session.practice_mode_enabled = event.enabled;
     }
 }
 

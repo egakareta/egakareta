@@ -446,6 +446,21 @@ impl Runtime {
         if state.editor_show_place_window() != session.editor_show_place_window {
             state.set_editor_show_place_window(session.editor_show_place_window);
         }
+        // Phase 3.15: the `GameSetPracticeMode` handler in
+        // `events::navigation` mutates
+        // `SessionStateRes.practice_mode_enabled` directly. The
+        // legacy setter
+        // (`set_practice_mode_enabled` → `set_practice_mode_enabled_internal`)
+        // has heavy side effects (clears `practice_checkpoints`,
+        // calls `rebuild_practice_checkpoint_vertices`,
+        // `restart_level`, and `resume_game`); the change guard here
+        // invokes the legacy setter only on real user-driven changes.
+        // The resource is seeded at `Runtime::new` from the legacy
+        // state, so the first frame after construction is a no-op
+        // for unchanged fields.
+        if state.practice_mode_enabled_value() != session.practice_mode_enabled {
+            state.set_practice_mode_enabled(session.practice_mode_enabled);
+        }
     }
 
     /// Sync the legacy `State.editor.perf.overlay_enabled` from the
@@ -2342,9 +2357,7 @@ mod tests {
     // the full message → App-world resource → legacy State field
     // propagation.
 
-    use eg_state::events::misc::{
-        Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow,
-    };
+    use eg_state::events::misc::{Escape, ToggleHitboxVisualization, TogglePlaceWindow};
 
     /// Writing a `ToggleHitboxVisualization` message reaches the
     /// App world, mutates `EditorInputRes.0.show_hitbox_visualization`,
@@ -2365,7 +2378,10 @@ mod tests {
             .show_hitbox_visualization = false;
         runtime.state.set_editor_hitbox_visualization(false);
 
-        runtime.app.world_mut().write_message(ToggleHitboxVisualization);
+        runtime
+            .app
+            .world_mut()
+            .write_message(ToggleHitboxVisualization);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -2414,6 +2430,155 @@ mod tests {
         );
     }
 
+    // --- Phase 3.15 / Navigation carve-out tests ---
+    //
+    // The `GameSetPracticeMode` handler in
+    // `events::navigation` writes directly to
+    // `SessionStateRes.practice_mode_enabled`. The change-guarded
+    // sync in `Runtime::sync_app_session_state` invokes the
+    // legacy `set_practice_mode_enabled` setter (which has
+    // heavy side effects: clear practice checkpoints, rebuild
+    // checkpoint vertices, restart level, resume game) only on
+    // real user-driven changes. The legacy setter is phase-
+    // guarded (no-op outside `AppPhase::Playing`), so the
+    // tests below drive the legacy state into the Playing
+    // phase before each write.
+
+    use eg_state::events::navigation::GameSetPracticeMode;
+
+    /// Writing a `GameSetPracticeMode(true)` message reaches the
+    /// App world, mutates `SessionStateRes.practice_mode_enabled`,
+    /// and the per-frame sync propagates the value to the legacy
+    /// `State.session.practice_mode_enabled` (which clears
+    /// `practice_checkpoints` and, when the toggle flips from
+    /// false to true, calls `resume_game`).
+    #[tokio::test]
+    async fn runtime_carve_out_game_set_practice_mode_propagates_to_legacy_state() {
+        let mut state = State::new_test().await;
+        // Force the legacy state into `AppPhase::Playing` so the
+        // phase-guarded legacy setter is a no-op-free.
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_session_practice_mode_enabled_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .practice_mode_enabled = false;
+
+        // Write the message and run a frame so the schedule's
+        // handler runs, the per-frame sync runs, and the legacy
+        // setter fires.
+        runtime
+            .app
+            .world_mut()
+            .write_message(GameSetPracticeMode { enabled: true });
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // App world is the source of truth.
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled,
+            "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
+        );
+        // Legacy state was synced to match the resource.
+        assert!(
+            runtime.state.practice_mode_enabled_value(),
+            "sync_app_session_state must propagate practice_mode_enabled to legacy state"
+        );
+        // No legacy command was staged (carve-out).
+        let pending = runtime
+            .app
+            .world()
+            .resource::<eg_state::events::PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameSetPracticeMode must not stage any legacy command (carve-out)"
+        );
+    }
+
+    /// No-op frame for practice mode: when no
+    /// `GameSetPracticeMode` message is written and the
+    /// resource matches the legacy state (the seeded
+    /// invariant), the sync must not re-invoke the legacy
+    /// `set_practice_mode_enabled` setter (which would
+    /// trigger `restart_level` + `resume_game` again).
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_practice_mode() {
+        let mut state = State::new_test().await;
+        // Seed the legacy state to a known value. The
+        // resource is seeded from the legacy state at
+        // Runtime::new, so the first frame is a true no-op.
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_session_practice_mode_enabled_for_test(true);
+        let mut runtime = Runtime::new(state);
+
+        // Run a frame with no message. The handler does not
+        // run, the resource stays at the seeded value, the
+        // sync sees no diff, the legacy setter is not
+        // invoked.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // Both the resource and the legacy state keep the
+        // user value.
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled
+        );
+        assert!(runtime.state.practice_mode_enabled_value());
+    }
+
+    /// Regression: `SessionStateRes.practice_mode_enabled` must
+    /// be seeded from the legacy `State` at `Runtime::new` so
+    /// the change-guarded sync does not clobber a user-enabled
+    /// practice mode on the first frame. Same first-frame
+    /// clobber pattern as the snap / bpm / timing / spawn /
+    /// camera / trigger / perf carve-outs.
+    #[tokio::test]
+    async fn runtime_seeds_practice_mode_from_legacy_state_no_first_frame_clobber() {
+        let mut state = State::new_test().await;
+        // User-enabled practice mode. The default resource
+        // value is `false`; without seeding, the first-frame
+        // sync would see a diff and clobber the user value
+        // back to `false` (and the legacy setter would call
+        // `restart_level` + `resume_game` — both heavy).
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_session_practice_mode_enabled_for_test(true);
+        let mut runtime = Runtime::new(state);
+
+        // Seeding: the resource must reflect the legacy user
+        // value, not the `SessionStateRes` default.
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled,
+            "SessionStateRes.practice_mode_enabled must be seeded from legacy State at Runtime::new"
+        );
+
+        // Run a frame with no GameSetPracticeMode message.
+        // The change-guarded sync must see no diff and must
+        // NOT invoke the legacy setter, so the user value
+        // survives the first frame.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime.state.practice_mode_enabled_value(),
+            "first-frame sync must not clobber user practice_mode_enabled setting"
+        );
+    }
+
     /// Writing a `TogglePerfOverlay` message reaches the App
     /// world, mutates `PerfRes.0.overlay_enabled`, and the
     /// per-frame sync propagates the value to the legacy
@@ -2421,6 +2586,8 @@ mod tests {
     /// `puffin::set_scopes_on(...)`).
     #[tokio::test]
     async fn runtime_carve_out_toggle_perf_overlay_propagates_to_legacy_state() {
+        use eg_state::events::misc::TogglePerfOverlay;
+
         let state = State::new_test().await;
         let mut runtime = Runtime::new(state);
 
@@ -2644,12 +2811,7 @@ mod tests {
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorInputRes>()
-                .0
-                .mode,
+            runtime.app.world().resource::<EditorInputRes>().0.mode,
             eg_types::EditorMode::Tapping,
             "SetEditorMode handler must mutate EditorInputRes.mode"
         );
@@ -2682,17 +2844,9 @@ mod tests {
         // No message -> handler does not run -> resource unchanged.
         // Sync sees no diff -> setter not invoked.
         assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorInputRes>()
-                .0
-                .mode,
+            runtime.app.world().resource::<EditorInputRes>().0.mode,
             eg_types::EditorMode::Select
         );
-        assert_eq!(
-            runtime.state.editor_mode(),
-            eg_types::EditorMode::Select
-        );
+        assert_eq!(runtime.state.editor_mode(), eg_types::EditorMode::Select);
     }
 }

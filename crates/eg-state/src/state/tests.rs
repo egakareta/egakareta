@@ -460,10 +460,16 @@ async fn tick_state_stages_undo_without_dispatching() {
 }
 
 #[tokio::test]
-async fn tick_state_stages_practice_mode_payload_without_dispatching() {
-    // Verify that a message carrying a payload (`GameSetPracticeMode`)
-    // routes through the App-world drain systems without toggling
-    // legacy session state.
+async fn tick_state_carve_out_practice_mode_mutates_session_resource() {
+    // Phase 3.15: `GameSetPracticeMode` is a carve-out — the
+    // handler writes `SessionStateRes.practice_mode_enabled`
+    // directly instead of staging a legacy `AppCommand`. Pin the
+    // resource is updated and no legacy command is queued. The
+    // change-guarded runtime sync (which would invoke the legacy
+    // `set_practice_mode_enabled` setter with the heavy side
+    // effects — clear checkpoints, restart level, resume game) is
+    // exercised in `eg-app` runtime tests because it requires a
+    // real `Runtime`.
     use crate::events::PendingCommands;
     use crate::events::navigation::GameSetPracticeMode;
 
@@ -479,13 +485,20 @@ async fn tick_state_stages_practice_mode_payload_without_dispatching() {
         .write_message(GameSetPracticeMode { enabled: true });
     tick_state_with_app(&mut state, &mut app);
 
-    assert_eq!(
-        app.world().resource::<PendingCommands>().app_commands,
-        vec![AppCommand::GameSetPracticeMode(true)]
+    assert!(
+        app.world()
+            .resource::<SessionStateRes>()
+            .practice_mode_enabled,
+        "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
+    );
+    let pending = app.world().resource::<PendingCommands>();
+    assert!(
+        pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+        "GameSetPracticeMode must not stage any legacy command (carve-out)"
     );
     assert!(
         !state.session.practice_mode_enabled,
-        "GameSetPracticeMode(true) staged in the App world must not mutate legacy session state"
+        "tick_state must not mutate legacy session state (sync is a Runtime concern)"
     );
 }
 

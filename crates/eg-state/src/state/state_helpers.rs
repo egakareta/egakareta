@@ -292,6 +292,29 @@ impl State {
         self.enter_editor_phase(level_name.into());
     }
 
+    /// Test-only setter for the top-level `phase` field.
+    /// Production code must call `toggle_editor`, `enter_editor_phase`,
+    /// `enter_playing_phase`, or `enter_menu_phase` instead.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_phase_for_test(&mut self, phase: AppPhase) {
+        self.phase = phase;
+    }
+
+    /// Test-only setter for `session.playtesting_editor`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_playtesting_editor_for_test(&mut self, playtesting_editor: bool) {
+        self.session.playtesting_editor = playtesting_editor;
+    }
+
+    /// Test-only setter for `session.practice_mode_enabled`.
+    /// Production code must call `set_practice_mode_enabled`
+    /// (which has the heavy side effects — clear checkpoints,
+    /// restart level, resume game).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_session_practice_mode_enabled_for_test(&mut self, enabled: bool) {
+        self.session.practice_mode_enabled = enabled;
+    }
+
     pub(super) fn enter_menu_phase(&mut self) {
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
