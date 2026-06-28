@@ -114,6 +114,35 @@ impl super::State {
         self.editor.perf.overlay_enabled
     }
 
+    /// Setter for the perf overlay toggle. The Phase 3.12 misc
+    /// carve-out syncs `PerfRes.0.overlay_enabled` into this field via
+    /// `Runtime::sync_app_perf_state`; the change guard in the
+    /// runtime ensures the `puffin::set_scopes_on` side effect fires
+    /// only on real user-driven changes.
+    pub fn set_perf_overlay_enabled(&mut self, enabled: bool) {
+        self.editor.perf.overlay_enabled = enabled;
+        puffin::set_scopes_on(enabled);
+    }
+
+    /// Snapshot the legacy `State.editor.perf` into a
+    /// [`super::PerfRes`] so the App world can be seeded from the
+    /// legacy state at construction time. Used for the perf overlay
+    /// carve-out (see `events::misc::handle_toggle_perf_overlay`):
+    /// the handler mutates the resource directly, and `Runtime::new`
+    /// seeds the resource from the legacy state so the
+    /// change-guarded `sync_app_perf_state` is a no-op on the first
+    /// frame for unchanged fields. Only `overlay_enabled` is part
+    /// of the carve-out; the per-frame `fps_smoothed` and
+    /// `global_frame_view` are runtime-derived and stay
+    /// legacy-authoritative.
+    pub fn perf_resource(&self) -> super::PerfRes {
+        super::PerfRes(super::perf::PerfState {
+            overlay_enabled: self.editor.perf.overlay_enabled,
+            fps_smoothed: self.editor.perf.fps_smoothed,
+            global_frame_view: puffin::GlobalFrameView::default(),
+        })
+    }
+
     pub fn perf_fps(&self) -> f32 {
         self.editor.perf.fps_smoothed
     }

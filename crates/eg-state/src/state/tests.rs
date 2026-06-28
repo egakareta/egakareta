@@ -343,7 +343,11 @@ async fn tick_state_stages_messages_without_dispatching() {
 
     // Write a TurnRight message.
     app.world_mut().write_message(TurnRight);
-    // Write a SetEditorMode(Place) message.
+    // Write a SetEditorMode(Place) message. Phase 3.13 carved
+    // this out: the handler mutates `EditorInputRes.0.mode`
+    // directly instead of staging a legacy
+    // `EditorCommand::SetMode`. Pin the carve-out behavior: the
+    // resource is updated and no editor command is staged.
     app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
@@ -356,9 +360,14 @@ async fn tick_state_stages_messages_without_dispatching() {
 
     let pending = app.world().resource::<PendingCommands>();
     assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
+    assert!(
+        pending.editor_commands.is_empty(),
+        "SetEditorMode is a Phase 3.13 carve-out and must not stage a legacy editor command"
+    );
     assert_eq!(
-        pending.editor_commands,
-        vec![EditorCommand::SetMode(EditorMode::Place)]
+        app.world().resource::<EditorInputRes>().0.mode,
+        EditorMode::Place,
+        "SetEditorMode handler must mutate EditorInputRes.mode"
     );
     assert!(
         state.is_menu(),

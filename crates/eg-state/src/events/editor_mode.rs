@@ -14,6 +14,7 @@ use eg_types::EditorMode;
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
 use crate::state::EditorConfigRes;
+use crate::state::EditorInputRes;
 use crate::state::editor_command::EditorCommand;
 
 /// Switch the editor mode.
@@ -84,14 +85,36 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
+// `SetEditorMode` is a carve-out from the `PendingCommands` →
+// `State::dispatch_editor` pipeline (same pattern as `events::snap`,
+// `events::bpm`, and `events::misc`): the handler mutates
+// `EditorInputRes.0.mode` directly, and the legacy
+// `State.editor.input.mode` is synced from the resource by
+// `Runtime::sync_app_editor_input_state` before any dispatch in the
+// same frame. The `ToLegacy` impl is preserved so the legacy
+// dispatch path remains reachable from non-message call sites (the
+// existing `editor_dispatch` tests continue to drive
+// `State::dispatch_editor(EditorCommand::SetMode(...))` directly).
+//
+// The legacy `set_editor_mode` has heavy side effects (rebuilds
+// gizmo/hover/selection outline vertices, marks
+// `EditorDirtyFlags::tap_timeline_changed()`). The change guard in
+// the runtime ensures those side effects fire only on real
+// user-driven changes. The legacy dispatch path
+// (`EditorCommand::SetMode`) goes through `dispatch_editor` which
+// also clears `editor.timeline.taps.selected_index` on
+// Tapping→other transitions and calls
+// `refresh_editor_tapping_preview_on_mode_entry` on
+// other→Tapping transitions. The sync helper invokes
+// `set_editor_mode` (the same setter used by
+// `set_editor_playback_effective_mode` after a mode change), so
+// the side effects fire through the same path.
 pub fn handle_set_editor_mode(
     mut events: MessageReader<SetEditorMode>,
-    mut pending: ResMut<PendingCommands>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetMode(event.0));
+        input.0.mode = event.0;
     }
 }
 

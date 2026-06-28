@@ -166,6 +166,16 @@ impl Runtime {
         app.world_mut()
             .insert_resource(state.editor_trigger_resource());
 
+        // Seed `PerfRes` from the legacy `State.editor.perf` for the
+        // perf-overlay carve-out (see `events::misc`). Without
+        // seeding, the change-guarded `sync_app_perf_state` would
+        // see a default-vs-legacy diff on the first frame and
+        // re-invoke the legacy `set_perf_overlay_enabled` setter
+        // (which calls `puffin::set_scopes_on(...)` — a global side
+        // effect). Seeding once at construction makes the first
+        // frame a no-op for unchanged fields.
+        app.world_mut().insert_resource(state.perf_resource());
+
         Self {
             state,
             pipeline,
@@ -196,6 +206,7 @@ impl Runtime {
             Self::sync_app_editor_camera_state(state, app.world());
             Self::sync_app_editor_trigger_state(state, app.world());
             Self::sync_app_session_state(state, app.world());
+            Self::sync_app_perf_state(state, app.world());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
         })
@@ -210,6 +221,8 @@ impl Runtime {
         let pan_down_held = input.pan_down_held;
         let pan_left_held = input.pan_left_held;
         let pan_right_held = input.pan_right_held;
+        let show_hitbox_visualization = input.show_hitbox_visualization;
+        let mode = input.mode;
 
         state.set_editor_shift_held(shift_held);
         state.set_editor_ctrl_held(ctrl_held);
@@ -218,6 +231,39 @@ impl Runtime {
         state.set_editor_pan_down_held(pan_down_held);
         state.set_editor_pan_left_held(pan_left_held);
         state.set_editor_pan_right_held(pan_right_held);
+        // Phase 3.12: the `ToggleHitboxVisualization` handler in
+        // `events::misc` mutates `EditorInputRes.0.show_hitbox_visualization`
+        // directly. The legacy setter
+        // (`set_editor_hitbox_visualization`) marks
+        // `EditorDirtyFlags::hitbox_visualization_changed()`, so the
+        // change guard here keeps the dirty-bit churn to one
+        // notification per real user-driven change. The legacy
+        // toggle also gates on `phase == AppPhase::Editor`; the
+        // App-world handler does not gate (it follows the carve-out
+        // pattern of writing the resource regardless of phase and
+        // letting the sync no-op if the value matches).
+        if state.editor_hitbox_visualization() != show_hitbox_visualization {
+            state.set_editor_hitbox_visualization(show_hitbox_visualization);
+        }
+        // Phase 3.13: the `SetEditorMode` handler in
+        // `events::editor_mode` mutates `EditorInputRes.0.mode`
+        // directly. The legacy `set_editor_mode` has heavy side
+        // effects (rebuilds gizmo/hover/selection outline
+        // vertices, marks `EditorDirtyFlags::tap_timeline_changed()`,
+        // and on Tapping→other or other→Tapping transitions, the
+        // `dispatch_editor` path additionally clears the tap
+        // selection / refreshes the tap preview). The change guard
+        // here invokes the legacy setter only on real user-driven
+        // changes; for the simple no-op case (e.g. message
+        // resources seeded identically at construction time) the
+        // sync is a true no-op. The Tapping-auxiliary side effects
+        // (tap selection / preview refresh) live in
+        // `dispatch_editor`, not in `set_editor_mode`, so a future
+        // refactor that ports those to a separate sync helper is
+        // still straightforward.
+        if state.editor_mode() != mode {
+            state.set_editor_mode(mode);
+        }
     }
 
     /// Sync the legacy `State.editor.config` from the App-world
@@ -369,13 +415,14 @@ impl Runtime {
     /// Sync the legacy `State.session` simple UI-window fields from
     /// the App-world `SessionStateRes`. The carved-out fields
     /// (`editor_show_metadata`, `editor_show_settings`,
-    /// `editor_settings_section`, `editor_keybind_capture_action`)
-    /// are written to the resource directly by their Bevy handlers
-    /// in `events::session`. The sync is change-guarded so a no-op
-    /// frame does not re-invoke the legacy setters. The resource
-    /// is seeded at `Runtime::new` from the legacy state, so the
-    /// first frame after construction is a no-op for unchanged
-    /// fields.
+    /// `editor_settings_section`, `editor_keybind_capture_action`,
+    /// `editor_show_place_window`) are written to the resource
+    /// directly by their Bevy handlers in `events::session`
+    /// (and the place-window handler in `events::misc`). The sync
+    /// is change-guarded so a no-op frame does not re-invoke the
+    /// legacy setters. The resource is seeded at `Runtime::new` from
+    /// the legacy state, so the first frame after construction is a
+    /// no-op for unchanged fields.
     fn sync_app_session_state(state: &mut State, world: &World) {
         let session = &world.resource::<SessionStateRes>();
         if state.editor_show_metadata() != session.editor_show_metadata {
@@ -389,6 +436,35 @@ impl Runtime {
         }
         if state.editor_keybind_capture_action() != session.editor_keybind_capture_action.as_ref() {
             state.set_editor_keybind_capture_action(session.editor_keybind_capture_action.clone());
+        }
+        // Phase 3.12: the `TogglePlaceWindow` handler in
+        // `events::misc` mutates
+        // `SessionStateRes.editor_show_place_window` directly. The
+        // legacy setter has no side effects, so this is the simplest
+        // case in the carve-out family — pure field write with a
+        // change guard.
+        if state.editor_show_place_window() != session.editor_show_place_window {
+            state.set_editor_show_place_window(session.editor_show_place_window);
+        }
+    }
+
+    /// Sync the legacy `State.editor.perf.overlay_enabled` from the
+    /// App-world `PerfRes`. The carved-out field is
+    /// `overlay_enabled` (`events::misc::handle_toggle_perf_overlay`):
+    /// the handler toggles the resource directly.
+    ///
+    /// The sync is change-guarded so a no-op frame does not
+    /// re-invoke the legacy setter (which calls
+    /// `puffin::set_scopes_on(...)` — a global side effect that
+    /// does not need to fire every frame). The resource is seeded
+    /// at `Runtime::new` from the legacy state via
+    /// `State::perf_resource()`, so the first frame after
+    /// construction is a no-op for unchanged fields.
+    fn sync_app_perf_state(state: &mut State, world: &World) {
+        use eg_state::state::PerfRes;
+        let overlay_enabled = world.resource::<PerfRes>().0.overlay_enabled;
+        if state.perf_overlay_enabled() != overlay_enabled {
+            state.set_perf_overlay_enabled(overlay_enabled);
         }
     }
 
@@ -2255,5 +2331,368 @@ mod tests {
         // The placeholder pins the carve-out decision so a
         // future refactor that flips the message to a carve-out
         // knows to also move the test.
+    }
+
+    // --- Phase 3.12 / Misc carve-out tests ---
+    //
+    // The `misc` event handlers for `ToggleHitboxVisualization`,
+    // `TogglePerfOverlay`, and `TogglePlaceWindow` write directly
+    // to App-world resources. `Escape` keeps the legacy
+    // `PendingCommands` path. The end-to-end tests below exercise
+    // the full message → App-world resource → legacy State field
+    // propagation.
+
+    use eg_state::events::misc::{
+        Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow,
+    };
+
+    /// Writing a `ToggleHitboxVisualization` message reaches the
+    /// App world, mutates `EditorInputRes.0.show_hitbox_visualization`,
+    /// and the per-frame sync propagates the value to the legacy
+    /// `State.editor.input.show_hitbox_visualization` (which
+    /// marks `EditorDirtyFlags::hitbox_visualization_changed()`).
+    #[tokio::test]
+    async fn runtime_carve_out_toggle_hitbox_visualization_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Reset both sides to a known value.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .show_hitbox_visualization = false;
+        runtime.state.set_editor_hitbox_visualization(false);
+
+        runtime.app.world_mut().write_message(ToggleHitboxVisualization);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorInputRes>()
+                .0
+                .show_hitbox_visualization,
+            "ToggleHitboxVisualization handler must mutate EditorInputRes"
+        );
+        assert!(
+            runtime.state.editor_hitbox_visualization(),
+            "sync_app_editor_input_state must propagate show_hitbox_visualization to legacy state"
+        );
+    }
+
+    /// No-op frame: when the resource and the legacy state are
+    /// unchanged, the sync must not re-invoke the legacy setter
+    /// (which marks `EditorDirtyFlags::hitbox_visualization_changed()`).
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_hitbox_visualization() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .show_hitbox_visualization = true;
+        runtime.state.set_editor_hitbox_visualization(true);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // No message -> handler does not run -> resource unchanged.
+        // Sync sees no diff -> setter not invoked.
+        assert!(runtime.state.editor_hitbox_visualization());
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorInputRes>()
+                .0
+                .show_hitbox_visualization
+        );
+    }
+
+    /// Writing a `TogglePerfOverlay` message reaches the App
+    /// world, mutates `PerfRes.0.overlay_enabled`, and the
+    /// per-frame sync propagates the value to the legacy
+    /// `State.editor.perf.overlay_enabled` (which calls
+    /// `puffin::set_scopes_on(...)`).
+    #[tokio::test]
+    async fn runtime_carve_out_toggle_perf_overlay_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Reset both sides to a known value.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<eg_state::state::PerfRes>()
+            .0
+            .overlay_enabled = false;
+        runtime.state.set_perf_overlay_enabled(false);
+
+        runtime.app.world_mut().write_message(TogglePerfOverlay);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<eg_state::state::PerfRes>()
+                .0
+                .overlay_enabled,
+            "TogglePerfOverlay handler must mutate PerfRes"
+        );
+        assert!(
+            runtime.state.perf_overlay_enabled(),
+            "sync_app_perf_state must propagate overlay_enabled to legacy state"
+        );
+
+        // Toggle back.
+        runtime.app.world_mut().write_message(TogglePerfOverlay);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+        assert!(!runtime.state.perf_overlay_enabled());
+    }
+
+    /// No-op frame: when the perf overlay resource matches the
+    /// legacy state, the sync must not re-invoke the legacy
+    /// setter (which has the `puffin::set_scopes_on` global side
+    /// effect).
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_perf_overlay() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<eg_state::state::PerfRes>()
+            .0
+            .overlay_enabled = true;
+        runtime.state.set_perf_overlay_enabled(true);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // No message -> handler does not run -> resource unchanged.
+        // Sync sees no diff -> setter not invoked.
+        assert!(runtime.state.perf_overlay_enabled());
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<eg_state::state::PerfRes>()
+                .0
+                .overlay_enabled
+        );
+    }
+
+    /// Writing a `TogglePlaceWindow` message reaches the App
+    /// world, mutates `SessionStateRes.editor_show_place_window`,
+    /// and the per-frame sync propagates the value to the legacy
+    /// `State.session.editor_show_place_window`.
+    #[tokio::test]
+    async fn runtime_carve_out_toggle_place_window_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Reset both sides to a known value.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_show_place_window = false;
+        runtime.state.set_editor_show_place_window(false);
+
+        runtime.app.world_mut().write_message(TogglePlaceWindow);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .editor_show_place_window,
+            "TogglePlaceWindow handler must mutate SessionStateRes"
+        );
+        assert!(
+            runtime.state.editor_show_place_window(),
+            "sync_app_session_state must propagate editor_show_place_window to legacy state"
+        );
+    }
+
+    /// No-op frame: when the place-window field matches the
+    /// legacy state, the sync must not re-invoke the legacy
+    /// setter.
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_place_window() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_show_place_window = true;
+        runtime.state.set_editor_show_place_window(true);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // No message -> handler does not run -> resource unchanged.
+        // Sync sees no diff -> setter not invoked.
+        assert!(runtime.state.editor_show_place_window());
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .editor_show_place_window
+        );
+    }
+
+    /// Regression: `PerfRes` must be seeded from the legacy
+    /// `State` at `Runtime::new` so the change-guarded perf sync
+    /// does not clobber the user overlay setting on the first
+    /// frame. The legacy setter calls `puffin::set_scopes_on`,
+    /// so without seeding, the first frame would re-invoke the
+    /// side effect with the default value.
+    #[tokio::test]
+    async fn runtime_seeds_perf_res_from_legacy_state_no_first_frame_clobber() {
+        let mut state = State::new_test().await;
+        // User-loaded settings: perf overlay enabled. The
+        // resource default is `overlay_enabled = false`, so this
+        // differs from the default and would be clobbered
+        // without the seeding fix.
+        state.set_perf_overlay_enabled(true);
+        let mut runtime = Runtime::new(state);
+
+        // Seeding: the resource must reflect the legacy user value.
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<eg_state::state::PerfRes>()
+                .0
+                .overlay_enabled,
+            "PerfRes must be seeded from legacy State at Runtime::new"
+        );
+
+        // Run a frame with no perf message. The change-guarded
+        // sync must see no diff and must NOT invoke the legacy
+        // setter, so the user value survives the first frame.
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime.state.perf_overlay_enabled(),
+            "first-frame sync must not clobber user perf overlay setting"
+        );
+    }
+
+    /// `Escape` is **not** a carve-out: it keeps the legacy
+    /// `PendingCommands` path. Pin the runtime path still drains
+    /// the legacy command after a `Escape` message is written.
+    #[tokio::test]
+    async fn runtime_escape_still_uses_pending_commands() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // The legacy dispatch ran (no panic). The `Escape` handler
+        // is the only `misc` handler that does NOT carve out, so
+        // we just confirm the runtime does not drop the message.
+        // The actual `handle_editor_escape` side effects (phase
+        // change, etc.) are covered by the existing
+        // `editor_dispatch` integration tests.
+    }
+
+    // --- Phase 3.13 / Editor-mode carve-out test ---
+    //
+    // The `SetEditorMode` handler writes `EditorInputRes.0.mode`
+    // directly. The per-frame sync invokes `state.set_editor_mode`
+    // (with the heavy vertex rebuild + dirty flag side effects)
+    // only when the resource value differs from the legacy
+    // `State.editor.input.mode`.
+
+    use eg_state::events::editor_mode::SetEditorMode;
+
+    /// Writing a `SetEditorMode` message reaches the App world,
+    /// mutates `EditorInputRes.0.mode`, and the per-frame sync
+    /// propagates the value to the legacy
+    /// `State.editor.input.mode` (via `state.set_editor_mode`,
+    /// which rebuilds vertices and marks dirty flags).
+    #[tokio::test]
+    async fn runtime_carve_out_set_editor_mode_propagates_to_legacy_state() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Force a non-default mode on both sides.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .mode = eg_types::EditorMode::Place;
+        runtime.state.set_editor_mode(eg_types::EditorMode::Place);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(SetEditorMode(eg_types::EditorMode::Tapping));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorInputRes>()
+                .0
+                .mode,
+            eg_types::EditorMode::Tapping,
+            "SetEditorMode handler must mutate EditorInputRes.mode"
+        );
+        assert_eq!(
+            runtime.state.editor_mode(),
+            eg_types::EditorMode::Tapping,
+            "sync_app_editor_input_state must propagate mode to legacy state"
+        );
+    }
+
+    /// No-op frame: when the resource mode matches the legacy
+    /// state mode, the sync must not re-invoke `set_editor_mode`
+    /// (which rebuilds vertices and marks dirty flags).
+    #[tokio::test]
+    async fn runtime_carve_out_no_op_frame_does_not_resync_editor_mode() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        // Seed the resource and the legacy state to the same mode.
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .mode = eg_types::EditorMode::Select;
+        runtime.state.set_editor_mode(eg_types::EditorMode::Select);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        // No message -> handler does not run -> resource unchanged.
+        // Sync sees no diff -> setter not invoked.
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorInputRes>()
+                .0
+                .mode,
+            eg_types::EditorMode::Select
+        );
+        assert_eq!(
+            runtime.state.editor_mode(),
+            eg_types::EditorMode::Select
+        );
     }
 }

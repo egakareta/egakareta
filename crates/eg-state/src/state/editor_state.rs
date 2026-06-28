@@ -1528,6 +1528,27 @@ impl State {
         self.editor.input.show_hitbox_visualization
     }
 
+    /// Read-only accessor for the editor hitbox visualization toggle.
+    /// Mirrors the legacy `editor.input.show_hitbox_visualization`
+    /// field. Exposed in non-test builds because the Phase 3.12
+    /// misc carve-out syncs the value from
+    /// `EditorInputRes.0.show_hitbox_visualization` into this field
+    /// (see `Runtime::sync_app_editor_input_state`).
+    pub fn editor_hitbox_visualization(&self) -> bool {
+        self.editor.input.show_hitbox_visualization
+    }
+
+    /// Setter for the editor hitbox visualization toggle. The Phase
+    /// 3.12 misc carve-out syncs the App-world resource into this
+    /// field via `Runtime::sync_app_editor_input_state`; the change
+    /// guard in the runtime ensures the side effect (marking
+    /// `EditorDirtyFlags::hitbox_visualization_changed()`) fires
+    /// only on real user-driven changes.
+    pub fn set_editor_hitbox_visualization(&mut self, enabled: bool) {
+        self.editor.input.show_hitbox_visualization = enabled;
+        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
+    }
+
     pub fn toggle_editor_hitbox_visualization(&mut self) {
         if self.phase != AppPhase::Editor {
             return;

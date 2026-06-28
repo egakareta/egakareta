@@ -571,6 +571,7 @@ mod tests {
         world.init_resource::<crate::state::EditorTriggerRes>();
         world.init_resource::<crate::state::EditorTimingRes>();
         world.init_resource::<crate::state::SessionStateRes>();
+        world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::AppPhaseRes>();
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
@@ -608,13 +609,27 @@ mod tests {
 
     #[test]
     fn schedule_drains_set_editor_mode_into_editor_command() {
+        // `SetEditorMode` is a Phase 3.13 carve-out: the handler
+        // mutates `EditorInputRes.0.mode` directly. Pin the
+        // resource update and confirm no legacy command is
+        // staged (the `PendingCommands` buffer stays empty for
+        // this message). The legacy `ToLegacy` impl is preserved
+        // so the existing `editor_dispatch` tests can still drive
+        // `State::dispatch_editor(EditorCommand::SetMode(...))`
+        // directly.
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
+
         assert_eq!(
-            pending.editor_commands,
-            vec![EditorCommand::SetMode(EditorMode::Tapping)]
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Tapping,
+            "SetEditorMode handler must mutate EditorInputRes.mode"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetEditorMode must not stage a legacy editor command"
         );
     }
 
@@ -1469,6 +1484,170 @@ mod tests {
             pending.editor_commands,
             vec![crate::state::editor_command::EditorCommand::AddCameraTrigger],
             "AddCameraTrigger must still stage a legacy editor command"
+        );
+    }
+
+    // --- Phase 3.12 / Misc carve-out tests ---
+    //
+    // The `misc` event handlers for `ToggleHitboxVisualization`,
+    // `TogglePerfOverlay`, and `TogglePlaceWindow` write directly to
+    // App-world resources (`EditorInputRes`, `PerfRes`, and
+    // `SessionStateRes`) instead of staging a legacy
+    // `EditorCommand`. The `Escape` handler keeps the legacy
+    // `PendingCommands` path because the legacy
+    // `handle_editor_escape` is a multi-step context-sensitive
+    // state machine.
+
+    use crate::events::misc::{Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow};
+
+    /// `ToggleHitboxVisualization` is a carve-out: the handler
+    /// mutates `EditorInputRes.0.show_hitbox_visualization`
+    /// directly. Pin the resource is updated and no legacy
+    /// command is queued.
+    #[test]
+    fn carve_out_toggle_hitbox_visualization_mutates_editor_input_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorInputRes>().0.show_hitbox_visualization = false;
+        assert!(!world.resource::<EditorInputRes>().0.show_hitbox_visualization);
+
+        world.write_message(ToggleHitboxVisualization);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world.resource::<EditorInputRes>().0.show_hitbox_visualization,
+            "ToggleHitboxVisualization handler must mutate EditorInputRes"
+        );
+
+        // Toggle back.
+        world.write_message(ToggleHitboxVisualization);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(!world.resource::<EditorInputRes>().0.show_hitbox_visualization);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ToggleHitboxVisualization must not stage a legacy editor command"
+        );
+    }
+
+    /// `TogglePerfOverlay` is a carve-out: the handler mutates
+    /// `PerfRes.0.overlay_enabled` directly. Pin the resource is
+    /// updated and no legacy command is queued.
+    #[test]
+    fn carve_out_toggle_perf_overlay_mutates_perf_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<crate::state::PerfRes>().0.overlay_enabled = false;
+        assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
+
+        world.write_message(TogglePerfOverlay);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world.resource::<crate::state::PerfRes>().0.overlay_enabled,
+            "TogglePerfOverlay handler must mutate PerfRes"
+        );
+
+        // Toggle back.
+        world.write_message(TogglePerfOverlay);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "TogglePerfOverlay must not stage a legacy editor command"
+        );
+    }
+
+    /// `TogglePlaceWindow` is a carve-out: the handler mutates
+    /// `SessionStateRes.editor_show_place_window` directly. Pin
+    /// the resource is updated and no legacy command is queued.
+    #[test]
+    fn carve_out_toggle_place_window_mutates_session_state_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<crate::state::SessionStateRes>().editor_show_place_window = false;
+        assert!(!world.resource::<crate::state::SessionStateRes>().editor_show_place_window);
+
+        world.write_message(TogglePlaceWindow);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world.resource::<crate::state::SessionStateRes>().editor_show_place_window,
+            "TogglePlaceWindow handler must mutate SessionStateRes"
+        );
+
+        // Toggle back.
+        world.write_message(TogglePlaceWindow);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(!world.resource::<crate::state::SessionStateRes>().editor_show_place_window);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "TogglePlaceWindow must not stage a legacy editor command"
+        );
+    }
+
+    /// `Escape` is **not** a carve-out: the handler stages a
+    /// legacy `EditorCommand::Escape` because the legacy
+    /// `handle_editor_escape` is a multi-step context-sensitive
+    /// state machine (stop playback → reset timeline → back to
+    /// menu). Pin the legacy command is staged.
+    #[test]
+    fn escape_still_uses_pending_commands() {
+        let mut world = build_event_world();
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let pending = world.resource::<PendingCommands>();
+        assert_eq!(
+            pending.editor_commands,
+            vec![crate::state::editor_command::EditorCommand::Escape],
+            "Escape must still stage a legacy editor command"
+        );
+    }
+
+    // --- Phase 3.13 / Editor-mode carve-out test ---
+    //
+    // The `SetEditorMode` handler in `events::editor_mode` writes
+    // `EditorInputRes.0.mode` directly. The legacy
+    // `State.editor.input.mode` is synced from the resource by
+    // `Runtime::sync_app_editor_input_state` (which the misc
+    // carve-out also extends). The legacy `set_editor_mode` has
+    // heavy side effects (rebuilds vertices, marks dirty flags);
+    // the change guard in the runtime keeps those to one
+    // notification per real user-driven change.
+
+    /// `SetEditorMode` is a carve-out: the handler mutates
+    /// `EditorInputRes.0.mode` directly. Pin the resource is
+    /// updated and no legacy command is queued.
+    #[test]
+    fn carve_out_set_editor_mode_mutates_editor_input_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Place;
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Place
+        );
+
+        world.write_message(SetEditorMode(EditorMode::Tapping));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Tapping,
+            "SetEditorMode handler must mutate EditorInputRes.mode"
+        );
+
+        // Switch back.
+        world.write_message(SetEditorMode(EditorMode::Select));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Select
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetEditorMode must not stage a legacy editor command"
         );
     }
 }
