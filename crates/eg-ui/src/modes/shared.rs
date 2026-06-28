@@ -6,7 +6,7 @@
 
 */
 use eg_state::commands::AppCommand;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{Direction, EditorMode};
 
@@ -84,7 +84,7 @@ pub(crate) fn show_editor_property_popup(
 
 pub(crate) fn show_mode_selector_popup(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     top_bar_height: f32,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -174,7 +174,7 @@ pub(crate) fn show_mode_selector_popup(
 
 fn show_grid_snap_controls(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
@@ -208,7 +208,7 @@ fn show_grid_snap_controls(
 
 fn show_rotation_snap_controls(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
@@ -246,7 +246,7 @@ fn show_rotation_snap_controls(
     });
 }
 
-pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiViewModel<'_>) {
+pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiStateSnapshot<'_>) {
     let position = view.timeline_preview_position;
     let direction = view.timeline_preview_direction;
     let direction_label = match direction {
@@ -277,9 +277,9 @@ mod tests {
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
         show_mode_selector_popup, show_player_camera_status_row,
     };
-    use crate::test_utils::editor_view_model;
+    use crate::test_utils::editor_ui_snapshot;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiViewModel;
+    use eg_state::state::UiStateSnapshot;
     use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata};
 
     fn make_view<'a>(
@@ -287,8 +287,8 @@ mod tests {
         music_metadata: &'a MusicMetadata,
         preview_direction: Direction,
         mode: EditorMode,
-    ) -> UiViewModel<'a> {
-        let mut view = editor_view_model(app_settings, music_metadata);
+    ) -> UiStateSnapshot<'a> {
+        let mut view = editor_ui_snapshot(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
         view.level_name = Some("Shared Test");

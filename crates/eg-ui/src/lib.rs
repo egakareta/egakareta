@@ -30,7 +30,7 @@ use crate::modes::timing::show_timing_mode_bottom_panel;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
 use eg_state::state::State;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -316,7 +316,7 @@ fn push_context_cursor_command(
 
 fn show_editor_context_menu(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -592,7 +592,7 @@ fn show_editor_context_menu(
 
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
@@ -611,7 +611,7 @@ fn show_settings_sidebar_area(
 
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
     sidebar_width: f32,
     viewport_height: f32,
@@ -692,7 +692,7 @@ fn show_settings_section_tab(
 
 fn show_backend_settings(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     show_backend_selector(
@@ -775,7 +775,7 @@ fn show_backend_selector(
 
 fn show_ui_scale_setting(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
@@ -797,7 +797,7 @@ fn show_ui_scale_setting(
 
 fn show_keybind_settings(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
@@ -851,10 +851,10 @@ fn show_keybind_settings(
 
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
 /// Hidden during active gameplay.
-/// Renders from [`UiViewModel`] and queues commands for the caller to dispatch.
+/// Renders from [`UiStateSnapshot`] and queues commands for the caller to dispatch.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     if !view.show_settings {
@@ -883,7 +883,7 @@ pub fn show_editor_ui_commands(
         return Vec::new();
     }
 
-    let view = state.ui_view_model();
+    let view = state.ui_state_snapshot();
     let mut commands = Vec::<AppCommand>::new();
     let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
@@ -1389,7 +1389,7 @@ pub fn show_editor_ui(
 /// Shows the app-wide profiler window when the performance overlay is enabled.
 pub fn show_perf_overlay(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     if !view.perf_overlay_enabled {
@@ -2192,7 +2192,7 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            let view = state.ui_view_model();
+            let view = state.ui_state_snapshot();
             let mut commands = Vec::new();
             show_perf_overlay(ctx, &view, &mut commands);
             assert!(commands.is_empty());
@@ -2286,18 +2286,18 @@ mod test_utils {
     use std::sync::LazyLock;
 
     use eg_blocks::BlockId;
-    use eg_state::state::UiViewModel;
+    use eg_state::state::UiStateSnapshot;
     use eg_types::{
         AppSettings, Direction, EditorMode, LevelMetadata, MusicMetadata, SettingsSection,
     };
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
-    pub fn editor_view_model<'a>(
+    pub fn editor_ui_snapshot<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
-    ) -> UiViewModel<'a> {
-        UiViewModel {
+    ) -> UiStateSnapshot<'a> {
+        UiStateSnapshot {
             is_editor: true,
             is_menu: false,
             is_game_paused: false,

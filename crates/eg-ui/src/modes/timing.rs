@@ -7,12 +7,12 @@
 */
 use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     _duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -212,9 +212,9 @@ pub(crate) fn show_timing_mode_bottom_panel(
 #[cfg(test)]
 mod tests {
     use super::show_timing_mode_bottom_panel;
-    use crate::test_utils::editor_view_model;
+    use crate::test_utils::editor_ui_snapshot;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiViewModel;
+    use eg_state::state::UiStateSnapshot;
     use eg_types::LevelObject;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
@@ -225,8 +225,8 @@ mod tests {
         trigger_objects: &'a [LevelObject],
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
-    ) -> UiViewModel<'a> {
-        let mut view = editor_view_model(app_settings, music_metadata);
+    ) -> UiStateSnapshot<'a> {
+        let mut view = editor_ui_snapshot(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.timeline_time_seconds = 2.5;

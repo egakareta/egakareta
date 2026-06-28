@@ -41,16 +41,12 @@ impl State {
 #[cfg(test)]
 impl Drop for State {
     fn drop(&mut self) {
-        if let Some(mut meshes) = self.world.get_non_send_mut::<resources::RenderMeshesRes>() {
-            meshes.0.destroy();
-        }
-        if let Some(gpu) = self.world.get_non_send_mut::<resources::RenderGpuRes>() {
-            gpu.0.line_uniform_buffer.destroy();
-            gpu.0.camera_uniform_buffer.destroy();
-            gpu.0.color_space_uniform_buffer.destroy();
-            gpu.0.grid_uniform_buffer.destroy();
-            let _ = gpu.0.device.poll(wgpu::PollType::Poll);
-        }
+        self.render_meshes_mut().destroy();
+        self.render_gpu_mut().line_uniform_buffer.destroy();
+        self.render_gpu_mut().camera_uniform_buffer.destroy();
+        self.render_gpu_mut().color_space_uniform_buffer.destroy();
+        self.render_gpu_mut().grid_uniform_buffer.destroy();
+        let _ = self.render_gpu().device.poll(wgpu::PollType::Poll);
     }
 }
 

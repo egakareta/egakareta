@@ -116,7 +116,7 @@ pub struct SessionStateRes {
 }
 
 /// `MenuState` mirrored as a resource so UI systems (Phase 5) can read
-/// the menu without going through `State::ui_view_model`. `MenuState`
+/// the menu without going through `State::ui_state_snapshot`. `MenuState`
 /// itself doesn't derive `Default` (its fields like `preview_sky_color`
 /// aren't all `Default`), so this resource is constructed explicitly
 /// via [`MenuStateRes::new`].

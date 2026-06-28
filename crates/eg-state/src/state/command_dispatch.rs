@@ -1855,7 +1855,7 @@ mod tests {
         assert_eq!(state.editor.timeline.taps.tap_times, vec![1.25]);
         assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
 
-        let view = state.ui_view_model();
+        let view = state.ui_state_snapshot();
         let selected_tap = view
             .selected_tap
             .expect("selected tap should be exposed to the UI");
@@ -1920,7 +1920,7 @@ mod tests {
         assert_eq!(state.editor.input.cursor, second_tap_position);
 
         let selected_tap = state
-            .ui_view_model()
+            .ui_state_snapshot()
             .selected_tap
             .expect("selected tap should be exposed to the UI");
         assert_eq!(selected_tap.index, 1);

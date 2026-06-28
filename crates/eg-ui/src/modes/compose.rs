@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget};
 
@@ -35,7 +35,7 @@ const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 
 pub(crate) fn show_recent_block_quick_strip(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut Vec<AppCommand>,
 ) -> bool {
@@ -71,7 +71,7 @@ pub(crate) fn show_recent_block_quick_strip(
 
 pub(crate) fn show_selected_block_properties_window(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     bottom_bar_height: f32,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -382,7 +382,7 @@ fn trigger_easing_label(easing: EasingDirection) -> &'static str {
 
 pub(crate) fn show_place_block_properties_window(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     bottom_bar_height: f32,
 ) {
     if view.mode != EditorMode::Place {
@@ -569,7 +569,7 @@ mod tests {
         block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
         show_place_block_properties_window, show_selected_block_properties_window,
     };
-    use crate::test_utils::editor_view_model;
+    use crate::test_utils::editor_ui_snapshot;
     use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
@@ -581,8 +581,8 @@ mod tests {
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
         mode: EditorMode,
-    ) -> eg_state::state::UiViewModel<'a> {
-        let mut view = editor_view_model(app_settings, music_metadata);
+    ) -> eg_state::state::UiStateSnapshot<'a> {
+        let mut view = editor_ui_snapshot(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
         view.level_name = Some("Compose Test");

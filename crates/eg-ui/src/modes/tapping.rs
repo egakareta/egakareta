@@ -9,12 +9,12 @@ use crate::modes::shared::{
     EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
 };
 use eg_state::commands::AppCommand;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     ui.horizontal_wrapped(|ui| {
@@ -42,7 +42,7 @@ pub(crate) fn show_tapping_mode_bottom_panel(
 
 pub(crate) fn show_selected_tap_properties_window(
     ctx: &egui::Context,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     bottom_bar_height: f32,
     commands: &mut Vec<AppCommand>,
 ) {

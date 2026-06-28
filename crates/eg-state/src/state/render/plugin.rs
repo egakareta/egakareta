@@ -91,6 +91,7 @@ impl Plugin for RenderPlugin {
 /// `World`-flavoured registration for callers that build a `World`
 /// directly (the `State` constructor). Mirrors
 /// [`RenderPlugin::build`] without going through an `App`.
+#[allow(dead_code)]
 pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();

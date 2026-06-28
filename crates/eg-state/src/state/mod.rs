@@ -32,8 +32,8 @@ mod sets;
 mod state_helpers;
 mod state_resources;
 mod transitions;
+mod ui_snapshot;
 mod update;
-mod view_model;
 
 use crate::events as state_events;
 pub use state_events::{
@@ -83,7 +83,7 @@ pub use state_resources::{
     EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, MenuStateRes, PerfRes,
     SessionStateRes,
 };
-pub use view_model::UiViewModel;
+pub use ui_snapshot::UiStateSnapshot;
 
 use crate::state::editor_command::EditorCommand;
 use eg_game::{GameCheckpointState, GameState};
@@ -189,11 +189,10 @@ pub struct StateSchedule;
 /// It contains subsystems for rendering, gameplay, editor, audio, session, and menu,
 /// and handles the overall application phase and frame runtime.
 ///
-/// In Phase 2b, [`State`] also owns a `bevy_ecs::world::World` registered with
-/// the [`StatePlugins`] from [`super::plugins`]. Legacy subsystems remain
-/// authoritative for now; the World is a parallel mirror that systems (added
-/// in subsequent phases) can read. Use [`State::world`] / [`State::world_mut`]
-/// to access the world, and [`State::tick_state`] to run a frame's systems.
+/// Phase 7 moved the parallel ECS `World` out of [`State`] and into Runtime's
+/// `bevy_app::App`. Legacy subsystem fields remain authoritative during the
+/// compatibility window; per-frame bridges install mirror data into the App
+/// world before [`StateSchedule`] runs.
 ///
 /// REFACTOR POINT(full-bevy): the legacy subsystem fields are removed in
 /// the full-Bevy migration; all state lives in the World and `State` becomes
@@ -207,7 +206,13 @@ pub struct State {
     menu: MenuSubsystem,
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
-    world: bevy_ecs::world::World,
+    render_resources: StateRenderResources,
+}
+
+pub struct StateRenderResources {
+    gpu: eg_render::GpuContext,
+    meshes: eg_render::SceneMeshes,
+    surface_host: Option<eg_platform::state_host::SurfaceHost>,
 }
 
 impl State {
@@ -223,33 +228,22 @@ impl State {
 
     /// Returns the GPU render context for render-owned helpers.
     pub fn render_gpu(&self) -> &eg_render::GpuContext {
-        &self.world.non_send::<render::resources::RenderGpuRes>().0
+        &self.render_resources.gpu
     }
 
     /// Returns mutable GPU render context for render-owned helpers.
     pub fn render_gpu_mut(&mut self) -> &mut eg_render::GpuContext {
-        let gpu = self
-            .world
-            .non_send_mut::<render::resources::RenderGpuRes>()
-            .into_inner();
-        &mut gpu.0
+        &mut self.render_resources.gpu
     }
 
     /// Returns the scene mesh storage for render-owned helpers.
     pub fn render_meshes(&self) -> &eg_render::SceneMeshes {
-        &self
-            .world
-            .non_send::<render::resources::RenderMeshesRes>()
-            .0
+        &self.render_resources.meshes
     }
 
     /// Returns mutable scene mesh storage for render-owned helpers.
     pub fn render_meshes_mut(&mut self) -> &mut eg_render::SceneMeshes {
-        let meshes = self
-            .world
-            .non_send_mut::<render::resources::RenderMeshesRes>()
-            .into_inner();
-        &mut meshes.0
+        &mut self.render_resources.meshes
     }
 
     /// Mutates scene mesh storage while also reading the wgpu device.
@@ -258,11 +252,7 @@ impl State {
         f: impl FnOnce(&wgpu::Device, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
         let device = self.render_gpu().device.clone();
-        let meshes = self
-            .world
-            .non_send_mut::<render::resources::RenderMeshesRes>()
-            .into_inner();
-        f(&device, &mut meshes.0)
+        f(&device, &mut self.render_resources.meshes)
     }
 
     /// Mutates scene mesh storage while also reading the wgpu queue.
@@ -271,19 +261,12 @@ impl State {
         f: impl FnOnce(&wgpu::Queue, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
         let queue = self.render_gpu().queue.clone();
-        let meshes = self
-            .world
-            .non_send_mut::<render::resources::RenderMeshesRes>()
-            .into_inner();
-        f(&queue, &mut meshes.0)
+        f(&queue, &mut self.render_resources.meshes)
     }
 
     /// Returns the optional platform surface host.
     pub fn surface_host(&self) -> Option<&eg_platform::state_host::SurfaceHost> {
-        self.world
-            .non_send::<render::resources::RenderSurfaceHostRes>()
-            .0
-            .as_ref()
+        self.render_resources.surface_host.as_ref()
     }
 
     /// Returns a reference to the native window (desktop only).
@@ -295,41 +278,10 @@ impl State {
         }
     }
 
-    /// Read-only access to the ECS `World`. Available since Phase 2b.
-    /// Use this from `eg-state` systems (added in later phases) to query
-    /// components and resources.
-    ///
-    /// The world is registered with [`StatePlugins`] in the [`State`]
-    /// constructor. Today it is only a placeholder — no systems are added
-    /// in Phase 2b. Use [`State::tick_state`] to run a frame's systems.
-    pub fn world(&self) -> &bevy_ecs::world::World {
-        &self.world
-    }
-
-    /// Mutable access to the ECS `World`. Available since Phase 2b.
-    /// Use this to insert/remove resources or spawn/despawn entities.
-    pub fn world_mut(&mut self) -> &mut bevy_ecs::world::World {
-        &mut self.world
-    }
-
-    /// Run a single tick of the [`StateSchedule`]. Executes the
-    /// [`transitions::phase_transition_system`] (which detects
-    /// `AppPhase` changes and runs `OnEnter` / `OnExit` side effects)
-    /// plus the per-message drain systems registered in Phase 3
-    /// (which convert Bevy messages into legacy `AppCommand` /
-    /// `EditorCommand` payloads in the `PendingCommands` resource).
-    /// Phase 7 no longer lets the State-owned world drain those commands
-    /// into the legacy dispatcher; production command dispatch is owned by
-    /// `Runtime` from the App world while the duplicate State-world bridge
-    /// is being deleted.
-    pub fn tick_state(&mut self) {
+    /// Install per-frame bridge data into the Runtime-owned App world before
+    /// [`StateSchedule`] runs.
+    pub fn prepare_app_world_for_state_schedule(&mut self, world: &mut bevy_ecs::world::World) {
         puffin::profile_scope!("StateSchedule");
-        // Phase 2c: detect AppPhase changes + run OnEnter/OnExit side
-        // effects via a non-system free function. This call is
-        // idempotent when the phase hasn't changed.
-        transitions::phase_transition_system(
-            self.world.resource_mut::<state_resources::AppPhaseRes>(),
-        );
         // Phase 4a/4b: install the per-frame mirror closure. The
         // closure captures only the `Copy` values it needs (uniforms,
         // phase, editor mode, sky color, gamma toggle) — `State`
@@ -354,16 +306,11 @@ impl State {
         //
         // The `install_async_bridge_from_state` helper is
         // idempotent: a second call is a no-op.
-        self.install_async_channel_resources();
-        // Phase 3: run the per-message drain schedule. This iterates
-        // every `Messages<T>` resource once and stages converted
-        // `AppCommand` / `EditorCommand` payloads in
-        // `PendingCommands`. The schedule is registered once during
-        // world construction (see
-        // [`crate::state::lifecycle::build_state_world`]); if the
-        // schedule was never registered (e.g. a test world) the
-        // `run_schedule` call is a no-op via `try_run_schedule`.
-        let _ = self.world.try_run_schedule(StateSchedule);
+        self.install_async_channel_resources(world);
+    }
+
+    /// Apply async-result closures emitted by App-world handler systems.
+    pub fn drain_pending_async_results(&mut self) {
         // Phase 6b: drain the pending async-result closures
         // installed by the handler systems and apply each one to
         // the legacy `State`. The closures route the result events
@@ -465,9 +412,9 @@ impl State {
     /// `Arc<Mutex<Receiver<T>>>` into the World's
     /// `Mutex<Receiver<T>>` wrapper (one extra layer of `Mutex` —
     /// see `state::async_bridge` for the rationale).
-    fn install_async_channel_resources(&mut self) {
+    fn install_async_channel_resources(&self, world: &mut bevy_ecs::world::World) {
         async_bridge::install_async_bridge_from_state_arc(
-            &mut self.world,
+            world,
             std::sync::Arc::clone(&self.auth.channel.1),
             std::sync::Arc::clone(&self.audio.state.editor.audio_import_channel.1),
             std::sync::Arc::clone(&self.audio.state.editor.waveform_load_channel.1),

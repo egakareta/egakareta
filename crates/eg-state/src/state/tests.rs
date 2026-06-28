@@ -26,6 +26,12 @@ async fn new_editor_state() -> State {
     state
 }
 
+fn tick_state_with_app(state: &mut State, app: &mut crate::state::test_support::TestApp) {
+    state.prepare_app_world_for_state_schedule(app.world_mut());
+    app.tick_state();
+    state.drain_pending_async_results();
+}
+
 fn transform_trigger_object(
     time_seconds: f32,
     duration_seconds: f32,
@@ -244,19 +250,9 @@ async fn dirty_flags_default_is_clean() {
 }
 
 #[tokio::test]
-async fn state_world_is_seeded_with_default_resources() {
-    // Phase 2b: every newly-constructed `State` carries a `World` that has
-    // been pre-populated with the default-constructible eg-state resources
-    // via `register_state_resources`. Verify the canonical resources are
-    // present and at their default values.
-    //
-    // Phase 8: the canonical Bevy-native test for this contract is the
-    // `TestApp::minimal_seeds_state_plugin_resources` test under
-    // `state::test_support`. The legacy `State`-flavored test stays
-    // here to pin the `State::new_test` path; the two should agree.
-    let state = State::new_test().await;
-
-    let world = state.world();
+async fn app_world_is_seeded_with_default_resources() {
+    let app = crate::state::test_support::TestApp::minimal();
+    let world = app.world();
     assert_eq!(
         world.resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Menu,
@@ -282,13 +278,11 @@ async fn state_world_is_seeded_with_default_resources() {
 
 #[tokio::test]
 async fn tick_state_is_safe_to_call_with_empty_schedule() {
-    // Phase 2b: `tick_state` runs the (currently empty) `StateSchedule`
-    // and must not panic. Future phases add systems; this test guards
-    // against regressions in the call site.
     let mut state = State::new_test().await;
-    state.tick_state();
-    state.tick_state();
-    state.tick_state();
+    let mut app = crate::state::test_support::TestApp::minimal();
+    tick_state_with_app(&mut state, &mut app);
+    tick_state_with_app(&mut state, &mut app);
+    tick_state_with_app(&mut state, &mut app);
 }
 
 #[tokio::test]
@@ -300,36 +294,36 @@ async fn tick_state_runs_phase_transition_system() {
     // - after we change the resource, the next tick updates the
     //   `previous_app_phase` field.
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
     // Initial tick: no transition.
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
     assert_eq!(
-        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        app.world().resource::<AppPhaseRes>().previous_app_phase,
         eg_types::AppPhase::Menu
     );
 
     // Change the phase manually (in later phases this happens via
     // a `NavigationEvent`; for Phase 2c we set it directly).
-    state
-        .world_mut()
+    app.world_mut()
         .resource_mut::<AppPhaseRes>()
         .set(eg_types::AppPhase::Playing);
 
     // Tick: should detect the change and update `previous_app_phase`.
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
     assert_eq!(
-        state.world().resource::<AppPhaseRes>().get(),
+        app.world().resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Playing
     );
     assert_eq!(
-        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        app.world().resource::<AppPhaseRes>().previous_app_phase,
         eg_types::AppPhase::Playing
     );
 
     // Subsequent tick with no change: no-op.
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
     assert_eq!(
-        state.world().resource::<AppPhaseRes>().previous_app_phase,
+        app.world().resource::<AppPhaseRes>().previous_app_phase,
         eg_types::AppPhase::Playing
     );
 }
@@ -337,32 +331,30 @@ async fn tick_state_runs_phase_transition_system() {
 // ── Phase 3 — command / event fragmentation tests ───────────────
 #[tokio::test]
 async fn tick_state_stages_messages_without_dispatching() {
-    // Phase 7: the State-owned world can still run its message drain
-    // systems, but it no longer forwards staged commands into the legacy
-    // dispatch path. Runtime owns the production App-world drain during
-    // the compatibility window.
+    // Runtime owns the production App-world drain during the compatibility
+    // window; staged commands are not dispatched until Runtime drains them.
     use crate::events::PendingCommands;
     use crate::events::editor_mode::SetEditorMode;
     use crate::events::navigation::TurnRight;
     use eg_types::EditorMode;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
     // Write a TurnRight message.
-    state.world_mut().write_message(TurnRight);
+    app.world_mut().write_message(TurnRight);
     // Write a SetEditorMode(Place) message.
-    state
-        .world_mut()
+    app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
     // `PendingCommands` is currently empty.
-    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert!(app.world().resource::<PendingCommands>().is_empty());
 
     // Tick: per-event drain systems fire and stage commands in
     // `PendingCommands`, but the legacy State dispatcher is not invoked.
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let pending = state.world().resource::<PendingCommands>();
+    let pending = app.world().resource::<PendingCommands>();
     assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
     assert_eq!(
         pending.editor_commands,
@@ -370,7 +362,7 @@ async fn tick_state_stages_messages_without_dispatching() {
     );
     assert!(
         state.is_menu(),
-        "TurnRight staged in State::world must not start gameplay"
+        "TurnRight staged in the App world must not start gameplay"
     );
 }
 
@@ -380,18 +372,19 @@ async fn tick_state_writes_input_state_without_staging_commands() {
     use crate::events::input_state::{SetCtrlHeld, SetPanRightHeld, SetShiftHeld};
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
-    state.world_mut().write_message(SetShiftHeld(true));
-    state.world_mut().write_message(SetCtrlHeld(true));
-    state.world_mut().write_message(SetPanRightHeld(true));
+    app.world_mut().write_message(SetShiftHeld(true));
+    app.world_mut().write_message(SetCtrlHeld(true));
+    app.world_mut().write_message(SetPanRightHeld(true));
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let input = &state.world().resource::<EditorInputRes>().0;
+    let input = &app.world().resource::<EditorInputRes>().0;
     assert!(input.shift_held);
     assert!(input.ctrl_held);
     assert!(input.pan_right_held);
-    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert!(app.world().resource::<PendingCommands>().is_empty());
     assert!(!state.editor.input.shift_held);
     assert!(!state.editor.input.ctrl_held);
     assert!(!state.editor.input.pan_right_held);
@@ -404,56 +397,55 @@ async fn tick_state_writes_pointer_state_without_staging_commands() {
     use crate::state::{AppPhaseRes, EditorCameraRes};
 
     let mut state = State::new_test().await;
-    state.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+    let mut app = crate::state::test_support::TestApp::minimal();
+    app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
 
-    state
-        .world_mut()
+    app.world_mut()
         .write_message(PointerMoved { x: 10.0, y: 20.0 });
-    state.world_mut().write_message(MouseButton {
+    app.world_mut().write_message(MouseButton {
         button: 2,
         pressed: true,
     });
-    state
-        .world_mut()
+    app.world_mut()
         .write_message(CameraDrag { dx: 5.0, dy: -3.0 });
-    state
-        .world_mut()
+    app.world_mut()
         .write_message(PrimaryClick { x: 30.0, y: 40.0 });
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let input = &state.world().resource::<EditorInputRes>().0;
+    let input = &app.world().resource::<EditorInputRes>().0;
     assert_eq!(input.pointer_screen, Some([30.0, 40.0]));
     assert!(input.left_mouse_down);
     assert!(input.right_dragging);
-    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert!(app.world().resource::<PendingCommands>().is_empty());
     assert_eq!(state.editor.input.pointer_screen, None);
     assert!(!state.editor.input.left_mouse_down);
     assert!(!state.editor.input.right_dragging);
 
-    let camera = &state.world().resource::<EditorCameraRes>().0;
+    let camera = &app.world().resource::<EditorCameraRes>().0;
     assert!(camera.editor_yaw < eg_types::DEFAULT_CAMERA_YAW);
     assert!(camera.editor_pitch < eg_types::DEFAULT_CAMERA_PITCH);
 }
 
 #[tokio::test]
 async fn tick_state_stages_undo_without_dispatching() {
-    // Verify that the editor Undo message routes through the State-owned
+    // Verify that the editor Undo message routes through the App-world
     // drain systems without calling `State::editor_undo`.
     use crate::events::PendingCommands;
     use crate::events::history::Undo;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_editor_phase("Phase3UndoTest".to_string());
 
     // Buffer is empty before the tick.
-    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert!(app.world().resource::<PendingCommands>().is_empty());
 
-    state.world_mut().write_message(Undo);
-    state.tick_state();
+    app.world_mut().write_message(Undo);
+    tick_state_with_app(&mut state, &mut app);
 
     assert_eq!(
-        state.world().resource::<PendingCommands>().editor_commands,
+        app.world().resource::<PendingCommands>().editor_commands,
         vec![EditorCommand::Undo]
     );
 }
@@ -461,30 +453,30 @@ async fn tick_state_stages_undo_without_dispatching() {
 #[tokio::test]
 async fn tick_state_stages_practice_mode_payload_without_dispatching() {
     // Verify that a message carrying a payload (`GameSetPracticeMode`)
-    // routes through the State-owned drain systems without toggling
+    // routes through the App-world drain systems without toggling
     // legacy session state.
     use crate::events::PendingCommands;
     use crate::events::navigation::GameSetPracticeMode;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_editor_phase("Phase3PracticeTest".to_string());
     state.phase = eg_types::AppPhase::Playing;
     state.session.playtesting_editor = false;
 
     assert!(!state.session.practice_mode_enabled);
 
-    state
-        .world_mut()
+    app.world_mut()
         .write_message(GameSetPracticeMode { enabled: true });
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
     assert_eq!(
-        state.world().resource::<PendingCommands>().app_commands,
+        app.world().resource::<PendingCommands>().app_commands,
         vec![AppCommand::GameSetPracticeMode(true)]
     );
     assert!(
         !state.session.practice_mode_enabled,
-        "GameSetPracticeMode(true) staged in State::world must not mutate legacy session state"
+        "GameSetPracticeMode(true) staged in the App world must not mutate legacy session state"
     );
 }
 
@@ -499,20 +491,21 @@ async fn tick_state_mirrors_frame_input_into_render_resource() {
     let _ = take_pending_mirror();
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.phase = AppPhase::Editor;
     state.editor.input.mode = EditorMode::Place;
     state.session.editor_sky_color = [0.25, 0.5, 0.75];
 
     // Before tick_state runs, the resource is at its default
     // (AppPhase::Menu).
-    let pre = state.world().resource::<RenderFrameInputRes>().0.phase;
+    let pre = app.world().resource::<RenderFrameInputRes>().0.phase;
     assert_eq!(pre, AppPhase::Menu);
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
     // After tick_state runs, the mirror has populated the resource
     // with the current phase + editor mode + sky color.
-    let frame_input = state.world().resource::<RenderFrameInputRes>().0;
+    let frame_input = app.world().resource::<RenderFrameInputRes>().0;
     assert_eq!(frame_input.phase, AppPhase::Editor);
     assert_eq!(frame_input.editor_mode, EditorMode::Place);
     assert_eq!(frame_input.sky_color, [0.25, 0.5, 0.75]);
@@ -526,8 +519,8 @@ async fn tick_state_registers_render_pod_resources_on_construction() {
         RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes,
     };
 
-    let state = State::new_test().await;
-    let world = state.world();
+    let app = crate::state::test_support::TestApp::minimal();
+    let world = app.world();
 
     assert!(render_pod_resources_present(world));
     assert!(world.contains_resource::<RenderUniformsRes>());
@@ -542,6 +535,7 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     use bevy_ecs::message::Messages;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
     // Create a fresh channel whose receiver sits in the Bevy
     // world resource (and whose sender we control from the test).
@@ -550,8 +544,7 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     // legacy `State::audio.state.editor.audio_import_channel.1`
     // is left alone (Phase 6b will share the receiver via Arc).
     let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
-    state
-        .world_mut()
+    app.world_mut()
         .insert_resource(AudioImportChannelRes(std::sync::Arc::new(
             std::sync::Mutex::new(rx),
         )));
@@ -562,11 +555,11 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     tx.send(("level1.ogg".to_string(), vec![1, 2, 3, 4]))
         .unwrap();
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
     // The event should be in the Messages<AudioImportResultEvent>
     // buffer. We read it via the resource API.
-    let messages = state.world().resource::<Messages<AudioImportResultEvent>>();
+    let messages = app.world().resource::<Messages<AudioImportResultEvent>>();
     let mut reader = messages.get_cursor();
     let events: Vec<_> = reader.read(messages).collect();
     assert_eq!(events.len(), 1, "expected one audio import event");
@@ -581,19 +574,19 @@ async fn tick_state_poll_channels_emits_level_import_result_event() {
     use bevy_ecs::message::Messages;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    state
-        .world_mut()
+    app.world_mut()
         .insert_resource(LevelImportChannelRes(std::sync::Arc::new(
             std::sync::Mutex::new(rx),
         )));
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let messages = state.world().resource::<Messages<LevelImportResultEvent>>();
+    let messages = app.world().resource::<Messages<LevelImportResultEvent>>();
     let mut cursor = messages.get_cursor();
     let events: Vec<_> = cursor.read(messages).collect();
     assert_eq!(events.len(), 1, "expected one level import event");
@@ -607,10 +600,10 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     use bevy_ecs::message::Messages;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
 
     let (tx, rx) = std::sync::mpsc::channel::<eg_platform::services::AuthServiceMessage>();
-    state
-        .world_mut()
+    app.world_mut()
         .insert_resource(AuthChannelRes(std::sync::Arc::new(std::sync::Mutex::new(
             rx,
         ))));
@@ -620,9 +613,9 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     tx.send(eg_platform::services::AuthServiceMessage::SignedOut(Ok(())))
         .unwrap();
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let messages = state.world().resource::<Messages<AuthServiceResultEvent>>();
+    let messages = app.world().resource::<Messages<AuthServiceResultEvent>>();
     let mut cursor = messages.get_cursor();
     let events: Vec<_> = cursor.read(messages).collect();
     assert_eq!(events.len(), 1, "expected one auth event");
@@ -637,29 +630,19 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
 /// Bevy systems can query them directly.
 #[tokio::test]
 async fn tick_state_inserts_heavy_render_resources_phase4c() {
-    use crate::state::render::resources::{RenderGpuRes, RenderMeshesRes, RenderSurfaceHostRes};
-
     let state = State::new_test().await;
-    let world = state.world();
 
-    assert!(world.contains_non_send::<RenderGpuRes>());
-    assert!(world.contains_non_send::<RenderMeshesRes>());
-    assert!(world.contains_non_send::<RenderSurfaceHostRes>());
-
-    // Test states have no platform host, so the authoritative
-    // `RenderSurfaceHostRes` is `None`.
-    let surface = world.non_send::<RenderSurfaceHostRes>();
-    assert!(surface.0.is_none());
+    assert!(state.surface_host().is_none());
 
     // Test construction seeds the real scene mesh storage: static
     // slots start empty, while the trail keeps its streaming buffer.
-    let meshes = world.non_send::<RenderMeshesRes>();
-    assert!(matches!(meshes.0.floor, eg_render::MeshSlot::Empty));
+    let meshes = state.render_meshes();
+    assert!(matches!(meshes.floor, eg_render::MeshSlot::Empty));
     assert!(matches!(
-        meshes.0.trail,
+        meshes.trail,
         eg_render::MeshSlot::Streaming { .. }
     ));
-    assert!(matches!(meshes.0.blocks, eg_render::MeshSlot::Empty));
+    assert!(matches!(meshes.blocks, eg_render::MeshSlot::Empty));
 }
 
 #[tokio::test]
@@ -676,7 +659,8 @@ async fn tick_state_mirror_bridge_consumes_closure() {
     });
 
     let mut state = State::new_test().await;
-    state.tick_state();
+    let mut app = crate::state::test_support::TestApp::minimal();
+    tick_state_with_app(&mut state, &mut app);
 
     // After tick_state, the slot should be empty (the bridge system
     // consumed the closure). If the schedule is not registered,
@@ -693,15 +677,16 @@ async fn tick_state_mirrors_render_uniforms() {
     use crate::state::render::resources::RenderUniformsRes;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     let expected_camera_position = state.menu.state.preview_camera_position;
     let expected_viewport = [
         state.render_gpu().config.width.max(1) as f32,
         state.render_gpu().config.height.max(1) as f32,
     ];
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
     assert_eq!(
         uniforms.camera.camera_position,
         [
@@ -726,6 +711,7 @@ async fn tick_state_mirrors_render_uniforms_in_editor() {
     use approx::assert_abs_diff_eq;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_editor_phase("Mirror Test".to_string());
 
     // Set non-default pan + target so we exercise the actual
@@ -749,9 +735,9 @@ async fn tick_state_mirrors_render_uniforms_in_editor() {
         state.render_gpu().config.height.max(1) as f32,
     ];
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
 
     // camera_position stores [x, y, z, 0.0].
     assert_abs_diff_eq!(
@@ -808,6 +794,7 @@ async fn tick_state_mirrors_render_uniforms_in_playing() {
     use approx::assert_abs_diff_eq;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_playing_phase(Some("Mirror Playing".to_string()), false);
 
     // The camera track uses `elapsed_seconds` for the sample time
@@ -824,9 +811,9 @@ async fn tick_state_mirrors_render_uniforms_in_playing() {
         state.render_gpu().config.height.max(1) as f32,
     ];
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
 
     // camera_position stores [x, y, z, 0.0].
     assert_abs_diff_eq!(
@@ -898,6 +885,7 @@ async fn tick_state_mirrors_render_uniforms_in_game_over() {
     use approx::assert_abs_diff_eq;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     // `enter_playing_phase` is the only entry to set `phase =
     // GameOver`; the production code doesn't have a dedicated
     // `enter_game_over_phase`. We follow the same pattern as the
@@ -911,9 +899,9 @@ async fn tick_state_mirrors_render_uniforms_in_game_over() {
 
     let (expected_eye, _expected_target) = state.playing_camera_view();
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
     assert_abs_diff_eq!(
         uniforms.camera.camera_position[0],
         expected_eye.x,
@@ -943,6 +931,7 @@ async fn tick_state_mirrors_render_uniforms_in_editor_playtest() {
     use approx::assert_abs_diff_eq;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_editor_phase("Mirror Playtest".to_string());
 
     // Flip the editor timeline into "playing" mode (this is what
@@ -966,9 +955,9 @@ async fn tick_state_mirrors_render_uniforms_in_editor_playtest() {
     let expected_eye = glam::Vec3::from_array(expected_eye_arr);
     let _expected_target = glam::Vec3::from_array(expected_target_arr);
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
     assert_abs_diff_eq!(
         uniforms.camera.camera_position[0],
         expected_eye.x,
@@ -996,6 +985,7 @@ async fn tick_state_mirrors_color_space_time_and_gamma() {
     use approx::assert_abs_diff_eq;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     // Set a non-zero global time + enable gamma so the test
     // exercises both fields (defaults at zero would trivially
     // match).
@@ -1007,9 +997,9 @@ async fn tick_state_mirrors_color_space_time_and_gamma() {
         state.render_gpu().config.height.max(1) as f32,
     ];
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
     assert_abs_diff_eq!(uniforms.color_space.time_seconds, 12.5, epsilon = 1e-6);
     assert_abs_diff_eq!(
         uniforms.color_space.apply_gamma_correction,
@@ -1028,11 +1018,12 @@ async fn tick_state_mirrors_gamma_off_as_zero() {
     use crate::state::render::resources::RenderUniformsRes;
 
     let mut state = State::new_test().await;
+    let mut app = crate::state::test_support::TestApp::minimal();
     state.render_gpu_mut().apply_gamma_correction = false;
 
-    state.tick_state();
+    tick_state_with_app(&mut state, &mut app);
 
-    let uniforms = state.world().resource::<RenderUniformsRes>();
+    let uniforms = app.world().resource::<RenderUniformsRes>();
     assert_eq!(uniforms.color_space.apply_gamma_correction, 0.0);
 }
 
@@ -1861,7 +1852,7 @@ async fn test_timing_mode_persistence_during_playback() {
     );
 
     // 3. Verify ViewModel shows we are still conceptually in Timing
-    let view = state.ui_view_model();
+    let view = state.ui_state_snapshot();
     let is_timing = view.mode == EditorMode::Timing
         || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Timing));
     assert!(

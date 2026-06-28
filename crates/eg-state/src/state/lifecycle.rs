@@ -308,26 +308,17 @@ impl From<&GpuContext> for TestGpuFixture {
     }
 }
 
-/// Build a fresh [`bevy_ecs::world::World`] pre-populated with the
-/// default-constructible eg-state resources + the [`StateSchedule`]
-/// schedule. Used by the [`State`] constructors to seed the parallel
-/// ECS world (Phase 2b + 3).
-fn build_state_world(
+/// Build the render resources owned directly by [`State`].
+fn build_state_render_resources(
     gpu: GpuContext,
     surface_host: Option<SurfaceHost>,
     meshes: SceneMeshes,
-) -> bevy_ecs::world::World {
-    let mut world = bevy_ecs::world::World::new();
-    super::plugins::register_state_resources(&mut world);
-    world.insert_non_send(crate::state::render::resources::RenderGpuRes(gpu));
-    world.insert_non_send(crate::state::render::resources::RenderMeshesRes(meshes));
-    world.insert_non_send(crate::state::render::resources::RenderSurfaceHostRes(
+) -> super::StateRenderResources {
+    super::StateRenderResources {
+        gpu,
+        meshes,
         surface_host,
-    ));
-    // Phase 3: register the per-event message resources + the schedule
-    // that drains them into the legacy command dispatch path.
-    super::plugins::register_state_command_pipeline(&mut world);
-    world
+    }
 }
 
 impl State {
@@ -542,7 +533,7 @@ impl State {
         let now = web_time::Instant::now();
 
         Self {
-            world: build_state_world(
+            render_resources: build_state_render_resources(
                 GpuContext {
                     surface: None,
                     adapter_info: fixture.adapter_info.clone(),
@@ -1458,7 +1449,7 @@ impl State {
         let now = web_time::Instant::now();
 
         Some(Self {
-            world: build_state_world(
+            render_resources: build_state_render_resources(
                 GpuContext {
                     surface,
                     adapter_info,

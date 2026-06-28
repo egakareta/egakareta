@@ -101,7 +101,7 @@ impl FramePipeline {
                 let editor_commands = show_editor_ui_commands(&ctx, state, &block_icon_texture_ids);
                 frame_ui_commands.extend(editor_commands);
                 {
-                    let view = state.ui_view_model();
+                    let view = state.ui_state_snapshot();
                     let mut ui_commands = Vec::new();
                     if !view.is_editor {
                         show_settings_sidebar(&ctx, &view, &mut ui_commands);

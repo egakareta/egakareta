@@ -157,12 +157,12 @@ pub fn run_state_schedule_in_world(world: &mut World) {
 
 /// Register all default-constructible eg-state resources on a `World`.
 ///
-/// `State` carries a `World` directly (Phase 2b: see
-/// [`crate::state::State::world`]). Use this helper to bring the world
-/// up to the same state as [`setup_state_app`] without going through an
-/// `App` first. Note: this only handles default-constructible resources.
+/// Use this helper to bring a bare world up to the same state as
+/// [`setup_state_app`] without going through an `App` first. Note: this
+/// only handles default-constructible resources.
 /// `MenuStateRes` (which needs level names) is not registered here and
 /// must be inserted by the caller with [`MenuStateRes::new`].
+#[allow(dead_code)]
 pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AppPhaseRes>();
     world.init_resource::<SessionStateRes>();
@@ -200,7 +200,7 @@ pub fn register_state_resources(world: &mut World) {
 /// Phase 4a: the schedule also contains the
 /// `mirror_pod_state_via_bridge` system from
 /// `state::render::plugin` that drains the per-frame mirror closure
-/// installed by `State::tick_state` into the POD render resources.
+/// installed by Runtime into the POD render resources.
 ///
 /// Phase 6a: the schedule also contains the
 /// `poll_channels_system` from `state::async_bridge` that drains
@@ -211,9 +211,8 @@ pub fn register_state_resources(world: &mut World) {
 /// `install_async_bridge_from_state` (when the legacy `State`
 /// fields are wired into the world).
 ///
-/// `State` constructs its world via
-/// [`crate::state::lifecycle::build_state_world`] which calls this
-/// helper, so callers don't need to invoke it directly.
+/// Runtime and tests call this for the App-owned world before running
+/// [`StateSchedule`].
 pub fn register_state_command_pipeline(world: &mut World) {
     // Message resources for every command event type. The
     // `register_command_events` helper takes an `App`; we use the

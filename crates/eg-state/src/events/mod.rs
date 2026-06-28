@@ -21,11 +21,10 @@
 //!
 //! The per-message drain systems are wired into the `StateSchedule` so
 //! a single Bevy system per message type drains that message into the
-//! [`PendingCommands`] resource. `State::tick_state` can still run the
-//! schedule on the legacy State-owned world, but it no longer drains
-//! those commands into `State::dispatch`. Input-state messages are the
-//! first direct-handler carve-out: they update `EditorInputRes` instead
-//! of staging legacy editor commands.
+//! [`PendingCommands`] resource. Runtime runs the schedule on the App
+//! world and drains staged commands into `State::dispatch`. Input-state
+//! messages update App-world resources directly instead of staging legacy
+//! editor commands.
 //!
 //! ## Why messages?
 //!
@@ -118,9 +117,7 @@ pub trait ToLegacy {
 /// The Bevy schedule's per-message drain systems write into this
 /// resource. Runtime takes the App-world resource and calls
 /// `State::dispatch` / `State::dispatch_editor` for each buffered
-/// command during the compatibility window. The State-owned world can
-/// still stage commands for tests, but `State::tick_state` no longer
-/// forwards them to legacy dispatch.
+/// command during the compatibility window.
 #[derive(Resource, Default, Debug)]
 pub struct PendingCommands {
     /// Commands to route through `State::dispatch`.

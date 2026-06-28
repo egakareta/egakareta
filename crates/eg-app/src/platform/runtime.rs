@@ -34,10 +34,9 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 /// [`Runtime::run_app_frame`], which owns the App update and command
 /// drain before handing the frame back to the compatibility renderer.
 ///
-/// The two Worlds (the App's and `State::world`) coexist during the
-/// compatibility window. The App is the production command/schedule driver;
-/// `State::world` remains the legacy render/input bridge until the
-/// single-world deletion pass moves those resources into the App.
+/// The App world is the production command/schedule driver during the
+/// compatibility window. Legacy `State` fields still own render/input data
+/// until those resources move fully into the App.
 ///
 /// REFACTOR POINT(full-bevy): when full Bevy lands, the `state`
 /// and `pipeline` fields disappear; the `App` owns the egui
@@ -91,9 +90,8 @@ impl Runtime {
         let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_textures);
 
         // Build the Bevy `App` with the eg-state plugin graph. The
-        // App owns its own `World`; `State::world` is independent
-        // for the scaffold. Future sub-phases will move the
-        // authoritative state into the App's world.
+        // App owns the single ECS `World`; legacy `State` fields are
+        // bridged into it each frame during the compatibility window.
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
@@ -120,10 +118,11 @@ impl Runtime {
             enqueue_ui_commands(app.world_mut(), ui_commands);
             drain_ui_command_queue(app.world_mut());
             app.update();
+            state.prepare_app_world_for_state_schedule(app.world_mut());
             run_state_schedule_in_world(app.world_mut());
             Self::sync_app_editor_input_state(state, app.world());
             Self::dispatch_app_pending_commands(state, app.world_mut());
-            state.tick_state();
+            state.drain_pending_async_results();
         })
     }
 
@@ -412,8 +411,7 @@ mod tests {
 
     /// `Runtime::run_app_frame` drains App-world messages and applies
     /// the recovered legacy command to `State` during the compatibility
-    /// window. UI commands now enter through this path instead of
-    /// `State::world`.
+    /// window. UI commands enter through this path before legacy dispatch.
     #[tokio::test]
     async fn runtime_run_app_frame_dispatches_app_world_commands() {
         let state = State::new_test().await;
@@ -429,24 +427,19 @@ mod tests {
         assert!(runtime.state.is_editor());
     }
 
-    /// `Runtime` keeps the App-world schedule and the legacy State
-    /// compatibility world isolated while the command bridge is still
-    /// being deleted. This keeps App setup from mutating legacy State
-    /// before the frame driver explicitly applies queued commands.
+    /// `Runtime` keeps App-world setup from mutating legacy State before
+    /// the frame driver explicitly applies queued commands.
     #[tokio::test]
-    async fn runtime_app_world_is_separate_from_state_world() {
+    async fn runtime_app_world_setup_does_not_mutate_state() {
         let state = State::new_test().await;
         let runtime = Runtime::new(state);
 
-        // The App's World has the plugin resources; the State's
-        // World is independent. We verify by reading a value
-        // from each side.
-        let app_phase = &*runtime.app.world().resource::<AppPhaseRes>();
+        // The App's World has the plugin resources.
+        let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Menu);
 
-        // The State's world is the one used by `State::tick_state`.
         // Pin that the State is still in the Menu phase after
-        // the App was built (no cross-talk).
+        // the App was built (no setup cross-talk).
         assert!(runtime.state.is_menu());
     }
 }

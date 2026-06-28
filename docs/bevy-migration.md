@@ -9,9 +9,9 @@
 **Now (Phase 0–9 complete):** `eg-game` has a headless ECS core,
 `eg-state` exposes a Bevy `Message`/schedule/resource boundary, `eg-ui` writes
 commands into that boundary, and `eg-app` drives a `bevy_app::App` from the
-winit redraw path. The legacy `State` object, `State::world`, and
-`FramePipeline` remain as the compatibility bridge until the single-world
-deletion pass moves render/input/session ownership fully into the App world.
+winit redraw path. The duplicate `State::world` has been deleted; the legacy
+`State` object and `FramePipeline` remain as compatibility bridges until render,
+session, audio, and editor ownership move fully into the App world.
 
 **Later (full Bevy):** drop the custom wgpu / egui-wgpu / winit plumbing in
 favor of the Bevy umbrella. The migration is designed to be mechanical.
@@ -125,7 +125,7 @@ Cross-domain ordering constraints (sample):
 - [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
 - [x] **Phase 6b** — replace legacy `update_*` methods with handler systems that consume result events.
-- [ ] **Phase 7** — in progress. `Runtime` owns a `bevy_app::App`; `Runtime::run_app_frame(raw_input)` drives `app.update()`, then explicitly runs the App-world `StateSchedule` before draining App-world `PendingCommands` into legacy `State`. `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` install default App resources directly, including `eg_game::GamePlugin`; the legacy `State` world, Runtime command bridge, `UiViewModel`, and render pipeline remain as compatibility bridges until the single-world deletion pass.
+- [ ] **Phase 7** — `Runtime` owns a `bevy_app::App`; `Runtime::run_app_frame(raw_input)` drives `app.update()`, then explicitly runs the App-world `StateSchedule` before draining App-world `PendingCommands` into legacy `State`. `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` install default App resources directly, including `eg_game::GamePlugin`; the duplicate legacy `State` world has been deleted. The Runtime command bridge, `UiStateSnapshot`, and render pipeline remain as compatibility bridges until direct handlers and App-world UI/render ownership land.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 
@@ -205,8 +205,8 @@ files in one final sweep.
   the PendingCommands resource.
 - A StateSchedule that bundles the per-message drain systems.
 - Runtime drains App-world PendingCommands to State::dispatch /
-  State::dispatch_editor during the compatibility window; the duplicate
-  State::world tick no longer forwards its staged PendingCommands.
+  State::dispatch_editor during the compatibility window; the App world is now
+  the only schedule host for `StateSchedule`.
 - A HistorySnapshot marker event for direct-manipulation UI (gizmo
   drag / marquee / block drag) that reserves the PreCommandHistorySet
   slot in the schedule. A follow-up phase wires a real
@@ -411,8 +411,8 @@ The legacy `State::render` field is still authoritative. Future phases (4b/4c) d
 - `crates/eg-ui/src/plugin.rs` defines `UiPlugin`, `EguiContextRes`, `UiCommandQueue`, and an exhaustive `AppCommand` / `EditorCommand` -> Bevy `Message` bridge.
 - `show_editor_ui_commands` renders the existing editor UI and returns commands instead of dispatching them internally; `show_editor_ui` remains as a compatibility wrapper.
 - `crates/eg-app/src/platform/pipeline.rs` collects editor/menu/pause UI commands and returns them to `Runtime`; the pipeline no longer knows about the Bevy `App` or drains App-world `PendingCommands`.
-- `crates/eg-app/src/platform/runtime.rs` queues UI commands in the Runtime App world's `UiCommandQueue`, drains that queue into Bevy messages, runs `app.update()`, applies App-world `PendingCommands` to the legacy `State`, then runs `State::tick_state()` before the compatibility update/render path.
-- The visual UI code still uses `UiViewModel` during the compatibility window, but `Runtime::run_app_frame` now mirrors the live egui context into App-world `EguiContextRes` before the frame update. The remaining UI cut-over is replacing `UiViewModel` reads with App-world resources/queries.
+- `crates/eg-app/src/platform/runtime.rs` queues UI commands in the Runtime App world's `UiCommandQueue`, drains that queue into Bevy messages, runs `app.update()`, prepares App-world mirror resources from legacy `State`, runs `StateSchedule`, then applies App-world `PendingCommands` to the legacy `State` before the compatibility update/render path.
+- The visual UI code now reads `UiStateSnapshot` during the compatibility window, but `Runtime::run_app_frame` mirrors the live egui context into App-world `EguiContextRes` before the frame update. The remaining UI cut-over is replacing snapshot reads with App-world resources/queries.
 
 **Verification:** `cargo check -p eg-ui` and `cargo check -p eg-app` pass. Both runs reported recurring Windows incremental-cache finalization warnings (`Access is denied`) but exited successfully.
 
@@ -557,11 +557,11 @@ Phase 6a established the channel wrappers and the `poll_channels_system` that em
 
 ## Phase 7 — App wiring complete
 
-Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but the App update and command drain now sit in `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI and returns UI commands, `Runtime` writes them into the App world, runs `app.update()`, explicitly runs the App-world `StateSchedule`, applies the resulting `PendingCommands` to legacy `State`, then lets the compatibility pipeline update and render the frame. The duplicate `State::world` schedule can still stage commands for tests, but `State::tick_state` no longer drains them into legacy dispatch.
+Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every frame. The legacy `State` object and `FramePipeline` still own rendering/input compatibility, but the App update and command drain now sit in `Runtime::run_app_frame(raw_input)`: the compatibility pipeline renders UI and returns UI commands, `Runtime` writes them into the App world, runs `app.update()`, prepares App-world mirror resources from legacy `State`, explicitly runs the App-world `StateSchedule`, applies the resulting `PendingCommands` to legacy `State`, then lets the compatibility pipeline update and render the frame. The duplicate `State::world` schedule and `State::tick_state` have been deleted.
 
 ### What's in Phase 7 today
 
-- **`Runtime` owns a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. The App's World remains separate from `State::world`, but it is no longer idle: Runtime runs `app.update()`, then explicitly runs the App-world `StateSchedule` once per frame.
+- **`Runtime` owns a `bevy_app::App` field** alongside the legacy `state: State` and `pipeline: FramePipeline` fields. Runtime runs `app.update()`, then explicitly runs the App-world `StateSchedule` once per frame.
 
 - **`Runtime::new` builds and drives the App**:
 
@@ -582,13 +582,13 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
 
     - **`Runtime::process_input_event(event)`** — queues platform input into App-world `PlatformInputQueue`, then forwards the same event to the legacy `State::process_input_event` path during the compatibility window. Production winit/touch/resize/key/mouse callers now use this Runtime method instead of calling `runtime.state.process_input_event(...)` directly.
 
-    - **`Runtime::run_app_frame(raw_input)`** — mirrors the live egui context into App-world `EguiContextRes`, delegates UI rendering to `FramePipeline::run_frame(&mut self.state, raw_input, ...)`, queues returned UI commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, applies App-world `PendingCommands` to the legacy `State` dispatch path, then runs `State::tick_state()`. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
+    - **`Runtime::run_app_frame(raw_input)`** — mirrors the live egui context into App-world `EguiContextRes`, delegates UI rendering to `FramePipeline::run_frame(&mut self.state, raw_input, ...)`, queues returned UI commands in App-world `UiCommandQueue`, drains that queue into messages, runs `app.update()`, prepares App-world mirror resources from legacy `State`, runs the App-world `StateSchedule`, then applies App-world `PendingCommands` to the legacy `State` dispatch path. The old `Runtime::run_frame` wrapper is gone; production callers use the App-driving entry point.
 
     - **`FramePipeline::run_frame(...)` no longer takes `&mut App`** — it owns egui tessellation/texture/render compatibility and exposes a callback for Runtime-owned schedule work. This removes the hidden App-world command bridge from the render pipeline.
 
 - **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
-- **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` now adds `eg_game::GamePlugin`, so the App world owns `GameClock` and `GameplaySchedule`. The bare-`World` `register_state_resources` helper remains only for legacy `State::world` construction and focused tests.
+- **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` now adds `eg_game::GamePlugin`, so the App world owns `GameClock` and `GameplaySchedule`. The bare-`World` `register_state_resources` helper remains only for focused tests.
 
 - **Re-export** of `register_state_command_pipeline` and `run_state_schedule_in_world` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
 
@@ -603,18 +603,18 @@ Phase 7 flips the redraw boundary so the winit loop drives the Bevy `App` every 
     - `runtime_run_app_frame_updates_app_state_schedule` — `run_app_frame` drives `app.update()`, then explicitly runs the App-world phase transition + `StateSchedule`.
     - `runtime_app_update_does_not_run_state_schedule_directly` — plain `app.update()` no longer advances the mirror `StateSchedule`; Runtime owns that order.
     - `runtime_run_app_frame_dispatches_app_world_commands` — an App-world message drains through `StateSchedule` and is applied to the legacy `State` during the compatibility window.
-    - `runtime_app_world_is_separate_from_state_world` — App setup does not mutate legacy `State` until `Runtime` explicitly applies queued commands.
+    - `runtime_app_world_setup_does_not_mutate_state` — App setup does not mutate legacy `State` until `Runtime` explicitly applies queued commands.
 
     - **Tests** in `crates/eg-state/src/state/tests.rs`:
-        - `tick_state_stages_messages_without_dispatching` — the legacy State-owned world still runs the per-message drain systems, but staged commands no longer dispatch into legacy `State`.
-        - `tick_state_stages_undo_without_dispatching` — editor commands from `State::world` remain staged in `PendingCommands`.
-        - `tick_state_stages_practice_mode_payload_without_dispatching` — app commands with payloads stage without mutating legacy session state.
+        - `tick_state_stages_messages_without_dispatching` — the App-world schedule runs the per-message drain systems, but staged commands do not dispatch into legacy `State` until Runtime drains them.
+        - `tick_state_stages_undo_without_dispatching` — editor commands from App-world messages remain staged in `PendingCommands`.
+            - `tick_state_stages_practice_mode_payload_without_dispatching` — app commands with payloads stage without mutating legacy session state.
 
 - **Dead-code allowances removed** from `Runtime.app` and `Runtime::run_app_frame` because both are now production-used.
 
 ### Schedule graph (post Phase 7)
 
-The production redraw path now writes UI commands into the App world from `Runtime`, runs the App `Update` schedule, explicitly runs the App-world `StateSchedule`, applies App-world `PendingCommands` to legacy `State`, then runs the remaining legacy `State::tick_state` / update / render path. The App world and `State::world` are still separate, but UI command ingress is App-world first and the render pipeline no longer owns the App bridge.
+The production redraw path now writes UI commands into the App world from `Runtime`, runs the App `Update` schedule, prepares App-world mirror resources, explicitly runs the App-world `StateSchedule`, applies App-world `PendingCommands` to legacy `State`, then runs the remaining legacy update / render path. UI command ingress is App-world first and the render pipeline no longer owns the App bridge.
 
 Production platform input is also App-world first: winit/touch/resize/key/mouse events call `Runtime::process_input_event`, which writes to `PlatformInputQueue(App::world)` before forwarding to legacy `State::process_input_event`.
 
@@ -637,15 +637,15 @@ RedrawRequested:
       State::render_egui(...)
 ```
 
-### Why two worlds still coexist
+### Why legacy State still coexists with the App world
 
-The App's `World` and `State::world` are separate `bevy_ecs::world::World` instances. They cannot be the same `World` today because:
+The App now owns the only ECS `World`, but legacy `State` still owns subsystem fields and direct render handles during the compatibility window:
 
-- `State` is `!Send` (it owns `mpsc::Receiver<T>` fields). Bevy's `App` is `Send + Sync` (it owns a `World` whose resources must be `Send + Sync`).
-- `State` is constructed in `State::new_test` / `new_native` / `new_web` with custom initialization logic that includes the heavy `RenderGpuRes` (which has no `Default`). The App's `World` is built by `setup_state_app` + `register_state_command_pipeline` which don't know about the GPU.
+- `State` is `!Send` (it owns `mpsc::Receiver<T>` fields), while Bevy's `App` expects `World` resources to be `Send + Sync`.
+- `State` is constructed in `State::new_test` / `new_native` / `new_web` with custom initialization logic that includes heavy render handles. Those handles now live in `StateRenderResources` rather than an extra ECS world.
 - The thread-local bridges (Phase 4a render mirror, Phase 6b async result handlers) read from `State` from inside Bevy systems. They expect `State` to be on a stable address (the `Runtime`'s field), not buried inside the App's `World`.
 
-The remaining single-world deletion is now the active post-Phase-7 gate: move heavy render/input/session/UI view ownership into App-world resources, delete `State::world`, delete the Runtime `PendingCommands` compatibility drain once handlers mutate resources directly, then collapse `FramePipeline` into Bevy systems. `UiViewModel` is still a legacy snapshot because the App-world resources do not yet cover available levels, auth state, selected objects, waveform slices, and every editor/runtime field the current UI reads.
+The remaining post-Phase-7 gate is deleting the Runtime `PendingCommands` compatibility drain once handlers mutate resources directly, replacing `UiStateSnapshot` reads with App-world resources/queries, and then collapsing `FramePipeline` into Bevy systems.
 
 ### Bevy 0.19 API notes (Phase 7)
 
@@ -734,9 +734,9 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
 
 ## Architectural shape right now
 
-- The migration so far is still a **parallel mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until the single-world deletion pass.
+- The migration so far is still a **compatibility mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until direct handlers and App-world ownership replace them.
 - The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
-- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world and run `app.update()` before legacy update/render. The App world has the real eg-state plugin graph and gameplay schedule; `State::world` remains parallel for rendering and non-UI legacy dispatch until the single-world deletion pass.
+- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world, run `app.update()`, prepare App-world mirror resources, run `StateSchedule`, and drain pending commands before legacy update/render. The App world has the real eg-state plugin graph and gameplay schedule; direct render ownership remains on legacy `State` through `StateRenderResources` until the render swap.
 
 ## Full-Bevy Next Roadmap
 
@@ -745,16 +745,16 @@ The next work should remove the compatibility bridge first, then replace one
 platform/rendering boundary at a time. Each step should keep native + wasm
 green before moving on.
 
-### 1. Delete the parallel `State::world`
+### 1. Finish direct App-world ownership
 
-This is the prerequisite for every full-Bevy swap. Move the authoritative
-resources that still live behind the legacy `State` object into the App world,
+The duplicate `State::world` is gone, but authoritative subsystem fields still
+live behind the legacy `State` object. Move those fields into the App world,
 then make `State` either disappear or become a thin construction/helper layer.
 
-- Move render ownership (`RenderGpuRes`, `RenderMeshesRes`, `RenderSurfaceHostRes`) into the App world at startup.
+- Move render ownership from `StateRenderResources` into App-world resources at startup.
 - Move session/editor/menu/audio/auth resources out of legacy subsystem fields and into App-world resources.
-- Route UI, async results, and input through the App world only; stop writing to `State::world`.
-- Delete `State::world`, then delete accessors that only exist to bridge between the two worlds.
+- Route UI, async results, and input through App-world handlers only; stop bridging through legacy dispatch.
+- Delete legacy `State` accessors that only exist to bridge App-world resources back into subsystem fields.
 - Keep `cargo test -p eg-state --lib` and `cargo test -p eg-app --lib runtime::` green throughout.
 
 ### 2. Replace legacy command dispatch
@@ -783,7 +783,7 @@ removes the manual `EguiContextRes` / `FramePipeline` coupling.
 
 - Replace `EguiContextRes` and manual `ctx.run_ui` calls with `bevy_egui` systems.
 - Let UI systems write Bevy messages/resources directly, not `UiCommandQueue` compatibility commands.
-- Delete `UiViewModel` once UI reads resources/queries directly.
+- Delete `UiStateSnapshot` once UI reads resources/queries directly.
 - Verify editor drag/marquee/gizmo interactions still mutate on the same frame.
 
 ### 5. Move rendering to `bevy_render`
@@ -821,14 +821,12 @@ These can happen in parallel once the single App world is authoritative.
 - After runtime/render/input changes: `cargo test -p eg-app --lib runtime::`, `cargo test -p eg-state --lib`, and `bun run build`.
 - Before calling a full-Bevy milestone done: `bun run dev`, then manually smoke test menu, level play, editor placement, playtest, audio import, export, auth-safe no-op paths, and wasm startup.
 
-The remaining gap is architectural, not just cleanup. The code still has two worlds and the compatibility bridge:
+The remaining gap is architectural, not just cleanup. The code still has a legacy `State` compatibility bridge:
 
 - runtime.rs still owns `State`, `FramePipeline`, and `App` together.
-- mod.rs still defines the legacy `State` with subsystem fields plus `State::world`.
 - runtime.rs still drains App-world `PendingCommands` into `State::dispatch` / `dispatch_editor`.
-- mod.rs still lets the duplicate State-owned world stage legacy commands, but `State::tick_state` no longer dispatches them.
 - mod.rs explicitly says messages still convert back to legacy commands.
-- lib.rs still uses `UiViewModel`.
+- lib.rs still uses `UiStateSnapshot`.
 - pipeline.rs still renders UI from legacy `State`, but the live egui context and UI command queue now live in the App world during the frame.
 - application.rs still translates winit input to legacy `InputEvent`, but those events now enter App-world `PlatformInputQueue` before the compatibility State input path consumes them.
 

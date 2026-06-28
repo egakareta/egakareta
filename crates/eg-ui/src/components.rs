@@ -6,7 +6,7 @@
 
 */
 use eg_state::commands::AppCommand;
-use eg_state::state::UiViewModel;
+use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::EditorMode;
 
@@ -83,13 +83,13 @@ fn timeline_bar_nearest_tap_index(
         .map(|(index, _)| index)
 }
 
-fn timeline_bar_view_is_tapping(view: &UiViewModel<'_>) -> bool {
+fn timeline_bar_view_is_tapping(view: &UiStateSnapshot<'_>) -> bool {
     view.mode == EditorMode::Tapping
         || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
 }
 
 fn timeline_bar_push_tap_click_commands(
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     pointer_x: f32,
     rect: egui::Rect,
     view_start: f32,
@@ -155,7 +155,7 @@ fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
 
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     duration_seconds: f32,
     commands: &mut Vec<AppCommand>,
 ) {
@@ -498,7 +498,7 @@ pub(crate) fn show_timeline_bar(
 
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
-    view: &UiViewModel<'_>,
+    view: &UiStateSnapshot<'_>,
     commands: &mut Vec<AppCommand>,
 ) {
     puffin::profile_scope!("UiWaveformPanel");
@@ -709,7 +709,7 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::editor_view_model;
+    use crate::test_utils::editor_ui_snapshot;
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
         MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
@@ -729,8 +729,8 @@ mod tests {
         waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
-    ) -> eg_state::state::UiViewModel<'a> {
-        let mut view = editor_view_model(app_settings, music_metadata);
+    ) -> eg_state::state::UiStateSnapshot<'a> {
+        let mut view = editor_ui_snapshot(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.playing = playing;
