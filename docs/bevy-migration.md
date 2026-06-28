@@ -103,6 +103,15 @@ Cross-domain ordering constraints (sample):
 - `SimulationSet.before(ExtractSet)`
 - `UiSet.before(ExtractSet)`
 - `ExtractSet.before(RenderSet)`
+- `StateSchedule.before(sync_app_editor_*_state)` (Bevy schedule runs
+  first; the Runtime-owned per-frame sync helpers
+  `sync_app_editor_input_state`, `sync_app_editor_config_state`,
+  `sync_app_editor_timing_state`, and `sync_app_session_state`
+  then run on the main thread before `dispatch_app_pending_commands`
+  drains the message buffer into the legacy State. The carved-out
+  config / bpm / session syncs are change-guarded to keep the
+  legacy setters' persist + side effects from re-firing every
+  frame.)
 
 ## Phase checklist
 
@@ -128,6 +137,10 @@ Cross-domain ordering constraints (sample):
 - [ ] **Phase 7** — `Runtime` owns a `bevy_app::App`; `Runtime::run_app_frame(raw_input)` drives `app.update()`, then explicitly runs the App-world `StateSchedule` before draining App-world `PendingCommands` into legacy `State`. `ApplicationHandler::RedrawRequested` calls `run_app_frame`. `StatePlugins` install default App resources directly, including `eg_game::GamePlugin`; the duplicate legacy `State` world has been deleted. The Runtime command bridge, `UiStateSnapshot`, and render pipeline remain as compatibility bridges until direct handlers and App-world UI/render ownership land.
 - [x] **Phase 8** — `TestApp` harness scaffold: `TestApp::minimal()` builder in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` mirrors `State::tick_state()`; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` helper. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Migration of the existing `&State`/`&GameState` tests to the new harness is incremental and tracked in follow-up commits.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
+- [x] **Phase 3.5 / Snap carve-out** — `events::snap` handlers (4 messages) migrated to write `EditorConfigRes.0.snap_*` directly; `Runtime::sync_app_editor_config_state` change-guarded sync to `State.editor.config` before `dispatch_app_pending_commands` runs. 4 schedule-level tests in `events::tests` + 5 end-to-end tests in `runtime::tests` exercise the full pipeline. The input_state + pointer carve-out pattern is now extended to a stateful-resource domain (the snap config), proving the migration works for resources with setter side effects.
+- [x] **Phase 3.6 / Block-id carve-out + `EditorConfigRes` seeding** — `events::editor_mode::handle_set_block_id` migrated to write `EditorConfigRes.0.selected_block_id` directly; `sync_app_editor_config_state` extended with a change-guarded `selected_block_id` sync whose legacy setter (`set_editor_block_id`) remembers the block in `recent_block_ids`, persists `app_settings`, and rebuilds cursor vertices. `Runtime::new` now seeds `EditorConfigRes` from the legacy `State` via `State::editor_config_resource()`, fixing a latent first-frame clobber where the Default-initialized resource would overwrite user-loaded `app_settings` snap/block config on the first frame. 1 schedule-level test in `events::tests` + 3 end-to-end tests in `runtime::tests` (block-id propagation, no-op resync guard, first-frame no-clobber regression).
+- [x] **Phase 3.7 / BPM carve-out + `EditorTimingRes` seeding** — `events::bpm::handle_bpm_tap` and `handle_bpm_tap_reset` migrated to write `EditorTimingRes.0.bpm_tap_times` / `bpm_tap_result` directly. The bpm-tap calculation (wall-clock-time read, append to history, recompute running BPM as 60 / average diff, truncate to 16 entries) is now performed in the App world, mirroring the legacy `State::editor_bpm_tap` logic. `Runtime::sync_app_editor_timing_state` change-guarded sync propagates the resource to the legacy `State.editor.timing` fields. `Runtime::new` seeds `EditorTimingRes` from the legacy state via `State::editor_timing_resource()` (which required `EditorTimingState: Clone`), so the first frame is a no-op for an in-flight tap history. 2 schedule-level tests in `events::tests` (`carve_out_bpm_tap_mutates_editor_timing_resource`, `carve_out_bpm_tap_reset_clears_editor_timing_resource`) + 4 end-to-end tests in `runtime::tests` (BpmTap propagation, BpmTapReset propagation, no-op resync guard, first-frame no-clobber regression).
+- [x] **Phase 3.8 / Session carve-out + `SessionStateRes` seeding** — `events::session::handle_set_show_metadata`, `handle_set_show_settings`, `handle_toggle_settings`, `handle_set_settings_section`, and `handle_set_keybind_capture` migrated to write `SessionStateRes` fields directly. The other 17 session events (`LoadLevel`, `RenameLevel`, `SetKeybind`, `SetGraphicsBackend`, `SetAudioBackend`, `UpdateMusic`, ...) keep the legacy `PendingCommands` path because their legacy setters have out-of-process side effects (level load, file IO, settings persist, audio backend switch). `Runtime::sync_app_session_state` change-guarded sync propagates the carved-out fields. `Runtime::new` seeds `SessionStateRes` (carved-out fields only) from the legacy `State.session` via `State::session_state_resource()`. 5 schedule-level tests in `events::tests` (one per carve-out message, plus a `ToggleSettings` flip-pair test) + 6 end-to-end tests in `runtime::tests` (per-message propagation + a first-frame no-clobber regression that exercises all four carved-out fields).
 
 ## Phase 1 — completed
 
@@ -265,6 +278,140 @@ REFACTOR POINT(full-bevy): the input-state + pointer events
 disappear in the full-Bevy migration; the corresponding bevy_input
 Input<KeyCode> / ButtonInput<MouseButton> resources handle
 held-state + click events natively.
+
+### Snap carve-out
+
+The 4 `events::snap::*` messages (`SetSnapToGrid`, `SetSnapStep`,
+`SetSnapRotation`, `SetSnapRotationStep`) are now a **carve-out** in the
+same shape as the input-state carve-out: the per-message handlers in
+`crates/eg-state/src/events/snap.rs` write directly to
+`EditorConfigRes.0.snap_*` instead of staging a `PendingCommands`
+entry.
+
+`Runtime::run_app_frame` adds a new `sync_app_editor_config_state`
+helper that copies `EditorConfigRes.0.snap_*` to the legacy
+`State.editor.config.snap_*` fields before any `dispatch_editor`
+runs. The sync is **change-guarded**: it only invokes the legacy
+`set_editor_snap_*` setter when the resource value actually
+differs from the legacy field. This is required because the
+legacy setters have side effects (persist `app_settings` to
+storage, re-snap the selected block); re-invoking them every
+frame would re-spawn the persist task and churn the block
+positions on every tick. The guard pins the side-effect-free
+property while keeping the App world as the source of truth.
+
+Tests in `crates/eg-state/src/events/mod.rs` (4 in `events::tests`
+
+- the existing helper-resource fix) exercise the carve-out at the
+  schedule level; tests in `crates/eg-app/src/platform/runtime.rs`
+  (`runtime_carve_out_*`) exercise the full
+  message → resource → sync → legacy-state pipeline through the
+  `Runtime::run_app_frame` driver.
+
+### Block-id carve-out + `EditorConfigRes` seeding
+
+`events::editor_mode::handle_set_block_id` is the second stateful
+config carve-out: it writes `EditorConfigRes.0.selected_block_id`
+directly instead of staging `EditorCommand::SetBlockId`. The
+`sync_app_editor_config_state` helper gained a change-guarded
+`selected_block_id` sync whose legacy setter (`set_editor_block_id`)
+has richer side effects than the snap setters: it remembers the
+block in `recent_block_ids`, persists `app_settings`, and rebuilds
+the editor cursor vertices when in the `Editor` phase. The
+change guard ensures those side effects fire only on real
+user-driven changes. The `recent_block_ids` side effect stays
+legacy-authoritative (the UI reads it from the legacy
+`UiStateSnapshot`, not from the resource), so the resource's
+`recent_block_ids` mirror is not kept in lockstep yet — it is
+refreshed when the resource is next seeded/rebuilt.
+
+The same change closed a **latent first-frame clobber bug** that
+affected the snap carve-out too: `EditorPlugin` Default-initializes
+`EditorConfigRes`, but in real (`State::new_native` / `new_web`)
+usage the legacy `State` loads user `app_settings` whose snap/block
+config may differ from the defaults. Without seeding, the very
+first frame's change-guarded sync would see `resource default !=
+legacy user value`, fire the legacy setter, overwrite the user
+value, and re-persist it — silently resetting the user's
+preferences on every fresh launch. `Runtime::new` now seeds the
+resource from the legacy `State` via `State::editor_config_resource()`
+(`EditorConfigState: Clone`), so the first frame is a true no-op
+for unchanged fields. `runtime_seeds_editor_config_res_from_legacy_state_no_first_frame_clobber`
+is the regression test: it sets non-default snap values on the
+legacy state before `Runtime::new` and asserts both the seeded
+resource and the post-frame legacy state keep the user values.
+
+Tests: 1 schedule-level test in `events::tests`
+(`carve_out_set_block_id_mutates_editor_config_resource`) + 3
+end-to-end tests in `runtime::tests`
+(`runtime_carve_out_set_block_id_propagates_to_legacy_state`,
+`runtime_carve_out_no_op_frame_does_not_resync_block_id`,
+`runtime_seeds_editor_config_res_from_legacy_state_no_first_frame_clobber`).
+
+### BPM carve-out + `EditorTimingRes` seeding
+
+`events::bpm::handle_bpm_tap` and `handle_bpm_tap_reset` are the
+**third stateful-resource carve-out** (after snap + block-id).
+The handler performs the full bpm-tap calculation in the App
+world (read wall-clock time, append to `bpm_tap_times`,
+recompute running BPM as `60 / average diff`, truncate to 16
+entries) and writes the result directly to
+`EditorTimingRes.0.bpm_tap_times` and `bpm_tap_result`. The
+legacy `State.editor_bpm_tap` path stays reachable via the
+preserved `ToLegacy` impl.
+
+`Runtime::run_app_frame` adds a new `sync_app_editor_timing_state`
+helper that propagates the resource values back to the legacy
+`State.editor.timing` fields. The sync is change-guarded so a
+no-op frame does not re-invoke the legacy setters.
+
+`Runtime::new` seeds `EditorTimingRes` from the legacy state via
+`State::editor_timing_resource()` (which required adding
+`Clone` to `EditorTimingState` and the `EditorSubsystem::timing`
+field). Without seeding, the change-guarded sync would clobber
+an in-flight tap history on the first frame: the default
+resource is empty, the legacy state has taps, the diff fires,
+and the user value is overwritten with the default. The
+`runtime_seeds_editor_timing_res_from_legacy_state_no_first_frame_clobber`
+test pins this.
+
+Tests: 2 schedule-level tests in `events::tests`
+(`carve_out_bpm_tap_mutates_editor_timing_resource`,
+`carve_out_bpm_tap_reset_clears_editor_timing_resource`) + 4
+end-to-end tests in `runtime::tests` (BpmTap propagation,
+BpmTapReset propagation, no-op resync guard, first-frame
+no-clobber regression).
+
+### Session carve-out + `SessionStateRes` seeding
+
+Five `events::session::*` messages are the **fourth
+stateful-resource carve-out** (after snap, block-id, bpm):
+`SetShowMetadata`, `SetShowSettings`, `ToggleSettings`,
+`SetSettingsSection`, and `SetKeybindCapture`. Their handlers
+write directly to `SessionStateRes` fields
+(`editor_show_metadata`, `editor_show_settings`,
+`editor_settings_section`, `editor_keybind_capture_action`).
+The other 17 session events (`LoadLevel`, `RenameLevel`,
+`SetKeybind`, `SetGraphicsBackend`, `SetAudioBackend`,
+`UpdateMusic`, `UpdateSkyColor`, ...) keep the legacy
+`PendingCommands` path because their legacy setters have
+out-of-process side effects (level load, file IO, settings
+persist, audio backend switch). The `ToLegacy` impls are
+preserved on the carve-out messages so the legacy dispatch
+path remains reachable for non-message call sites.
+
+`Runtime::sync_app_session_state` change-guarded sync propagates
+the carved-out fields. `Runtime::new` seeds the carved-out
+fields from the legacy `State.session` via
+`State::session_state_resource()` so the first frame is a
+no-op for user-driven UI-window state.
+
+Tests: 5 schedule-level tests in `events::tests` (one per
+carve-out message, plus a `ToggleSettings` flip-pair test) + 6
+end-to-end tests in `runtime::tests` (per-message propagation
+
+- a first-frame no-clobber regression that exercises all four
+  carved-out fields).
 
 ### Schedule graph (post Phase 3)
 

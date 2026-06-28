@@ -13,6 +13,7 @@ use eg_blocks::BlockId;
 use eg_types::EditorMode;
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::state::EditorConfigRes;
 use crate::state::editor_command::EditorCommand;
 
 /// Switch the editor mode.
@@ -94,14 +95,21 @@ pub fn handle_set_editor_mode(
     }
 }
 
+// `SetBlockId` is a carve-out from the `PendingCommands` ->
+// `State::dispatch_editor` pipeline (same pattern as `events::snap`):
+// the handler mutates `EditorConfigRes.0.selected_block_id` directly,
+// and the legacy `State.editor.config.selected_block_id` is synced from
+// the resource by `Runtime::sync_app_editor_config_state` before any
+// dispatch in the same frame. The `ToLegacy` impl is kept so the legacy
+// dispatch path remains reachable from non-message call sites (the
+// existing `dispatch_editor_set_block_id_updates_recent` test still
+// drives `State::dispatch_editor(EditorCommand::SetBlockId)` directly).
 pub fn handle_set_block_id(
     mut events: MessageReader<SetBlockId>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetBlockId(event.0.clone()));
+        config.0.selected_block_id = event.0.clone();
     }
 }
 

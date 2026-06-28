@@ -729,6 +729,56 @@ impl State {
         self.editor.snap_rotation_step_degrees()
     }
 
+    /// Snapshot the editor config into an [`super::EditorConfigRes`] so
+    /// the App world can be seeded from the legacy `State` at
+    /// construction time. This keeps the resource in sync with
+    /// user-loaded `app_settings` (snap config, selected block id,
+    /// recent blocks) so the per-frame change-guarded
+    /// `sync_app_editor_config_state` only fires on real user-driven
+    /// changes, not on the first frame.
+    pub fn editor_config_resource(&self) -> super::EditorConfigRes {
+        super::EditorConfigRes(self.editor.config.clone())
+    }
+
+    /// Snapshot the editor timing state into an
+    /// [`super::EditorTimingRes`] so the App world can be seeded from
+    /// the legacy `State` at construction time. Used for the bpm-tap
+    /// carve-out (see `events::bpm`): the bpm_tap_times and
+    /// bpm_tap_result fields live on `EditorTimingRes`, and
+    /// `Runtime::new` seeds the resource from the legacy state so
+    /// the change-guarded `sync_app_editor_timing_state` is a no-op
+    /// on the first frame for unchanged fields.
+    pub fn editor_timing_resource(&self) -> super::EditorTimingRes {
+        super::EditorTimingRes(self.editor.timing.clone())
+    }
+
+    /// Snapshot the simple UI-window fields of the legacy
+    /// `State.session` into a [`super::SessionStateRes`] so the App
+    /// world can be seeded from the legacy state at construction
+    /// time. Used for the session carve-out (see `events::session`):
+    /// the `editor_show_metadata`, `editor_show_settings`,
+    /// `editor_settings_section`, and `editor_keybind_capture_action`
+    /// fields are written to the resource directly by their Bevy
+    /// handlers, and `Runtime::new` seeds the resource from the
+    /// legacy state so the change-guarded
+    /// `sync_app_session_state` is a no-op on the first frame for
+    /// unchanged fields.
+    pub fn session_state_resource(&self) -> super::SessionStateRes {
+        super::SessionStateRes {
+            editor_level_name: self.session.editor_level_name.clone(),
+            editor_music_metadata: self.session.editor_music_metadata.clone(),
+            editor_creator_metadata: self.session.editor_creator_metadata.clone(),
+            editor_sky_color: self.session.editor_sky_color,
+            editor_menu_preview_camera: self.session.editor_menu_preview_camera.clone(),
+            editor_show_metadata: self.session.editor_show_metadata,
+            editor_show_place_window: self.session.editor_show_place_window,
+            editor_show_settings: self.session.editor_show_settings,
+            editor_settings_section: self.session.editor_settings_section,
+            editor_keybind_capture_action: self.session.editor_keybind_capture_action.clone(),
+            ..Default::default()
+        }
+    }
+
     pub fn set_editor_snap_to_grid(&mut self, snap: bool) {
         self.editor.set_snap_to_grid(snap);
         self.session.app_settings.editor_snap_to_grid = self.editor.config.snap_to_grid;
@@ -923,6 +973,15 @@ impl State {
     /// Returns the unique identifier of the currently selected block type in the editor.
     pub fn editor_selected_block_id(&self) -> &BlockId {
         &self.editor.config.selected_block_id
+    }
+
+    /// Returns the recent-blocks list (most-recently-used first). The
+    /// list is updated as a side effect of `set_editor_block_id`; used
+    /// by the carve-out sync tests to confirm the legacy setter (and
+    /// its recent-blocks side effect) actually fires on a user-driven
+    /// change.
+    pub fn editor_recent_block_ids(&self) -> &[BlockId] {
+        &self.editor.config.recent_block_ids
     }
 
     /// Returns whether the editor timeline is currently playing.
@@ -1553,6 +1612,23 @@ impl State {
 
     pub fn editor_bpm_tap_result(&self) -> Option<f32> {
         self.editor.bpm_tap_result()
+    }
+
+    /// Replace the legacy bpm-tap times and recomputed result directly.
+    /// Used by the carve-out sync from `EditorTimingRes` (see
+    /// `events::bpm` and `Runtime::sync_app_editor_timing_state`).
+    /// The legacy `editor.bpm_tap`/`editor.bpm_tap_reset` paths
+    /// recompute from wall-clock time, so the sync writes the
+    /// precomputed values instead of re-running the calculation.
+    pub fn set_editor_bpm_tap_state(&mut self, tap_times: Vec<f64>, tap_result: Option<f32>) {
+        self.editor.timing.bpm_tap_times = tap_times;
+        self.editor.timing.bpm_tap_result = tap_result;
+    }
+
+    /// Read-only view of the current bpm-tap times (used by tests and
+    /// the carve-out sync guard to detect a diff).
+    pub fn editor_bpm_tap_times(&self) -> &[f64] {
+        &self.editor.timing.bpm_tap_times
     }
 
     pub fn editor_add_timing_point(&mut self, time_seconds: f32, bpm: f32) {

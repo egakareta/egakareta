@@ -6,12 +6,36 @@
 
 */
 //! Session / UI / level-management events.
+//!
+//! A subset of session events are a **carve-out** from the
+//! `PendingCommands` -> `State::dispatch_editor` pipeline (same
+//! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
+//! and `events::bpm`). The handlers mutate
+//! `SessionStateRes.0` directly:
+//!
+//! - `SetShowMetadata` -> `session.editor_show_metadata`
+//! - `SetShowSettings` -> `session.editor_show_settings`
+//! - `ToggleSettings` -> toggles `session.editor_show_settings`
+//! - `SetSettingsSection` -> `session.editor_settings_section`
+//! - `SetKeybindCapture` -> `session.editor_keybind_capture_action`
+//!
+//! The other session events (`LoadLevel`, `RenameLevel`,
+//! `SetKeybind`, `SetGraphicsBackend`, ...) keep the legacy
+//! `PendingCommands` path because their legacy setters have
+//! out-of-process side effects (level load, file IO, settings
+//! persist, audio backend switch).
+//!
+//! `Runtime::sync_app_session_state` propagates the carved-out
+//! fields back to the legacy `State.session` each frame so any
+//! code path that still reads the legacy fields sees the new
+//! values.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_types::{BasicLevelMetadata, MusicMetadata, SettingsSection};
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::state::SessionStateRes;
 use crate::state::editor_command::EditorCommand;
 
 /// Load a level from a builtin resource name.
@@ -310,43 +334,37 @@ pub fn handle_export_level(
 
 pub fn handle_set_show_metadata(
     mut events: MessageReader<SetShowMetadata>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetShowMetadata(event.0));
+        session.editor_show_metadata = event.0;
     }
 }
 
 pub fn handle_toggle_settings(
     mut events: MessageReader<ToggleSettings>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::ToggleSettings);
+        session.editor_show_settings = !session.editor_show_settings;
     }
 }
 
 pub fn handle_set_show_settings(
     mut events: MessageReader<SetShowSettings>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetShowSettings(event.0));
+        session.editor_show_settings = event.0;
     }
 }
 
 pub fn handle_set_settings_section(
     mut events: MessageReader<SetSettingsSection>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSettingsSection(event.0));
+        session.editor_settings_section = event.0;
     }
 }
 
@@ -385,12 +403,10 @@ pub fn handle_set_ui_scale_multiplier(
 
 pub fn handle_set_keybind_capture(
     mut events: MessageReader<SetKeybindCapture>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetKeybindCapture(event.0.clone()));
+        session.editor_keybind_capture_action = event.0.clone();
     }
 }
 

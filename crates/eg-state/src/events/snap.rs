@@ -6,11 +6,23 @@
 
 */
 //! Snap / grid events.
+//!
+//! These are a **carve-out** from the `PendingCommands` -> `State::dispatch`
+//! pipeline (same pattern as the `input_state` and `pointer` modules).
+//! The handlers mutate `EditorConfigRes` directly, and the legacy
+//! `State.editor.config` fields are synced from the resource at the top of
+//! the per-frame `StateSchedule`.
+//!
+//! The `ToLegacy` impls are kept so the legacy dispatch path remains
+//! reachable from non-message call sites (the existing editor dispatch
+//! tests still drive `State::dispatch_editor(EditorCommand::SetSnapToGrid)`
+//! directly).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::events::{LegacyCommand, ToLegacy};
+use crate::state::EditorConfigRes;
 use crate::state::editor_command::EditorCommand;
 
 /// Set whether to snap to grid.
@@ -61,49 +73,45 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems
+// Carve-out dispatch systems: handlers mutate `EditorConfigRes` directly
+// so the App world is the authoritative store for the snap configuration.
+// The legacy `State.editor.config` is refreshed from the resource by
+// `Runtime::sync_app_editor_config_state` before any dispatch in the same
+// frame.
 // -----------------------------------------------------------------------
 
 pub fn handle_set_snap_to_grid(
     mut events: MessageReader<SetSnapToGrid>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSnapToGrid(event.0));
+        config.0.snap_to_grid = event.0;
     }
 }
 
 pub fn handle_set_snap_step(
     mut events: MessageReader<SetSnapStep>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSnapStep(event.0));
+        config.0.snap_step = event.0;
     }
 }
 
 pub fn handle_set_snap_rotation(
     mut events: MessageReader<SetSnapRotation>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSnapRotation(event.0));
+        config.0.snap_rotation = event.0;
     }
 }
 
 pub fn handle_set_snap_rotation_step(
     mut events: MessageReader<SetSnapRotationStep>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSnapRotationStep(event.0));
+        config.0.snap_rotation_step_degrees = event.0;
     }
 }

@@ -550,7 +550,21 @@ mod tests {
     /// drain schedule.
     fn build_event_world() -> bevy_ecs::world::World {
         let mut world = bevy_ecs::world::World::new();
+        // All per-message drain systems run in the same schedule, so the
+        // helper must register every resource any of them reads. The
+        // carve-out handlers (input_state, pointer) reach for
+        // `EditorInputRes`, `EditorCameraRes`, and `AppPhaseRes`; the
+        // `snap` carve-out reaches for `EditorConfigRes`; the `bpm`
+        // carve-out reaches for `EditorTimingRes`; the `session`
+        // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
+        // `SessionStateRes`. The rest of the schedule only reads
+        // message buffers + the `PendingCommands` accumulator.
         world.init_resource::<crate::state::EditorInputRes>();
+        world.init_resource::<crate::state::EditorCameraRes>();
+        world.init_resource::<crate::state::EditorConfigRes>();
+        world.init_resource::<crate::state::EditorTimingRes>();
+        world.init_resource::<crate::state::SessionStateRes>();
+        world.init_resource::<crate::state::AppPhaseRes>();
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         add_command_systems(&mut schedule);
@@ -562,7 +576,7 @@ mod tests {
     fn schedule_drains_turn_right_message_into_pending() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
     }
@@ -574,7 +588,7 @@ mod tests {
             width: 1920,
             height: 1080,
         });
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert_eq!(
             pending.app_commands,
@@ -589,7 +603,7 @@ mod tests {
     fn schedule_drains_set_editor_mode_into_editor_command() {
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert_eq!(
             pending.editor_commands,
@@ -599,13 +613,26 @@ mod tests {
 
     #[test]
     fn schedule_drains_set_snap_to_grid_into_editor_command() {
+        // `SetSnapToGrid` is a carve-out: the handler mutates
+        // `EditorConfigRes` directly. Assert the resource is updated
+        // and no legacy command is staged.
         let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .snap_to_grid = true;
         world.write_message(SetSnapToGrid(false));
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            !world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .snap_to_grid
+        );
         let pending = world.resource::<PendingCommands>();
-        assert_eq!(
-            pending.editor_commands,
-            vec![EditorCommand::SetSnapToGrid(false)]
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetSnapToGrid must not stage a legacy editor command"
         );
     }
 
@@ -615,7 +642,7 @@ mod tests {
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.write_message(TurnRight);
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert_eq!(
             pending.app_commands,
@@ -630,22 +657,31 @@ mod tests {
     #[test]
     fn empty_message_buffer_is_noop() {
         let mut world = build_event_world();
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert!(pending.is_empty());
     }
 
     #[test]
     fn mixed_message_types_drain_into_correct_buckets() {
+        // `TurnRight` still stages a legacy `AppCommand`; `SetSnapToGrid`
+        // is a carve-out and writes to `EditorConfigRes` directly. Pin
+        // both behaviours in one test.
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
-        let _ = world.run_schedule(crate::state::StateSchedule);
+        world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
         assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
-        assert_eq!(
-            pending.editor_commands,
-            vec![EditorCommand::SetSnapToGrid(true)]
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetSnapToGrid carve-out must not stage a legacy editor command"
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .snap_to_grid
         );
     }
 
@@ -659,5 +695,288 @@ mod tests {
         register_command_events_world(&mut world);
         // No panic = pass.
         assert!(world.contains_resource::<Messages<TurnRight>>());
+    }
+
+    // --- Carve-out pattern: handlers that mutate App-world resources
+    // directly, bypassing `PendingCommands`. Pin the contract: the
+    // message reaches the schedule, the handler mutates the resource,
+    // and the buffer is empty afterwards (no legacy command staged).
+
+    use crate::events::input_state::{SetPanRightHeld, SetShiftHeld};
+    use crate::state::EditorInputRes;
+
+    /// `SetShiftHeld` is a carve-out: the handler writes the held state
+    /// directly to `EditorInputRes` instead of staging a legacy
+    /// `EditorCommand`. Pin the resource is updated and no legacy
+    /// command is queued.
+    #[test]
+    fn carve_out_set_shift_held_mutates_editor_input_resource() {
+        let mut world = build_event_world();
+
+        // Start from a known state.
+        world.resource_mut::<EditorInputRes>().0.shift_held = false;
+        assert!(!world.resource::<EditorInputRes>().0.shift_held);
+
+        world.write_message(SetShiftHeld(true));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world.resource::<EditorInputRes>().0.shift_held,
+            "SetShiftHeld handler must mutate EditorInputRes"
+        );
+        // Carve-out: the message must not be staged as a legacy command.
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetShiftHeld must not stage a legacy editor command"
+        );
+    }
+
+    /// Repeated messages of the same carve-out type should leave the
+    /// resource in the last-written state. This catches accidental
+    /// reset-to-default logic and confirms Bevy's `MessageReader` reads
+    /// the full buffer (not just the first event).
+    #[test]
+    fn carve_out_last_written_state_wins() {
+        let mut world = build_event_world();
+        world.resource_mut::<EditorInputRes>().0.pan_right_held = false;
+
+        world.write_message(SetPanRightHeld(true));
+        world.write_message(SetPanRightHeld(false));
+        world.write_message(SetPanRightHeld(true));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(world.resource::<EditorInputRes>().0.pan_right_held);
+    }
+
+    /// `SetBlockId` is a carve-out: the handler writes the selected
+    /// block id directly to `EditorConfigRes.0.selected_block_id`
+    /// instead of staging a legacy `EditorCommand::SetBlockId`. Pin
+    /// the resource is updated and no legacy command is queued. The
+    /// legacy `State` sync (and the recent-blocks side effect) is
+    /// exercised end-to-end in `eg-app` runtime tests.
+    #[test]
+    fn carve_out_set_block_id_mutates_editor_config_resource() {
+        use crate::events::editor_mode::SetBlockId;
+
+        let mut world = build_event_world();
+        let initial = world
+            .resource::<crate::state::EditorConfigRes>()
+            .0
+            .selected_block_id
+            .clone();
+        let new_id = eg_blocks::BlockId::new("core/lava");
+        assert_ne!(initial, new_id, "test precondition: new id must differ");
+
+        world.write_message(SetBlockId(new_id.clone()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            new_id,
+            "SetBlockId handler must mutate EditorConfigRes.selected_block_id"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetBlockId must not stage a legacy editor command"
+        );
+    }
+
+    // --- BPM carve-out pattern ---
+
+    use crate::events::bpm::{BpmTap, BpmTapReset};
+    use crate::state::EditorTimingRes;
+
+    /// `BpmTap` is a carve-out: the handler reads wall-clock time,
+    /// appends to `EditorTimingRes.0.bpm_tap_times`, recomputes the
+    /// running BPM, and writes the resource directly. Pin the
+    /// resource is updated and no legacy command is queued.
+    #[test]
+    fn carve_out_bpm_tap_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        // Start from a known empty state.
+        world
+            .resource_mut::<EditorTimingRes>()
+            .0
+            .bpm_tap_times
+            .clear();
+        world.resource_mut::<EditorTimingRes>().0.bpm_tap_result = None;
+        assert!(
+            world
+                .resource::<EditorTimingRes>()
+                .0
+                .bpm_tap_times
+                .is_empty(),
+            "test precondition: empty tap history"
+        );
+
+        world.write_message(BpmTap);
+        world.run_schedule(crate::state::StateSchedule);
+
+        // First tap: list grows by 1, no result yet (needs >= 2 taps).
+        assert_eq!(
+            world.resource::<EditorTimingRes>().0.bpm_tap_times.len(),
+            1,
+            "BpmTap handler must append to EditorTimingRes.bpm_tap_times"
+        );
+        assert!(
+            world
+                .resource::<EditorTimingRes>()
+                .0
+                .bpm_tap_result
+                .is_none(),
+            "BpmTap with a single tap must not produce a result"
+        );
+        // Carve-out: the message must not be staged as a legacy command.
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "BpmTap must not stage a legacy editor command"
+        );
+    }
+
+    /// `BpmTapReset` is a carve-out: the handler clears the
+    /// tap-history list and result on the resource directly.
+    #[test]
+    fn carve_out_bpm_tap_reset_clears_editor_timing_resource() {
+        let mut world = build_event_world();
+        // Pre-populate the resource with fake tap history so we can
+        // verify the reset actually clears it.
+        let mut res = world.resource_mut::<EditorTimingRes>();
+        res.0.bpm_tap_times = vec![1.0, 2.0, 3.0];
+        res.0.bpm_tap_result = Some(120.0);
+        drop(res);
+
+        world.write_message(BpmTapReset);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<EditorTimingRes>()
+                .0
+                .bpm_tap_times
+                .is_empty(),
+            "BpmTapReset must clear bpm_tap_times"
+        );
+        assert!(
+            world
+                .resource::<EditorTimingRes>()
+                .0
+                .bpm_tap_result
+                .is_none(),
+            "BpmTapReset must clear bpm_tap_result"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "BpmTapReset must not stage a legacy editor command"
+        );
+    }
+
+    // --- Session carve-out pattern ---
+    //
+    // `SetShowMetadata`, `SetShowSettings`, `ToggleSettings`,
+    // `SetSettingsSection`, and `SetKeybindCapture` are carve-outs:
+    // their handlers mutate `SessionStateRes` directly. Pin the
+    // resource is updated and no legacy command is queued.
+
+    use crate::events::session::{
+        SetKeybindCapture, SetSettingsSection, SetShowMetadata, SetShowSettings, ToggleSettings,
+    };
+    use crate::state::SessionStateRes;
+    use eg_types::SettingsSection;
+
+    #[test]
+    fn carve_out_set_show_metadata_mutates_session_resource() {
+        let mut world = build_event_world();
+        // Start from a known state.
+        world.resource_mut::<SessionStateRes>().editor_show_metadata = false;
+        assert!(!world.resource::<SessionStateRes>().editor_show_metadata);
+
+        world.write_message(SetShowMetadata(true));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world.resource::<SessionStateRes>().editor_show_metadata,
+            "SetShowMetadata handler must mutate SessionStateRes.editor_show_metadata"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetShowMetadata must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_show_settings_mutates_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<SessionStateRes>().editor_show_settings = false;
+
+        world.write_message(SetShowSettings(true));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(world.resource::<SessionStateRes>().editor_show_settings);
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    #[test]
+    fn carve_out_toggle_settings_flips_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<SessionStateRes>().editor_show_settings = false;
+
+        // First toggle: false -> true.
+        world.write_message(ToggleSettings);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(world.resource::<SessionStateRes>().editor_show_settings);
+
+        // Second toggle: true -> false.
+        world.write_message(ToggleSettings);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(!world.resource::<SessionStateRes>().editor_show_settings);
+    }
+
+    #[test]
+    fn carve_out_set_settings_section_mutates_session_resource() {
+        let mut world = build_event_world();
+        let new_section = SettingsSection::Keybinds;
+        world
+            .resource_mut::<SessionStateRes>()
+            .editor_settings_section = SettingsSection::Backends;
+
+        world.write_message(SetSettingsSection(new_section));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<SessionStateRes>().editor_settings_section,
+            new_section
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
+    }
+
+    #[test]
+    fn carve_out_set_keybind_capture_mutates_session_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<SessionStateRes>()
+            .editor_keybind_capture_action = None;
+
+        let capture = Some(("editor.place".to_string(), 0));
+        world.write_message(SetKeybindCapture(capture.clone()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_keybind_capture_action,
+            capture
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(pending.editor_commands.is_empty());
     }
 }

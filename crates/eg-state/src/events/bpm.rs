@@ -6,11 +6,31 @@
 
 */
 //! BPM tapping events.
+//!
+//! These are a **carve-out** from the `PendingCommands` ->
+//! `State::dispatch_editor` pipeline (same pattern as
+//! `events::snap` and `events::editor_mode::handle_set_block_id`).
+//! The handlers mutate `EditorTimingRes.0.bpm_tap_times` and
+//! `EditorTimingRes.0.bpm_tap_result` directly, doing the same
+//! calculation as the legacy `State::editor_bpm_tap` /
+//! `editor_bpm_tap_reset` paths.
+//!
+//! The `ToLegacy` impls are kept so the legacy dispatch path
+//! remains reachable from non-message call sites (the existing
+//! editor dispatch tests still drive
+//! `State::dispatch_editor(EditorCommand::BpmTap)` directly).
+//!
+//! `Runtime::sync_app_editor_timing_state` propagates the
+//! resource values back to the legacy `State.editor.timing` fields
+//! each frame so any code path that still reads the legacy fields
+//! (mesh rebuilds, render extraction, UI snapshot) sees the new
+//! values.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::events::{LegacyCommand, ToLegacy};
+use crate::state::EditorTimingRes;
 use crate::state::editor_command::EditorCommand;
 
 /// Record a BPM heart-beat tap.
@@ -37,17 +57,65 @@ pub fn register_events(app: &mut App) {
     app.add_message::<BpmTap>().add_message::<BpmTapReset>();
 }
 
-pub fn handle_bpm_tap(mut events: MessageReader<BpmTap>, mut pending: ResMut<PendingCommands>) {
+// -----------------------------------------------------------------------
+// Carve-out dispatch systems: handlers mutate `EditorTimingRes` directly
+// so the App world is the authoritative store for the bpm-tap state.
+// The legacy `State.editor.timing` fields are refreshed by
+// `Runtime::sync_app_editor_timing_state` before any dispatch in the
+// same frame.
+//
+// The bpm-tap calculation runs in the App world: the handler reads
+// wall-clock time, appends to the tap-times list, recomputes the
+// running BPM (60 / average diff), and truncates the list to the
+// last 16 taps. This is the same logic as
+// `State::editor_bpm_tap` / `State::editor_bpm_tap_reset`, kept in
+// lockstep to avoid two divergent implementations.
+// -----------------------------------------------------------------------
+
+/// Maximum number of bpm tap times retained for the running average.
+/// Mirrors the cap in `EditorSubsystem::bpm_tap`.
+const BPM_TAP_HISTORY_LIMIT: usize = 16;
+
+fn wall_clock_now_seconds() -> f64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        web_time::SystemTime::now()
+            .duration_since(web_time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() / 1000.0
+    }
+}
+
+pub fn handle_bpm_tap(mut events: MessageReader<BpmTap>, mut timing: ResMut<EditorTimingRes>) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::BpmTap);
+        let now_secs = wall_clock_now_seconds();
+        timing.0.bpm_tap_times.push(now_secs);
+        if timing.0.bpm_tap_times.len() > 1 {
+            let mut diffs: Vec<f64> = Vec::with_capacity(timing.0.bpm_tap_times.len() - 1);
+            for i in 1..timing.0.bpm_tap_times.len() {
+                diffs.push(timing.0.bpm_tap_times[i] - timing.0.bpm_tap_times[i - 1]);
+            }
+            let avg_diff = diffs.iter().sum::<f64>() / diffs.len() as f64;
+            let bpm = (60.0 / avg_diff) as f32;
+            timing.0.bpm_tap_result = Some(bpm);
+        }
+        if timing.0.bpm_tap_times.len() > BPM_TAP_HISTORY_LIMIT {
+            let excess = timing.0.bpm_tap_times.len() - BPM_TAP_HISTORY_LIMIT;
+            timing.0.bpm_tap_times.drain(0..excess);
+        }
     }
 }
 
 pub fn handle_bpm_tap_reset(
     mut events: MessageReader<BpmTapReset>,
-    mut pending: ResMut<PendingCommands>,
+    mut timing: ResMut<EditorTimingRes>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::BpmTapReset);
+        timing.0.bpm_tap_times.clear();
+        timing.0.bpm_tap_result = None;
     }
 }

@@ -10,7 +10,7 @@ use smart_default::SmartDefault;
 
 const RECENT_BLOCK_LIMIT: usize = 10;
 
-#[derive(SmartDefault)]
+#[derive(SmartDefault, Clone)]
 pub struct EditorConfigState {
     pub selected_block_id: BlockId,
     pub recent_block_ids: Vec<BlockId>,
