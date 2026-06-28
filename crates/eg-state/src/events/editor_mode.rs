@@ -136,14 +136,36 @@ pub fn handle_set_block_id(
     }
 }
 
+// `SelectRecentBlock` is a carve-out: the handler reads the
+// `recent_block_ids` list from `EditorConfigRes`, picks the indexed
+// (placeable) entry, and writes the result directly to
+// `EditorConfigRes.0.selected_block_id` + `EditorInputRes.0.mode`.
+// The legacy `select_recent_block` is a no-op outside the editor
+// phase and also gates on placeable; the App-world handler mirrors
+// the placeable filter via `eg_blocks::BlockDefinition::get` so
+// the carve-out matches the legacy behavior. The change-guarded
+// syncs in `Runtime` (config + input) propagate the values to the
+// legacy `State.editor.config.selected_block_id` and
+// `State.editor.input.mode` fields; their setters handle the
+// heavy side effects (recent-blocks list, vertex rebuilds,
+// dirty flags) once per real user-driven change.
 pub fn handle_select_recent_block(
     mut events: MessageReader<SelectRecentBlock>,
-    mut pending: ResMut<PendingCommands>,
+    mut config: ResMut<EditorConfigRes>,
+    mut input: ResMut<crate::state::EditorInputRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SelectRecentBlock(event.0));
+        let placeable_ids: Vec<eg_blocks::BlockId> = config
+            .0
+            .recent_block_ids
+            .iter()
+            .filter(|id| eg_blocks::BlockDefinition::get(id).placeable)
+            .cloned()
+            .collect();
+        if let Some(id) = placeable_ids.get(event.0) {
+            config.0.selected_block_id = id.clone();
+            input.0.mode = eg_types::EditorMode::Place;
+        }
     }
 }
 

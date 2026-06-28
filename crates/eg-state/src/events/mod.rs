@@ -1650,4 +1650,80 @@ mod tests {
             "SetEditorMode must not stage a legacy editor command"
         );
     }
+
+    /// `SelectRecentBlock` is a carve-out: the handler reads
+    /// `EditorConfigRes.0.recent_block_ids` (filtered to placeable
+    /// blocks), writes the indexed entry to
+    /// `EditorConfigRes.0.selected_block_id` and sets
+    /// `EditorInputRes.0.mode = Place` directly. Pin the resources
+    /// are updated and no legacy command is queued.
+    #[test]
+    fn carve_out_select_recent_block_mutates_resources() {
+        use crate::events::editor_mode::SelectRecentBlock;
+        let mut world = build_event_world();
+
+        // Seed two distinct placeable recent block ids. The
+        // `BlockDefinition::get` fallback returns the default
+        // block for unknown ids (which is placeable), so the
+        // placeable filter is exercised even when the test uses
+        // ids that resolve to known blocks.
+        let first = eg_blocks::BlockId::new("core/stone");
+        let second = eg_blocks::BlockId::new("core/wood");
+        world.resource_mut::<crate::state::EditorConfigRes>().0.recent_block_ids =
+            vec![first.clone(), second.clone()];
+        world.resource_mut::<crate::state::EditorConfigRes>().0.selected_block_id =
+            eg_blocks::BlockId::default();
+
+        // Out-of-range index: no-op, no legacy command staged.
+        world.write_message(SelectRecentBlock(10));
+        world.run_schedule(crate::state::StateSchedule);
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SelectRecentBlock must not stage a legacy editor command"
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            eg_blocks::BlockId::default(),
+            "Out-of-range index must not change selected_block_id"
+        );
+
+        // Index 0 picks the first recent block.
+        world.write_message(SelectRecentBlock(0));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            first,
+            "SelectRecentBlock(0) handler must mutate EditorConfigRes.selected_block_id"
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Place,
+            "SelectRecentBlock handler must switch the editor mode to Place"
+        );
+
+        // Index 1 picks the second recent block.
+        world.write_message(SelectRecentBlock(1));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            second
+        );
+
+        // No legacy command is staged across the whole test.
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SelectRecentBlock must not stage a legacy editor command"
+        );
+    }
 }
