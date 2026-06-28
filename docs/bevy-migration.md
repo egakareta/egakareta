@@ -72,9 +72,10 @@ favor of the Bevy umbrella. The migration is designed to be mechanical.
 (`SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` / `SetPan{Up,Down,Left,Right}Held`
 
 - `MouseButton` / `PrimaryClick` / `PointerMoved` / `UpdateCursorFromScreen` /
-  `CameraDrag`) are **not** events — an `InputSet` system writes an `EditorInput`
-  resource directly from winit input. That makes for ~85 events + ~12 direct
-  resource writes. See the system-set graph below for ordering.
+  `CameraDrag`) are **not** commands — their message handlers write App-world
+  editor input/camera resources directly during the compatibility window. That
+  makes for ~85 legacy-routed messages + ~12 direct resource writes. See the
+  system-set graph below for ordering.
 
 ## System set graph (post Phase 7)
 
@@ -254,11 +255,11 @@ avigation | 10 | TurnRight, ToggleEditor, GameSetPracticeMode |
 
 Per the migration plan, the 7 input*state::* events and 5
 pointer::_ events are **not** commands — they are \_input state_.
-A follow-up phase replaces them with direct writes to the
-EditorInput resource from a dedicated InputSet system. For now
-they remain routed through dispatch_editor to preserve test parity
-with the legacy EditorCommand::SetShiftHeld /
-EditorCommand::MouseButton etc. variants.
+They now write directly to App-world resources (`EditorInputRes` and
+`EditorCameraRes`) instead of staging `PendingCommands` for
+`dispatch_editor`. The legacy `State::process_input_event` path still exists
+for compatibility tests and production frame behavior until the single-world
+deletion pass.
 
 REFACTOR POINT(full-bevy): the input-state + pointer events
 disappear in the full-Bevy migration; the corresponding bevy_input

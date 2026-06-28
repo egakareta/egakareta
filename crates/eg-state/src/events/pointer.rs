@@ -5,17 +5,18 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Pointer / drag / cursor events. Deprecated as commands per the
-//! migration plan; see the module-level docs of
-//! [`crate::events::mod`] for the input-state carve-out. The
-//! events remain routed through `dispatch_editor` for now to preserve
-//! test parity.
+//! Pointer / drag / cursor input messages.
+//!
+//! These represent editor input state, not commands. The handlers write
+//! directly to mirrored App-world resources so pointer routing no longer
+//! needs to stage legacy editor commands during the compatibility window.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::editor_command::EditorCommand;
+use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes};
 
 /// Mouse button state update for editor interaction routing.
 #[derive(Message, Debug, Clone, Copy)]
@@ -107,62 +108,83 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_mouse_button(
     mut events: MessageReader<MouseButton>,
-    mut pending: ResMut<PendingCommands>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::MouseButton {
-            button: event.button,
-            pressed: event.pressed,
-        });
+        match event.button {
+            0 => {
+                input.0.left_mouse_down = event.pressed;
+                if !event.pressed {
+                    input.0.marquee_start_screen = None;
+                    input.0.marquee_current_screen = None;
+                }
+            }
+            2 => {
+                input.0.right_dragging = event.pressed;
+            }
+            _ => {}
+        }
     }
 }
 
 pub fn handle_primary_click(
     mut events: MessageReader<PrimaryClick>,
-    mut pending: ResMut<PendingCommands>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::PrimaryClick {
-            x: event.x,
-            y: event.y,
-        });
+        input.0.pointer_screen = Some([event.x, event.y]);
+        input.0.left_mouse_down = true;
     }
 }
 
 pub fn handle_pointer_moved(
     mut events: MessageReader<PointerMoved>,
-    mut pending: ResMut<PendingCommands>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::PointerMoved {
-            x: event.x,
-            y: event.y,
-        });
+        input.0.pointer_screen = Some([event.x, event.y]);
+        if input.0.left_mouse_down {
+            input.0.marquee_current_screen = Some([event.x, event.y]);
+        }
     }
 }
 
 pub fn handle_update_cursor_from_screen(
     mut events: MessageReader<UpdateCursorFromScreen>,
-    mut pending: ResMut<PendingCommands>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::UpdateCursorFromScreen {
-                x: event.x,
-                y: event.y,
-            });
+        input.0.pointer_screen = Some([event.x, event.y]);
     }
 }
 
 pub fn handle_camera_drag(
     mut events: MessageReader<CameraDrag>,
-    mut pending: ResMut<PendingCommands>,
+    input: Res<EditorInputRes>,
+    phase: Res<AppPhaseRes>,
+    mut camera: ResMut<EditorCameraRes>,
 ) {
+    if !input.0.right_dragging {
+        events.clear();
+        return;
+    }
+
+    const ROTATE_SPEED: f32 = 0.004;
+    const PITCH_SPEED: f32 = 0.006;
+
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::CameraDrag {
-            dx: event.dx,
-            dy: event.dy,
-        });
+        match phase.current {
+            eg_types::AppPhase::Editor => {
+                camera.0.editor_yaw -= event.dx as f32 * ROTATE_SPEED;
+                camera.0.editor_pitch = (camera.0.editor_pitch + event.dy as f32 * PITCH_SPEED)
+                    .clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
+            }
+            eg_types::AppPhase::Playing => {
+                camera.0.playing_rotation -= event.dx as f32 * ROTATE_SPEED;
+                camera.0.playing_pitch = (camera.0.playing_pitch + event.dy as f32 * PITCH_SPEED)
+                    .clamp(0.1f32.to_radians(), 89.9f32.to_radians());
+            }
+            _ => {}
+        }
     }
 }

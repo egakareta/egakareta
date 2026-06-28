@@ -45,14 +45,14 @@
 //!
 //! Per the migration plan, the following 12 editor command variants are
 //! **not** commands — they are *input state*. Modifier/pan held state now
-//! writes directly to `EditorInputRes`; pointer/camera drag events remain
-//! routed through `dispatch_editor` until their interaction handlers move
-//! over as a group.
+//! writes directly to `EditorInputRes`; pointer/camera drag messages now
+//! write directly to App-world editor input/camera resources during the
+//! compatibility window.
 //!
 //! - `SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` (direct resource writes)
 //! - `SetPan{Up,Down,Left,Right}Held` (direct resource writes)
 //! - `MouseButton` / `PrimaryClick` / `PointerMoved` /
-//!   `UpdateCursorFromScreen` / `CameraDrag` (pointer / camera drag)
+//!   `UpdateCursorFromScreen` / `CameraDrag` (direct resource writes)
 //!
 //! REFACTOR POINT(full-bevy): the messages defined here migrate to
 //! `bevy_input` `Input<KeyCode>` / `ButtonInput<MouseButton>` in the

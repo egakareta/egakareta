@@ -398,6 +398,45 @@ async fn tick_state_writes_input_state_without_staging_commands() {
 }
 
 #[tokio::test]
+async fn tick_state_writes_pointer_state_without_staging_commands() {
+    use crate::events::PendingCommands;
+    use crate::events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick};
+    use crate::state::{AppPhaseRes, EditorCameraRes};
+
+    let mut state = State::new_test().await;
+    state.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+
+    state
+        .world_mut()
+        .write_message(PointerMoved { x: 10.0, y: 20.0 });
+    state.world_mut().write_message(MouseButton {
+        button: 2,
+        pressed: true,
+    });
+    state
+        .world_mut()
+        .write_message(CameraDrag { dx: 5.0, dy: -3.0 });
+    state
+        .world_mut()
+        .write_message(PrimaryClick { x: 30.0, y: 40.0 });
+
+    state.tick_state();
+
+    let input = &state.world().resource::<EditorInputRes>().0;
+    assert_eq!(input.pointer_screen, Some([30.0, 40.0]));
+    assert!(input.left_mouse_down);
+    assert!(input.right_dragging);
+    assert!(state.world().resource::<PendingCommands>().is_empty());
+    assert_eq!(state.editor.input.pointer_screen, None);
+    assert!(!state.editor.input.left_mouse_down);
+    assert!(!state.editor.input.right_dragging);
+
+    let camera = &state.world().resource::<EditorCameraRes>().0;
+    assert!(camera.editor_yaw < eg_types::DEFAULT_CAMERA_YAW);
+    assert!(camera.editor_pitch < eg_types::DEFAULT_CAMERA_PITCH);
+}
+
+#[tokio::test]
 async fn tick_state_stages_undo_without_dispatching() {
     // Verify that the editor Undo message routes through the State-owned
     // drain systems without calling `State::editor_undo`.
