@@ -1600,8 +1600,6 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use crate::commands::AppCommand;
-    use crate::state::editor_command::EditorCommand;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{Direction, MusicMetadata};
 
@@ -1707,7 +1705,7 @@ mod tests {
         ));
 
         let level_name = state.menu.state.levels[0].clone();
-        state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
+        state.load_builtin_level_into_editor(&level_name);
 
         assert!(
             !state.editor.timeline.playback.playing,
@@ -1755,10 +1753,10 @@ mod tests {
         state.enter_editor_phase("Test Level".to_string());
 
         // 1. Setup: Enter editor and copy a block
-        state.dispatch(AppCommand::TurnRight); // Place block
+        state.turn_right(); // Place block
         state.editor.input.selected_block_index = Some(0);
         state.editor.input.selected_block_indices = vec![0];
-        state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
+        state.editor_copy_block();
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
         // 2. Transition to playing: Clipboard should remain available for editor re-entry.
@@ -1775,15 +1773,15 @@ mod tests {
         let mut state = State::new_test().await;
         state.enter_editor_phase("Test Level".to_string());
 
-        state.dispatch(AppCommand::TurnRight); // Place block -> adds to undo history
+        state.turn_right(); // Place block -> adds to undo history
         state.editor.input.selected_block_index = Some(0);
         state.editor.input.selected_block_indices = vec![0];
-        state.dispatch(AppCommand::Editor(EditorCommand::CopyBlock));
+        state.editor_copy_block();
         assert!(!state.editor.runtime.history.undo.is_empty());
         assert!(state.editor.runtime.interaction.clipboard.is_some());
 
         let level_name = state.menu.state.levels[0].clone();
-        state.dispatch(AppCommand::Editor(EditorCommand::LoadLevel(level_name)));
+        state.load_builtin_level_into_editor(&level_name);
 
         assert!(
             state.editor.runtime.history.undo.is_empty(),

@@ -290,6 +290,358 @@ pub fn register_command_events_world(world: &mut World) {
     world.init_resource::<PendingCommands>();
 }
 
+/// Write a legacy app command into the Bevy message bus.
+///
+/// UI and compatibility callers use this as the single command-ingress
+/// adapter while the public UI surface still returns `AppCommand` values.
+pub fn write_app_command_message(world: &mut World, command: AppCommand) {
+    match command {
+        AppCommand::TurnRight => {
+            world.write_message(navigation::TurnRight);
+        }
+        AppCommand::NextLevel => {
+            world.write_message(navigation::NextLevel);
+        }
+        AppCommand::PrevLevel => {
+            world.write_message(navigation::PrevLevel);
+        }
+        AppCommand::ToggleEditor => {
+            world.write_message(navigation::ToggleEditor);
+        }
+        AppCommand::GameResume => {
+            world.write_message(navigation::GameResume);
+        }
+        AppCommand::GameRestartLevel => {
+            world.write_message(navigation::GameRestartLevel);
+        }
+        AppCommand::GameSetPracticeMode(enabled) => {
+            world.write_message(navigation::GameSetPracticeMode { enabled });
+        }
+        AppCommand::GameSetPracticeCheckpoint => {
+            world.write_message(navigation::GameSetPracticeCheckpoint);
+        }
+        AppCommand::GameRemovePracticeCheckpoint => {
+            world.write_message(navigation::GameRemovePracticeCheckpoint);
+        }
+        AppCommand::GameQuitToMenu => {
+            world.write_message(navigation::GameQuitToMenu);
+        }
+        AppCommand::AuthSubmitSignIn => {
+            world.write_message(auth::AuthSubmitSignIn);
+        }
+        AppCommand::AuthSignOut => {
+            world.write_message(auth::AuthSignOut);
+        }
+        AppCommand::AuthOpenSignup => {
+            world.write_message(auth::AuthOpenSignup);
+        }
+        AppCommand::CopyLatestPerfFrame => {
+            world.write_message(auth::CopyLatestPerfFrame);
+        }
+        AppCommand::ResizeSurface { width, height } => {
+            world.write_message(auth::ResizeSurface { width, height });
+        }
+        AppCommand::Editor(command) => write_editor_command_message(world, command),
+    }
+}
+
+/// Write multiple legacy app commands into the Bevy message bus.
+pub fn write_app_command_messages(
+    world: &mut World,
+    commands: impl IntoIterator<Item = AppCommand>,
+) {
+    for command in commands {
+        write_app_command_message(world, command);
+    }
+}
+
+/// Write a legacy editor command into the Bevy message bus.
+pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
+    match command {
+        EditorCommand::SetMode(mode) => {
+            world.write_message(editor_mode::SetEditorMode(mode));
+        }
+        EditorCommand::SetBlockId(block_id) => {
+            world.write_message(editor_mode::SetBlockId(block_id));
+        }
+        EditorCommand::SelectRecentBlock(index) => {
+            world.write_message(editor_mode::SelectRecentBlock(index));
+        }
+        EditorCommand::PickSelectedBlock => {
+            world.write_message(editor_mode::PickSelectedBlock);
+        }
+        EditorCommand::PickBlockAt { x, y } => {
+            world.write_message(editor_mode::PickBlockAt { x, y });
+        }
+        EditorCommand::SetSnapToGrid(enabled) => {
+            world.write_message(snap::SetSnapToGrid(enabled));
+        }
+        EditorCommand::SetSnapStep(step) => {
+            world.write_message(snap::SetSnapStep(step));
+        }
+        EditorCommand::SetSnapRotation(enabled) => {
+            world.write_message(snap::SetSnapRotation(enabled));
+        }
+        EditorCommand::SetSnapRotationStep(step) => {
+            world.write_message(snap::SetSnapRotationStep(step));
+        }
+        EditorCommand::RemoveBlock => {
+            world.write_message(block::RemoveBlock);
+        }
+        EditorCommand::DuplicateBlock => {
+            world.write_message(block::DuplicateBlock);
+        }
+        EditorCommand::CopyBlock => {
+            world.write_message(block::CopyBlock);
+        }
+        EditorCommand::PasteBlock => {
+            world.write_message(block::PasteBlock);
+        }
+        EditorCommand::UpdateSelectedBlock(object) => {
+            world.write_message(block::UpdateSelectedBlock(object));
+        }
+        EditorCommand::SnapSelectionToGrid => {
+            world.write_message(selection::SnapSelectionToGrid);
+        }
+        EditorCommand::FocusCameraTarget => {
+            world.write_message(selection::FocusCameraTarget);
+        }
+        EditorCommand::AddTransformTrigger => {
+            world.write_message(selection::AddTransformTrigger);
+        }
+        EditorCommand::ToggleTimelinePlayback => {
+            world.write_message(timeline::ToggleTimelinePlayback);
+        }
+        EditorCommand::ShiftTimeline(delta_seconds) => {
+            world.write_message(timeline::ShiftTimeline(delta_seconds));
+        }
+        EditorCommand::SetTimelineTime(time_seconds) => {
+            world.write_message(timeline::SetTimelineTime(time_seconds));
+        }
+        EditorCommand::SetTimelineDuration(duration_seconds) => {
+            world.write_message(timeline::SetTimelineDuration(duration_seconds));
+        }
+        EditorCommand::AddTap => {
+            world.write_message(timeline::AddTap);
+        }
+        EditorCommand::RemoveTap => {
+            world.write_message(timeline::RemoveTap);
+        }
+        EditorCommand::RemoveTapAt(time_seconds) => {
+            world.write_message(timeline::RemoveTapAt(time_seconds));
+        }
+        EditorCommand::SetSelectedTap(index) => {
+            world.write_message(timeline::SetSelectedTap(index));
+        }
+        EditorCommand::SetSelectedTapTime(time_seconds) => {
+            world.write_message(timeline::SetSelectedTapTime(time_seconds));
+        }
+        EditorCommand::ClearTaps => {
+            world.write_message(timeline::ClearTaps);
+        }
+        EditorCommand::SetPlaybackSpeed(speed) => {
+            world.write_message(timeline::SetPlaybackSpeed(speed));
+        }
+        EditorCommand::SetWaveformZoom(zoom) => {
+            world.write_message(timeline::SetWaveformZoom(zoom));
+        }
+        EditorCommand::SetWaveformScroll(scroll) => {
+            world.write_message(timeline::SetWaveformScroll(scroll));
+        }
+        EditorCommand::Playtest => {
+            world.write_message(timeline::Playtest);
+        }
+        EditorCommand::AddTimingPoint { time_seconds, bpm } => {
+            world.write_message(timing::AddTimingPoint { time_seconds, bpm });
+        }
+        EditorCommand::RemoveTimingPoint(index) => {
+            world.write_message(timing::RemoveTimingPoint(index));
+        }
+        EditorCommand::SetTimingPointTime(index, time) => {
+            world.write_message(timing::SetTimingPointTime { index, time });
+        }
+        EditorCommand::SetTimingPointBpm(index, bpm) => {
+            world.write_message(timing::SetTimingPointBpm { index, bpm });
+        }
+        EditorCommand::SetTimingPointTimeSignature(index, numerator, denominator) => {
+            world.write_message(timing::SetTimingPointTimeSignature {
+                index,
+                numerator,
+                denominator,
+            });
+        }
+        EditorCommand::SetTimingSelected(index) => {
+            world.write_message(timing::SetTimingSelected(index));
+        }
+        EditorCommand::BpmTap => {
+            world.write_message(bpm::BpmTap);
+        }
+        EditorCommand::BpmTapReset => {
+            world.write_message(bpm::BpmTapReset);
+        }
+        EditorCommand::SetSpawnHere => {
+            world.write_message(spawn::SetSpawnHere);
+        }
+        EditorCommand::RotateSpawnDirection => {
+            world.write_message(spawn::RotateSpawnDirection);
+        }
+        EditorCommand::RotatePlacementPreview => {
+            world.write_message(spawn::RotatePlacementPreview);
+        }
+        EditorCommand::Undo => {
+            world.write_message(history::Undo);
+        }
+        EditorCommand::Redo => {
+            world.write_message(history::Redo);
+        }
+        EditorCommand::AdjustZoom(delta) => {
+            world.write_message(camera::AdjustZoom(delta));
+        }
+        EditorCommand::SetCameraOrientation {
+            rotation,
+            pitch,
+            transition_seconds,
+        } => {
+            world.write_message(camera::SetCameraOrientation {
+                rotation,
+                pitch,
+                transition_seconds,
+            });
+        }
+        EditorCommand::AddCameraTrigger => {
+            world.write_message(camera::AddCameraTrigger);
+        }
+        EditorCommand::AddCameraFollowTrigger => {
+            world.write_message(camera::AddCameraFollowTrigger);
+        }
+        EditorCommand::SetTriggerSelected(index) => {
+            world.write_message(camera::SetTriggerSelected(index));
+        }
+        EditorCommand::ToggleHitboxVisualization => {
+            world.write_message(misc::ToggleHitboxVisualization);
+        }
+        EditorCommand::TogglePerfOverlay => {
+            world.write_message(misc::TogglePerfOverlay);
+        }
+        EditorCommand::LoadLevel(name) => {
+            world.write_message(session::LoadLevel(name));
+        }
+        EditorCommand::RenameLevel(name) => {
+            world.write_message(session::RenameLevel(name));
+        }
+        EditorCommand::ExportLevel => {
+            world.write_message(session::ExportLevel);
+        }
+        EditorCommand::SetShowMetadata(show) => {
+            world.write_message(session::SetShowMetadata(show));
+        }
+        EditorCommand::ToggleSettings => {
+            world.write_message(session::ToggleSettings);
+        }
+        EditorCommand::SetShowSettings(show) => {
+            world.write_message(session::SetShowSettings(show));
+        }
+        EditorCommand::SetSettingsSection(section) => {
+            world.write_message(session::SetSettingsSection(section));
+        }
+        EditorCommand::SetGraphicsBackend(backend) => {
+            world.write_message(session::SetGraphicsBackend(backend));
+        }
+        EditorCommand::SetAudioBackend(backend) => {
+            world.write_message(session::SetAudioBackend(backend));
+        }
+        EditorCommand::SetUiScaleMultiplier(scale) => {
+            world.write_message(session::SetUiScaleMultiplier(scale));
+        }
+        EditorCommand::SetKeybindCapture(capture) => {
+            world.write_message(session::SetKeybindCapture(capture));
+        }
+        EditorCommand::SetKeybind {
+            action,
+            slot,
+            chord,
+        } => {
+            world.write_message(session::SetKeybind {
+                action,
+                slot,
+                chord,
+            });
+        }
+        EditorCommand::ClearKeybindSlot { action, slot } => {
+            world.write_message(session::ClearKeybindSlot { action, slot });
+        }
+        EditorCommand::ResetKeybind(action) => {
+            world.write_message(session::ResetKeybind(action));
+        }
+        EditorCommand::ResetKeybinds => {
+            world.write_message(session::ResetKeybinds);
+        }
+        EditorCommand::CompleteImport => {
+            world.write_message(session::CompleteImport);
+        }
+        EditorCommand::UpdateMusic(metadata) => {
+            world.write_message(session::UpdateMusic(metadata));
+        }
+        EditorCommand::UpdateCreatorMetadata(metadata) => {
+            world.write_message(session::UpdateCreatorMetadata(metadata));
+        }
+        EditorCommand::UpdateSkyColor(color) => {
+            world.write_message(session::UpdateSkyColor(color));
+        }
+        EditorCommand::TriggerAudioImport => {
+            world.write_message(session::TriggerAudioImport);
+        }
+        EditorCommand::CaptureMenuPreviewCamera => {
+            world.write_message(session::CaptureMenuPreviewCamera);
+        }
+        EditorCommand::UseAutoMenuPreviewCamera => {
+            world.write_message(session::UseAutoMenuPreviewCamera);
+        }
+        EditorCommand::SetShiftHeld(held) => {
+            world.write_message(input_state::SetShiftHeld(held));
+        }
+        EditorCommand::SetCtrlHeld(held) => {
+            world.write_message(input_state::SetCtrlHeld(held));
+        }
+        EditorCommand::SetAltHeld(held) => {
+            world.write_message(input_state::SetAltHeld(held));
+        }
+        EditorCommand::SetPanUpHeld(held) => {
+            world.write_message(input_state::SetPanUpHeld(held));
+        }
+        EditorCommand::SetPanDownHeld(held) => {
+            world.write_message(input_state::SetPanDownHeld(held));
+        }
+        EditorCommand::SetPanLeftHeld(held) => {
+            world.write_message(input_state::SetPanLeftHeld(held));
+        }
+        EditorCommand::SetPanRightHeld(held) => {
+            world.write_message(input_state::SetPanRightHeld(held));
+        }
+        EditorCommand::MouseButton { button, pressed } => {
+            world.write_message(pointer::MouseButton { button, pressed });
+        }
+        EditorCommand::PrimaryClick { x, y } => {
+            world.write_message(pointer::PrimaryClick { x, y });
+        }
+        EditorCommand::PointerMoved { x, y } => {
+            world.write_message(pointer::PointerMoved { x, y });
+        }
+        EditorCommand::UpdateCursorFromScreen { x, y } => {
+            world.write_message(pointer::UpdateCursorFromScreen { x, y });
+        }
+        EditorCommand::CameraDrag { dx, dy } => {
+            world.write_message(pointer::CameraDrag { dx, dy });
+        }
+        EditorCommand::TogglePlaceWindow => {
+            world.write_message(misc::TogglePlaceWindow);
+        }
+        EditorCommand::Escape => {
+            world.write_message(misc::Escape);
+        }
+    }
+}
+
 /// Add every per-message drain system to a `Schedule`.
 ///
 /// `State::tick_state` runs the schedule, so the systems execute once

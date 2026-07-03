@@ -7,9 +7,9 @@
 */
 use super::EditorDirtyFlags;
 use super::State;
-use crate::commands::AppCommand;
-use crate::state::editor_command::EditorCommand;
-use crate::state::{AppPhaseRes, EditorInputRes, EditorRuntimeRes, PerfRes, SessionStateRes};
+use crate::state::{
+    AppPhaseRes, EditorInputRes, EditorRuntimeRes, PerfRes, SessionStateRes, TurnRightRequest,
+};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
 use eg_game::simulate_timeline_state;
@@ -330,10 +330,9 @@ async fn tick_state_runs_phase_transition_system() {
 
 // ── Phase 3 — command / event fragmentation tests ───────────────
 #[tokio::test]
-async fn tick_state_stages_messages_without_dispatching() {
-    // Runtime owns the production App-world drain during the compatibility
-    // window; staged commands are not dispatched until Runtime drains them.
-    use crate::events::PendingCommands;
+async fn tick_state_writes_command_messages_without_dispatching() {
+    // Runtime owns the production App-world request consumption during the
+    // compatibility window; requests are not applied to legacy State here.
     use crate::events::editor_mode::SetEditorMode;
     use crate::events::navigation::TurnRight;
     use eg_types::EditorMode;
@@ -351,18 +350,13 @@ async fn tick_state_stages_messages_without_dispatching() {
     app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
-    // `PendingCommands` is currently empty.
-    assert!(app.world().resource::<PendingCommands>().is_empty());
-
-    // Tick: per-event drain systems fire and stage commands in
-    // `PendingCommands`, but the legacy State dispatcher is not invoked.
+    // Tick: per-event systems fire and write App-world resources/requests,
+    // but the legacy State dispatcher is not invoked.
     tick_state_with_app(&mut state, &mut app);
 
-    let pending = app.world().resource::<PendingCommands>();
-    assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
     assert!(
-        pending.editor_commands.is_empty(),
-        "SetEditorMode is a Phase 3.13 carve-out and must not stage a legacy editor command"
+        app.world().resource::<TurnRightRequest>().pending,
+        "TurnRight handler must write TurnRightRequest"
     );
     assert_eq!(
         app.world().resource::<EditorInputRes>().0.mode,
@@ -377,7 +371,6 @@ async fn tick_state_stages_messages_without_dispatching() {
 
 #[tokio::test]
 async fn tick_state_writes_input_state_without_staging_commands() {
-    use crate::events::PendingCommands;
     use crate::events::input_state::{SetCtrlHeld, SetPanRightHeld, SetShiftHeld};
 
     let mut state = State::new_test().await;
@@ -393,7 +386,6 @@ async fn tick_state_writes_input_state_without_staging_commands() {
     assert!(input.shift_held);
     assert!(input.ctrl_held);
     assert!(input.pan_right_held);
-    assert!(app.world().resource::<PendingCommands>().is_empty());
     assert!(!state.editor.input.shift_held);
     assert!(!state.editor.input.ctrl_held);
     assert!(!state.editor.input.pan_right_held);
@@ -401,7 +393,6 @@ async fn tick_state_writes_input_state_without_staging_commands() {
 
 #[tokio::test]
 async fn tick_state_writes_pointer_state_without_staging_commands() {
-    use crate::events::PendingCommands;
     use crate::events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick};
     use crate::state::{AppPhaseRes, EditorCameraRes};
 
@@ -426,7 +417,6 @@ async fn tick_state_writes_pointer_state_without_staging_commands() {
     assert_eq!(input.pointer_screen, Some([30.0, 40.0]));
     assert!(input.left_mouse_down);
     assert!(input.right_dragging);
-    assert!(app.world().resource::<PendingCommands>().is_empty());
     assert_eq!(state.editor.input.pointer_screen, None);
     assert!(!state.editor.input.left_mouse_down);
     assert!(!state.editor.input.right_dragging);
@@ -439,8 +429,7 @@ async fn tick_state_writes_pointer_state_without_staging_commands() {
 #[tokio::test]
 async fn tick_state_applies_undo_without_pending_command() {
     // Verify that the editor Undo message is handled in App-world resources
-    // instead of staging `EditorCommand::Undo` for legacy dispatch.
-    use crate::events::PendingCommands;
+    // instead of relying on legacy dispatch.
     use crate::events::history::Undo;
 
     let mut state = State::new_test().await;
@@ -478,9 +467,6 @@ async fn tick_state_applies_undo_without_pending_command() {
             selected_trigger_index: None,
         });
 
-    // Buffer is empty before the tick.
-    assert!(app.world().resource::<PendingCommands>().is_empty());
-
     app.world_mut().write_message(Undo);
     tick_state_with_app(&mut state, &mut app);
 
@@ -490,10 +476,6 @@ async fn tick_state_applies_undo_without_pending_command() {
             .objects,
         vec![undo_object]
     );
-    assert!(
-        app.world().resource::<PendingCommands>().is_empty(),
-        "Undo must not stage a legacy editor command"
-    );
 }
 
 #[tokio::test]
@@ -501,13 +483,12 @@ async fn tick_state_carve_out_practice_mode_mutates_session_resource() {
     // Phase 3.15: `GameSetPracticeMode` is a carve-out — the
     // handler writes `SessionStateRes.practice_mode_enabled`
     // directly instead of staging a legacy `AppCommand`. Pin the
-    // resource is updated and no legacy command is queued. The
+    // resource is updated without legacy dispatch. The
     // change-guarded runtime sync (which would invoke the legacy
     // `set_practice_mode_enabled` setter with the heavy side
     // effects — clear checkpoints, restart level, resume game) is
     // exercised in `eg-app` runtime tests because it requires a
     // real `Runtime`.
-    use crate::events::PendingCommands;
     use crate::events::navigation::GameSetPracticeMode;
 
     let mut state = State::new_test().await;
@@ -527,11 +508,6 @@ async fn tick_state_carve_out_practice_mode_mutates_session_resource() {
             .resource::<SessionStateRes>()
             .practice_mode_enabled,
         "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
-    );
-    let pending = app.world().resource::<PendingCommands>();
-    assert!(
-        pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-        "GameSetPracticeMode must not stage any legacy command (carve-out)"
     );
     assert!(
         !state.session.practice_mode_enabled,
@@ -1760,10 +1736,7 @@ async fn context_cursor_update_forces_cursor_in_select_mode_while_right_dragging
         .cursor;
     state.editor.input.cursor = [99.0, 99.0, 99.0];
 
-    state.dispatch(AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
-        x: screen_x,
-        y: screen_y,
-    }));
+    state.force_editor_cursor_from_screen(screen_x, screen_y);
 
     assert_eq!(state.editor.input.cursor, expected_cursor);
 }
@@ -1789,7 +1762,8 @@ async fn spawn_hotkey_updates_spawn_from_pointer_in_select_mode() {
     state.editor.input.cursor = [99.0, 99.0, 99.0];
     state.editor.input.pointer_screen = Some([screen_x, screen_y]);
 
-    state.dispatch(AppCommand::Editor(EditorCommand::SetSpawnHere));
+    state.force_editor_cursor_from_pointer();
+    state.editor_set_spawn_here();
 
     assert_eq!(state.editor.spawn.position, expected_cursor);
 }
@@ -1991,7 +1965,7 @@ async fn playback_shift_timeline_command_queues_debounced_audio_resync() {
     state.toggle_editor_timeline_playback();
     assert!(state.editor.timeline.playback.playing);
 
-    state.dispatch(AppCommand::Editor(EditorCommand::ShiftTimeline(0.1)));
+    state.editor_shift_timeline_time(0.1);
 
     assert!((state.editor.timeline.clock.time_seconds - 0.6).abs() < 1e-5);
     assert_eq!(

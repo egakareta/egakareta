@@ -8,7 +8,7 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use eg_state::state::{State, editor_command::EditorCommand};
+use eg_state::state::State;
 use eg_types::EditorMode;
 use egakareta_lib::bench_support::{
     TimelineScrubBenchmarkState, advance_timeline_preview, rebuild_chunked_dense_block_mesh,
@@ -19,9 +19,9 @@ fn build_editor_playback_start_state() -> State {
     pollster::block_on(async {
         let mut state = State::new_test().await;
         state.enter_editor_phase_for_test("Ambition");
-        state.dispatch_editor(EditorCommand::LoadLevel("Ambition".to_string()));
-        state.dispatch_editor(EditorCommand::SetMode(EditorMode::Place));
-        state.dispatch_editor(EditorCommand::SetTimelineDuration(120.0));
+        state.load_builtin_level_into_editor("Ambition");
+        state.set_editor_mode(EditorMode::Place);
+        state.set_editor_timeline_duration_seconds(120.0);
         state
     })
 }
@@ -113,8 +113,8 @@ fn editor_playback_start_benchmarks(c: &mut Criterion) {
                 b.iter_batched(
                     build_editor_playback_start_state,
                     |mut state| {
-                        state.dispatch_editor(EditorCommand::SetTimelineTime(start_time_seconds));
-                        state.dispatch_editor(EditorCommand::ToggleTimelinePlayback);
+                        state.set_editor_timeline_time_seconds(start_time_seconds);
+                        state.toggle_editor_timeline_playback();
                         black_box(state.editor_is_playing());
                         black_box(state.editor_mode());
                         black_box(state.editor_timeline_time_seconds());

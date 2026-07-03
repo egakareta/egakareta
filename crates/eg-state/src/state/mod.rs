@@ -94,7 +94,6 @@ pub use state_resources::{
 };
 pub use ui_snapshot::UiStateSnapshot;
 
-use crate::state::editor_command::EditorCommand;
 use eg_game::{GameCheckpointState, GameState};
 use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
@@ -784,9 +783,7 @@ impl State {
             }
 
             if self.editor.input.alt_held {
-                self.dispatch(crate::commands::AppCommand::Editor(
-                    EditorCommand::PickBlockAt { x, y },
-                ));
+                self.editor_pick_block_at_screen(x, y);
                 return;
             }
 

@@ -1374,16 +1374,14 @@ pub fn show_editor_ui_commands(
     commands
 }
 
-/// Shows the editor UI using egui and dispatches emitted commands immediately.
+/// Shows the editor UI using egui and discards emitted commands.
 #[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
     state: &mut State,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) {
-    for command in show_editor_ui_commands(ctx, state, block_icon_texture_ids) {
-        state.dispatch(command);
-    }
+    let _ = show_editor_ui_commands(ctx, state, block_icon_texture_ids);
 }
 
 /// Shows the app-wide profiler window when the performance overlay is enabled.
@@ -2187,7 +2185,7 @@ mod tests {
         };
 
         assert!(state.is_menu());
-        state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
+        state.set_perf_overlay_enabled(true);
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
@@ -2213,9 +2211,7 @@ mod tests {
         };
 
         state.enter_editor_phase_for_test("MarqueeUiTest");
-        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-            eg_types::EditorMode::Select,
-        )));
+        state.set_editor_mode(eg_types::EditorMode::Select);
 
         // Inject a marquee drag large enough to be considered active.
         state.process_input_event(eg_state::commands::InputEvent::MouseButton {
@@ -2243,15 +2239,11 @@ mod tests {
         state.enter_editor_phase_for_test("EditorUiCompositionTest");
         assert!(state.is_editor());
 
-        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-            EditorMode::Timing,
-        )));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetShowSettings(true)));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
-            SettingsSection::Backends,
-        )));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetShowMetadata(true)));
-        state.dispatch(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
+        state.set_editor_mode(EditorMode::Timing);
+        state.set_editor_show_settings(true);
+        state.set_editor_settings_section(SettingsSection::Backends);
+        state.set_editor_show_metadata(true);
+        state.set_perf_overlay_enabled(true);
         run_editor_ui_once(&mut state);
 
         assert_eq!(state.editor_mode(), EditorMode::Timing);
@@ -2260,20 +2252,14 @@ mod tests {
         assert!(state.editor_show_metadata());
         assert!(state.perf_overlay_enabled());
 
-        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-            EditorMode::Place,
-        )));
-        state.dispatch(AppCommand::Editor(EditorCommand::SetSettingsSection(
-            SettingsSection::Keybinds,
-        )));
+        state.set_editor_mode(EditorMode::Place);
+        state.set_editor_settings_section(SettingsSection::Keybinds);
         run_editor_ui_once(&mut state);
 
         assert_eq!(state.editor_mode(), EditorMode::Place);
         assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
 
-        state.dispatch(AppCommand::Editor(EditorCommand::SetMode(
-            EditorMode::Tapping,
-        )));
+        state.set_editor_mode(EditorMode::Tapping);
         run_editor_ui_once(&mut state);
 
         assert_eq!(state.editor_mode(), EditorMode::Tapping);

@@ -746,8 +746,6 @@ mod tests {
     use std::fs;
 
     use super::{State, auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata};
-    use crate::commands::AppCommand;
-    use crate::state::editor_command::EditorCommand;
     use eg_audio::audio::runtime_asset_source_key;
     use eg_types::{
         AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
@@ -1084,11 +1082,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn menu_preview_camera_commands_are_phase_guarded_and_dispatchable() {
+    async fn menu_preview_camera_methods_are_phase_guarded() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Menu;
 
-        state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+        state.editor_capture_menu_preview_camera();
         assert!(
             state
                 .current_editor_metadata()
@@ -1100,7 +1098,7 @@ mod tests {
             position: [9.0, 8.0, 7.0],
             target: [6.0, 5.0, 4.0],
         });
-        state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+        state.editor_use_auto_menu_preview_camera();
         assert!(
             state
                 .current_editor_metadata()
@@ -1112,14 +1110,14 @@ mod tests {
         state.editor.camera.editor_pan = [2.0, -4.0];
         state.editor.camera.editor_target_z = 3.0;
 
-        state.dispatch(AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera));
+        state.editor_capture_menu_preview_camera();
         let captured = state.current_editor_metadata().menu_preview_camera;
         assert_eq!(
             captured.as_ref().map(|camera| camera.target),
             Some([2.0, 3.0, -4.0])
         );
 
-        state.dispatch(AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera));
+        state.editor_use_auto_menu_preview_camera();
         assert!(
             state
                 .current_editor_metadata()
@@ -1262,16 +1260,16 @@ mod tests {
 
         state.gameplay.state.position = [2.0, 2.0, 2.0];
         state.gameplay.state.elapsed_seconds = 2.0;
-        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+        state.apply_game_set_practice_checkpoint();
 
         state.gameplay.state.position = [5.0, 2.0, 5.0];
         state.gameplay.state.elapsed_seconds = 5.0;
-        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+        state.apply_game_set_practice_checkpoint();
 
         assert_eq!(state.practice_checkpoint_count(), 2);
         assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
 
-        state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+        state.apply_game_remove_practice_checkpoint();
 
         assert_eq!(state.practice_checkpoint_count(), 1);
         assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
@@ -1294,7 +1292,7 @@ mod tests {
         state.gameplay.state.started = true;
 
         state.gameplay.state.position = [2.0, 1.0, 2.0];
-        state.dispatch(crate::commands::AppCommand::GameSetPracticeCheckpoint);
+        state.apply_game_set_practice_checkpoint();
         assert!(
             state
                 .render_meshes()
@@ -1303,7 +1301,7 @@ mod tests {
                 .is_some()
         );
 
-        state.dispatch(crate::commands::AppCommand::GameRemovePracticeCheckpoint);
+        state.apply_game_remove_practice_checkpoint();
         assert!(
             state
                 .render_meshes()
