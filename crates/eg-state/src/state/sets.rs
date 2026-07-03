@@ -13,7 +13,7 @@
 //! the per-frame flow in `update.rs`:
 //!
 //! 1. `InputSet` — drain platform `InputEvent`s into the `EditorInput` resource.
-//! 2. `CommandSet` — process queued `AppCommand` / `EditorCommand` events.
+//! 2. `CommandHandlerSet` — process queued semantic command messages.
 //! 3. `PreCommandHistorySet` — snapshot editor state for undo/redo before
 //!    mutating commands commit.
 //! 4. `ModeChangeSet` — apply phase/mode transitions (`AppPhase`, `EditorMode`).
@@ -40,9 +40,9 @@ pub enum StateSet {
     /// Drains platform `InputEvent`s into `EditorInput` resource. Runs at
     /// the top of the frame so all downstream systems see the latest input.
     Input,
-    /// Drains queued semantic messages into direct handlers or the legacy
-    /// command buffer while the compatibility bridge is still active.
-    Command,
+    /// Drains queued semantic messages into direct handlers while the
+    /// compatibility bridge is still shrinking.
+    CommandHandler,
     /// Snapshots editor state for undo/redo before mutating commands commit.
     /// Runs before the editor mutation set so undo history reflects the
     /// pre-mutation state.

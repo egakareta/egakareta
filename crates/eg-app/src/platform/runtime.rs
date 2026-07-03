@@ -9,6 +9,7 @@ use crate::load_menu_textures;
 use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
 use bevy_ecs::world::World;
+#[cfg(test)]
 use eg_state::events::PendingCommands;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthOpenSignupRequest;
@@ -277,7 +278,6 @@ impl Runtime {
             Self::sync_app_playtest_request(state, app.world_mut());
             Self::sync_app_navigation_requests(state, app.world_mut());
             Self::sync_app_session_side_effect_requests(state, app.world_mut());
-            Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
         });
         Self::refresh_editor_playback_mirrors_from_legacy(state, app.world_mut());
@@ -861,10 +861,9 @@ impl Runtime {
     /// world owns the "user pressed Escape" intent while the legacy
     /// state still owns the state machine. The sync runs after
     /// `sync_app_perf_frame_copy_request` / `sync_app_render_resize_request`
-    /// and before `dispatch_app_pending_commands` so the request is
-    /// consumed in the same frame and any state changes (phase,
-    /// timeline, session) propagate to the App world via the
-    /// downstream sync helpers.
+    /// and before async-result draining so the request is consumed in the
+    /// same frame and any state changes (phase, timeline, session)
+    /// propagate through the downstream sync helpers.
     fn sync_app_escape_request(state: &mut State, world: &mut World) {
         if !world.resource_mut::<EscapeRequest>().take() {
             return;
@@ -881,10 +880,10 @@ impl Runtime {
     /// sign-in side effect (network IO via `trigger_auth_sign_in`
     /// on the auth channel) stays legacy-owned because the auth
     /// channel `Sender` lives on the legacy `State`. The sync runs
-    /// before `dispatch_app_pending_commands` so the request is
-    /// consumed in the same frame and any auth state changes
-    /// (pending flag, message) propagate to legacy readers via the
-    /// existing `State::update_auth_results` polling path.
+    /// before async-result draining so the request is consumed in the
+    /// same frame and any auth state changes (pending flag, message)
+    /// propagate to legacy readers via the existing
+    /// `State::update_auth_results` polling path.
     fn sync_app_auth_submit_sign_in_request(state: &mut State, world: &mut World) {
         if !world.resource_mut::<AuthSubmitSignInRequest>().take() {
             return;
@@ -945,11 +944,11 @@ impl Runtime {
     /// The `back_to_menu` side effect (phase change + audio stop +
     /// gameplay state reset) stays legacy-owned because the audio
     /// backend + gameplay state live on the legacy `State`. The
-    /// sync runs before `dispatch_app_pending_commands` so the
-    /// request is consumed in the same frame and any state changes
-    /// (phase, session.game_paused, gameplay.state) propagate to the
-    /// App world via `dispatch_app_pending_commands` -> the mirror
-    /// refresh in `refresh_editor_playback_mirrors_from_legacy`.
+    /// sync runs before async-result draining so the request is
+    /// consumed in the same frame and any state changes (phase,
+    /// session.game_paused, gameplay.state) propagate to the App world
+    /// via the mirror refresh in
+    /// `refresh_editor_playback_mirrors_from_legacy`.
     fn sync_app_game_quit_to_menu_request(state: &mut State, world: &mut World) {
         if !world.resource_mut::<GameQuitToMenuRequest>().take() {
             return;
@@ -1048,22 +1047,6 @@ impl Runtime {
         }
         if world.resource_mut::<ToggleEditorRequest>().take() {
             state.toggle_editor();
-        }
-    }
-
-    fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {
-        let mut pending = std::mem::take(&mut *world.resource_mut::<PendingCommands>());
-        let had_commands = !pending.is_empty();
-        for command in pending.app_commands.drain(..) {
-            state.dispatch(command);
-        }
-        for command in pending.editor_commands.drain(..) {
-            state.dispatch_editor(command);
-        }
-        if had_commands {
-            world.insert_resource(state.app_phase_resource());
-            world.insert_resource(state.editor_input_resource());
-            world.insert_resource(state.menu_state_resource());
         }
     }
 

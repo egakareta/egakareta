@@ -16,7 +16,7 @@
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
 //! here because we want pull-based consumption by the per-message
-//! handler systems in the [`CommandSet`] system set.
+//! handler systems in the [`CommandHandlerSet`] system set.
 //!
 //! The per-message systems are wired into the `StateSchedule` so each
 //! message type has one explicit handler. Runtime runs the schedule on
@@ -127,7 +127,7 @@ impl PendingCommands {
 /// App-world resources directly or write typed request resources consumed by
 /// Runtime. They run as part of the `StateSchedule`.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct CommandSet;
+pub struct CommandHandlerSet;
 
 /// Register every eg-state message type on the given `App` and keep the
 /// temporary [`PendingCommands`] compatibility resource initialized.
@@ -295,7 +295,7 @@ pub fn register_command_events_world(world: &mut World) {
 /// `State::tick_state` runs the schedule, so the systems execute once
 /// per frame in the order they're added (Bevy schedules are not
 /// parallel-by-default for unconstrained systems, so this is
-/// deterministic). All systems target the [`CommandSet`].
+/// deterministic). All systems target the [`CommandHandlerSet`].
 pub fn add_command_systems(schedule: &mut Schedule) {
     // Bevy's `IntoScheduleConfigs` only goes up to 16 systems in a flat
     // tuple, so we add each domain's systems in its own `add_systems`
@@ -697,8 +697,7 @@ mod tests {
     // `GameSetPracticeCheckpoint`, and `GameRemovePracticeCheckpoint`
     // handlers in `events::navigation` write to dedicated request
     // resources instead of staging `AppCommand`s in `PendingCommands`.
-    // The runtime sync consumes each request before
-    // `dispatch_app_pending_commands` runs and calls the existing
+    // The runtime sync consumes each request and calls the existing
     // legacy `State::apply_game_*` compatibility methods. The
     // schedule-level tests below pin the request is set and no
     // legacy command is staged.

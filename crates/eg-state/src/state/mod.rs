@@ -36,7 +36,9 @@ mod ui_snapshot;
 mod update;
 
 use crate::events as state_events;
-pub use state_events::{CommandSet, PendingCommands, add_command_systems, register_command_events};
+pub use state_events::{
+    CommandHandlerSet, PendingCommands, add_command_systems, register_command_events,
+};
 
 #[cfg(test)]
 mod editor_domain_tests;

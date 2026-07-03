@@ -219,7 +219,7 @@ fn normalize_taps(
 }
 
 /// No-op handler for [`HistorySnapshot`]. Reserves the system slot in the
-/// `CommandSet` so a follow-up phase can wire a real pre-mutation
+/// `CommandHandlerSet` so a follow-up phase can wire a real pre-mutation
 /// snapshot system without re-orchestrating the schedule.
 pub fn handle_history_snapshot(mut events: MessageReader<HistorySnapshot>) {
     // Drain the events so they don't accumulate frame-over-frame. No
