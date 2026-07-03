@@ -46,19 +46,14 @@ use eg_types::{
     SettingsSection,
 };
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::editor_command::EditorCommand;
-use crate::state::{AppPhaseRes, EditorCameraRes, SessionStateRes};
+use crate::state::{
+    AppPhaseRes, CompleteImportRequest, EditorCameraRes, ExportLevelRequest, LoadLevelRequest,
+    SessionStateRes, SetAudioBackendRequest, TriggerAudioImportRequest,
+};
 
 /// Load a level from a builtin resource name.
 #[derive(Message, Debug, Clone)]
 pub struct LoadLevel(pub String);
-
-impl ToLegacy for LoadLevel {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::LoadLevel(self.0))
-    }
-}
 
 /// Rename the current level.
 #[derive(Message, Debug, Clone)]
@@ -67,12 +62,6 @@ pub struct RenameLevel(pub String);
 /// Start the level export process.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ExportLevel;
-
-impl ToLegacy for ExportLevel {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::ExportLevel)
-    }
-}
 
 /// Open or close the metadata editing window.
 #[derive(Message, Debug, Clone, Copy)]
@@ -97,12 +86,6 @@ pub struct SetGraphicsBackend(pub String);
 /// Set preferred audio backend and apply immediately when possible.
 #[derive(Message, Debug, Clone)]
 pub struct SetAudioBackend(pub String);
-
-impl ToLegacy for SetAudioBackend {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetAudioBackend(self.0))
-    }
-}
 
 /// Set UI scale multiplier used with responsive UI scaling.
 #[derive(Message, Debug, Clone, Copy)]
@@ -139,12 +122,6 @@ pub struct ResetKeybinds;
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct CompleteImport;
 
-impl ToLegacy for CompleteImport {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::CompleteImport)
-    }
-}
-
 /// Update music information for the level.
 #[derive(Message, Debug, Clone)]
 pub struct UpdateMusic(pub MusicMetadata);
@@ -160,12 +137,6 @@ pub struct UpdateSkyColor(pub [f32; 3]);
 /// Trigger the platform audio import dialog.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TriggerAudioImport;
-
-impl ToLegacy for TriggerAudioImport {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::TriggerAudioImport)
-    }
-}
 
 /// Store the current editor camera as menu preview camera metadata.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -206,12 +177,10 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_load_level(
     mut events: MessageReader<LoadLevel>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<LoadLevelRequest>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::LoadLevel(event.0.clone()));
+        request.request(event.0.clone());
     }
 }
 
@@ -226,10 +195,10 @@ pub fn handle_rename_level(
 
 pub fn handle_export_level(
     mut events: MessageReader<ExportLevel>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<ExportLevelRequest>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::ExportLevel);
+        request.request();
     }
 }
 
@@ -284,12 +253,10 @@ pub fn handle_set_graphics_backend(
 
 pub fn handle_set_audio_backend(
     mut events: MessageReader<SetAudioBackend>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<SetAudioBackendRequest>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetAudioBackend(event.0.clone()));
+        request.request(event.0.clone());
     }
 }
 
@@ -353,10 +320,10 @@ pub fn handle_reset_keybinds(
 
 pub fn handle_complete_import(
     mut events: MessageReader<CompleteImport>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<CompleteImportRequest>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::CompleteImport);
+        request.request();
     }
 }
 
@@ -389,12 +356,10 @@ pub fn handle_update_sky_color(
 
 pub fn handle_trigger_audio_import(
     mut events: MessageReader<TriggerAudioImport>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<TriggerAudioImportRequest>,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::TriggerAudioImport);
+        request.request();
     }
 }
 

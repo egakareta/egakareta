@@ -9,14 +9,15 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use eg_blocks::BlockId;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
+use glam::Vec2;
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::editor_command::EditorCommand;
 use crate::state::{
-    AppPhaseRes, EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorTimelineRes,
+    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes,
+    EditorRuntimeRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    RenderUniformsRes,
 };
 
 /// Switch the editor mode.
@@ -40,15 +41,6 @@ pub struct PickSelectedBlock;
 pub struct PickBlockAt {
     pub x: f64,
     pub y: f64,
-}
-
-impl ToLegacy for PickBlockAt {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::PickBlockAt {
-            x: self.x,
-            y: self.y,
-        })
-    }
 }
 
 pub fn register_events(app: &mut App) {
@@ -170,14 +162,78 @@ pub fn handle_pick_selected_block(
 
 pub fn handle_pick_block_at(
     mut events: MessageReader<PickBlockAt>,
-    mut pending: ResMut<PendingCommands>,
+    mut resources: PickBlockAtResources,
 ) {
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::PickBlockAt {
-            x: event.x,
-            y: event.y,
-        });
+        if input_pointer_over_ui_input(&resources.input.0, event.x, event.y) {
+            continue;
+        }
+        pick_block_at_for_place(event.x, event.y, &mut resources);
     }
+}
+
+#[derive(SystemParam)]
+pub struct PickBlockAtResources<'w> {
+    phase: Res<'w, AppPhaseRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    camera: Res<'w, EditorCameraRes>,
+    triggers: Res<'w, EditorTriggerRes>,
+    timing: Res<'w, EditorTimingRes>,
+    uniforms: Res<'w, RenderUniformsRes>,
+    config: ResMut<'w, EditorConfigRes>,
+    input: ResMut<'w, EditorInputRes>,
+    runtime: ResMut<'w, EditorRuntimeRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+}
+
+fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<'_>) -> bool {
+    if resources.phase.current != AppPhase::Editor {
+        return false;
+    }
+
+    let viewport_size = Vec2::from_array(resources.uniforms.color_space.viewport_size);
+    let mut editor = EditorSubsystem {
+        input: resources.input.0.clone(),
+        config: resources.config.0.clone(),
+        objects: resources.objects.objects.clone(),
+        camera: resources.camera.0.clone(),
+        triggers: resources.triggers.0.clone(),
+        timing: resources.timing.0.clone(),
+        ..Default::default()
+    };
+    let Some(block_id) = editor
+        .pick_from_screen(x, y, viewport_size)
+        .and_then(|pick| pick.hit_block_index)
+        .and_then(|index| resources.objects.objects.get(index))
+        .map(|object| object.block_id.clone())
+    else {
+        return false;
+    };
+
+    if !eg_blocks::BlockDefinition::get(&block_id).placeable {
+        return false;
+    }
+
+    set_effective_place_mode(
+        &mut resources.input,
+        &mut resources.runtime,
+        &resources.timeline,
+    );
+    resources.config.0.selected_block_id = block_id;
+    true
+}
+
+fn input_pointer_over_ui_input(input: &EditorInputState, x: f64, y: f64) -> bool {
+    let pixels_per_point = input.ui_input_pixels_per_point as f64;
+    let point_x = x / pixels_per_point;
+    let point_y = y / pixels_per_point;
+
+    input.ui_input_blocking_rects.iter().any(|rect| {
+        point_x >= rect[0] as f64
+            && point_x <= rect[2] as f64
+            && point_y >= rect[1] as f64
+            && point_y <= rect[3] as f64
+    })
 }
 
 fn pick_selected_block_for_place(

@@ -17,30 +17,23 @@
 //! `SessionStateRes` directly, and the legacy `State.session` fields are
 //! synced from the resource in the runtime bridge.
 //!
-//! `ToLegacy` impls are kept only for navigation messages that still
-//! route through the legacy command drain.
+//! Multi-step navigation messages write request resources that Runtime
+//! consumes through the legacy compatibility methods while gameplay,
+//! phase, and audio ownership remain on `State`.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_types::AppPhase;
 
-use crate::commands::AppCommand;
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
 use crate::state::{
     AppPhaseRes, EditorConfigRes, EditorInputRes, GameQuitToMenuRequest,
     GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
-    MenuStateRes, SessionStateRes,
+    MenuStateRes, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
 };
 
 /// Primary action: in menu → start level, in game → turn, in editor → place block.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TurnRight;
-
-impl ToLegacy for TurnRight {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::TurnRight)
-    }
-}
 
 /// Select the next level in the menu or move editor cursor +X.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -53,12 +46,6 @@ pub struct PrevLevel;
 /// Toggle between editor and menu/playing.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ToggleEditor;
-
-impl ToLegacy for ToggleEditor {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::ToggleEditor)
-    }
-}
 
 /// Resume real gameplay from the pause menu.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -100,16 +87,16 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems. Legacy-routed messages still stage `AppCommand`s in
-// `PendingCommands`; carved-out messages mutate App-world resources directly.
+// Dispatch systems. Request-backed messages write App-world request resources;
+// direct carve-outs mutate App-world resources directly.
 // -----------------------------------------------------------------------
 
 pub fn handle_turn_right(
     mut events: MessageReader<TurnRight>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<TurnRightRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::TurnRight);
+        request.request();
     }
 }
 
@@ -174,10 +161,10 @@ fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, di
 
 pub fn handle_toggle_editor(
     mut events: MessageReader<ToggleEditor>,
-    mut pending: ResMut<PendingCommands>,
+    mut request: ResMut<ToggleEditorRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::ToggleEditor);
+        request.request();
     }
 }
 

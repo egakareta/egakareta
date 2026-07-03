@@ -29,19 +29,18 @@
 //! - `SetPlaybackSpeed`, `SetWaveformZoom`, and `SetWaveformScroll`
 //!   write `EditorTimingRes.0.{playback_speed,waveform_zoom,waveform_scroll}`
 //!
-//! The remaining timeline message (`Playtest`) stays on the `PendingCommands`
-//! path because it still routes through legacy phase/gameplay/audio startup
-//! state machines that need a dedicated App-world ownership pass.
+//! `Playtest` writes a request resource that Runtime consumes through the
+//! legacy playtest transition while phase/gameplay/audio startup remain
+//! legacy-owned.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_editor_domain::{add_tap_with_indicator, remove_tap_with_indicator};
 use eg_types::{AppPhase, EditorMode};
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::editor_command::EditorCommand;
 use crate::state::{
     AppPhaseRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
+    PlaytestRequest,
 };
 
 /// Toggle timeline playback.
@@ -99,12 +98,6 @@ pub struct SetWaveformScroll(pub f32);
 /// Start playtesting from the current editor state.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct Playtest;
-
-impl ToLegacy for Playtest {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::Playtest)
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<ToggleTimelinePlayback>()
@@ -339,8 +332,8 @@ pub fn handle_set_waveform_scroll(
     }
 }
 
-pub fn handle_playtest(mut events: MessageReader<Playtest>, mut pending: ResMut<PendingCommands>) {
+pub fn handle_playtest(mut events: MessageReader<Playtest>, mut request: ResMut<PlaytestRequest>) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::Playtest);
+        request.request();
     }
 }

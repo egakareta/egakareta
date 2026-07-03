@@ -39,11 +39,12 @@ use bevy_ecs::prelude::*;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
-    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    EscapeRequest, GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest,
-    GameRestartLevelRequest, GameSetPracticeCheckpointRequest, PerfFrameCopyRequest, PerfRes,
-    SessionStateRes,
+    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, EscapeRequest, ExportLevelRequest, GameQuitToMenuRequest,
+    GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
+    LoadLevelRequest, PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes,
+    SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
 };
 use super::{StateSchedule, transitions};
 
@@ -86,7 +87,15 @@ impl Plugin for EditorPlugin {
             .init_resource::<GameQuitToMenuRequest>()
             .init_resource::<GameRestartLevelRequest>()
             .init_resource::<GameSetPracticeCheckpointRequest>()
-            .init_resource::<GameRemovePracticeCheckpointRequest>();
+            .init_resource::<GameRemovePracticeCheckpointRequest>()
+            .init_resource::<PlaytestRequest>()
+            .init_resource::<LoadLevelRequest>()
+            .init_resource::<ExportLevelRequest>()
+            .init_resource::<SetAudioBackendRequest>()
+            .init_resource::<CompleteImportRequest>()
+            .init_resource::<TriggerAudioImportRequest>()
+            .init_resource::<TurnRightRequest>()
+            .init_resource::<ToggleEditorRequest>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -200,6 +209,14 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<GameRestartLevelRequest>();
     world.init_resource::<GameSetPracticeCheckpointRequest>();
     world.init_resource::<GameRemovePracticeCheckpointRequest>();
+    world.init_resource::<PlaytestRequest>();
+    world.init_resource::<LoadLevelRequest>();
+    world.init_resource::<ExportLevelRequest>();
+    world.init_resource::<SetAudioBackendRequest>();
+    world.init_resource::<CompleteImportRequest>();
+    world.init_resource::<TriggerAudioImportRequest>();
+    world.init_resource::<TurnRightRequest>();
+    world.init_resource::<ToggleEditorRequest>();
     super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
     // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,

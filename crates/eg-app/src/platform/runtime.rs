@@ -14,20 +14,28 @@ use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthOpenSignupRequest;
 use eg_state::state::AuthSignOutRequest;
 use eg_state::state::AuthSubmitSignInRequest;
+use eg_state::state::CompleteImportRequest;
 use eg_state::state::EditorConfigRes;
 use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
 use eg_state::state::EscapeRequest;
+use eg_state::state::ExportLevelRequest;
 use eg_state::state::GameQuitToMenuRequest;
 use eg_state::state::GameRemovePracticeCheckpointRequest;
 use eg_state::state::GameRestartLevelRequest;
 use eg_state::state::GameSetPracticeCheckpointRequest;
+use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PerfFrameCopyRequest;
+use eg_state::state::PlaytestRequest;
 use eg_state::state::RenderResizeRequest;
 use eg_state::state::SessionStateRes;
+use eg_state::state::SetAudioBackendRequest;
 use eg_state::state::State;
+use eg_state::state::ToggleEditorRequest;
+use eg_state::state::TriggerAudioImportRequest;
+use eg_state::state::TurnRightRequest;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::run_state_schedule_in_world;
@@ -266,6 +274,9 @@ impl Runtime {
             Self::sync_app_game_restart_level_request(state, app.world_mut());
             Self::sync_app_game_set_practice_checkpoint_request(state, app.world_mut());
             Self::sync_app_game_remove_practice_checkpoint_request(state, app.world_mut());
+            Self::sync_app_playtest_request(state, app.world_mut());
+            Self::sync_app_navigation_requests(state, app.world_mut());
+            Self::sync_app_session_side_effect_requests(state, app.world_mut());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
         });
@@ -994,6 +1005,50 @@ impl Runtime {
             return;
         }
         state.apply_game_remove_practice_checkpoint();
+    }
+
+    /// Consume the App-world `PlaytestRequest` and apply the legacy
+    /// `State::editor_playtest` compatibility method.
+    ///
+    /// The playtest side effect builds gameplay state, primes audio,
+    /// and transitions phase, so it stays legacy-owned until those
+    /// subsystems move into App resources.
+    fn sync_app_playtest_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<PlaytestRequest>().take() {
+            return;
+        }
+        state.editor_playtest();
+    }
+
+    /// Consume App-world session side-effect requests and apply the
+    /// existing legacy compatibility methods.
+    fn sync_app_session_side_effect_requests(state: &mut State, world: &mut World) {
+        if let Some(level_name) = world.resource_mut::<LoadLevelRequest>().take() {
+            state.load_builtin_level_into_editor(&level_name);
+        }
+        if world.resource_mut::<ExportLevelRequest>().take() {
+            state.trigger_level_export();
+        }
+        if let Some(backend_name) = world.resource_mut::<SetAudioBackendRequest>().take() {
+            state.set_preferred_audio_backend(backend_name);
+        }
+        if world.resource_mut::<CompleteImportRequest>().take() {
+            state.complete_import();
+        }
+        if world.resource_mut::<TriggerAudioImportRequest>().take() {
+            state.trigger_audio_import();
+        }
+    }
+
+    /// Consume App-world navigation requests and apply the existing
+    /// legacy compatibility methods.
+    fn sync_app_navigation_requests(state: &mut State, world: &mut World) {
+        if world.resource_mut::<TurnRightRequest>().take() {
+            state.turn_right();
+        }
+        if world.resource_mut::<ToggleEditorRequest>().take() {
+            state.toggle_editor();
+        }
     }
 
     fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {

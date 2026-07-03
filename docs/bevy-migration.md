@@ -73,9 +73,10 @@ favor of the Bevy umbrella. The migration is designed to be mechanical.
 
 - `MouseButton` / `PrimaryClick` / `PointerMoved` / `UpdateCursorFromScreen` /
   `CameraDrag`) are **not** commands — their message handlers write App-world
-  editor input/camera resources directly during the compatibility window. That
-  makes for ~85 legacy-routed messages + ~12 direct resource writes. See the
-  system-set graph below for ordering.
+  editor input/camera resources directly during the compatibility window. The
+  remaining command messages have now moved to either direct resource writes or
+  typed request resources that Runtime consumes through compatibility methods.
+  See the system-set graph below for ordering.
 
     After Phases 3.5–3.14 the count shifts: 4 snap messages + 1
     block-id message + 2 bpm messages + 5 session messages + 6
@@ -103,15 +104,13 @@ favor of the Bevy umbrella. The migration is designed to be mechanical.
     4 navigation messages (`GameRestartLevel`, `GameSetPracticeCheckpoint`, `GameRemovePracticeCheckpoint`, `GameQuitToMenu`) +
     2 history messages (`Undo`, `Redo`) +
     5 block messages (`RemoveBlock`, `DuplicateBlock`, `CopyBlock`,
-    `PasteBlock`, `UpdateSelectedBlock`) =
-    **75 additional carve-outs** move from the legacy-routed bucket
-    to the direct-resource-write bucket. The current counts are **~12 legacy-routed messages + ~93
-    direct resource writes**. The remaining 5 session messages
-    stay in the legacy-routed bucket because they have
-    out-of-process side effects (file IO, audio backend switch,
-    level load). `TurnRight` and `ToggleEditor` remain on the
-    legacy path because they are multi-step state machines that
-    touch gameplay, phase, and audio state.
+    `PasteBlock`, `UpdateSelectedBlock`) +
+    `PickBlockAt` + `Playtest` + 5 session side-effect messages +
+    `TurnRight` + `ToggleEditor` =
+    **all command messages** moved out of the legacy-routed bucket.
+    Side-effect-heavy messages now write request resources; the side effects
+    themselves still run through legacy compatibility methods until ownership
+    moves fully into App-world resources.
 
 ## System set graph (post Phase 7)
 
@@ -143,10 +142,10 @@ Cross-domain ordering constraints (sample):
   first; the Runtime-owned per-frame sync helpers
   `sync_app_editor_input_state`, `sync_app_editor_config_state`,
   `sync_app_editor_timing_state`, and `sync_app_session_state`
-  then run on the main thread before `dispatch_app_pending_commands`
-  drains the message buffer into the legacy State. The carved-out
-  config / bpm / session syncs are change-guarded to keep the
-  legacy setters' persist + side effects from re-firing every
+  then run on the main thread before Runtime consumes typed request
+  resources for side effects that still live on legacy State. The
+  carved-out config / bpm / session syncs are change-guarded to keep
+  the legacy setters' persist + side effects from re-firing every
   frame.)
 
 ## Migration Checklist (single-world ECS migration plan)
@@ -165,8 +164,8 @@ Migration` plan in `AGENTS.md` / the in-session `plan.md`. The 11
 | 1   | Freeze the compatibility boundary and baseline                | **done**        | This section + the per-step `REFACTOR POINT` comments in code.                                                                                                                                                                                                                                                                                                                                                               |
 | 2   | Create the authoritative App-world ownership map              | **in progress** | `SessionStateRes`, `EditorConfigRes`, `EditorInputRes`, `EditorObjectsRes`, `EditorHistoryRes`, `EditorCameraRes`, `EditorTriggerRes`, `EditorTimingRes`, `EditorSpawnRes`, `EditorRuntimeRes`, and `PerfRes` are seeded from the legacy state at `Runtime::new`. Full ownership transfer is gated on moving the remaining legacy subsystem fields and replacing the ordered editor-object mirror with ECS object ownership. |
 | 3   | Move legacy subsystem ownership into App resources            | **blocked**     | Subsystem fields still live on `State` (auth, gameplay, editor, audio, session, menu, phase, frame_runtime, render_resources). Move into App resources requires the carve-out percentage to reach 100% and the per-frame driver to be in place.                                                                                                                                                                              |
-| 4   | Convert messages from `ToLegacy` to direct handlers by domain | **in progress** | 79 of ~90 legacy-routed messages are now full direct-resource-write or request-pattern carve-outs (snap ×4, block ×5, block-id ×1, bpm ×2, session ×17, timing ×6, spawn ×3, camera ×5 of 5, selection ×3 of 3, misc ×4 of 4, editor-mode ×3 of 5, navigation ×8 of 10, timeline ×13 of 14, auth/surface ×5 of 5, history ×2 of 3). See "Event taxonomy (post Phase 3)" + the per-phase entries.                             |
-| 5   | Delete the command compatibility bridge                       | **blocked**     | Requires step 4 at 100% (no `PendingCommands` callers). `ToLegacy` + `LegacyCommand` + `Runtime::dispatch_app_pending_commands` are still the dispatch path for the remaining ~21 messages.                                                                                                                                                                                                                                  |
+| 4   | Convert messages from `ToLegacy` to direct handlers by domain | **done**        | All 97 command/input/pointer messages now use direct App-world resource mutation or typed request resources. `LegacyCommand`/`ToLegacy` are deleted; `PickBlockAt`, `Playtest`, session side-effect messages, `TurnRight`, and `ToggleEditor` were the final request/direct carve-outs.                                                                                                                                      |
+| 5   | Delete the command compatibility bridge                       | **in progress** | No event handler writes `PendingCommands`, and `LegacyCommand`/`ToLegacy` are deleted. The empty `PendingCommands` resource and `Runtime::dispatch_app_pending_commands` drain remain as temporary compatibility scaffolding while tests/runtime references are removed.                                                                                                                                                     |
 | 6   | Move `State::update` into scheduled systems                   | **blocked**     | `State::update` (1454 lines in `state/update.rs`) is still authoritative. The frame driver is `Runtime::run_app_frame` → legacy `State::update` after the App world runs.                                                                                                                                                                                                                                                    |
 | 7   | Replace manual phase/time compatibility                       | **not started** | `AppPhaseRes` still tracks `previous_app_phase` manually; no `bevy_time::Time<Fixed>` for gameplay; `GameClock` mirrors Bevy time fields.                                                                                                                                                                                                                                                                                    |
 | 8   | Move UI off snapshots and into ECS systems                    | **not started** | `UiStateSnapshot` (198 lines) is the source of truth for the egui UI code. UI writes commands into `UiCommandQueue`; the legacy `State::dispatch*` path still runs.                                                                                                                                                                                                                                                          |
@@ -176,34 +175,34 @@ Migration` plan in `AGENTS.md` / the in-session `plan.md`. The 11
 
 **Carve-out count by domain (post Phase 3.48):**
 
-| Domain              |   Done |  Total | Examples carved out                                                                                                                                                                                                                                                                                               |
-| ------------------- | -----: | -----: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| snap                |      4 |      4 | SetSnapToGrid, SetSnapStep, SetSnapRotation, SetSnapRotationStep                                                                                                                                                                                                                                                  |
-| block               |      5 |      5 | RemoveBlock, DuplicateBlock, CopyBlock, PasteBlock, UpdateSelectedBlock                                                                                                                                                                                                                                           |
-| block-id            |      1 |      1 | SetBlockId (in editor_mode module)                                                                                                                                                                                                                                                                                |
-| bpm                 |      2 |      2 | BpmTap, BpmTapReset                                                                                                                                                                                                                                                                                               |
-| session             |     17 |     22 | RenameLevel, SetShowMetadata, SetShowSettings, ToggleSettings, SetSettingsSection, SetGraphicsBackend, SetKeybindCapture, SetKeybind, ClearKeybindSlot, ResetKeybind, ResetKeybinds, SetUiScaleMultiplier, UpdateMusic, UpdateCreatorMetadata, UpdateSkyColor, CaptureMenuPreviewCamera, UseAutoMenuPreviewCamera |
-| timing              |      6 |      6 | AddTimingPoint, RemoveTimingPoint, SetTimingPointTime, SetTimingPointBpm, SetTimingPointTimeSignature, SetTimingSelected                                                                                                                                                                                          |
-| spawn               |      3 |      3 | SetSpawnHere, RotateSpawnDirection, RotatePlacementPreview (config)                                                                                                                                                                                                                                               |
-| camera              |      5 |      5 | AdjustZoom, SetCameraOrientation, AddCameraTrigger, AddCameraFollowTrigger, SetTriggerSelected                                                                                                                                                                                                                    |
-| misc                |      4 |      4 | ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow (session), Escape (EscapeRequest)                                                                                                                                                                                                                 |
-| auth/surface        |      5 |      5 | ResizeSurface, CopyLatestPerfFrame, AuthSubmitSignIn, AuthSignOut, AuthOpenSignup                                                                                                                                                                                                                                 |
-| editor_mode         |      3 |      5 | SetEditorMode, SelectRecentBlock, PickSelectedBlock                                                                                                                                                                                                                                                               |
-| selection           |      3 |      3 | AddTransformTrigger, SnapSelectionToGrid, FocusCameraTarget                                                                                                                                                                                                                                                       |
-| navigation          |      8 |     10 | GameResume (session game_paused), GameSetPracticeMode (session), NextLevel/PrevLevel (menu selection or editor cursor), GameRestartLevel, GameSetPracticeCheckpoint, GameRemovePracticeCheckpoint, GameQuitToMenu (request resources)                                                                             |
-| timeline            |     13 |     14 | ToggleTimelinePlayback, ShiftTimeline, SetTimelineTime, SetTimelineDuration, AddTap, SetSelectedTap, SetSelectedTapTime, RemoveTap, RemoveTapAt, ClearTaps, SetPlaybackSpeed, SetWaveformZoom, SetWaveformScroll                                                                                                  |
-| history             |      2 |      3 | Undo, Redo                                                                                                                                                                                                                                                                                                        |
-| input_state         |      7 |      7 | (direct resource writes; not PendingCommands)                                                                                                                                                                                                                                                                     |
-| pointer             |      5 |      5 | (direct resource writes; not PendingCommands)                                                                                                                                                                                                                                                                     |
-| **Carve-out total** | **93** | **97** | (input_state + pointer are direct writes, separate from the legacy PendingCommands routings)                                                                                                                                                                                                                      |
+| Domain              |   Done |  Total | Examples carved out                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------- | -----: | -----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| snap                |      4 |      4 | SetSnapToGrid, SetSnapStep, SetSnapRotation, SetSnapRotationStep                                                                                                                                                                                                                                                                                                                               |
+| block               |      5 |      5 | RemoveBlock, DuplicateBlock, CopyBlock, PasteBlock, UpdateSelectedBlock                                                                                                                                                                                                                                                                                                                        |
+| block-id            |      1 |      1 | SetBlockId (in editor_mode module)                                                                                                                                                                                                                                                                                                                                                             |
+| bpm                 |      2 |      2 | BpmTap, BpmTapReset                                                                                                                                                                                                                                                                                                                                                                            |
+| session             |     22 |     22 | RenameLevel, SetShowMetadata, SetShowSettings, ToggleSettings, SetSettingsSection, SetGraphicsBackend, SetKeybindCapture, SetKeybind, ClearKeybindSlot, ResetKeybind, ResetKeybinds, SetUiScaleMultiplier, UpdateMusic, UpdateCreatorMetadata, UpdateSkyColor, CaptureMenuPreviewCamera, UseAutoMenuPreviewCamera, LoadLevel, ExportLevel, SetAudioBackend, CompleteImport, TriggerAudioImport |
+| timing              |      6 |      6 | AddTimingPoint, RemoveTimingPoint, SetTimingPointTime, SetTimingPointBpm, SetTimingPointTimeSignature, SetTimingSelected                                                                                                                                                                                                                                                                       |
+| spawn               |      3 |      3 | SetSpawnHere, RotateSpawnDirection, RotatePlacementPreview (config)                                                                                                                                                                                                                                                                                                                            |
+| camera              |      5 |      5 | AdjustZoom, SetCameraOrientation, AddCameraTrigger, AddCameraFollowTrigger, SetTriggerSelected                                                                                                                                                                                                                                                                                                 |
+| misc                |      4 |      4 | ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow (session), Escape (EscapeRequest)                                                                                                                                                                                                                                                                                              |
+| auth/surface        |      5 |      5 | ResizeSurface, CopyLatestPerfFrame, AuthSubmitSignIn, AuthSignOut, AuthOpenSignup                                                                                                                                                                                                                                                                                                              |
+| editor_mode         |      5 |      5 | SetEditorMode, SetBlockId, SelectRecentBlock, PickSelectedBlock, PickBlockAt                                                                                                                                                                                                                                                                                                                   |
+| selection           |      3 |      3 | AddTransformTrigger, SnapSelectionToGrid, FocusCameraTarget                                                                                                                                                                                                                                                                                                                                    |
+| navigation          |     10 |     10 | TurnRight, ToggleEditor, GameResume (session game_paused), GameSetPracticeMode (session), NextLevel/PrevLevel (menu selection or editor cursor), GameRestartLevel, GameSetPracticeCheckpoint, GameRemovePracticeCheckpoint, GameQuitToMenu                                                                                                                                                     |
+| timeline            |     14 |     14 | ToggleTimelinePlayback, ShiftTimeline, SetTimelineTime, SetTimelineDuration, AddTap, SetSelectedTap, SetSelectedTapTime, RemoveTap, RemoveTapAt, ClearTaps, SetPlaybackSpeed, SetWaveformZoom, SetWaveformScroll, Playtest                                                                                                                                                                     |
+| history             |      2 |      3 | Undo, Redo                                                                                                                                                                                                                                                                                                                                                                                     |
+| input_state         |      7 |      7 | (direct resource writes; not PendingCommands)                                                                                                                                                                                                                                                                                                                                                  |
+| pointer             |      5 |      5 | (direct resource writes; not PendingCommands)                                                                                                                                                                                                                                                                                                                                                  |
+| **Carve-out total** | **97** | **97** | Direct writes or request-resource carve-outs; no message handler writes `PendingCommands`.                                                                                                                                                                                                                                                                                                     |
 
-The remaining legacy-routed messages fall into three categories:
-
-- **`editor.objects` / object-derived presentation paths (1)** — editor_mode ×1 (`PickBlockAt`). This still depends on screen picking / object-derived presentation and needs a direct App-world owner before the bridge can be deleted.
-- **Out-of-process side effects** — session messages (LoadLevel, SetAudioBackend, TriggerAudioImport, CompleteImport, ...). Touch file IO / network / audio backend switch; `ResizeSurface` is now carved out through `RenderResizeRequest`, `CopyLatestPerfFrame` through `PerfFrameCopyRequest`, the 3 auth messages through their request resources, `Escape` through `EscapeRequest` (request pattern), and the 4 gameplay messages (GameQuitToMenu, GameRestartLevel, GameSetPracticeCheckpoint, GameRemovePracticeCheckpoint) through their request resources. The latest-frame formatter + the multi-step escape state machine remain legacy-owned.
-- **Multi-step state machines (2)** — TurnRight, ToggleEditor.
-
-A domain counts as "complete" when every message in the bucket is either carved out or has a pinned regression test that documents why it stays on the legacy path. The current regressions are: `tick_state_stages_practice_mode_payload_without_dispatching` (the latter was renamed to `tick_state_carve_out_practice_mode_mutates_session_resource` and rewritten for Phase 3.15). Future carve-outs should add a similar regression test that documents the legacy-routed decision so a future refactor knows to also move the test.
+No message remains legacy-routed through `PendingCommands`. Side-effect-heavy
+messages (`LoadLevel`, `ExportLevel`, `SetAudioBackend`, `CompleteImport`,
+`TriggerAudioImport`, `Playtest`, `TurnRight`, `ToggleEditor`, auth, resize,
+escape, and gameplay pause/checkpoint requests) write typed request resources
+that Runtime consumes through compatibility methods. The remaining bridge work
+is deleting the empty `PendingCommands` resource/drain and then moving the
+compatibility methods' side effects into App-world systems/resources.
 
 ## Phase checklist
 
@@ -261,7 +260,7 @@ A domain counts as "complete" when every message in the bucket is either carved 
 
 - [x] **Phase 3.25 / Menu-preview camera carve-out (`CaptureMenuPreviewCamera`, `UseAutoMenuPreviewCamera`)** — the session handlers now mutate `SessionStateRes.editor_menu_preview_camera` directly. `CaptureMenuPreviewCamera` reads `AppPhaseRes` and `EditorCameraRes`, preserves the legacy Editor-only phase guard, and stores the current editor camera pose as `LevelPreviewCameraMetadata`; `UseAutoMenuPreviewCamera` clears the manual camera only in Editor. `Runtime::sync_app_session_state` mirrors the resource back through `State::set_editor_menu_preview_camera` for legacy UI/export compatibility, and `State::prepare_app_world_for_state_schedule` mirrors legacy menu-preview metadata before the schedule so stale App resources cannot clobber direct legacy updates. 3 schedule-level tests cover capture, clear, and phase-guard behavior; 3 `eg-app` runtime tests cover propagation and stale-resource protection, and the session first-frame seeding regression now includes menu-preview camera metadata.
 
-- [x] **Phase 3.26 / Menu navigation partial carve-out (`NextLevel`, `PrevLevel` menu branch) + `MenuStateRes` seeding** — `Runtime::new` now seeds `MenuStateRes` from legacy `State.menu`, and `Runtime::sync_app_menu_state` change-guards `MenuStateRes.selected_level` back into legacy state for current UI/render compatibility. `events::navigation::handle_next_level` and `handle_prev_level` now read `AppPhaseRes`: in `Menu`, they mutate `MenuStateRes.selected_level` directly with wraparound and do not stage `PendingCommands`; outside `Menu`, they still stage `AppCommand::NextLevel` / `PrevLevel` because the editor cursor branch still calls legacy cursor/mesh update code. `State::prepare_app_world_for_state_schedule` mirrors legacy menu selection and levels into `MenuStateRes` before the schedule so stale App resources cannot clobber direct legacy updates on no-message frames, and `Runtime::dispatch_app_pending_commands` refreshes App phase/menu mirrors after legacy commands mutate them. 2 schedule-level tests pin menu direct writes plus editor fallback; 2 `eg-app` runtime tests cover propagation and stale-resource protection. Phase 3.27 below completes the editor cursor branch and promotes both messages to full carve-outs.
+- [x] **Phase 3.26 / Menu navigation partial carve-out (`NextLevel`, `PrevLevel` menu branch) + `MenuStateRes` seeding** — `Runtime::new` now seeds `MenuStateRes` from legacy `State.menu`, and `Runtime::sync_app_menu_state` change-guards `MenuStateRes.selected_level` back into legacy state for current UI/render compatibility. `events::navigation::handle_next_level` and `handle_prev_level` read `AppPhaseRes`: in `Menu`, they mutate `MenuStateRes.selected_level` directly with wraparound and do not stage `PendingCommands`. At this historical point, the non-menu branch still used the legacy command path; Phase 3.27 completed the editor cursor branch and promoted both messages to full carve-outs. `State::prepare_app_world_for_state_schedule` mirrors legacy menu selection and levels into `MenuStateRes` before the schedule so stale App resources cannot clobber direct legacy updates on no-message frames. 2 schedule-level tests pin menu direct writes plus editor fallback; 2 `eg-app` runtime tests cover propagation and stale-resource protection.
 
 - [x] **Phase 3.27 / Navigation carve-out completion (`NextLevel`, `PrevLevel` editor cursor branch) + `EditorInputRes` seeding** — `events::navigation::handle_next_level` and `handle_prev_level` now mutate `EditorInputRes.0.cursor` directly in `AppPhase::Editor`, using the same snap-step calculation as legacy `EditorSubsystem::move_cursor` (`snap_to_grid && !ctrl_held` → `snap_step.max(0.05)`, otherwise `1.0`). In `Menu`, they keep mutating `MenuStateRes.selected_level`; outside Menu/Editor they no-op, matching legacy `State::next_level` / `prev_level`. `Runtime::new` now seeds `EditorInputRes` from legacy `State.editor.input`, and `Runtime::sync_app_editor_input_state` change-guards cursor propagation back through `State::set_editor_cursor_position`, preserving the current cursor-mesh rebuild side effect until that rebuild moves into App-world systems. `Runtime::dispatch_app_pending_commands` refreshes `EditorInputRes` after remaining legacy commands run so stale App input cannot clobber legacy cursor mutations on the next frame. 3 schedule-level tests cover menu selection, editor cursor movement with snap, and no-op behavior outside Menu/Editor; 1 `eg-app` runtime test covers UI-command → App cursor → legacy cursor propagation.
 
@@ -277,7 +276,7 @@ A domain counts as "complete" when every message in the bucket is either carved 
 
 - [x] **Phase 3.33 / Navigation fallback cleanup (`NextLevel`, `PrevLevel`)** — `events::navigation::handle_next_level` and `handle_prev_level` no longer take `PendingCommands` or fall back to `AppCommand::NextLevel` / `AppCommand::PrevLevel` when `MenuStateRes` is absent. The handlers remain direct-resource carve-outs in their Menu and Editor branches and now no-op if the menu resource is unavailable, matching the App-world ownership rule that carved-out messages must not re-enter the legacy command drain. Carve-out totals are unchanged because both messages were already counted in Phase 3.27. 1 schedule-level regression test removes `MenuStateRes`, sends both messages, and pins the empty `PendingCommands` buffer.
 
-- [x] **Phase 3.34 / Navigation `ToLegacy` cleanup** — the fully carved-out navigation messages (`NextLevel`, `PrevLevel`, `GameResume`, `GameSetPracticeMode`) no longer implement `ToLegacy`; only navigation messages that still stage legacy commands keep their legacy conversion impls. The top-level event module docs now describe the mixed command-handler model directly: carved-out handlers mutate App-world resources, while remaining bridge handlers write `PendingCommands`. Carve-out totals are unchanged; this is bridge scaffolding deletion after the direct handlers were already test-gated.
+- [x] **Phase 3.34 / Navigation `ToLegacy` cleanup** — the fully carved-out navigation messages (`NextLevel`, `PrevLevel`, `GameResume`, `GameSetPracticeMode`) stopped implementing `ToLegacy`. At that historical point, `TurnRight` and `ToggleEditor` still kept legacy conversion impls; the active branch has since moved them to request resources and deleted all `ToLegacy` impls.
 
 - [x] **Phase 3.35 / Surface resize carve-out (`ResizeSurface`)** — `events::auth::handle_resize_surface` now writes the latest physical size into App-world `RenderResizeRequest` instead of staging `AppCommand::ResizeSurface`. `Runtime::sync_app_render_resize_request` consumes that request before the remaining `PendingCommands` drain and calls the existing `State::resize_surface` compatibility method so the GPU/surface-host side effects remain centralized until present moves fully into `RenderSet::Present`. The `ResizeSurface` `ToLegacy` impl was removed. 1 schedule-level test pins `RenderResizeRequest` + empty `PendingCommands`, and 1 runtime test pins message → request → legacy render size propagation and request consumption.
 
@@ -285,7 +284,7 @@ A domain counts as "complete" when every message in the bucket is either carved 
 
 - [x] **Phase 3.37 / HistorySnapshot bridge cleanup** — `events::history::handle_history_snapshot` now drains marker messages without taking `PendingCommands`. Counts are unchanged because `HistorySnapshot` was already a no-op marker for future pre-mutation history work, but the handler no longer depends on the command bridge. 1 schedule-level regression test pins empty `PendingCommands`.
 
-- [x] **Phase 3.38 / Broad `ToLegacy` cleanup for carved-out messages** — stale `ToLegacy` impls were removed from direct-resource messages across `input_state`, `pointer`, `snap`, `bpm`, `timing`, `spawn`, the carved-out `editor_mode`, `camera`, `misc`, `timeline`, and `session` variants. Messages that still stage `PendingCommands` keep their `ToLegacy` impls. Carve-out totals are unchanged; this deletes bridge scaffolding after direct handlers were already covered by schedule/runtime tests.
+- [x] **Phase 3.38 / Broad `ToLegacy` cleanup for carved-out messages** — stale `ToLegacy` impls were removed from direct-resource messages across `input_state`, `pointer`, `snap`, `bpm`, `timing`, `spawn`, the carved-out `editor_mode`, `camera`, `misc`, `timeline`, and `session` variants. At that historical point, request-heavy messages still kept conversion impls; the active branch has since moved those messages to request resources and deleted `LegacyCommand`/`ToLegacy` entirely.
 - [x] **Phase 3.39 / History Undo-Redo carve-out + object/history mirrors** — `events::history::handle_undo` and `handle_redo` now mutate App-world resources directly instead of staging `EditorCommand::Undo` / `Redo`. The new `EditorObjectsRes` mirrors the ordered authored-object list and carries a one-shot `history_restore_pending` flag; `EditorHistoryRes` is seeded from legacy history at `Runtime::new` and mirrored before `StateSchedule`. Runtime syncs restored object/history resources back into the compatibility `State` and runs the existing editor scene rebuild hooks while rendering remains legacy-owned. The `Undo`/`Redo` `ToLegacy` impls were removed. 1 schedule-level test pins undo/redo resource mutation + empty `PendingCommands`, and 1 state tick test pins the App-world path without legacy command staging.
 - [x] **Phase 3.40 / Block command carve-out + clipboard/object mutation sync** — `events::block` handlers now mutate App-world resources directly instead of staging `EditorCommand::{RemoveBlock, DuplicateBlock, CopyBlock, PasteBlock, UpdateSelectedBlock}`. `EditorObjectsRes` carries a one-shot `object_mutation_pending` flag for ordinary object edits, and `EditorRuntimeRes` mirrors the editor clipboard so copy/paste stays App-world authoritative while the legacy renderer still rebuilds presentation. Runtime syncs App-world object selection, clipboard, history, and objects back into the compatibility `State`, then consumes the mutation flag. 3 schedule-level tests pin remove, copy/duplicate/paste, and update-selected behavior with empty `PendingCommands`; 1 runtime test pins clipboard + object convergence through `Runtime::run_app_frame`.
 - [x] **Phase 3.41 / Selection transform-trigger carve-out** — `events::selection::handle_add_transform_trigger` now mutates App-world resources directly instead of staging `EditorCommand::AddTransformTrigger`. The handler records editor history, clears active object drags, closes the App-world place window, removes same-time transform-trigger targets that are being replaced, appends generated transform trigger objects to `EditorObjectsRes`, selects the created trigger blocks, and marks `object_mutation_pending` so Runtime rebuilds the legacy presentation once. `FocusCameraTarget` remained legacy-routed after this slice because camera-track evaluation still needed an App-world owner; `SnapSelectionToGrid` moved in Phase 3.42 and `FocusCameraTarget` moved in Phase 3.44. 1 schedule-level test pins trigger creation, target replacement, history, selection, and empty `PendingCommands`; 1 runtime test pins message → App objects/session → legacy State convergence.
@@ -360,7 +359,7 @@ event taxonomy. Future phases migrate UI / winit / egui code to write
 Message<T>::write directly, then delete the legacy enums + dispatch
 files in one final sweep.
 
-### What's in Phase 3 today
+### What Phase 3 established
 
 - 15 event submodules under events/ (
   avigation, auth,
@@ -369,14 +368,12 @@ files in one final sweep.
   input_state, pointer).
 - One Message struct per semantic command (~85 distinct message
   types).
-- A ToLegacy trait on each message type that converts the message to
-  a LegacyCommand (an AppCommand or EditorCommand enum variant).
-- A per-message drain system (one `fn handle_*`(MessageReader<T>,
-  ResMut<PendingCommands>) per message type) that stages commands in
-  the PendingCommands resource.
-- A StateSchedule that bundles the per-message drain systems.
-- Runtime drains App-world PendingCommands to State::dispatch /
-  State::dispatch_editor during the compatibility window; the App world is now
+- Per-message handler systems in `StateSchedule`.
+- Initially, handlers staged commands in `PendingCommands`; the active branch
+  has since moved all message handlers to direct resource writes or typed
+  request resources.
+- Runtime consumes typed App-world requests through compatibility methods for
+  side effects that still live on legacy `State`; the App world is now
   the only schedule host for `StateSchedule`.
 - A HistorySnapshot marker event for direct-manipulation UI (gizmo
   drag / marquee / block drag) that reserves the PreCommandHistorySet
@@ -549,14 +546,12 @@ stateful-resource carve-out** (after snap, block-id, bpm):
 write directly to `SessionStateRes` fields
 (`editor_show_metadata`, `editor_show_settings`,
 `editor_settings_section`, `editor_keybind_capture_action`).
-The other 11 session events (`LoadLevel`,
-`SetKeybind`, `SetAudioBackend`,
-`TriggerAudioImport`, ...) keep the legacy
-`PendingCommands` path because their legacy setters have
+At this historical point, the other session events (`LoadLevel`,
+`SetAudioBackend`, `TriggerAudioImport`, ...) kept the legacy
+`PendingCommands` path because their legacy setters had
 out-of-process side effects (level load, file IO, settings
-persist, audio backend switch). Phase 3.38 removed `ToLegacy`
-impls from the carved-out session messages, leaving conversions only
-on messages that still stage legacy commands.
+persist, audio backend switch). The active branch now routes those
+messages through typed request resources instead.
 
 `Runtime::sync_app_session_state` change-guarded sync propagates
 the carved-out fields. `Runtime::new` seeds the carved-out
@@ -700,12 +695,9 @@ RebuildMeshSet, ExtractSet, RenderSet). Phase 3 keeps the
 schedule minimal so the existing legacy dispatch path is exercised
 end-to-end on every frame.
 
-**Verification:** cargo test --workspace is green; the new
-ick_state_drains_message_into_pending_then_dispatches test
-exercises the full pipeline (write a Message →
-State::tick_state → side effect on the legacy State).
-14 new unit tests in events::tests cover ToLegacy conversion +
-PendingCommands drain semantics for representative event types.
+**Historical verification:** the original Phase 3 pipeline was covered by
+message → `PendingCommands` tests. The active branch replaces those with
+direct-resource and request-resource tests in `events::tests`.
 
 ## Phase 4a — rendering extraction scaffolding
 
@@ -1155,9 +1147,9 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
 
 ## Architectural shape right now
 
-- The migration so far is still a **compatibility mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before being bridged to legacy `State`; the legacy `State` / `GameState` compatibility fields still drive production behavior until direct handlers and App-world ownership replace them.
-- The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined and dispatched** through command_dispatch.rs + editor_dispatch.rs. Phase 3 added a `Message`-to-`LegacyCommand` drain path, and Phase 5 routes UI output into that path. The final swap (delete the enums + dispatch files) is gated on Phase 7.
-- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world, run `app.update()`, prepare App-world mirror resources, run `StateSchedule`, and drain pending commands before legacy update/render. The App world has the real eg-state plugin graph and gameplay schedule; direct render ownership remains on legacy `State` through `StateRenderResources` until the render swap.
+- The migration so far is still a **compatibility mirror** strategy for rendering, input, async, session, and editor mutation. Gameplay ECS resources and `GameplaySchedule` are installed by the App's `GameplayPlugin`, the live egui context is mirrored into App-world `EguiContextRes`, and UI-originated commands now enter through App-world `UiCommandQueue` before App-world handlers mutate resources or request legacy-owned side effects.
+- The `AppCommand` (15 variants) + `EditorCommand` (~87 variants) enums are **still defined** for non-message legacy call sites and compatibility methods, but no event handler converts through `LegacyCommand`/`ToLegacy`; those bridge types are deleted.
+- `Runtime` in `eg-app` now owns a `bevy_app::App` alongside the legacy `state`/`pipeline` fields. `ApplicationHandler::RedrawRequested` calls `Runtime::run_app_frame(raw_input)`, which lets `FramePipeline` write UI commands into the App world, run `app.update()`, prepare App-world mirror resources, run `StateSchedule`, consume typed request resources, and then continue the legacy update/render path. The App world has the real eg-state plugin graph and gameplay schedule; direct render ownership remains on legacy `State` through `StateRenderResources` until the render swap.
 - **Phases 3.5–3.11 carve-out status** (as of `be4d965` +
   this branch's continuation): 23 of the ~85 legacy-routed
   `EditorCommand` messages have been carved out to direct
@@ -1172,7 +1164,7 @@ The plan calls for `TestApp` builders that let tests assert on World resources, 
     - `events::spawn` (3 messages) → `EditorSpawnRes.0` (SetSpawnHere, RotateSpawnDirection) + `EditorConfigRes.0.selected_block_rotation_degrees[1]` (RotatePlacementPreview)
     - `events::camera` (5 messages) → `EditorCameraRes.0`, `EditorTriggerRes.0.selected_index`, and `EditorObjectsRes` camera-trigger creation
     - All carved-out resources are seeded from the legacy `State` at `Runtime::new` to prevent first-frame clobbers, and the `Runtime::sync_app_*_state` helpers are change-guarded to keep the legacy setters' side effects from re-firing every frame.
-    - Phase 3.38 removes `ToLegacy` impls from carved-out messages; only messages that still stage `PendingCommands` keep legacy conversion impls.
+    - The active branch removes all `ToLegacy` impls and `LegacyCommand`; no message handler stages `PendingCommands`.
 
 ## Full-Bevy Next Roadmap
 
@@ -1195,11 +1187,11 @@ then make `State` either disappear or become a thin construction/helper layer.
 
 ### 2. Replace legacy command dispatch
 
-Once there is one authoritative World, stop converting Bevy `Message`s back to
-`AppCommand` / `EditorCommand`.
+The message-to-legacy conversion is gone, but the empty compatibility buffer and
+legacy dispatch files remain for non-message call sites and deletion gates.
 
-- Move each `ToLegacy` bridge into a direct handler system over resources/components.
-- Delete `PendingCommands`, `command_dispatch.rs`, and `editor_dispatch.rs` after the last handler is direct.
+- Delete the empty `PendingCommands` resource and `Runtime::dispatch_app_pending_commands` after runtime/tests stop referencing it.
+- Delete `command_dispatch.rs` and `editor_dispatch.rs` after non-message call sites move to App-world systems or compatibility methods.
 - Move the input-state carve-out (`SetShiftHeld`, pointer moves, camera drag, etc.) to a real `InputSet` that writes `EditorInputRes` directly.
 - Use tests around undo/redo, selection, timeline scrub, and playtest enter/exit as the parity gate.
 

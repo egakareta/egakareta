@@ -429,3 +429,148 @@ impl GameRemovePracticeCheckpointRequest {
         pending
     }
 }
+
+/// App-world request to start editor playtest mode.
+///
+/// The playtest transition still builds gameplay state, primes audio,
+/// and changes phase through legacy `State::editor_playtest`, so the
+/// side effect stays legacy-owned while the App world owns the user
+/// intent.
+#[derive(Resource, Default)]
+pub struct PlaytestRequest {
+    pub pending: bool,
+}
+
+impl PlaytestRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to load a built-in level into the editor.
+#[derive(Resource, Default)]
+pub struct LoadLevelRequest {
+    pub level_name: Option<String>,
+}
+
+impl LoadLevelRequest {
+    pub fn request(&mut self, level_name: String) {
+        self.level_name = Some(level_name);
+    }
+
+    pub fn take(&mut self) -> Option<String> {
+        self.level_name.take()
+    }
+}
+
+/// App-world request to export the current editor level.
+#[derive(Resource, Default)]
+pub struct ExportLevelRequest {
+    pub pending: bool,
+}
+
+impl ExportLevelRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to switch the preferred audio backend.
+#[derive(Resource, Default)]
+pub struct SetAudioBackendRequest {
+    pub backend_name: Option<String>,
+}
+
+impl SetAudioBackendRequest {
+    pub fn request(&mut self, backend_name: String) {
+        self.backend_name = Some(backend_name);
+    }
+
+    pub fn take(&mut self) -> Option<String> {
+        self.backend_name.take()
+    }
+}
+
+/// App-world request to complete a pending level import.
+#[derive(Resource, Default)]
+pub struct CompleteImportRequest {
+    pub pending: bool,
+}
+
+impl CompleteImportRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to open the platform audio-import picker.
+#[derive(Resource, Default)]
+pub struct TriggerAudioImportRequest {
+    pub pending: bool,
+}
+
+impl TriggerAudioImportRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request for the primary turn/place/start action.
+#[derive(Resource, Default)]
+pub struct TurnRightRequest {
+    pub pending: bool,
+}
+
+impl TurnRightRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to toggle between menu/editor/playtest editor.
+#[derive(Resource, Default)]
+pub struct ToggleEditorRequest {
+    pub pending: bool,
+}
+
+impl ToggleEditorRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}

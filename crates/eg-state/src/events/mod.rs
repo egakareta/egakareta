@@ -9,21 +9,20 @@
 //!
 //! Phase 3 fragments the monolithic `AppCommand` / `EditorCommand` enums
 //! into a per-semantic Bevy `Message` type. During the Phase 7
-//! compatibility window, carved-out messages mutate App-world resources
-//! directly while remaining legacy-routed messages are staged in
-//! [`PendingCommands`] for `Runtime` to apply to legacy `State`.
+//! compatibility window, messages mutate App-world resources directly or
+//! write typed request resources that `Runtime` consumes through legacy
+//! compatibility methods.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
 //! here because we want pull-based consumption by the per-message
-//! handler systems in the [`CommandSet`] system set, then a single
-//! drain into [`PendingCommands`] at the end of the frame.
+//! handler systems in the [`CommandSet`] system set.
 //!
 //! The per-message systems are wired into the `StateSchedule` so each
 //! message type has one explicit handler. Runtime runs the schedule on
-//! the App world and drains any staged legacy commands into
-//! `State::dispatch`. Input-state and carved-out command messages update
-//! App-world resources directly instead of staging legacy commands.
+//! the App world, then consumes request resources for side effects that
+//! still live on legacy `State`. Input-state and direct command messages
+//! update App-world resources directly.
 //!
 //! ## Why messages?
 //!
@@ -91,32 +90,11 @@ pub mod timing;
 // module paths. Public message *types* remain accessible via their
 // submodule path (e.g. `events::navigation::TurnRight`).
 
-/// A legacy command, recovered from a Bevy message via [`ToLegacy`].
-#[derive(Debug, Clone)]
-pub enum LegacyCommand {
-    /// Equivalent to an [`AppCommand`] variant.
-    App(AppCommand),
-    /// Equivalent to an [`EditorCommand`] variant.
-    Editor(EditorCommand),
-}
-
-/// Trait mapping a Bevy message to its legacy `AppCommand` /
-/// `EditorCommand` equivalent.
+/// Legacy command buffer left in place until the runtime bridge deletion pass.
 ///
-/// Implementing this trait is the only boilerplate the migration to
-/// messages requires per command — the dispatch path on `State` is
-/// unchanged.
-pub trait ToLegacy {
-    /// Convert `self` to a [`LegacyCommand`].
-    fn to_legacy(self) -> LegacyCommand;
-}
-
-/// Per-frame buffer of legacy commands recovered from Bevy messages.
-///
-/// The Bevy schedule's per-message drain systems write into this
-/// resource. Runtime takes the App-world resource and calls
-/// `State::dispatch` / `State::dispatch_editor` for each buffered
-/// command during the compatibility window.
+/// Message handlers now use direct resource writes or typed request resources,
+/// so this buffer is expected to stay empty. It remains registered while
+/// adjacent runtime/tests are migrated away from the old drain point.
 #[derive(Resource, Default, Debug)]
 pub struct PendingCommands {
     /// Commands to route through `State::dispatch`.
@@ -145,18 +123,18 @@ impl PendingCommands {
 
 /// System set that contains the per-message command handlers.
 ///
-/// All systems in this set read a single `MessageReader<T>`. Carved-out
-/// handlers mutate App-world resources directly; legacy-routed handlers
-/// write [`PendingCommands`]. They run as part of the `StateSchedule`.
+/// All systems in this set read a single `MessageReader<T>`. Handlers mutate
+/// App-world resources directly or write typed request resources consumed by
+/// Runtime. They run as part of the `StateSchedule`.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandSet;
 
-/// Register every eg-state message type on the given `App` and ensure
-/// the [`PendingCommands`] resource is initialized.
+/// Register every eg-state message type on the given `App` and keep the
+/// temporary [`PendingCommands`] compatibility resource initialized.
 ///
 /// The schedule itself is owned by `State` (Phase 2c / 7), so this
 /// helper does not add a `Schedule` — only the `Messages<T>` resources
-/// and the `PendingCommands` buffer. Use [`add_command_systems`] to
+/// and the temporary `PendingCommands` buffer. Use [`add_command_systems`] to
 /// add the per-message command handlers to a `Schedule`.
 pub fn register_command_events(app: &mut App) {
     // Add the message resources so `Messages<T>` is available.
@@ -177,14 +155,14 @@ pub fn register_command_events(app: &mut App) {
     input_state::register_events(app);
     pointer::register_events(app);
 
-    // PendingCommands resource for the per-message systems to write into.
+    // Temporary compatibility buffer. No current message handler writes it.
     app.init_resource::<PendingCommands>();
 }
 
 /// World-flavoured variant of [`register_command_events`] for callers
 /// that work with a bare `World` (e.g. `State` constructs its `World`
 /// directly without going through an `App`). Initializes the
-/// `Messages<T>` resource for every event type + the
+/// `Messages<T>` resource for every event type + the temporary
 /// [`PendingCommands`] buffer; does **not** add a schedule — see
 /// `register_state_command_pipeline` for the full `World` setup.
 pub fn register_command_events_world(world: &mut World) {
@@ -511,12 +489,6 @@ mod tests {
         assert!(pending.is_empty());
     }
 
-    #[test]
-    fn to_legacy_turn_right_app_command() {
-        let legacy = TurnRight.to_legacy();
-        assert!(matches!(legacy, LegacyCommand::App(AppCommand::TurnRight)));
-    }
-
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
     fn build_event_world() -> bevy_ecs::world::World {
@@ -533,7 +505,8 @@ mod tests {
         // `SessionStateRes`; the `timing` carve-out reaches for
         // `EditorTimingRes`; the `spawn` carve-out reaches for
         // `EditorInputRes` (cursor) + `EditorSpawnRes` +
-        // `EditorConfigRes`; the `camera` carve-out reaches for
+        // `EditorConfigRes`; the `PickBlockAt` carve-out reaches for
+        // `RenderUniformsRes` viewport size; the `camera` carve-out reaches for
         // `EditorCameraRes` + `EditorTriggerRes`; the resize carve-out
         // reaches for `RenderResizeRequest`; the perf-frame copy carve-out
         // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
@@ -552,6 +525,7 @@ mod tests {
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.init_resource::<crate::state::AppPhaseRes>();
+        world.init_resource::<crate::state::RenderUniformsRes>();
         world.init_resource::<crate::state::RenderResizeRequest>();
         world.init_resource::<crate::state::EscapeRequest>();
         world.init_resource::<crate::state::AuthSubmitSignInRequest>();
@@ -561,6 +535,14 @@ mod tests {
         world.init_resource::<crate::state::GameRestartLevelRequest>();
         world.init_resource::<crate::state::GameSetPracticeCheckpointRequest>();
         world.init_resource::<crate::state::GameRemovePracticeCheckpointRequest>();
+        world.init_resource::<crate::state::PlaytestRequest>();
+        world.init_resource::<crate::state::LoadLevelRequest>();
+        world.init_resource::<crate::state::ExportLevelRequest>();
+        world.init_resource::<crate::state::SetAudioBackendRequest>();
+        world.init_resource::<crate::state::CompleteImportRequest>();
+        world.init_resource::<crate::state::TriggerAudioImportRequest>();
+        world.init_resource::<crate::state::TurnRightRequest>();
+        world.init_resource::<crate::state::ToggleEditorRequest>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -581,12 +563,25 @@ mod tests {
     }
 
     #[test]
-    fn schedule_drains_turn_right_message_into_pending() {
+    fn carve_out_turn_right_writes_request_resource() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
-        assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
+        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
+        assert!(world.resource::<PendingCommands>().is_empty());
+    }
+
+    #[test]
+    fn carve_out_toggle_editor_writes_request_resource() {
+        let mut world = build_event_world();
+        world.write_message(navigation::ToggleEditor);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world
+                .resource::<crate::state::ToggleEditorRequest>()
+                .pending
+        );
+        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
@@ -1539,21 +1534,14 @@ mod tests {
     }
 
     #[test]
-    fn multiple_messages_drain_in_order() {
+    fn multiple_turn_right_messages_coalesce_into_request() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
-        assert_eq!(
-            pending.app_commands,
-            vec![
-                AppCommand::TurnRight,
-                AppCommand::TurnRight,
-                AppCommand::TurnRight
-            ]
-        );
+        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
+        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
@@ -1565,20 +1553,19 @@ mod tests {
     }
 
     #[test]
-    fn mixed_message_types_drain_into_correct_buckets() {
-        // `TurnRight` still stages a legacy `AppCommand`; `SetSnapToGrid`
-        // is a carve-out and writes to `EditorConfigRes` directly. Pin
-        // both behaviours in one test.
+    fn mixed_message_types_write_request_and_direct_resource() {
+        // `TurnRight` writes a request resource; `SetSnapToGrid` writes to
+        // `EditorConfigRes` directly. Neither stages a legacy command.
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
         world.run_schedule(crate::state::StateSchedule);
         let pending = world.resource::<PendingCommands>();
-        assert_eq!(pending.app_commands, vec![AppCommand::TurnRight]);
         assert!(
-            pending.editor_commands.is_empty(),
-            "SetSnapToGrid carve-out must not stage a legacy editor command"
+            pending.is_empty(),
+            "request/direct messages must not stage legacy commands"
         );
+        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
         assert!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3294,6 +3281,133 @@ mod tests {
         assert!(
             pending.editor_commands.is_empty(),
             "PickSelectedBlock must not stage a legacy editor command"
+        );
+    }
+
+    /// `PickBlockAt` is a carve-out: the handler reuses the existing
+    /// editor screen picker against App-world resources, writes the
+    /// picked block id into `EditorConfigRes`, enters Place mode, and
+    /// does not stage `EditorCommand::PickBlockAt`.
+    #[test]
+    fn carve_out_pick_block_at_mutates_resources() {
+        use crate::events::editor_mode::PickBlockAt;
+        use crate::state::EditorSubsystem;
+        use glam::{Vec2, Vec3};
+
+        let mut world = build_event_world();
+        let picked = eg_blocks::BlockId::new("core/grass");
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            block_id: picked.clone(),
+            ..LevelObject::default()
+        }];
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Select;
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .selected_block_id = eg_blocks::BlockId::new("core/stone");
+        world
+            .resource_mut::<crate::state::RenderUniformsRes>()
+            .color_space
+            .viewport_size = [1280.0, 720.0];
+
+        let screen = EditorSubsystem::default()
+            .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), Vec2::new(1280.0, 720.0))
+            .expect("block center should project to screen");
+
+        world.write_message(PickBlockAt {
+            x: screen.x as f64,
+            y: screen.y as f64,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            picked
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Place
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "PickBlockAt must not stage a legacy editor command"
+        );
+    }
+
+    /// `Playtest` is a request-resource carve-out: the schedule records
+    /// the playtest intent in `PlaytestRequest` while Runtime keeps the
+    /// legacy phase/gameplay/audio transition as the side-effect owner.
+    #[test]
+    fn carve_out_playtest_writes_request_resource() {
+        use crate::events::timeline::Playtest;
+
+        let mut world = build_event_world();
+
+        world.write_message(Playtest);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(world.resource::<crate::state::PlaytestRequest>().pending);
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "Playtest must not stage a legacy editor command"
+        );
+    }
+
+    /// Session side-effect messages are request-resource carve-outs:
+    /// Runtime consumes these resources and calls the existing legacy
+    /// compatibility methods for level IO and audio side effects.
+    #[test]
+    fn carve_out_session_side_effects_write_request_resources() {
+        use crate::events::session::{
+            CompleteImport, ExportLevel, LoadLevel, SetAudioBackend, TriggerAudioImport,
+        };
+
+        let mut world = build_event_world();
+
+        world.write_message(LoadLevel("Flowerfield".to_string()));
+        world.write_message(ExportLevel);
+        world.write_message(SetAudioBackend("Default".to_string()));
+        world.write_message(CompleteImport);
+        world.write_message(TriggerAudioImport);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<crate::state::LoadLevelRequest>()
+                .level_name,
+            Some("Flowerfield".to_string())
+        );
+        assert!(world.resource::<crate::state::ExportLevelRequest>().pending);
+        assert_eq!(
+            world
+                .resource::<crate::state::SetAudioBackendRequest>()
+                .backend_name,
+            Some("Default".to_string())
+        );
+        assert!(
+            world
+                .resource::<crate::state::CompleteImportRequest>()
+                .pending
+        );
+        assert!(
+            world
+                .resource::<crate::state::TriggerAudioImportRequest>()
+                .pending
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "session side-effect messages must not stage legacy editor commands"
         );
     }
 
