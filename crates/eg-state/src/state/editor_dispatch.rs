@@ -268,6 +268,16 @@ impl State {
         }
         had_tap_selection
     }
+
+    /// Phase 3.46: public wrapper for the Escape state machine. The
+    /// App-world `Escape` message handler writes `EscapeRequest`; the
+    /// runtime sync calls this method (instead of draining
+    /// `EditorCommand::Escape` through `PendingCommands`) so the
+    /// multi-step context-sensitive state machine stays reachable
+    /// from the App world without the legacy command bridge.
+    pub fn apply_editor_escape(&mut self) {
+        self.handle_editor_escape();
+    }
 }
 
 #[cfg(test)]

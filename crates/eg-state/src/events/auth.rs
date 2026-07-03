@@ -12,39 +12,22 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_types::PhysicalSize;
 
-use crate::commands::AppCommand;
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::{PerfFrameCopyRequest, RenderResizeRequest};
+use crate::state::{
+    AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest, PerfFrameCopyRequest,
+    RenderResizeRequest,
+};
 
 /// Start the browser sign-in flow.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AuthSubmitSignIn;
 
-impl ToLegacy for AuthSubmitSignIn {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::AuthSubmitSignIn)
-    }
-}
-
 /// Sign out of the current account.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AuthSignOut;
 
-impl ToLegacy for AuthSignOut {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::AuthSignOut)
-    }
-}
-
 /// Open the web signup page.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AuthOpenSignup;
-
-impl ToLegacy for AuthOpenSignup {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::AuthOpenSignup)
-    }
-}
 
 /// Copy the latest profiler frame to the system clipboard.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -69,30 +52,60 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
+// `AuthSubmitSignIn` is a carve-out from the `PendingCommands` →
+// `State::dispatch` pipeline (same request-resource pattern as
+// `events::misc::handle_escape` and
+// `events::auth::handle_resize_surface`): the handler writes
+// `AuthSubmitSignInRequest.pending = true` and
+// `Runtime::sync_app_auth_submit_sign_in_request` consumes the
+// request before the remaining `PendingCommands` drain and calls
+// the existing legacy `State::submit_auth_sign_in` compatibility
+// method. The sign-in side effect (network IO via
+// `trigger_auth_sign_in` on the auth channel) stays legacy-owned
+// because the auth channel `Sender` lives on the legacy `State`.
 pub fn handle_auth_submit_sign_in(
     mut events: MessageReader<AuthSubmitSignIn>,
-    mut pending: ResMut<PendingCommands>,
+    mut sign_in_request: ResMut<AuthSubmitSignInRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::AuthSubmitSignIn);
+        sign_in_request.request();
     }
 }
 
+// `AuthSignOut` is a carve-out from the `PendingCommands` →
+// `State::dispatch` pipeline (same request-resource pattern as
+// `AuthSubmitSignIn`): the handler writes
+// `AuthSignOutRequest.pending = true` and
+// `Runtime::sync_app_auth_sign_out_request` consumes the request
+// and calls the existing legacy `State::sign_out_auth_session`
+// compatibility method. The sign-out side effect (network IO via
+// `trigger_auth_sign_out` on the auth channel) stays legacy-owned
+// because the auth channel `Sender` lives on the legacy `State`.
 pub fn handle_auth_sign_out(
     mut events: MessageReader<AuthSignOut>,
-    mut pending: ResMut<PendingCommands>,
+    mut sign_out_request: ResMut<AuthSignOutRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::AuthSignOut);
+        sign_out_request.request();
     }
 }
 
+// `AuthOpenSignup` is a carve-out from the `PendingCommands` →
+// `State::dispatch` pipeline (same request-resource pattern as
+// `AuthSubmitSignIn`): the handler writes
+// `AuthOpenSignupRequest.pending = true` and
+// `Runtime::sync_app_auth_open_signup_request` consumes the
+// request and calls the existing legacy
+// `State::open_auth_signup_page` compatibility method. The
+// signup-page-open side effect (platform code via
+// `eg_platform::auth::open_signup_page`) stays legacy-owned
+// because the platform API is only available in non-wasm targets.
 pub fn handle_auth_open_signup(
     mut events: MessageReader<AuthOpenSignup>,
-    mut pending: ResMut<PendingCommands>,
+    mut open_signup_request: ResMut<AuthOpenSignupRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::AuthOpenSignup);
+        open_signup_request.request();
     }
 }
 

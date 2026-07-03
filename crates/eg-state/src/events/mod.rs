@@ -480,7 +480,9 @@ pub fn add_command_systems(schedule: &mut Schedule) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::auth::{CopyLatestPerfFrame, ResizeSurface};
+    use crate::events::auth::{
+        AuthOpenSignup, AuthSignOut, AuthSubmitSignIn, CopyLatestPerfFrame, ResizeSurface,
+    };
     use crate::events::editor_mode::SetEditorMode;
     use crate::events::history::{HistorySnapshot, Redo, Undo};
     use crate::events::navigation::TurnRight;
@@ -551,6 +553,10 @@ mod tests {
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.init_resource::<crate::state::AppPhaseRes>();
         world.init_resource::<crate::state::RenderResizeRequest>();
+        world.init_resource::<crate::state::EscapeRequest>();
+        world.init_resource::<crate::state::AuthSubmitSignInRequest>();
+        world.init_resource::<crate::state::AuthSignOutRequest>();
+        world.init_resource::<crate::state::AuthOpenSignupRequest>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -616,6 +622,73 @@ mod tests {
         assert!(
             pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
             "CopyLatestPerfFrame must not stage a legacy command"
+        );
+    }
+
+    /// `AuthSubmitSignIn` is a carve-out: the handler writes
+    /// `AuthSubmitSignInRequest.pending = true`. Pin the request
+    /// is set and no legacy command is staged.
+    #[test]
+    fn carve_out_auth_submit_sign_in_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(AuthSubmitSignIn);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::AuthSubmitSignInRequest>()
+                .pending,
+            "AuthSubmitSignIn handler must request an App-world sign-in"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthSubmitSignIn must not stage a legacy command"
+        );
+    }
+
+    /// `AuthSignOut` is a carve-out: the handler writes
+    /// `AuthSignOutRequest.pending = true`. Pin the request is set
+    /// and no legacy command is staged.
+    #[test]
+    fn carve_out_auth_sign_out_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(AuthSignOut);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world.resource::<crate::state::AuthSignOutRequest>().pending,
+            "AuthSignOut handler must request an App-world sign-out"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthSignOut must not stage a legacy command"
+        );
+    }
+
+    /// `AuthOpenSignup` is a carve-out: the handler writes
+    /// `AuthOpenSignupRequest.pending = true`. Pin the request is
+    /// set and no legacy command is staged.
+    #[test]
+    fn carve_out_auth_open_signup_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(AuthOpenSignup);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::AuthOpenSignupRequest>()
+                .pending,
+            "AuthOpenSignup handler must request an App-world signup-page open"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthOpenSignup must not stage a legacy command"
         );
     }
 
@@ -2829,23 +2902,53 @@ mod tests {
         );
     }
 
-    /// `Escape` is **not** a carve-out: the handler stages a
-    /// legacy `EditorCommand::Escape` because the legacy
-    /// `handle_editor_escape` is a multi-step context-sensitive
-    /// state machine (stop playback → reset timeline → back to
-    /// menu). Pin the legacy command is staged.
+    /// `Escape` is a carve-out from the `PendingCommands` pipeline
+    /// (same request-resource pattern as `ResizeSurface` and
+    /// `CopyLatestPerfFrame`): the handler writes
+    /// `EscapeRequest.pending = true` and the runtime sync consumes
+    /// it by calling `State::apply_editor_escape`. Pin the request
+    /// is set and no legacy command is staged.
     #[test]
-    fn escape_still_uses_pending_commands() {
+    fn carve_out_escape_writes_request() {
         let mut world = build_event_world();
 
         world.write_message(Escape);
         world.run_schedule(crate::state::StateSchedule);
 
+        assert!(
+            world.resource::<crate::state::EscapeRequest>().pending,
+            "Escape handler must request an App-world escape"
+        );
+
         let pending = world.resource::<PendingCommands>();
-        assert_eq!(
-            pending.editor_commands,
-            vec![crate::state::editor_command::EditorCommand::Escape],
-            "Escape must still stage a legacy editor command"
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "Escape must not stage a legacy command"
+        );
+    }
+
+    /// `Escape` is consumed by the runtime sync. After the first
+    /// frame the request is consumed and a second no-message frame
+    /// stays a no-op (pin the change guard: stale requests don't
+    /// accumulate across frames).
+    #[test]
+    fn carve_out_escape_request_is_consumed_after_first_frame() {
+        let mut world = build_event_world();
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+        // Simulate the runtime sync consuming the request, mirroring
+        // `Runtime::sync_app_escape_request`.
+        world.resource_mut::<crate::state::EscapeRequest>().take();
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "request must be consumed after the runtime sync"
+        );
+        // A second no-message frame must not re-fire the request.
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "no-message frame must not re-request escape"
         );
     }
 

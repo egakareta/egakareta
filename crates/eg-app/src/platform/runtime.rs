@@ -11,10 +11,14 @@ use bevy_app::App;
 use bevy_ecs::world::World;
 use eg_state::events::PendingCommands;
 use eg_state::state::AppPhaseRes;
+use eg_state::state::AuthOpenSignupRequest;
+use eg_state::state::AuthSignOutRequest;
+use eg_state::state::AuthSubmitSignInRequest;
 use eg_state::state::EditorConfigRes;
 use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
+use eg_state::state::EscapeRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PerfFrameCopyRequest;
 use eg_state::state::RenderResizeRequest;
@@ -250,6 +254,10 @@ impl Runtime {
             Self::sync_app_perf_state(state, app.world());
             Self::sync_app_perf_frame_copy_request(state, app.world_mut());
             Self::sync_app_render_resize_request(state, app.world_mut());
+            Self::sync_app_escape_request(state, app.world_mut());
+            Self::sync_app_auth_submit_sign_in_request(state, app.world_mut());
+            Self::sync_app_auth_sign_out_request(state, app.world_mut());
+            Self::sync_app_auth_open_signup_request(state, app.world_mut());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
         });
@@ -824,6 +832,90 @@ impl Runtime {
         state.resize_surface(size);
     }
 
+    /// Consume the App-world `EscapeRequest` and apply the multi-step
+    /// context-sensitive escape state machine through the legacy
+    /// `State::apply_editor_escape` compatibility method.
+    ///
+    /// Phase 3.46: `events::misc::handle_escape` writes
+    /// `EscapeRequest.pending = true` instead of staging
+    /// `EditorCommand::Escape` in `PendingCommands`, so the App
+    /// world owns the "user pressed Escape" intent while the legacy
+    /// state still owns the state machine. The sync runs after
+    /// `sync_app_perf_frame_copy_request` / `sync_app_render_resize_request`
+    /// and before `dispatch_app_pending_commands` so the request is
+    /// consumed in the same frame and any state changes (phase,
+    /// timeline, session) propagate to the App world via the
+    /// downstream sync helpers.
+    fn sync_app_escape_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<EscapeRequest>().take() {
+            return;
+        }
+        state.apply_editor_escape();
+    }
+
+    /// Consume the App-world `AuthSubmitSignInRequest` and apply the
+    /// legacy `State::submit_auth_sign_in` compatibility method.
+    ///
+    /// Phase 3.47: `events::auth::handle_auth_submit_sign_in` writes
+    /// `AuthSubmitSignInRequest.pending = true` instead of staging
+    /// `AppCommand::AuthSubmitSignIn` in `PendingCommands`. The
+    /// sign-in side effect (network IO via `trigger_auth_sign_in`
+    /// on the auth channel) stays legacy-owned because the auth
+    /// channel `Sender` lives on the legacy `State`. The sync runs
+    /// before `dispatch_app_pending_commands` so the request is
+    /// consumed in the same frame and any auth state changes
+    /// (pending flag, message) propagate to legacy readers via the
+    /// existing `State::update_auth_results` polling path.
+    fn sync_app_auth_submit_sign_in_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<AuthSubmitSignInRequest>().take() {
+            return;
+        }
+        state.submit_auth_sign_in();
+    }
+
+    /// Consume the App-world `AuthSignOutRequest` and apply the
+    /// legacy `State::sign_out_auth_session` compatibility method.
+    ///
+    /// Phase 3.47: same request pattern as
+    /// `sync_app_auth_submit_sign_in_request`. The sign-out side
+    /// effect (network IO via `trigger_auth_sign_out` on the auth
+    /// channel) stays legacy-owned because the auth channel
+    /// `Sender` lives on the legacy `State`.
+    fn sync_app_auth_sign_out_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<AuthSignOutRequest>().take() {
+            return;
+        }
+        state.sign_out_auth_session();
+    }
+
+    /// Consume the App-world `AuthOpenSignupRequest` and apply the
+    /// legacy `State::open_auth_signup_page` compatibility method.
+    ///
+    /// Phase 3.47: same request pattern as
+    /// `sync_app_auth_submit_sign_in_request`. The signup-page-open
+    /// side effect (platform code via
+    /// `eg_platform::auth::open_signup_page`) stays legacy-owned
+    /// because the platform API is only available in non-wasm
+    /// targets.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sync_app_auth_open_signup_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<AuthOpenSignupRequest>().take() {
+            return;
+        }
+        state.open_auth_signup_page();
+    }
+
+    /// WASM stub: `open_auth_signup_page` is not callable in wasm
+    /// targets (it would invoke `window.open` in a non-async
+    /// browser context). Phase 3.47 still keeps the request
+    /// resource so the App world owns the "user requested signup
+    /// page" intent in the unified schedule; runtime drops it on
+    /// wasm where the platform API is unavailable.
+    #[cfg(target_arch = "wasm32")]
+    fn sync_app_auth_open_signup_request(_state: &mut State, world: &mut World) {
+        let _ = world.resource_mut::<AuthOpenSignupRequest>().take();
+    }
+
     fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {
         let mut pending = std::mem::take(&mut *world.resource_mut::<PendingCommands>());
         let had_commands = !pending.is_empty();
@@ -853,8 +945,9 @@ mod tests {
     use super::*;
     use eg_state::state::State;
     use eg_state::state::{
-        AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
+        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
+        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest,
         MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
         SessionStateRes,
     };
@@ -1187,6 +1280,86 @@ mod tests {
         assert!(
             pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
             "CopyLatestPerfFrame must not stage a legacy command"
+        );
+    }
+
+    /// `AuthSubmitSignIn` is a Phase 3.47 carve-out: the App-world
+    /// handler writes `AuthSubmitSignInRequest.pending = true`, the
+    /// runtime sync consumes the request and calls the legacy
+    /// `State::submit_auth_sign_in` compatibility method, and no
+    /// legacy `AppCommand::AuthSubmitSignIn` is staged in
+    /// `PendingCommands`. The legacy `auth.pending` flag is also
+    /// set by the legacy side effect.
+    #[tokio::test]
+    async fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
+        use eg_state::events::auth::AuthSubmitSignIn;
+
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(AuthSubmitSignIn);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime.app.world().resource::<AuthSubmitSignInRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume AuthSubmitSignInRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthSubmitSignIn must not stage a legacy command"
+        );
+    }
+
+    /// `AuthSignOut` is a Phase 3.47 carve-out: same request pattern
+    /// as `AuthSubmitSignIn`.
+    #[tokio::test]
+    async fn runtime_carve_out_auth_sign_out_consumes_request() {
+        use eg_state::events::auth::AuthSignOut;
+
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(AuthSignOut);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime.app.world().resource::<AuthSignOutRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume AuthSignOutRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthSignOut must not stage a legacy command"
+        );
+    }
+
+    /// `AuthOpenSignup` is a Phase 3.47 carve-out: same request
+    /// pattern as `AuthSubmitSignIn`. The legacy
+    /// `State::open_auth_signup_page` is platform-only and may
+    /// no-op in test builds; the carve-out assertion pins the
+    /// request was consumed and no legacy command was staged.
+    #[tokio::test]
+    async fn runtime_carve_out_auth_open_signup_consumes_request() {
+        use eg_state::events::auth::AuthOpenSignup;
+
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(AuthOpenSignup);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime.app.world().resource::<AuthOpenSignupRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume AuthOpenSignupRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AuthOpenSignup must not stage a legacy command"
         );
     }
 
@@ -4500,13 +4673,12 @@ mod tests {
     // --- Phase 3.12 / Misc carve-out tests ---
     //
     // The `misc` event handlers for `ToggleHitboxVisualization`,
-    // `TogglePerfOverlay`, and `TogglePlaceWindow` write directly
-    // to App-world resources. `Escape` keeps the legacy
-    // `PendingCommands` path. The end-to-end tests below exercise
-    // the full message → App-world resource → legacy State field
-    // propagation.
+    // `TogglePerfOverlay`, `TogglePlaceWindow`, and `Escape` write
+    // directly to App-world resources. The end-to-end tests below
+    // exercise the full message → App-world resource → legacy
+    // State field propagation.
 
-    use eg_state::events::misc::{Escape, ToggleHitboxVisualization, TogglePlaceWindow};
+    use eg_state::events::misc::{ToggleHitboxVisualization, TogglePlaceWindow};
 
     /// Writing a `ToggleHitboxVisualization` message reaches the
     /// App world, mutates `EditorInputRes.0.show_hitbox_visualization`,
@@ -5081,23 +5253,47 @@ mod tests {
         );
     }
 
-    /// `Escape` is **not** a carve-out: it keeps the legacy
-    /// `PendingCommands` path. Pin the runtime path still drains
-    /// the legacy command after a `Escape` message is written.
+    /// `Escape` is a Phase 3.46 carve-out: the App-world handler
+    /// writes `EscapeRequest.pending = true`, the runtime sync
+    /// consumes the request and calls the legacy
+    /// `State::apply_editor_escape` compatibility method, and no
+    /// legacy `EditorCommand::Escape` is staged in `PendingCommands`.
     #[tokio::test]
-    async fn runtime_escape_still_uses_pending_commands() {
+    async fn runtime_carve_out_escape_consumes_request_without_pending_commands() {
+        use eg_state::events::misc::Escape;
+
         let state = State::new_test().await;
         let mut runtime = Runtime::new(state);
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        // The legacy dispatch ran (no panic). The `Escape` handler
-        // is the only `misc` handler that does NOT carve out, so
-        // we just confirm the runtime does not drop the message.
-        // The actual `handle_editor_escape` side effects (phase
-        // change, etc.) are covered by the existing
-        // `editor_dispatch` integration tests.
+        let request = runtime.app.world().resource::<EscapeRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume EscapeRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "Escape must not stage a legacy command"
+        );
+    }
+
+    /// `Escape` is a no-op on a no-message frame. Pin the change
+    /// guard: stale requests don't accumulate across frames.
+    #[tokio::test]
+    async fn runtime_carve_out_escape_no_message_frame_is_noop() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+        // No message; pre-condition: request is not pending.
+        assert!(!runtime.app.world().resource::<EscapeRequest>().pending);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+        let request = runtime.app.world().resource::<EscapeRequest>();
+        assert!(
+            !request.pending,
+            "no-message frame must not request an App-world escape"
+        );
     }
 
     // --- Phase 3.13 / Editor-mode carve-out test ---

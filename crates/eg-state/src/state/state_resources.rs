@@ -226,3 +226,103 @@ impl PerfFrameCopyRequest {
         pending
     }
 }
+
+/// App-world request to run the editor `Escape` state machine.
+///
+/// The Escape keypress is a multi-step context-sensitive state machine
+/// (toggle game pause → back to menu → clear selection → toggle timeline
+/// playback → reset timeline time → back to menu). Phase 3.46 routes
+/// the message through this request resource instead of staging
+/// `EditorCommand::Escape` in `PendingCommands`, so the App world owns
+/// the "user pressed Escape" intent while the legacy `State` still owns
+/// the multi-step state machine. Runtime consumes the request via
+/// `State::apply_editor_escape` (which wraps
+/// `handle_editor_escape`).
+#[derive(Resource, Default)]
+pub struct EscapeRequest {
+    pub pending: bool,
+}
+
+impl EscapeRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to start the browser sign-in flow.
+///
+/// The sign-in side effect touches network IO (it calls
+/// `trigger_auth_sign_in` which sends a message on the auth channel),
+/// so it stays legacy-owned for the carve-out. Phase 3.47 routes
+/// the message through this request resource instead of staging
+/// `AppCommand::AuthSubmitSignIn` in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct AuthSubmitSignInRequest {
+    pub pending: bool,
+}
+
+impl AuthSubmitSignInRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to sign out the current account.
+///
+/// The sign-out side effect touches network IO (it calls
+/// `trigger_auth_sign_out` which sends a message on the auth
+/// channel), so it stays legacy-owned for the carve-out. Phase 3.47
+/// routes the message through this request resource instead of
+/// staging `AppCommand::AuthSignOut` in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct AuthSignOutRequest {
+    pub pending: bool,
+}
+
+impl AuthSignOutRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to open the web signup page.
+///
+/// The signup-page open side effect touches platform code
+/// (`eg_platform::auth::open_signup_page`), so it stays
+/// legacy-owned for the carve-out. Phase 3.47 routes the message
+/// through this request resource instead of staging
+/// `AppCommand::AuthOpenSignup` in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct AuthOpenSignupRequest {
+    pub pending: bool,
+}
+
+impl AuthOpenSignupRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}

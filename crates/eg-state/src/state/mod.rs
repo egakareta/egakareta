@@ -84,9 +84,10 @@ pub use render::resources::RenderResizeRequest;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
-    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
+    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    EscapeRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::UiStateSnapshot;
 

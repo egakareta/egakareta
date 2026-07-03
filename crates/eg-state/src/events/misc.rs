@@ -11,9 +11,6 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::editor_command::EditorCommand;
-
 /// Toggle editor hitbox visualization.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ToggleHitboxVisualization;
@@ -29,12 +26,6 @@ pub struct TogglePlaceWindow;
 /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct Escape;
-
-impl ToLegacy for Escape {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::Escape)
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<ToggleHitboxVisualization>()
@@ -95,12 +86,23 @@ pub fn handle_toggle_place_window(
     }
 }
 
-// `Escape` keeps the legacy `PendingCommands` path because the
-// legacy `handle_editor_escape` is a multi-step context-sensitive
-// state machine (stop playback → reset timeline → back to menu).
-// It is out of scope for the simple-state carve-out pattern.
-pub fn handle_escape(mut events: MessageReader<Escape>, mut pending: ResMut<PendingCommands>) {
+// `Escape` is a carve-out from the `PendingCommands` →
+// `State::dispatch_editor` pipeline (same request-resource pattern
+// as `events::auth::handle_resize_surface` and
+// `events::auth::handle_copy_latest_perf_frame`): the handler
+// writes `EscapeRequest.pending = true`, and
+// `Runtime::sync_app_escape_request` consumes the request before the
+// remaining `PendingCommands` drain and calls the existing legacy
+// `State::apply_editor_escape` compatibility method. This keeps
+// the multi-step context-sensitive state machine in `handle_editor_escape`
+// (stop playback → reset timeline → back to menu) reachable from
+// the App world without staging `EditorCommand::Escape` in
+// `PendingCommands`.
+pub fn handle_escape(
+    mut events: MessageReader<Escape>,
+    mut escape_request: ResMut<crate::state::EscapeRequest>,
+) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::Escape);
+        escape_request.request();
     }
 }
