@@ -10,52 +10,30 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_blocks::BlockId;
-use eg_types::EditorMode;
+use eg_types::{AppPhase, EditorInputState, EditorMode};
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::EditorConfigRes;
-use crate::state::EditorInputRes;
 use crate::state::editor_command::EditorCommand;
+use crate::state::{
+    AppPhaseRes, EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
+    EditorTimelineRes,
+};
 
 /// Switch the editor mode.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetEditorMode(pub EditorMode);
 
-impl ToLegacy for SetEditorMode {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetMode(self.0))
-    }
-}
-
 /// Set the current block ID for placement.
 #[derive(Message, Debug, Clone)]
 pub struct SetBlockId(pub BlockId);
-
-impl ToLegacy for SetBlockId {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetBlockId(self.0))
-    }
-}
 
 /// Select the Nth recent placeable block and switch to Place mode.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SelectRecentBlock(pub usize);
 
-impl ToLegacy for SelectRecentBlock {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SelectRecentBlock(self.0))
-    }
-}
-
 /// Pick the selected block and enter place mode with that block type.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct PickSelectedBlock;
-
-impl ToLegacy for PickSelectedBlock {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::PickSelectedBlock)
-    }
-}
 
 /// Pick the block under the pointer and enter place mode with that block type.
 #[derive(Message, Debug, Clone, Copy)]
@@ -91,10 +69,7 @@ pub fn register_events(app: &mut App) {
 // `EditorInputRes.0.mode` directly, and the legacy
 // `State.editor.input.mode` is synced from the resource by
 // `Runtime::sync_app_editor_input_state` before any dispatch in the
-// same frame. The `ToLegacy` impl is preserved so the legacy
-// dispatch path remains reachable from non-message call sites (the
-// existing `editor_dispatch` tests continue to drive
-// `State::dispatch_editor(EditorCommand::SetMode(...))` directly).
+// same frame.
 //
 // The legacy `set_editor_mode` has heavy side effects (rebuilds
 // gizmo/hover/selection outline vertices, marks
@@ -123,10 +98,7 @@ pub fn handle_set_editor_mode(
 // the handler mutates `EditorConfigRes.0.selected_block_id` directly,
 // and the legacy `State.editor.config.selected_block_id` is synced from
 // the resource by `Runtime::sync_app_editor_config_state` before any
-// dispatch in the same frame. The `ToLegacy` impl is kept so the legacy
-// dispatch path remains reachable from non-message call sites (the
-// existing `dispatch_editor_set_block_id_updates_recent` test still
-// drives `State::dispatch_editor(EditorCommand::SetBlockId)` directly).
+// dispatch in the same frame.
 pub fn handle_set_block_id(
     mut events: MessageReader<SetBlockId>,
     mut config: ResMut<EditorConfigRes>,
@@ -169,14 +141,30 @@ pub fn handle_select_recent_block(
     }
 }
 
+// `PickSelectedBlock` is a carve-out: the handler reads the current
+// block selection from `EditorInputRes` / `EditorObjectsRes`, rejects
+// non-placeable block ids, then writes the picked id and effective
+// Place mode directly to App-world resources. Runtime's config/input/
+// timeline syncs propagate those changes to legacy State once per
+// frame while `PickBlockAt` remains on the legacy screen-picking path.
 pub fn handle_pick_selected_block(
     mut events: MessageReader<PickSelectedBlock>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    objects: Res<EditorObjectsRes>,
+    mut config: ResMut<EditorConfigRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut runtime: ResMut<EditorRuntimeRes>,
+    timeline: Res<EditorTimelineRes>,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::PickSelectedBlock);
+        pick_selected_block_for_place(
+            &phase,
+            &objects,
+            &mut config,
+            &mut input,
+            &mut runtime,
+            &timeline,
+        );
     }
 }
 
@@ -190,4 +178,70 @@ pub fn handle_pick_block_at(
             y: event.y,
         });
     }
+}
+
+fn pick_selected_block_for_place(
+    phase: &AppPhaseRes,
+    objects: &EditorObjectsRes,
+    config: &mut EditorConfigRes,
+    input: &mut EditorInputRes,
+    runtime: &mut EditorRuntimeRes,
+    timeline: &EditorTimelineRes,
+) -> bool {
+    if phase.current != AppPhase::Editor {
+        return false;
+    }
+
+    let selected_indices = selected_indices_normalized(&input.0, objects.objects.len());
+    let block_index = input
+        .0
+        .selected_block_index
+        .filter(|index| selected_indices.contains(index))
+        .or_else(|| selected_indices.first().copied());
+
+    let Some(block_id) = block_index
+        .and_then(|index| objects.objects.get(index))
+        .map(|object| object.block_id.clone())
+    else {
+        return false;
+    };
+
+    if !eg_blocks::BlockDefinition::get(&block_id).placeable {
+        return false;
+    }
+
+    set_effective_place_mode(input, runtime, timeline);
+    config.0.selected_block_id = block_id;
+    true
+}
+
+fn set_effective_place_mode(
+    input: &mut EditorInputRes,
+    runtime: &mut EditorRuntimeRes,
+    timeline: &EditorTimelineRes,
+) {
+    if timeline.0.playback.playing {
+        runtime.0.interaction.last_mode = Some(EditorMode::Place);
+        input.0.mode = EditorMode::Null;
+    } else {
+        input.0.mode = EditorMode::Place;
+    }
+}
+
+fn selected_indices_normalized(input: &EditorInputState, object_count: usize) -> Vec<usize> {
+    let mut indices = input
+        .selected_block_indices
+        .iter()
+        .copied()
+        .filter(|index| *index < object_count)
+        .collect::<Vec<_>>();
+    if let Some(index) = input
+        .selected_block_index
+        .filter(|index| *index < object_count)
+    {
+        indices.push(index);
+    }
+    indices.sort_unstable();
+    indices.dedup();
+    indices
 }

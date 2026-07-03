@@ -26,20 +26,13 @@
 //!   synced from the resource by
 //!   `Runtime::sync_app_editor_config_state` (the existing
 //!   change-guarded sync).
-//!
-//! The `ToLegacy` impls are preserved so the legacy dispatch path
-//! remains reachable from non-message call sites (the existing
-//! editor_dispatch tests continue to drive
-//! `State::dispatch_editor(EditorCommand::SetSpawnHere)` directly).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::EditorConfigRes;
 use crate::state::EditorInputRes;
 use crate::state::EditorSpawnRes;
-use crate::state::editor_command::EditorCommand;
 
 use eg_editor_domain::toggle_spawn_direction;
 
@@ -47,31 +40,13 @@ use eg_editor_domain::toggle_spawn_direction;
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct SetSpawnHere;
 
-impl ToLegacy for SetSpawnHere {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSpawnHere)
-    }
-}
-
 /// Rotate the spawn direction (cycles Forward / Right).
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct RotateSpawnDirection;
 
-impl ToLegacy for RotateSpawnDirection {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::RotateSpawnDirection)
-    }
-}
-
 /// Rotate the block placement preview yaw by 90 degrees.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct RotatePlacementPreview;
-
-impl ToLegacy for RotatePlacementPreview {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::RotatePlacementPreview)
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<SetSpawnHere>()

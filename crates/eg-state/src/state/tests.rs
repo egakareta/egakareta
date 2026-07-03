@@ -437,15 +437,46 @@ async fn tick_state_writes_pointer_state_without_staging_commands() {
 }
 
 #[tokio::test]
-async fn tick_state_stages_undo_without_dispatching() {
-    // Verify that the editor Undo message routes through the App-world
-    // drain systems without calling `State::editor_undo`.
+async fn tick_state_applies_undo_without_pending_command() {
+    // Verify that the editor Undo message is handled in App-world resources
+    // instead of staging `EditorCommand::Undo` for legacy dispatch.
     use crate::events::PendingCommands;
     use crate::events::history::Undo;
 
     let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
     state.enter_editor_phase("Phase3UndoTest".to_string());
+    app.world_mut()
+        .resource_mut::<AppPhaseRes>()
+        .set(AppPhase::Editor);
+
+    let undo_object = LevelObject {
+        id: "undo".to_string(),
+        position: [1.0, 0.0, 2.0],
+        ..LevelObject::default()
+    };
+    state
+        .editor
+        .runtime
+        .history
+        .undo
+        .push(crate::state::EditorHistorySnapshot {
+            objects: vec![undo_object.clone()],
+            selected_block_index: Some(0),
+            selected_block_indices: vec![0],
+            cursor: [1.0, 0.0, 2.0],
+            selected_block_id: eg_blocks::BlockId::new("core/stone"),
+            selected_block_rotation_degrees: [0.0, 0.0, 0.0],
+            recent_block_ids: vec![eg_blocks::BlockId::new("core/stone")],
+            spawn: eg_types::SpawnMetadata::default(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 1.0,
+            tap_times: Vec::new(),
+            tap_indicator_positions: Vec::new(),
+            selected_tap_index: None,
+            timing_points: Vec::new(),
+            selected_trigger_index: None,
+        });
 
     // Buffer is empty before the tick.
     assert!(app.world().resource::<PendingCommands>().is_empty());
@@ -454,8 +485,14 @@ async fn tick_state_stages_undo_without_dispatching() {
     tick_state_with_app(&mut state, &mut app);
 
     assert_eq!(
-        app.world().resource::<PendingCommands>().editor_commands,
-        vec![EditorCommand::Undo]
+        app.world()
+            .resource::<crate::state::EditorObjectsRes>()
+            .objects,
+        vec![undo_object]
+    );
+    assert!(
+        app.world().resource::<PendingCommands>().is_empty(),
+        "Undo must not stage a legacy editor command"
     );
 }
 

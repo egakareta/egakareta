@@ -14,8 +14,6 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
-use crate::state::editor_command::EditorCommand;
 use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes};
 
 /// Mouse button state update for editor interaction routing.
@@ -25,29 +23,11 @@ pub struct MouseButton {
     pub pressed: bool,
 }
 
-impl ToLegacy for MouseButton {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::MouseButton {
-            button: self.button,
-            pressed: self.pressed,
-        })
-    }
-}
-
 /// Primary click action at screen coordinates.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct PrimaryClick {
     pub x: f64,
     pub y: f64,
-}
-
-impl ToLegacy for PrimaryClick {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::PrimaryClick {
-            x: self.x,
-            y: self.y,
-        })
-    }
 }
 
 /// Pointer moved to screen coordinates.
@@ -57,15 +37,6 @@ pub struct PointerMoved {
     pub y: f64,
 }
 
-impl ToLegacy for PointerMoved {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::PointerMoved {
-            x: self.x,
-            y: self.y,
-        })
-    }
-}
-
 /// Update the editor cursor from screen coordinates without triggering a click.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct UpdateCursorFromScreen {
@@ -73,29 +44,11 @@ pub struct UpdateCursorFromScreen {
     pub y: f64,
 }
 
-impl ToLegacy for UpdateCursorFromScreen {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::UpdateCursorFromScreen {
-            x: self.x,
-            y: self.y,
-        })
-    }
-}
-
 /// Camera drag delta in screen pixels.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct CameraDrag {
     pub dx: f64,
     pub dy: f64,
-}
-
-impl ToLegacy for CameraDrag {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::CameraDrag {
-            dx: self.dx,
-            dy: self.dy,
-        })
-    }
 }
 
 pub fn register_events(app: &mut App) {

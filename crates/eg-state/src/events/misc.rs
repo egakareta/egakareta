@@ -18,31 +18,13 @@ use crate::state::editor_command::EditorCommand;
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ToggleHitboxVisualization;
 
-impl ToLegacy for ToggleHitboxVisualization {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::ToggleHitboxVisualization)
-    }
-}
-
 /// Toggle the performance overlay.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TogglePerfOverlay;
 
-impl ToLegacy for TogglePerfOverlay {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::TogglePerfOverlay)
-    }
-}
-
 /// Toggle the floating place window with block catalog.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TogglePlaceWindow;
-
-impl ToLegacy for TogglePlaceWindow {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::TogglePlaceWindow)
-    }
-}
 
 /// Escape key context-sensitive (stop playback → reset timeline → back to menu).
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -71,11 +53,7 @@ pub fn register_events(app: &mut App) {
 // `EditorInputRes.0.show_hitbox_visualization` directly, and the
 // legacy `State.editor.input.show_hitbox_visualization` is synced from
 // the resource by `Runtime::sync_app_editor_input_state` before any
-// dispatch in the same frame. The `ToLegacy` impl is preserved so the
-// legacy dispatch path remains reachable from non-message call sites
-// (the existing `editor_dispatch` tests continue to drive
-// `State::dispatch_editor(EditorCommand::ToggleHitboxVisualization)`
-// directly).
+// dispatch in the same frame.
 pub fn handle_toggle_hitbox_visualization(
     mut events: MessageReader<ToggleHitboxVisualization>,
     mut input: ResMut<crate::state::EditorInputRes>,

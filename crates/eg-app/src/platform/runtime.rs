@@ -12,7 +12,6 @@ use bevy_ecs::world::World;
 use eg_state::events::PendingCommands;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::EditorConfigRes;
-use eg_state::state::EditorInputRes;
 use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
@@ -25,6 +24,7 @@ use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
+use eg_state::state::{EditorHistoryRes, EditorInputRes, EditorObjectsRes};
 use eg_ui::{
     drain_ui_command_queue, enqueue_ui_commands, register_ui_resources_world, sync_egui_context,
 };
@@ -134,6 +134,8 @@ impl Runtime {
         // cursor/mode/modifier state as the compatibility path.
         app.world_mut()
             .insert_resource(state.editor_input_resource());
+        app.world_mut()
+            .insert_resource(state.editor_objects_resource());
 
         // Seed `EditorTimingRes` from the legacy `State` for the
         // bpm-tap carve-out (see `events::bpm`). The resource's
@@ -156,6 +158,8 @@ impl Runtime {
             .insert_resource(state.editor_timeline_resource());
         app.world_mut()
             .insert_resource(state.editor_runtime_resource());
+        app.world_mut()
+            .insert_resource(state.editor_history_resource());
 
         // Seed the carved-out `SessionStateRes` fields from the
         // legacy `State.session` (see `events::session`). The
@@ -231,13 +235,16 @@ impl Runtime {
             app.update();
             state.prepare_app_world_for_state_schedule(app.world_mut());
             run_state_schedule_in_world(app.world_mut());
+            Self::sync_app_editor_history_state(state, app.world());
             Self::sync_app_editor_input_state(state, app.world());
             Self::sync_app_editor_config_state(state, app.world());
             Self::sync_app_editor_timeline_state(state, app.world_mut());
+            Self::sync_app_editor_runtime_state(state, app.world());
             Self::sync_app_editor_timing_state(state, app.world());
             Self::sync_app_editor_spawn_state(state, app.world());
             Self::sync_app_editor_camera_state(state, app.world());
             Self::sync_app_editor_trigger_state(state, app.world());
+            Self::sync_app_editor_objects_state(state, app.world_mut());
             Self::sync_app_menu_state(state, app.world());
             Self::sync_app_session_state(state, app.world());
             Self::sync_app_perf_state(state, app.world());
@@ -254,6 +261,66 @@ impl Runtime {
         world.insert_resource(state.editor_timeline_resource());
         world.insert_resource(state.editor_runtime_resource());
         world.insert_resource(state.editor_input_resource());
+    }
+
+    fn sync_app_editor_history_state(state: &mut State, world: &World) {
+        state.set_editor_history_state(world.resource::<EditorHistoryRes>().0.clone());
+    }
+
+    fn sync_app_editor_runtime_state(state: &mut State, world: &World) {
+        state.set_editor_clipboard_from_app(
+            world
+                .resource::<EditorRuntimeRes>()
+                .0
+                .interaction
+                .clipboard
+                .clone(),
+        );
+    }
+
+    fn sync_app_editor_objects_state(state: &mut State, world: &mut World) {
+        let (
+            objects,
+            selected_block_index,
+            selected_block_indices,
+            hovered_block_index,
+            history_restore_pending,
+            object_mutation_pending,
+        ) = {
+            let objects = world.resource::<EditorObjectsRes>();
+            let input = &world.resource::<EditorInputRes>().0;
+            (
+                objects.objects.clone(),
+                input.selected_block_index,
+                input.selected_block_indices.clone(),
+                input.hovered_block_index,
+                objects.history_restore_pending,
+                objects.object_mutation_pending,
+            )
+        };
+        if state.editor_objects() != objects.as_slice() {
+            state.set_editor_objects_from_app(objects);
+        }
+        if history_restore_pending || object_mutation_pending {
+            state.set_editor_block_selection_from_app(
+                selected_block_index,
+                selected_block_indices,
+                hovered_block_index,
+            );
+        }
+        if history_restore_pending {
+            state.sync_editor_scene_after_history_restore();
+        } else if object_mutation_pending {
+            state.sync_editor_scene_after_app_object_mutation();
+        }
+        if history_restore_pending || object_mutation_pending {
+            let mut objects = world.resource_mut::<EditorObjectsRes>();
+            if objects.objects.as_slice() != state.editor_objects() {
+                objects.objects = state.editor_objects().to_vec();
+            }
+            objects.history_restore_pending = false;
+            objects.object_mutation_pending = false;
+        }
     }
 
     fn sync_app_editor_input_state(state: &mut State, world: &World) {
@@ -388,6 +455,7 @@ impl Runtime {
             tap_times,
             tap_indicator_positions,
             selected_index,
+            tap_cursor_override,
             playback_playing,
             playback_last_mode,
         ) = {
@@ -399,6 +467,7 @@ impl Runtime {
                 timeline.taps.tap_times.clone(),
                 timeline.taps.tap_indicator_positions.clone(),
                 timeline.taps.selected_index,
+                timeline.tap_cursor_override,
                 timeline.playback.playing,
                 runtime.0.interaction.last_mode,
             )
@@ -414,7 +483,12 @@ impl Runtime {
         if state.editor_tap_times() != tap_times.as_slice()
             || state.editor_tap_indicator_positions() != tap_indicator_positions.as_slice()
         {
-            state.set_editor_tap_state(tap_times, tap_indicator_positions, selected_index);
+            state.set_editor_tap_state_with_cursor_override(
+                tap_times,
+                tap_indicator_positions,
+                selected_index,
+                tap_cursor_override,
+            );
             tap_state_changed = true;
         }
         if state.editor_selected_tap_index_value() != selected_index {
@@ -431,6 +505,7 @@ impl Runtime {
             timeline.0.taps.tap_indicator_positions =
                 state.editor_tap_indicator_positions().to_vec();
             timeline.0.taps.selected_index = state.editor_selected_tap_index_value();
+            timeline.0.tap_cursor_override = None;
         }
         if state.editor_is_playing() == playback_playing {
             let mut runtime = world.resource_mut::<EditorRuntimeRes>();
@@ -779,8 +854,9 @@ mod tests {
     use eg_state::state::State;
     use eg_state::state::{
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, MenuStateRes,
-        PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
+        EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
+        SessionStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -835,6 +911,10 @@ mod tests {
         assert!(
             world.contains_resource::<EditorInputRes>(),
             "EditorInputRes registered by EditorPlugin"
+        );
+        assert!(
+            world.contains_resource::<EditorObjectsRes>(),
+            "EditorObjectsRes registered by EditorPlugin"
         );
         assert!(
             world.contains_resource::<EditorConfigRes>(),
@@ -1448,6 +1528,46 @@ mod tests {
         );
     }
 
+    /// `PickSelectedBlock` carve-out end-to-end: the App-world handler
+    /// reads the selected object, writes `EditorConfigRes.selected_block_id`,
+    /// and runtime sync propagates the picked id to legacy State without
+    /// staging `EditorCommand::PickSelectedBlock`.
+    #[tokio::test]
+    async fn runtime_carve_out_pick_selected_block_propagates_to_legacy_state() {
+        use eg_state::events::editor_mode::PickSelectedBlock;
+
+        let picked = eg_blocks::BlockId::new("core/lava");
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("PickSelectedBlockRuntime");
+        state.set_editor_objects_from_app(vec![eg_types::LevelObject {
+            block_id: picked.clone(),
+            ..eg_types::LevelObject::default()
+        }]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
+        assert_ne!(state.editor_selected_block_id(), &picked);
+
+        let mut runtime = Runtime::new(state);
+        runtime.app.world_mut().write_message(PickSelectedBlock);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorConfigRes>()
+                .0
+                .selected_block_id,
+            picked
+        );
+        assert_eq!(runtime.state.editor_selected_block_id(), &picked);
+        assert_eq!(runtime.state.editor_mode(), eg_types::EditorMode::Place);
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "PickSelectedBlock must not stage a legacy command"
+        );
+    }
+
     /// `SetBlockId` carve-out no-op frame: when no `SetBlockId` message
     /// is written and the resource matches the legacy state (the
     /// seeded invariant), the sync must not re-invoke
@@ -1486,6 +1606,306 @@ mod tests {
             runtime.state.editor_recent_block_ids(),
             recent_before.as_slice(),
             "no-op frame must not reorder recent_block_ids"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_block_copy_and_remove_propagate_to_legacy_state() {
+        use eg_state::events::block::{CopyBlock, RemoveBlock};
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("BlockRuntimeCarveOut");
+        state.set_editor_objects_from_app(vec![
+            eg_types::LevelObject {
+                id: "removed".to_string(),
+                position: [0.0, 0.0, 0.0],
+                ..eg_types::LevelObject::default()
+            },
+            eg_types::LevelObject {
+                id: "kept".to_string(),
+                position: [2.0, 0.0, 0.0],
+                ..eg_types::LevelObject::default()
+            },
+        ]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(CopyBlock);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+        assert!(
+            runtime.state.editor_clipboard().is_some(),
+            "copy must sync the App-world clipboard back to legacy State"
+        );
+
+        runtime.app.world_mut().write_message(RemoveBlock);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_objects().len(), 1);
+        assert_eq!(runtime.state.editor_objects()[0].id, "kept");
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .objects
+                .len(),
+            1,
+            "App object resource must converge with legacy State after presentation sync"
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .object_mutation_pending,
+            "object mutation flag must be consumed by Runtime sync"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "block carve-out messages must not stage legacy commands"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_add_transform_trigger_propagates_to_legacy_state() {
+        use eg_state::events::selection::AddTransformTrigger;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("SelectionRuntimeCarveOut");
+        state.set_editor_show_place_window(true);
+        state.set_editor_timeline_time_seconds(2.5);
+        state.set_editor_objects_from_app(vec![eg_types::LevelObject {
+            id: "object_0".to_string(),
+            position: [0.0, 0.0, 0.0],
+            ..eg_types::LevelObject::default()
+        }]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(AddTransformTrigger);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_objects().len(), 2);
+        let trigger_object = &runtime.state.editor_objects()[1];
+        assert_eq!(
+            trigger_object.block_id,
+            eg_types::TRANSFORM_TRIGGER_BLOCK_ID
+        );
+        let trigger = trigger_object
+            .trigger
+            .as_ref()
+            .expect("new transform trigger");
+        approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
+        assert_eq!(
+            trigger.target,
+            eg_types::TriggerTarget::Objects {
+                object_ids: vec!["object_0".to_string()],
+            }
+        );
+        assert!(
+            !runtime.state.editor_show_place_window(),
+            "selection handler must sync the App-world place-window close to legacy State"
+        );
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .objects
+                .len(),
+            2,
+            "App object resource must converge with legacy State after presentation sync"
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .object_mutation_pending,
+            "object mutation flag must be consumed by Runtime sync"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AddTransformTrigger must not stage a legacy command"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_add_camera_trigger_propagates_to_legacy_state() {
+        use eg_state::events::camera::AddCameraTrigger;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("CameraTriggerRuntimeCarveOut");
+        state.set_editor_timeline_time_seconds(2.5);
+        state.set_editor_camera_pose_for_test([12.0, -7.0], 4.5, 0.9, 0.3);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(AddCameraTrigger);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_objects().len(), 1);
+        let trigger_object = &runtime.state.editor_objects()[0];
+        assert_eq!(trigger_object.block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
+        let trigger = trigger_object.trigger.as_ref().expect("camera trigger");
+        approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
+        assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
+        let camera = trigger.camera.as_ref().expect("camera payload");
+        assert_eq!(camera.mode, eg_types::CameraMode::Static);
+        assert_eq!(camera.target_position, [12.0, 4.5, -7.0]);
+        approx::assert_abs_diff_eq!(camera.yaw, 0.9, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.pitch, 0.3, epsilon = 1e-6);
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .objects
+                .len(),
+            1,
+            "App object resource must converge with legacy State after presentation sync"
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .object_mutation_pending,
+            "object mutation flag must be consumed by Runtime sync"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "AddCameraTrigger must not stage a legacy command"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_snap_selection_to_grid_propagates_block_snap() {
+        use eg_state::events::selection::SnapSelectionToGrid;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("SelectionSnapBlocks");
+        state.set_editor_snap_step(1.0);
+        state.set_editor_objects_from_app(vec![
+            eg_types::LevelObject {
+                id: "first".to_string(),
+                position: [0.2, 0.0, 0.7],
+                ..eg_types::LevelObject::default()
+            },
+            eg_types::LevelObject {
+                id: "second".to_string(),
+                position: [3.1, 0.0, 3.6],
+                ..eg_types::LevelObject::default()
+            },
+        ]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0, 1], Some(0));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(SnapSelectionToGrid);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_objects()[0].position, [0.0, 0.0, 1.0]);
+        assert_eq!(runtime.state.editor_objects()[1].position, [3.0, 0.0, 4.0]);
+        assert_eq!(
+            runtime.app.world().resource::<EditorInputRes>().0.cursor,
+            runtime.state.editor_cursor_position(),
+            "runtime sync must converge the App cursor with legacy State"
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .object_mutation_pending,
+            "object mutation flag must be consumed by Runtime sync"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "SnapSelectionToGrid block branch must not stage a legacy command"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_snap_selection_to_grid_propagates_tap_snap() {
+        use eg_state::events::selection::SnapSelectionToGrid;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("SelectionSnapTap");
+        state.set_editor_mode(eg_types::EditorMode::Tapping);
+        state.set_editor_snap_step(1.0);
+        state.set_editor_timeline_duration_seconds(8.0);
+        state.set_editor_timeline_time_seconds(1.5);
+        state.set_editor_tap_state_for_test(
+            vec![0.5, 1.5],
+            vec![[0.0, 0.0, 0.0], [1.2, 0.0, 1.7]],
+            Some(1),
+        );
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(SnapSelectionToGrid);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let selected_index = runtime
+            .state
+            .editor_selected_tap_index_value()
+            .expect("selected tap after snap");
+        assert_eq!(
+            runtime.state.editor_tap_indicator_positions()[selected_index],
+            [1.0, 0.0, 2.0],
+            "legacy refresh must preserve the snapped tap indicator"
+        );
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimelineRes>()
+                .0
+                .taps
+                .tap_indicator_positions[selected_index],
+            [1.0, 0.0, 2.0],
+            "runtime sync must copy the snapped indicator back into the App world"
+        );
+        assert_eq!(
+            runtime.app.world().resource::<EditorInputRes>().0.cursor,
+            [1.0, 0.0, 2.0],
+            "runtime sync must keep the App cursor on the snapped selected tap"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "SnapSelectionToGrid tap branch must not stage a legacy command"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_carve_out_focus_camera_target_propagates_to_legacy_state() {
+        use eg_state::events::selection::FocusCameraTarget;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("SelectionFocusCamera");
+        state.set_editor_objects_from_app(vec![eg_types::LevelObject {
+            position: [10.0, 2.0, 30.0],
+            size: [2.0, 4.0, 6.0],
+            ..eg_types::LevelObject::default()
+        }]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(FocusCameraTarget);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(runtime.state.editor_camera_pan(), [11.0, 33.0]);
+        approx::assert_abs_diff_eq!(runtime.state.editor_camera_target_z(), 4.0, epsilon = 1e-6);
+        let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [11.0, 33.0]);
+        approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "FocusCameraTarget must not stage a legacy command"
         );
     }
 

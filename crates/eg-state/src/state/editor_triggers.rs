@@ -29,7 +29,7 @@ fn camera_trigger_object_position_from_eye(eye: [f32; 3], size: [f32; 3]) -> [f3
 /// World-space pose (position, rotation) for a camera trigger object placed so its eye
 /// sits at the camera trigger's eye, looking at the target. Used when capturing a camera trigger
 /// from the current editor camera.
-pub(super) fn camera_trigger_object_pose(camera: &CameraTrigger) -> ([f32; 3], [f32; 3]) {
+pub(crate) fn camera_trigger_object_pose(camera: &CameraTrigger) -> ([f32; 3], [f32; 3]) {
     let size = [1.0, 1.0, 1.0];
     let eye = camera.eye();
     (

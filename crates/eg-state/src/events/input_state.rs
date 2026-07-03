@@ -15,79 +15,35 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::EditorInputRes;
-use crate::state::editor_command::EditorCommand;
 
 /// Track Shift held state for editor shortcuts.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetShiftHeld(pub bool);
 
-impl ToLegacy for SetShiftHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetShiftHeld(self.0))
-    }
-}
-
 /// Track Ctrl held state for editor shortcuts.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetCtrlHeld(pub bool);
-
-impl ToLegacy for SetCtrlHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetCtrlHeld(self.0))
-    }
-}
 
 /// Track Alt held state for editor shortcuts.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetAltHeld(pub bool);
 
-impl ToLegacy for SetAltHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetAltHeld(self.0))
-    }
-}
-
 /// Track W-pan held state in editor.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetPanUpHeld(pub bool);
-
-impl ToLegacy for SetPanUpHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetPanUpHeld(self.0))
-    }
-}
 
 /// Track S-pan held state in editor.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetPanDownHeld(pub bool);
 
-impl ToLegacy for SetPanDownHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetPanDownHeld(self.0))
-    }
-}
-
 /// Track A-pan held state in editor.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetPanLeftHeld(pub bool);
 
-impl ToLegacy for SetPanLeftHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetPanLeftHeld(self.0))
-    }
-}
-
 /// Track D-pan held state in editor.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetPanRightHeld(pub bool);
-
-impl ToLegacy for SetPanRightHeld {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetPanRightHeld(self.0))
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<SetShiftHeld>()

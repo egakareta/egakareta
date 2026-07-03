@@ -22,7 +22,9 @@
 //! Phase 2b alongside their resource registration helpers.
 
 use bevy_ecs::prelude::*;
-use eg_types::{AppPhase, AppSettings, BasicLevelMetadata, LevelPreviewCameraMetadata, MenuState};
+use eg_types::{
+    AppPhase, AppSettings, BasicLevelMetadata, LevelObject, LevelPreviewCameraMetadata, MenuState,
+};
 
 use crate::state::editor_camera::EditorCameraState;
 use crate::state::editor_config_state::EditorConfigState;
@@ -135,6 +137,16 @@ impl MenuStateRes {
 /// (Phase 3+) read/write this resource instead of `state.editor.input`.
 #[derive(Resource, Default)]
 pub struct EditorInputRes(pub eg_types::EditorInputState);
+
+/// `EditorSubsystem.objects` mirrored as a resource. This is the ordered
+/// authored-object list used by editor export, selection, history, and render
+/// mesh rebuilds while object ownership is migrating into the App world.
+#[derive(Resource, Default, Clone)]
+pub struct EditorObjectsRes {
+    pub objects: Vec<LevelObject>,
+    pub history_restore_pending: bool,
+    pub object_mutation_pending: bool,
+}
 
 /// `EditorConfigState` mirrored as a resource.
 #[derive(Resource, Default)]

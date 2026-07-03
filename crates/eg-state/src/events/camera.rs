@@ -7,7 +7,7 @@
 */
 //! Camera / zoom / trigger selection events.
 //!
-//! 3 of the 5 messages in this module are **carve-outs** (same
+//! All 5 messages in this module are **carve-outs** (same
 //! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
 //! `events::session`, and `events::spawn`): the per-message handlers in
 //! this file mutate App-world resources directly instead of staging a
@@ -25,38 +25,34 @@
 //!   synced from the resource by
 //!   `Runtime::sync_app_editor_trigger_state`.
 //!
-//! `AddCameraTrigger` and `AddCameraFollowTrigger` keep the legacy
-//! `PendingCommands` path because their legacy setters push to
-//! `editor.objects` (a `Vec<LevelObject>`) and have many
-//! out-of-process side effects (record history, sync editor
-//! objects, rebuild marker vertices, mark dirty flags). Moving
-//! these to a resource model would require also moving the editor
-//! object store to entities (Phase 4d-final work), which is out of
-//! scope for the Phase 3.11 carve-out.
+//! - `AddCameraTrigger` / `AddCameraFollowTrigger` append generated
+//!   camera trigger objects to `EditorObjectsRes`, record
+//!   App-world editor history, sync trigger selection against the
+//!   App-world object list, and set `object_mutation_pending` so the
+//!   runtime compatibility sync rebuilds legacy presentation once.
 //!
-//! The `ToLegacy` impls are preserved on the carve-out messages so
-//! the legacy dispatch path remains reachable from non-message
-//! call sites (the existing editor_dispatch tests continue to
-//! drive `State::dispatch_editor(EditorCommand::AdjustZoom)`
-//! directly).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
+use eg_blocks::BlockId;
+use eg_editor_domain::interpolate_timeline_sample_positions;
+use eg_types::{
+    AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
+    TimedTrigger, TriggerTarget,
+};
 
-use crate::events::{LegacyCommand, ToLegacy};
-use crate::state::EditorCameraRes;
-use crate::state::EditorTriggerRes;
-use crate::state::editor_command::EditorCommand;
+use crate::state::{
+    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
+    EditorInputRes, EditorObjectsRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose,
+};
+
+const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 
 /// Adjust zoom by moving the camera along its look vector.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct AdjustZoom(pub f32);
-
-impl ToLegacy for AdjustZoom {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::AdjustZoom(self.0))
-    }
-}
 
 /// Snap the editor camera to an absolute orientation in radians.
 #[derive(Message, Debug, Clone, Copy)]
@@ -66,45 +62,17 @@ pub struct SetCameraOrientation {
     pub transition_seconds: Option<f32>,
 }
 
-impl ToLegacy for SetCameraOrientation {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetCameraOrientation {
-            rotation: self.rotation,
-            pitch: self.pitch,
-            transition_seconds: self.transition_seconds,
-        })
-    }
-}
-
 /// Capture a new camera trigger from the current editor camera at the playhead.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AddCameraTrigger;
-
-impl ToLegacy for AddCameraTrigger {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::AddCameraTrigger)
-    }
-}
 
 /// Add a camera-follow trigger at the current playhead, returning to default tracking mode.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AddCameraFollowTrigger;
 
-impl ToLegacy for AddCameraFollowTrigger {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::AddCameraFollowTrigger)
-    }
-}
-
 /// Select or deselect a trigger in the UI.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetTriggerSelected(pub Option<usize>);
-
-impl ToLegacy for SetTriggerSelected {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTriggerSelected(self.0))
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<AdjustZoom>()
@@ -115,8 +83,7 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Carve-out dispatch systems (3 of 5 — AdjustZoom,
-// SetCameraOrientation, SetTriggerSelected)
+// Carve-out dispatch systems
 // -----------------------------------------------------------------------
 
 /// Mirror of `EditorSubsystem::adjust_zoom`: move the editor camera
@@ -205,36 +172,197 @@ pub fn handle_set_trigger_selected(
     }
 }
 
-// -----------------------------------------------------------------------
-// Legacy dispatch systems (2 of 5 — AddCameraTrigger,
-// AddCameraFollowTrigger)
-// -----------------------------------------------------------------------
-
 pub fn handle_add_camera_trigger(
     mut events: MessageReader<AddCameraTrigger>,
-    mut pending: ResMut<crate::events::PendingCommands>,
+    mut resources: CameraResources,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::AddCameraTrigger);
+        add_camera_trigger(&mut resources);
     }
 }
 
 pub fn handle_add_camera_follow_trigger(
     mut events: MessageReader<AddCameraFollowTrigger>,
-    mut pending: ResMut<crate::events::PendingCommands>,
+    mut resources: CameraResources,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::AddCameraFollowTrigger);
+        add_camera_follow_trigger(&mut resources);
     }
+}
+
+#[derive(SystemParam)]
+pub struct CameraResources<'w> {
+    phase: Res<'w, AppPhaseRes>,
+    objects: ResMut<'w, EditorObjectsRes>,
+    input: Res<'w, EditorInputRes>,
+    config: Res<'w, EditorConfigRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    camera: Res<'w, EditorCameraRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+    timing: Res<'w, EditorTimingRes>,
+    trigger: ResMut<'w, EditorTriggerRes>,
+    history: ResMut<'w, EditorHistoryRes>,
 }
 
 // -----------------------------------------------------------------------
 // Local helpers
 // -----------------------------------------------------------------------
+
+fn add_camera_trigger(resources: &mut CameraResources<'_>) -> bool {
+    if resources.phase.current != AppPhase::Editor {
+        return false;
+    }
+
+    record_history_state(resources);
+    let trigger_object = capture_current_camera_trigger(
+        &resources.camera.0,
+        resources.timeline.0.clock.time_seconds,
+    )
+    .with_generated_id(&resources.objects.objects);
+    resources.objects.objects.push(trigger_object);
+    sync_trigger_selection_from_objects(resources);
+    resources.objects.object_mutation_pending = true;
+    true
+}
+
+fn add_camera_follow_trigger(resources: &mut CameraResources<'_>) -> bool {
+    if resources.phase.current != AppPhase::Editor {
+        return false;
+    }
+
+    record_history_state(resources);
+    let camera = CameraTrigger {
+        mode: CameraMode::Follow,
+        ..CameraTrigger::default()
+    };
+    let mut trigger_object = LevelObject {
+        block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
+        trigger: Some(TimedTrigger {
+            time_seconds: resources.timeline.0.clock.time_seconds,
+            target: TriggerTarget::Camera,
+            camera: Some(camera),
+            ..TimedTrigger::default()
+        }),
+        ..LevelObject::default()
+    }
+    .with_generated_id(&resources.objects.objects);
+    if let Some(trigger) = trigger_object.trigger.clone() {
+        let target_position =
+            timeline_position_at_seconds(&resources.timeline.0, trigger.time_seconds);
+        EditorSubsystem::sync_camera_follow_trigger_object_pose(
+            &mut trigger_object,
+            &trigger,
+            target_position,
+        );
+    }
+
+    resources.objects.objects.push(trigger_object);
+    sync_trigger_selection_from_objects(resources);
+    resources.objects.object_mutation_pending = true;
+    true
+}
+
+fn capture_current_camera_trigger(
+    camera_state: &crate::state::EditorCameraState,
+    time_seconds: f32,
+) -> LevelObject {
+    let camera = CameraTrigger {
+        mode: CameraMode::Static,
+        transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
+        use_full_segment_transition: false,
+        target_position: camera_state.editor_camera_target().to_array(),
+        yaw: camera_state.editor_yaw,
+        pitch: camera_state.editor_pitch,
+        ..CameraTrigger::default()
+    };
+    let (position, rotation) = camera_trigger_object_pose(&camera);
+    LevelObject {
+        position,
+        rotation,
+        size: [1.0, 1.0, 1.0],
+        block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
+        trigger: Some(TimedTrigger {
+            time_seconds,
+            duration_seconds: 0.0,
+            easing: EasingDirection::Linear,
+            target: TriggerTarget::Camera,
+            camera: Some(camera),
+            ..TimedTrigger::default()
+        }),
+        ..LevelObject::default()
+    }
+}
+
+fn timeline_position_at_seconds(
+    timeline: &crate::state::EditorTimelineState,
+    time_seconds: f32,
+) -> [f32; 3] {
+    let cache = &timeline.snapshot_cache;
+    if cache.is_empty() {
+        return timeline.preview.position;
+    }
+
+    let step_seconds = timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+    let target_time = time_seconds.clamp(0.0, timeline.clock.duration_seconds);
+    let max_index = cache.len().saturating_sub(1);
+    let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
+    let lower_index = sample_position.floor() as usize;
+    let upper_index = (lower_index + 1).min(max_index);
+    let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+    let lower = &cache[lower_index];
+    let upper = &cache[upper_index];
+    interpolate_timeline_sample_positions(
+        lower.position,
+        lower.direction,
+        upper.position,
+        upper.direction,
+        alpha,
+    )
+}
+
+fn sync_trigger_selection_from_objects(resources: &mut CameraResources<'_>) {
+    let trigger_count = resources
+        .objects
+        .objects
+        .iter()
+        .filter(|object| object.trigger.is_some())
+        .count();
+    resources.trigger.0.selected_index = resources
+        .trigger
+        .0
+        .selected_index
+        .filter(|index| *index < trigger_count);
+}
+
+fn record_history_state(resources: &mut CameraResources<'_>) {
+    const MAX_HISTORY: usize = 256;
+    if resources.history.0.undo.len() >= MAX_HISTORY {
+        resources.history.0.undo.remove(0);
+    }
+    let snapshot = history_snapshot_from_resources(resources);
+    resources.history.0.undo.push(snapshot);
+    resources.history.0.redo.clear();
+}
+
+fn history_snapshot_from_resources(resources: &CameraResources<'_>) -> EditorHistorySnapshot {
+    EditorHistorySnapshot {
+        objects: resources.objects.objects.clone(),
+        selected_block_index: resources.input.0.selected_block_index,
+        selected_block_indices: resources.input.0.selected_block_indices.clone(),
+        cursor: resources.input.0.cursor,
+        selected_block_id: resources.config.0.selected_block_id.clone(),
+        selected_block_rotation_degrees: resources.config.0.selected_block_rotation_degrees,
+        recent_block_ids: resources.config.0.recent_block_ids.clone(),
+        spawn: resources.spawn.0.clone(),
+        timeline_time_seconds: resources.timeline.0.clock.time_seconds,
+        timeline_duration_seconds: resources.timeline.0.clock.duration_seconds,
+        tap_times: resources.timeline.0.taps.tap_times.clone(),
+        tap_indicator_positions: resources.timeline.0.taps.tap_indicator_positions.clone(),
+        selected_tap_index: resources.timeline.0.taps.selected_index,
+        timing_points: resources.timing.0.timing_points.clone(),
+        selected_trigger_index: resources.trigger.0.selected_index,
+    }
+}
 
 /// Compute the camera offset vector for a given yaw + pitch (in
 /// radians), at the editor distance constant. Mirrors the math

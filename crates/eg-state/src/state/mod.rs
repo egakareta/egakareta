@@ -58,15 +58,19 @@ pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 pub use audio_state::{AudioState, AudioSubsystem};
 pub use auth_state::AuthSubsystem;
 pub use editor_camera::EditorCameraState;
+pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
 pub use editor_config_state::EditorConfigState;
 use editor_interaction::EditorPickSpatialIndex;
 pub use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
     EditorInteractionState, EditorPendingTapClick,
 };
+#[cfg(test)]
+pub(crate) use editor_timeline::EditorTimelineSnapshot;
 pub use editor_timeline::EditorTimelineState;
 pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
+pub(crate) use editor_triggers::camera_trigger_object_pose;
 pub use history::EditorHistoryState;
 pub use input_bridge::{
     PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
@@ -81,8 +85,8 @@ pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::UiStateSnapshot;
 
@@ -289,6 +293,13 @@ impl State {
         // `EditorTimelineRes` before the schedule runs so the handler
         // can validate and select against the current legacy-owned data.
         {
+            let mut objects = world.resource_mut::<EditorObjectsRes>();
+            objects.objects = self.editor.objects.clone();
+            objects.history_restore_pending = false;
+            objects.object_mutation_pending = false;
+        }
+        world.resource_mut::<EditorHistoryRes>().0 = self.editor.runtime.history.clone();
+        {
             let mut timeline = world.resource_mut::<EditorTimelineRes>();
             timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
             timeline.0.taps.tap_indicator_positions =
@@ -304,6 +315,7 @@ impl State {
         {
             let mut runtime = world.resource_mut::<EditorRuntimeRes>();
             runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
+            runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
         }
         // Phase 3.26: menu next/previous level messages can mutate
         // `MenuStateRes.selected_level` directly while most menu

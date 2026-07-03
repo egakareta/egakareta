@@ -482,13 +482,13 @@ mod tests {
     use super::*;
     use crate::events::auth::{CopyLatestPerfFrame, ResizeSurface};
     use crate::events::editor_mode::SetEditorMode;
-    use crate::events::history::HistorySnapshot;
+    use crate::events::history::{HistorySnapshot, Redo, Undo};
     use crate::events::navigation::TurnRight;
     use crate::events::snap::SetSnapToGrid;
     use bevy_ecs::message::Messages;
     use eg_types::{
         DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode,
-        LevelMetadata, MenuState,
+        LevelMetadata, LevelObject, MenuState,
     };
 
     #[test]
@@ -515,24 +515,6 @@ mod tests {
         assert!(matches!(legacy, LegacyCommand::App(AppCommand::TurnRight)));
     }
 
-    #[test]
-    fn to_legacy_set_editor_mode_routes_to_editor() {
-        let legacy = SetEditorMode(EditorMode::Place).to_legacy();
-        assert!(matches!(
-            legacy,
-            LegacyCommand::Editor(EditorCommand::SetMode(EditorMode::Place))
-        ));
-    }
-
-    #[test]
-    fn to_legacy_snap_to_grid_carries_bool() {
-        let legacy = SetSnapToGrid(true).to_legacy();
-        assert!(matches!(
-            legacy,
-            LegacyCommand::Editor(EditorCommand::SetSnapToGrid(true))
-        ));
-    }
-
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
     fn build_event_world() -> bevy_ecs::world::World {
@@ -541,7 +523,8 @@ mod tests {
         // helper must register every resource any of them reads. The
         // carve-out handlers (input_state, pointer) reach for
         // `EditorInputRes`, `EditorCameraRes`, and `AppPhaseRes`; the
-        // `snap` carve-out reaches for `EditorConfigRes`; the `timeline`
+        // `snap` carve-out reaches for `EditorConfigRes`; the `history`
+        // carve-out reaches for `EditorObjectsRes` + the editor mirrors; the `timeline`
         // carve-out reaches for `EditorTimelineRes` + `EditorRuntimeRes`; the `bpm`
         // carve-out reaches for `EditorTimingRes`; the `session`
         // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
@@ -554,6 +537,7 @@ mod tests {
         // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
         // reads message buffers + the `PendingCommands` accumulator.
         world.init_resource::<crate::state::EditorInputRes>();
+        world.init_resource::<crate::state::EditorObjectsRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
         world.init_resource::<crate::state::EditorConfigRes>();
         world.init_resource::<crate::state::EditorSpawnRes>();
@@ -561,6 +545,7 @@ mod tests {
         world.init_resource::<crate::state::EditorTimelineRes>();
         world.init_resource::<crate::state::EditorTimingRes>();
         world.init_resource::<crate::state::EditorRuntimeRes>();
+        world.init_resource::<crate::state::EditorHistoryRes>();
         world.init_resource::<crate::state::SessionStateRes>();
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
@@ -650,15 +635,683 @@ mod tests {
     }
 
     #[test]
+    fn carve_out_undo_redo_mutates_editor_history_resources() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+
+        let current_object = LevelObject {
+            id: "current".to_string(),
+            position: [8.0, 0.0, 8.0],
+            ..LevelObject::default()
+        };
+        let undo_object = LevelObject {
+            id: "undo".to_string(),
+            position: [3.0, 0.0, 4.0],
+            ..LevelObject::default()
+        };
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![current_object.clone()];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.cursor = [8.0, 0.0, 8.0];
+        }
+        world
+            .resource_mut::<crate::state::EditorHistoryRes>()
+            .0
+            .undo
+            .push(crate::state::EditorHistorySnapshot {
+                objects: vec![undo_object.clone()],
+                selected_block_index: Some(0),
+                selected_block_indices: vec![0],
+                cursor: [3.0, 0.0, 4.0],
+                selected_block_id: eg_blocks::BlockId::new("core/stone"),
+                selected_block_rotation_degrees: [0.0, 90.0, 0.0],
+                recent_block_ids: vec![eg_blocks::BlockId::new("core/stone")],
+                spawn: eg_types::SpawnMetadata::default(),
+                timeline_time_seconds: 0.25,
+                timeline_duration_seconds: 2.0,
+                tap_times: vec![0.25],
+                tap_indicator_positions: vec![[3.0, 0.0, 4.0]],
+                selected_tap_index: Some(0),
+                timing_points: Vec::new(),
+                selected_trigger_index: None,
+            });
+
+        world.write_message(Undo);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::EditorObjectsRes>().objects,
+            vec![undo_object.clone()]
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [3.0, 0.0, 4.0]
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .history_restore_pending
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .is_empty()
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .redo
+                .len(),
+            1
+        );
+        assert!(
+            world
+                .resource::<PendingCommands>()
+                .editor_commands
+                .is_empty()
+        );
+
+        world.write_message(Redo);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::EditorObjectsRes>().objects,
+            vec![current_object]
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [8.0, 0.0, 8.0]
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .redo
+                .is_empty()
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "Undo/Redo must not stage legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_remove_block_mutates_editor_object_resources() {
+        use crate::events::block::RemoveBlock;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![
+            LevelObject {
+                id: "removed".to_string(),
+                position: [0.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                id: "kept".to_string(),
+                position: [2.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+
+        world.write_message(RemoveBlock);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].id, "kept");
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "RemoveBlock must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_copy_duplicate_and_paste_use_app_clipboard() {
+        use crate::events::block::{CopyBlock, DuplicateBlock, PasteBlock};
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            id: "source".to_string(),
+            position: [1.0, 0.0, 1.0],
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.cursor = [6.0, 0.0, 6.0];
+        }
+
+        world.write_message(CopyBlock);
+        world.run_schedule(crate::state::StateSchedule);
+        assert!(
+            world
+                .resource::<crate::state::EditorRuntimeRes>()
+                .0
+                .interaction
+                .clipboard
+                .is_some()
+        );
+
+        world.write_message(DuplicateBlock);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .objects
+                .len(),
+            2
+        );
+
+        world.write_message(PasteBlock);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects.len(), 3);
+        assert_eq!(objects[2].position, [6.0, 0.0, 6.0]);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            2
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "Copy/Duplicate/Paste must not stage legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_update_selected_block_mutates_object_resource_once() {
+        use crate::events::block::UpdateSelectedBlock;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            id: "selected".to_string(),
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+        {
+            let mut config = world.resource_mut::<crate::state::EditorConfigRes>();
+            config.0.snap_to_grid = false;
+            config.0.snap_rotation = false;
+        }
+
+        world.write_message(UpdateSelectedBlock(LevelObject {
+            id: "selected".to_string(),
+            position: [1.5, -2.0, 3.0],
+            size: [0.1, 2.0, 3.0],
+            rotation: [4.0, 5.0, 6.0],
+            color_tint: [-1.0, 0.5, 2.0],
+            block_id: eg_blocks::BlockId::new("core/lava"),
+            ..LevelObject::default()
+        }));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let object = &world.resource::<crate::state::EditorObjectsRes>().objects[0];
+        assert_eq!(object.position, [1.5, 0.0, 3.0]);
+        assert_eq!(object.size, [0.25, 2.0, 3.0]);
+        assert_eq!(object.rotation, [4.0, 5.0, 6.0]);
+        assert_eq!(object.color_tint, [0.0, 0.5, 1.0]);
+        assert_eq!(object.block_id, eg_blocks::BlockId::new("core/lava"));
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "UpdateSelectedBlock must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_snap_selection_to_grid_mutates_selected_block_resources() {
+        use crate::events::selection::SnapSelectionToGrid;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .snap_step = 1.0;
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![
+            LevelObject {
+                id: "first".to_string(),
+                position: [0.2, 0.0, 0.7],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                id: "second".to_string(),
+                position: [3.1, 0.0, 3.6],
+                ..LevelObject::default()
+            },
+        ];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0, 1];
+            input.0.cursor = [9.0, 0.0, 9.0];
+        }
+
+        world.write_message(SnapSelectionToGrid);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects[0].position, [0.0, 0.0, 1.0]);
+        assert_eq!(objects[1].position, [3.0, 0.0, 4.0]);
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [0.0, 0.0, 1.0],
+            "block snap must move the cursor to the primary selected block"
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "SnapSelectionToGrid block branch must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_snap_selection_to_grid_mutates_selected_tap_resources() {
+        use crate::events::selection::SnapSelectionToGrid;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorConfigRes>()
+            .0
+            .snap_step = 1.0;
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 8.0;
+            timeline.0.clock.time_seconds = 1.5;
+            timeline.0.taps.tap_times = vec![0.5, 1.5];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.2, 0.0, 1.7]];
+            timeline.0.taps.selected_index = Some(1);
+        }
+
+        world.write_message(SnapSelectionToGrid);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(
+            timeline.taps.tap_indicator_positions[timeline.taps.selected_index.unwrap()],
+            [1.0, 0.0, 2.0]
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [1.0, 0.0, 2.0],
+            "tap snap must move the cursor to the snapped selected tap"
+        );
+        assert!(
+            timeline
+                .taps
+                .tap_times
+                .iter()
+                .all(|time_seconds| time_seconds.is_finite())
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "SnapSelectionToGrid tap branch must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_focus_camera_target_mutates_editor_camera_resource() {
+        use crate::events::selection::FocusCameraTarget;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![
+            LevelObject {
+                position: [10.0, 2.0, 30.0],
+                size: [2.0, 4.0, 6.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                position: [50.0, 4.0, 70.0],
+                size: [4.0, 2.0, 8.0],
+                ..LevelObject::new("core/grass")
+            },
+        ];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.hovered_block_index = Some(1);
+        }
+
+        world.write_message(FocusCameraTarget);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<crate::state::EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [11.0, 33.0]);
+        approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
+        assert!(
+            world.resource::<PendingCommands>().is_empty(),
+            "FocusCameraTarget must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_focus_camera_target_prefers_selected_tap_in_tapping_mode() {
+        use crate::events::selection::FocusCameraTarget;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            position: [10.0, 2.0, 30.0],
+            size: [2.0, 4.0, 6.0],
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.mode = EditorMode::Tapping;
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.taps.tap_times = vec![1.25];
+            timeline.0.taps.tap_indicator_positions = vec![[5.0, 1.0, 6.0]];
+            timeline.0.taps.selected_index = Some(0);
+        }
+
+        world.write_message(FocusCameraTarget);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<crate::state::EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [5.5, 6.5]);
+        approx::assert_abs_diff_eq!(camera.editor_target_z, 1.0, epsilon = 1e-6);
+        assert!(world.resource::<PendingCommands>().is_empty());
+    }
+
+    #[test]
+    fn carve_out_focus_camera_target_uses_camera_track_fallback() {
+        use crate::events::selection::FocusCameraTarget;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 0.5;
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            trigger: Some(eg_types::TimedTrigger {
+                time_seconds: 0.0,
+                target: eg_types::TriggerTarget::Camera,
+                camera: Some(eg_types::CameraTrigger {
+                    mode: eg_types::CameraMode::Static,
+                    target_position: [3.0, 4.0, 5.0],
+                    yaw: 0.4,
+                    pitch: 0.2,
+                    ..eg_types::CameraTrigger::default()
+                }),
+                ..eg_types::TimedTrigger::default()
+            }),
+            ..LevelObject::new(eg_types::CAMERA_TRIGGER_BLOCK_ID)
+        }];
+
+        world.write_message(FocusCameraTarget);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let camera = &world.resource::<crate::state::EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [3.0, 5.0]);
+        approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.editor_yaw, 0.4, epsilon = 1e-5);
+        approx::assert_abs_diff_eq!(camera.editor_pitch, 0.2, epsilon = 1e-5);
+        assert!(
+            world.resource::<PendingCommands>().is_empty(),
+            "FocusCameraTarget fallback must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_add_transform_trigger_mutates_editor_object_resources() {
+        use crate::events::selection::AddTransformTrigger;
+
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 2.5;
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_show_place_window = true;
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![
+            LevelObject {
+                id: "object_0".to_string(),
+                position: [0.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                id: "object_4".to_string(),
+                position: [4.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                id: "existing_trigger".to_string(),
+                trigger: Some(eg_types::TimedTrigger {
+                    time_seconds: 2.5,
+                    target: eg_types::TriggerTarget::Objects {
+                        object_ids: vec!["object_0".to_string(), "object_8".to_string()],
+                    },
+                    transform: true,
+                    ..eg_types::TimedTrigger::default()
+                }),
+                ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+            },
+        ];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0, 1];
+            input.0.hovered_block_index = Some(1);
+        }
+
+        world.write_message(AddTransformTrigger);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects.len(), 5);
+        assert_eq!(objects[3].block_id, eg_types::TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_eq!(objects[3].position, [0.0, 0.0, 0.0]);
+        assert_eq!(objects[4].block_id, eg_types::TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_eq!(objects[4].position, [4.0, 0.0, 0.0]);
+        assert_eq!(
+            objects[2].trigger.as_ref().unwrap().target,
+            eg_types::TriggerTarget::Objects {
+                object_ids: vec!["object_8".to_string()],
+            }
+        );
+        for (object, expected_id) in objects[3..].iter().zip(["object_0", "object_4"]) {
+            let trigger = object.trigger.as_ref().expect("new transform trigger");
+            approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
+            approx::assert_abs_diff_eq!(trigger.duration_seconds, 1.0, epsilon = 1e-6);
+            assert_eq!(trigger.easing, eg_types::EasingDirection::EaseInOut);
+            assert!(trigger.transform);
+            assert_eq!(
+                trigger.target,
+                eg_types::TriggerTarget::Objects {
+                    object_ids: vec![expected_id.to_string()],
+                }
+            );
+        }
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![3, 4]
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorInputRes>()
+                .0
+                .hovered_block_index,
+            Some(3)
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending
+        );
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .editor_show_place_window
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty()
+                && world
+                    .resource::<PendingCommands>()
+                    .editor_commands
+                    .is_empty(),
+            "AddTransformTrigger must not stage a legacy command"
+        );
+    }
+
+    #[test]
     fn schedule_drains_set_editor_mode_into_editor_command() {
         // `SetEditorMode` is a Phase 3.13 carve-out: the handler
         // mutates `EditorInputRes.0.mode` directly. Pin the
         // resource update and confirm no legacy command is
         // staged (the `PendingCommands` buffer stays empty for
-        // this message). The legacy `ToLegacy` impl is preserved
-        // so the existing `editor_dispatch` tests can still drive
-        // `State::dispatch_editor(EditorCommand::SetMode(...))`
-        // directly.
+        // this message).
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
         world.run_schedule(crate::state::StateSchedule);
@@ -1792,15 +2445,13 @@ mod tests {
 
     // --- Camera + TriggerSelected carve-out pattern ---
     //
-    // 3 of the 5 `events::camera::*` messages are carve-outs:
-    // their handlers mutate `EditorCameraRes.0` (AdjustZoom,
-    // SetCameraOrientation) or `EditorTriggerRes.0.selected_index`
-    // (SetTriggerSelected) directly. The other 2
-    // (AddCameraTrigger, AddCameraFollowTrigger) keep the legacy
-    // PendingCommands path because they push to `editor.objects`.
+    // All 5 `events::camera::*` messages are carve-outs: their handlers
+    // mutate `EditorCameraRes.0`, `EditorTriggerRes.0.selected_index`, or
+    // `EditorObjectsRes` directly instead of staging legacy editor commands.
 
     use crate::events::camera::{
-        AddCameraTrigger, AdjustZoom, SetCameraOrientation, SetTriggerSelected,
+        AddCameraFollowTrigger, AddCameraTrigger, AdjustZoom, SetCameraOrientation,
+        SetTriggerSelected,
     };
     use crate::state::EditorTriggerRes;
 
@@ -1914,23 +2565,136 @@ mod tests {
         assert!(pending.editor_commands.is_empty());
     }
 
-    /// `AddCameraTrigger` is **not** a carve-out: the handler
-    /// stages a legacy `EditorCommand::AddCameraTrigger` because
-    /// the legacy setter pushes to `editor.objects` (a complex
-    /// store with history + sync side effects). Pin the legacy
-    /// command is staged.
+    /// `AddCameraTrigger` captures the App-world editor camera pose as a
+    /// static camera trigger object, records App-world history, and avoids
+    /// staging a legacy command.
     #[test]
-    fn add_camera_trigger_still_uses_pending_commands() {
+    fn carve_out_add_camera_trigger_mutates_editor_objects_resource() {
         let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        world.resource_mut::<EditorCameraRes>().0.editor_pan = [12.0, -7.0];
+        world.resource_mut::<EditorCameraRes>().0.editor_target_z = 4.5;
+        world.resource_mut::<EditorCameraRes>().0.editor_yaw = 0.9;
+        world.resource_mut::<EditorCameraRes>().0.editor_pitch = 0.3;
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 8.0;
 
         world.write_message(AddCameraTrigger);
         world.run_schedule(crate::state::StateSchedule);
 
-        let pending = world.resource::<PendingCommands>();
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
+        let trigger = objects[0].trigger.as_ref().expect("camera trigger");
+        approx::assert_abs_diff_eq!(trigger.time_seconds, 8.0, epsilon = 1e-6);
+        assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
+        let camera = trigger.camera.as_ref().expect("camera payload");
+        assert_eq!(camera.mode, eg_types::CameraMode::Static);
+        assert_eq!(camera.target_position, [12.0, 4.5, -7.0]);
+        approx::assert_abs_diff_eq!(camera.yaw, 0.9, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(camera.pitch, 0.3, epsilon = 1e-6);
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending,
+            "AddCameraTrigger must request runtime object/presentation sync"
+        );
         assert_eq!(
-            pending.editor_commands,
-            vec![crate::state::editor_command::EditorCommand::AddCameraTrigger],
-            "AddCameraTrigger must still stage a legacy editor command"
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1,
+            "AddCameraTrigger must record App-world editor history"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty() && pending.app_commands.is_empty(),
+            "AddCameraTrigger must not stage a legacy command"
+        );
+    }
+
+    /// `AddCameraFollowTrigger` appends a follow-mode camera trigger and uses
+    /// the App-world timeline sample cache to derive the visible trigger pose.
+    #[test]
+    fn carve_out_add_camera_follow_trigger_mutates_editor_objects_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.time_seconds = 0.5;
+            timeline.0.clock.duration_seconds = 2.0;
+            timeline.0.snapshot_cache_step_seconds = 0.5;
+            timeline.0.snapshot_cache = vec![
+                crate::state::EditorTimelineSnapshot {
+                    position: [0.0, 0.0, 0.0],
+                    direction: eg_types::Direction::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
+                },
+                crate::state::EditorTimelineSnapshot {
+                    position: [10.0, 2.0, 4.0],
+                    direction: eg_types::Direction::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
+                },
+            ];
+        }
+
+        world.write_message(AddCameraFollowTrigger);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
+        assert_ne!(
+            objects[0].position,
+            [0.0, 0.0, 0.0],
+            "follow trigger object pose must be derived from the timeline sample"
+        );
+        let trigger = objects[0].trigger.as_ref().expect("camera follow trigger");
+        let camera = trigger.camera.as_ref().expect("camera payload");
+        assert_eq!(camera.mode, eg_types::CameraMode::Follow);
+        assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty() && pending.app_commands.is_empty(),
+            "AddCameraFollowTrigger must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_camera_trigger_creation_respects_editor_phase() {
+        let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
+
+        world.write_message(AddCameraTrigger);
+        world.write_message(AddCameraFollowTrigger);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .objects
+                .is_empty(),
+            "camera trigger creation must no-op outside editor phase"
+        );
+        assert!(
+            world.resource::<PendingCommands>().is_empty(),
+            "phase-guarded camera trigger messages must not stage legacy commands"
         );
     }
 
@@ -2208,6 +2972,113 @@ mod tests {
         assert!(
             pending.editor_commands.is_empty(),
             "SelectRecentBlock must not stage a legacy editor command"
+        );
+    }
+
+    /// `PickSelectedBlock` is a carve-out: the handler reads the
+    /// selected object from `EditorObjectsRes` / `EditorInputRes`,
+    /// writes the selected block id into `EditorConfigRes`, and enters
+    /// Place mode without staging `EditorCommand::PickSelectedBlock`.
+    #[test]
+    fn carve_out_pick_selected_block_mutates_resources() {
+        use crate::events::editor_mode::PickSelectedBlock;
+
+        let mut world = build_event_world();
+        let picked = eg_blocks::BlockId::new("core/lava");
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            block_id: picked.clone(),
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.mode = EditorMode::Select;
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+
+        world.write_message(PickSelectedBlock);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            picked
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Place
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "PickSelectedBlock must not stage a legacy editor command"
+        );
+    }
+
+    /// During editor timeline playback, legacy `PickSelectedBlock`
+    /// changes the effective mode by writing `last_mode = Place` while
+    /// the visible mode remains `Null`. The App-world handler preserves
+    /// that contract so stopping playback restores Place mode.
+    #[test]
+    fn carve_out_pick_selected_block_sets_playback_effective_mode() {
+        use crate::events::editor_mode::PickSelectedBlock;
+
+        let mut world = build_event_world();
+        let picked = eg_blocks::BlockId::new("core/stone");
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            block_id: picked.clone(),
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.mode = EditorMode::Null;
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .playback
+            .playing = true;
+
+        world.write_message(PickSelectedBlock);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .selected_block_id,
+            picked
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Null
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorRuntimeRes>()
+                .0
+                .interaction
+                .last_mode,
+            Some(EditorMode::Place)
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "PickSelectedBlock must not stage a legacy editor command"
         );
     }
 

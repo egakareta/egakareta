@@ -15,11 +15,6 @@
 //! calculation as the legacy `State::editor_bpm_tap` /
 //! `editor_bpm_tap_reset` paths.
 //!
-//! The `ToLegacy` impls are kept so the legacy dispatch path
-//! remains reachable from non-message call sites (the existing
-//! editor dispatch tests still drive
-//! `State::dispatch_editor(EditorCommand::BpmTap)` directly).
-//!
 //! `Runtime::sync_app_editor_timing_state` propagates the
 //! resource values back to the legacy `State.editor.timing` fields
 //! each frame so any code path that still reads the legacy fields
@@ -29,29 +24,15 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::EditorTimingRes;
-use crate::state::editor_command::EditorCommand;
 
 /// Record a BPM heart-beat tap.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct BpmTap;
 
-impl ToLegacy for BpmTap {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::BpmTap)
-    }
-}
-
 /// Reset the BPM tapping state.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct BpmTapReset;
-
-impl ToLegacy for BpmTapReset {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::BpmTapReset)
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<BpmTap>().add_message::<BpmTapReset>();

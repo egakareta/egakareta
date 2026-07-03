@@ -23,9 +23,9 @@ const MIN_PLAYING_PITCH: f32 = 0.1f32.to_radians();
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct CameraViewSample {
-    eye: Vec3,
-    target: Vec3,
+pub(crate) struct CameraViewSample {
+    pub(crate) eye: Vec3,
+    pub(crate) target: Vec3,
 }
 
 pub struct EditorCameraState {
@@ -177,6 +177,120 @@ fn interpolate_camera_samples(
     }
 }
 
+fn live_follow_sample_for_camera(
+    camera: &EditorCameraState,
+    target: Vec3,
+    is_game_active: bool,
+) -> CameraViewSample {
+    let rotation = if is_game_active {
+        DEFAULT_CAMERA_YAW
+    } else {
+        camera.playing_rotation
+    };
+    let pitch = if is_game_active {
+        DEFAULT_CAMERA_PITCH
+    } else {
+        camera
+            .playing_pitch
+            .clamp(MIN_PLAYING_PITCH, MAX_EDITOR_PITCH)
+    };
+
+    CameraViewSample {
+        eye: target + playing_camera_offset_for_angles(rotation, pitch),
+        target,
+    }
+}
+
+fn resolve_camera_trigger_sample(
+    camera_trigger: &CameraTrigger,
+    live_follow_sample: CameraViewSample,
+) -> CameraViewSample {
+    match camera_trigger.mode {
+        CameraMode::Follow => EditorSubsystem::follow_camera_view_for_trigger(
+            camera_trigger,
+            live_follow_sample.target,
+        ),
+        CameraMode::Static => EditorSubsystem::static_camera_view_for_trigger(camera_trigger),
+    }
+}
+
+pub(crate) fn evaluate_camera_track_for_objects(
+    camera: &EditorCameraState,
+    objects: &[LevelObject],
+    time_seconds: f32,
+    live_follow_target: Vec3,
+    is_game_active: bool,
+) -> CameraViewSample {
+    let live_follow_sample =
+        live_follow_sample_for_camera(camera, live_follow_target, is_game_active);
+    let mut camera_triggers = objects
+        .iter()
+        .filter_map(|object| {
+            let trigger = object.trigger.as_ref()?;
+            let camera = trigger.camera.as_ref()?;
+            Some((trigger, camera))
+        })
+        .collect::<Vec<(&TimedTrigger, &CameraTrigger)>>();
+    camera_triggers
+        .sort_by(|left, right| f32::total_cmp(&left.0.time_seconds, &right.0.time_seconds));
+    if camera_triggers.is_empty() {
+        return live_follow_sample;
+    }
+
+    let clamped_time = time_seconds.max(0.0);
+    let next_index =
+        camera_triggers.partition_point(|(trigger, _)| trigger.time_seconds < clamped_time);
+
+    if next_index == 0 {
+        let (first_t, first_c) = camera_triggers[0];
+        if first_t.time_seconds <= 1e-6 {
+            return resolve_camera_trigger_sample(first_c, live_follow_sample);
+        }
+
+        let end_sample = resolve_camera_trigger_sample(first_c, live_follow_sample);
+        let transition_start = if first_c.use_full_segment_transition {
+            0.0
+        } else {
+            (first_t.time_seconds - first_c.transition_interval_seconds.max(0.0)).max(0.0)
+        };
+        if clamped_time <= transition_start {
+            return live_follow_sample;
+        }
+
+        let transition_duration = (first_t.time_seconds - transition_start).max(1e-6);
+        let alpha = eased_alpha(
+            first_t.easing,
+            (clamped_time - transition_start) / transition_duration,
+        );
+        return interpolate_camera_samples(live_follow_sample, end_sample, alpha);
+    }
+
+    if next_index >= camera_triggers.len() {
+        let (_, last_c) = *camera_triggers.last().expect("camera triggers not empty");
+        return resolve_camera_trigger_sample(last_c, live_follow_sample);
+    }
+
+    let (previous_t, previous_c) = camera_triggers[next_index - 1];
+    let (next_t, next_c) = camera_triggers[next_index];
+    let start_sample = resolve_camera_trigger_sample(previous_c, live_follow_sample);
+    let end_sample = resolve_camera_trigger_sample(next_c, live_follow_sample);
+
+    let transition_start = if next_c.use_full_segment_transition {
+        previous_t.time_seconds
+    } else {
+        (next_t.time_seconds - next_c.transition_interval_seconds.max(0.0))
+            .max(previous_t.time_seconds)
+    };
+    if clamped_time <= transition_start {
+        return start_sample;
+    }
+
+    let transition_duration = (next_t.time_seconds - transition_start).max(1e-6);
+    let local_alpha = (clamped_time - transition_start) / transition_duration;
+    let eased = eased_alpha(next_t.easing, local_alpha);
+    interpolate_camera_samples(start_sample, end_sample, eased)
+}
+
 impl EditorSubsystem {
     fn static_camera_view_for_trigger(camera_trigger: &CameraTrigger) -> CameraViewSample {
         let target = Vec3::from_array(camera_trigger.target_position);
@@ -298,45 +412,11 @@ impl EditorSubsystem {
         self.camera.editor_pan[1] += movement.z;
         self.camera.editor_target_z += movement.y;
     }
-
-    fn resolve_live_follow_sample(&self, target: Vec3, is_game_active: bool) -> CameraViewSample {
-        let rotation = if is_game_active {
-            DEFAULT_CAMERA_YAW
-        } else {
-            self.camera.playing_rotation
-        };
-        let pitch = if is_game_active {
-            DEFAULT_CAMERA_PITCH
-        } else {
-            self.camera
-                .playing_pitch
-                .clamp(MIN_PLAYING_PITCH, MAX_EDITOR_PITCH)
-        };
-
-        CameraViewSample {
-            eye: target + playing_camera_offset_for_angles(rotation, pitch),
-            target,
-        }
-    }
 }
 
 impl State {
     pub(super) fn editor_camera_offset(&self) -> Vec3 {
         self.editor.camera_offset()
-    }
-
-    fn resolve_camera_trigger_sample(
-        &self,
-        camera_trigger: &CameraTrigger,
-        live_follow_sample: CameraViewSample,
-    ) -> CameraViewSample {
-        match camera_trigger.mode {
-            CameraMode::Follow => EditorSubsystem::follow_camera_view_for_trigger(
-                camera_trigger,
-                live_follow_sample.target,
-            ),
-            CameraMode::Static => EditorSubsystem::static_camera_view_for_trigger(camera_trigger),
-        }
     }
 
     fn evaluate_camera_track(
@@ -345,74 +425,13 @@ impl State {
         live_follow_target: Vec3,
         is_game_active: bool,
     ) -> CameraViewSample {
-        let live_follow_sample = self
-            .editor
-            .resolve_live_follow_sample(live_follow_target, is_game_active);
-        let trigger_objects = self.editor.trigger_objects();
-        let camera_triggers: Vec<(&TimedTrigger, &CameraTrigger)> = trigger_objects
-            .iter()
-            .filter_map(|object| {
-                let trigger = object.trigger.as_ref()?;
-                let camera = trigger.camera.as_ref()?;
-                Some((trigger, camera))
-            })
-            .collect();
-        if camera_triggers.is_empty() {
-            return live_follow_sample;
-        }
-
-        let clamped_time = time_seconds.max(0.0);
-        let next_index =
-            camera_triggers.partition_point(|(trigger, _)| trigger.time_seconds < clamped_time);
-
-        if next_index == 0 {
-            let (first_t, first_c) = camera_triggers[0];
-            if first_t.time_seconds <= 1e-6 {
-                return self.resolve_camera_trigger_sample(first_c, live_follow_sample);
-            }
-
-            let end_sample = self.resolve_camera_trigger_sample(first_c, live_follow_sample);
-            let transition_start = if first_c.use_full_segment_transition {
-                0.0
-            } else {
-                (first_t.time_seconds - first_c.transition_interval_seconds.max(0.0)).max(0.0)
-            };
-            if clamped_time <= transition_start {
-                return live_follow_sample;
-            }
-
-            let transition_duration = (first_t.time_seconds - transition_start).max(1e-6);
-            let alpha = eased_alpha(
-                first_t.easing,
-                (clamped_time - transition_start) / transition_duration,
-            );
-            return interpolate_camera_samples(live_follow_sample, end_sample, alpha);
-        }
-
-        if next_index >= camera_triggers.len() {
-            let (_, last_c) = *camera_triggers.last().expect("camera triggers not empty");
-            return self.resolve_camera_trigger_sample(last_c, live_follow_sample);
-        }
-
-        let (previous_t, previous_c) = camera_triggers[next_index - 1];
-        let (next_t, next_c) = camera_triggers[next_index];
-        let start_sample = self.resolve_camera_trigger_sample(previous_c, live_follow_sample);
-        let end_sample = self.resolve_camera_trigger_sample(next_c, live_follow_sample);
-
-        let transition_start = if next_c.use_full_segment_transition {
-            previous_t.time_seconds
-        } else {
-            (next_t.time_seconds - next_c.transition_interval_seconds.max(0.0))
-                .max(previous_t.time_seconds)
-        };
-        if clamped_time <= transition_start {
-            return start_sample;
-        }
-
-        let transition_duration = (next_t.time_seconds - transition_start).max(1e-6);
-        let local_alpha = (clamped_time - transition_start) / transition_duration;
-        let eased = eased_alpha(next_t.easing, local_alpha);
-        interpolate_camera_samples(start_sample, end_sample, eased)
+        evaluate_camera_track_for_objects(
+            &self.editor.camera,
+            &self.editor.objects,
+            time_seconds,
+            live_follow_target,
+            is_game_active,
+        )
     }
 
     pub(super) fn playing_camera_view(&self) -> (Vec3, Vec3) {
@@ -486,7 +505,8 @@ mod tests {
     use super::{
         CameraViewSample, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, MIN_PLAYING_PITCH, State,
         eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
-        offset_from_rotation_pitch, playing_camera_offset_for_angles,
+        live_follow_sample_for_camera, offset_from_rotation_pitch,
+        playing_camera_offset_for_angles,
     };
     use eg_types::{AppPhase, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use eg_types::{CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget};
@@ -629,7 +649,7 @@ mod tests {
         state.editor.camera.playing_pitch = -0.8;
 
         let target = Vec3::new(2.0, 3.0, 4.0);
-        let sample = state.editor.resolve_live_follow_sample(target, true);
+        let sample = live_follow_sample_for_camera(&state.editor.camera, target, true);
         let expected_eye =
             target + playing_camera_offset_for_angles(DEFAULT_CAMERA_YAW, DEFAULT_CAMERA_PITCH);
 
@@ -644,7 +664,7 @@ mod tests {
         state.editor.camera.playing_pitch = -5.0;
 
         let target = Vec3::new(1.0, 0.5, -2.0);
-        let sample = state.editor.resolve_live_follow_sample(target, false);
+        let sample = live_follow_sample_for_camera(&state.editor.camera, target, false);
         let expected_eye = target
             + playing_camera_offset_for_angles(
                 state.editor.camera.playing_rotation,
@@ -663,7 +683,7 @@ mod tests {
         state.editor.camera.playing_pitch = 0.4;
 
         let target = Vec3::new(2.5, 1.0, -0.5);
-        let expected = state.editor.resolve_live_follow_sample(target, false);
+        let expected = live_follow_sample_for_camera(&state.editor.camera, target, false);
         let sample = state.evaluate_camera_track(3.0, target, false);
 
         assert_vec3_close(sample.eye, expected.eye);
@@ -684,7 +704,7 @@ mod tests {
         )];
 
         let live_target = Vec3::new(0.0, 0.0, 0.0);
-        let live = state.editor.resolve_live_follow_sample(live_target, false);
+        let live = live_follow_sample_for_camera(&state.editor.camera, live_target, false);
         let trigger_target = Vec3::new(10.0, 1.0, -2.0);
         let end = CameraViewSample {
             eye: trigger_target + editor_camera_offset_for_pose(0.8, 0.3),

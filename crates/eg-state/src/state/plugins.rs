@@ -39,8 +39,8 @@ use bevy_ecs::prelude::*;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 use super::{StateSchedule, transitions};
 
@@ -65,6 +65,7 @@ pub struct EditorPlugin;
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorInputRes>()
+            .init_resource::<EditorObjectsRes>()
             .init_resource::<EditorConfigRes>()
             .init_resource::<EditorCameraRes>()
             .init_resource::<EditorSpawnRes>()
@@ -169,6 +170,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AppPhaseRes>();
     world.init_resource::<SessionStateRes>();
     world.init_resource::<EditorInputRes>();
+    world.init_resource::<EditorObjectsRes>();
     world.init_resource::<EditorConfigRes>();
     world.init_resource::<EditorCameraRes>();
     world.init_resource::<EditorSpawnRes>();

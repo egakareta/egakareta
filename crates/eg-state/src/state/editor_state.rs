@@ -712,9 +712,25 @@ impl State {
         tap_indicator_positions: Vec<[f32; 3]>,
         selected_index: Option<usize>,
     ) {
+        self.set_editor_tap_state_with_cursor_override(
+            tap_times,
+            tap_indicator_positions,
+            selected_index,
+            None,
+        );
+    }
+
+    pub fn set_editor_tap_state_with_cursor_override(
+        &mut self,
+        tap_times: Vec<f32>,
+        tap_indicator_positions: Vec<[f32; 3]>,
+        selected_index: Option<usize>,
+        cursor_override: Option<[f32; 3]>,
+    ) {
         if self.editor.timeline.taps.tap_times == tap_times
             && self.editor.timeline.taps.tap_indicator_positions == tap_indicator_positions
             && self.editor.timeline.taps.selected_index == selected_index
+            && cursor_override.is_none()
         {
             return;
         }
@@ -724,7 +740,7 @@ impl State {
         self.editor.timeline.taps.tap_indicator_positions = tap_indicator_positions;
         self.editor.set_selected_tap_index(selected_index);
         self.editor.invalidate_samples();
-        self.refresh_editor_after_tap_change(None);
+        self.refresh_editor_after_tap_change(cursor_override);
         if let Some((_, _, selected_position)) = self.editor.selected_tap() {
             self.editor.input.cursor = selected_position;
             self.rebuild_editor_cursor_vertices();
@@ -790,6 +806,66 @@ impl State {
         super::EditorInputRes(self.editor.input.clone())
     }
 
+    /// Snapshot the ordered editor object list into an [`super::EditorObjectsRes`]
+    /// so App-world history handlers can apply undo/redo snapshots without
+    /// staging legacy editor commands.
+    pub fn editor_objects_resource(&self) -> super::EditorObjectsRes {
+        super::EditorObjectsRes {
+            objects: self.editor.objects.clone(),
+            history_restore_pending: false,
+            object_mutation_pending: false,
+        }
+    }
+
+    /// Read-only view of the ordered editor object list mirrored by
+    /// [`super::EditorObjectsRes`].
+    pub fn editor_objects(&self) -> &[eg_types::LevelObject] {
+        &self.editor.objects
+    }
+
+    /// Replace the ordered editor object list from the App-world mirror.
+    pub fn set_editor_objects_from_app(&mut self, objects: Vec<eg_types::LevelObject>) {
+        self.editor.objects = objects;
+    }
+
+    /// Replace editor block selection fields from the App-world input mirror.
+    pub fn set_editor_block_selection_from_app(
+        &mut self,
+        selected_block_index: Option<usize>,
+        selected_block_indices: Vec<usize>,
+        hovered_block_index: Option<usize>,
+    ) {
+        self.editor.input.selected_block_index = selected_block_index;
+        self.editor.input.selected_block_indices = selected_block_indices;
+        self.editor.input.hovered_block_index = hovered_block_index;
+        self.editor.sync_primary_selection_from_indices();
+    }
+
+    /// Rebuild legacy editor presentation after an App-world history restore.
+    pub fn sync_editor_scene_after_history_restore(&mut self) {
+        self.sync_editor_objects();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_spawn_marker_vertices();
+    }
+
+    /// Rebuild legacy editor presentation after an App-world object mutation.
+    pub fn sync_editor_scene_after_app_object_mutation(&mut self) {
+        self.sync_editor_objects();
+        self.sync_editor_camera_follow_trigger_object_poses();
+        self.rebuild_editor_cursor_vertices();
+        self.rebuild_editor_gizmo_vertices();
+        self.rebuild_editor_selection_outline_vertices();
+        self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
+    }
+
+    pub fn editor_history_resource(&self) -> super::EditorHistoryRes {
+        super::EditorHistoryRes(self.editor.runtime.history.clone())
+    }
+
+    pub fn set_editor_history_state(&mut self, history: super::EditorHistoryState) {
+        self.editor.runtime.history = history;
+    }
+
     /// Snapshot the editor timing state into an
     /// [`super::EditorTimingRes`] so the App world can be seeded from
     /// the legacy `State` at construction time. Used for the bpm-tap
@@ -829,7 +905,16 @@ impl State {
     pub fn editor_runtime_resource(&self) -> super::EditorRuntimeRes {
         let mut runtime = super::EditorRuntimeRes::default();
         runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
+        runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
         runtime
+    }
+
+    pub fn editor_clipboard(&self) -> Option<&super::EditorClipboard> {
+        self.editor.runtime.interaction.clipboard.as_ref()
+    }
+
+    pub fn set_editor_clipboard_from_app(&mut self, clipboard: Option<super::EditorClipboard>) {
+        self.editor.runtime.interaction.clipboard = clipboard;
     }
 
     /// Snapshot the simple UI-window fields of the legacy

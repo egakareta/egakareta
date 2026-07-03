@@ -14,10 +14,7 @@
 //! `EditorCommand`. The legacy `State.editor.timing.*` fields are synced
 //! from the resource by
 //! `Runtime::sync_app_editor_timing_state` before any dispatch in the
-//! same frame. The `ToLegacy` impls are preserved so the legacy dispatch
-//! path remains reachable from non-message call sites (the existing
-//! editor_dispatch tests continue to drive
-//! `State::dispatch_editor(EditorCommand::AddTimingPoint)` directly).
+//! same frame.
 //!
 //! The carve-out covers `timing_points` and `timing_selected_index`.
 //! The bpm-tap fields are carved out in `events::bpm` (separate
@@ -27,9 +24,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::EditorTimingRes;
-use crate::state::editor_command::EditorCommand;
 
 /// Add a new timing point.
 #[derive(Message, Debug, Clone, Copy)]
@@ -38,24 +33,9 @@ pub struct AddTimingPoint {
     pub bpm: f32,
 }
 
-impl ToLegacy for AddTimingPoint {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::AddTimingPoint {
-            time_seconds: self.time_seconds,
-            bpm: self.bpm,
-        })
-    }
-}
-
 /// Remove an existing timing point by index.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct RemoveTimingPoint(pub usize);
-
-impl ToLegacy for RemoveTimingPoint {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::RemoveTimingPoint(self.0))
-    }
-}
 
 /// Update an existing timing point's timestamp.
 #[derive(Message, Debug, Clone, Copy)]
@@ -64,23 +44,11 @@ pub struct SetTimingPointTime {
     pub time: f32,
 }
 
-impl ToLegacy for SetTimingPointTime {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimingPointTime(self.index, self.time))
-    }
-}
-
 /// Update an existing timing point's BPM.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetTimingPointBpm {
     pub index: usize,
     pub bpm: f32,
-}
-
-impl ToLegacy for SetTimingPointBpm {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimingPointBpm(self.index, self.bpm))
-    }
 }
 
 /// Update an existing timing point's time signature.
@@ -91,25 +59,9 @@ pub struct SetTimingPointTimeSignature {
     pub denominator: u32,
 }
 
-impl ToLegacy for SetTimingPointTimeSignature {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimingPointTimeSignature(
-            self.index,
-            self.numerator,
-            self.denominator,
-        ))
-    }
-}
-
 /// Select or deselect a timing point in the UI.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetTimingSelected(pub Option<usize>);
-
-impl ToLegacy for SetTimingSelected {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimingSelected(self.0))
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<AddTimingPoint>()

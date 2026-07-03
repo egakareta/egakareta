@@ -12,58 +12,27 @@
 //! The handlers mutate `EditorConfigRes` directly, and the legacy
 //! `State.editor.config` fields are synced from the resource at the top of
 //! the per-frame `StateSchedule`.
-//!
-//! The `ToLegacy` impls are kept so the legacy dispatch path remains
-//! reachable from non-message call sites (the existing editor dispatch
-//! tests still drive `State::dispatch_editor(EditorCommand::SetSnapToGrid)`
-//! directly).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::events::{LegacyCommand, ToLegacy};
 use crate::state::EditorConfigRes;
-use crate::state::editor_command::EditorCommand;
 
 /// Set whether to snap to grid.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSnapToGrid(pub bool);
 
-impl ToLegacy for SetSnapToGrid {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSnapToGrid(self.0))
-    }
-}
-
 /// Set the grid snap step.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSnapStep(pub f32);
-
-impl ToLegacy for SetSnapStep {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSnapStep(self.0))
-    }
-}
 
 /// Set whether rotation uses snapping.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSnapRotation(pub bool);
 
-impl ToLegacy for SetSnapRotation {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSnapRotation(self.0))
-    }
-}
-
 /// Set the rotation snap step in degrees.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSnapRotationStep(pub f32);
-
-impl ToLegacy for SetSnapRotationStep {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSnapRotationStep(self.0))
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<SetSnapToGrid>()

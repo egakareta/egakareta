@@ -52,6 +52,7 @@ pub struct EditorTimelineState {
     pub clock: EditorTimelineClockState,
     pub preview: EditorTimelinePreviewState,
     pub taps: EditorTimelineTapState,
+    pub tap_cursor_override: Option<[f32; 3]>,
     pub playback: EditorTimelinePlaybackState,
     #[default = 1]
     pub simulation_revision: u64,

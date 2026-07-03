@@ -9,7 +9,7 @@ use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
 use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, LevelObject, TriggerTarget, next_level_object_id};
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EditorHistoryState {
     pub undo: Vec<EditorHistorySnapshot>,
     pub redo: Vec<EditorHistorySnapshot>,

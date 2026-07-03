@@ -227,9 +227,7 @@ pub fn handle_game_restart_level(
 /// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
 /// `resume_game`); the change-guarded sync in
 /// `Runtime::sync_app_session_state` invokes the legacy setter only
-/// on real user-driven changes. The `ToLegacy` impl is preserved so
-/// the legacy dispatch path remains reachable from non-message call
-/// sites.
+/// on real user-driven changes.
 pub fn handle_game_set_practice_mode(
     mut events: MessageReader<GameSetPracticeMode>,
     mut session: ResMut<SessionStateRes>,

@@ -48,131 +48,53 @@ use crate::state::{
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ToggleTimelinePlayback;
 
-impl ToLegacy for ToggleTimelinePlayback {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::ToggleTimelinePlayback)
-    }
-}
-
 /// Shift the timeline cursor by `delta_seconds`.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct ShiftTimeline(pub f32);
-
-impl ToLegacy for ShiftTimeline {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::ShiftTimeline(self.0))
-    }
-}
 
 /// Set the timeline cursor to an absolute time in seconds.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetTimelineTime(pub f32);
 
-impl ToLegacy for SetTimelineTime {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimelineTime(self.0))
-    }
-}
-
 /// Set the total duration of the timeline (seconds).
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetTimelineDuration(pub f32);
-
-impl ToLegacy for SetTimelineDuration {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetTimelineDuration(self.0))
-    }
-}
 
 /// Add a tap at the current timeline position.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct AddTap;
 
-impl ToLegacy for AddTap {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::AddTap)
-    }
-}
-
 /// Remove a tap at the current timeline position.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct RemoveTap;
-
-impl ToLegacy for RemoveTap {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::RemoveTap)
-    }
-}
 
 /// Remove a tap at a specific timeline position.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct RemoveTapAt(pub f32);
 
-impl ToLegacy for RemoveTapAt {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::RemoveTapAt(self.0))
-    }
-}
-
 /// Select or deselect a tap by index.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSelectedTap(pub Option<usize>);
-
-impl ToLegacy for SetSelectedTap {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSelectedTap(self.0))
-    }
-}
 
 /// Update the selected tap's timestamp.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetSelectedTapTime(pub f32);
 
-impl ToLegacy for SetSelectedTapTime {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetSelectedTapTime(self.0))
-    }
-}
-
 /// Remove all taps from the level.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ClearTaps;
-
-impl ToLegacy for ClearTaps {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::ClearTaps)
-    }
-}
 
 /// Update the playback speed multiplier.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetPlaybackSpeed(pub f32);
 
-impl ToLegacy for SetPlaybackSpeed {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetPlaybackSpeed(self.0))
-    }
-}
-
 /// Set waveform view zoom.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetWaveformZoom(pub f32);
 
-impl ToLegacy for SetWaveformZoom {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetWaveformZoom(self.0))
-    }
-}
-
 /// Set waveform view scroll offset.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SetWaveformScroll(pub f32);
-
-impl ToLegacy for SetWaveformScroll {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::Editor(EditorCommand::SetWaveformScroll(self.0))
-    }
-}
 
 /// Start playtesting from the current editor state.
 #[derive(Message, Debug, Clone, Copy, Default)]
