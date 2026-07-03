@@ -87,7 +87,9 @@ pub use state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
     EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
     EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    EscapeRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EscapeRequest, GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest,
+    GameRestartLevelRequest, GameSetPracticeCheckpointRequest, MenuStateRes, PerfFrameCopyRequest,
+    PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::UiStateSnapshot;
 

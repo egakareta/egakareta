@@ -29,6 +29,7 @@ pub struct AuthSubsystem {
     pub pending: bool,
     pub message: Option<String>,
     pub refresh_started: bool,
+    pub external_navigation_enabled: bool,
     pub channel: (
         std::sync::mpsc::Sender<AuthServiceMessage>,
         AuthChannelReceiver,
@@ -114,6 +115,10 @@ impl State {
     }
 
     pub fn open_auth_signup_page(&mut self) {
+        if !self.auth.external_navigation_enabled {
+            return;
+        }
+
         if let Err(error) = eg_platform::auth::open_signup_page() {
             self.auth.message = Some(error);
         }

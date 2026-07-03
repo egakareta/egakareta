@@ -41,7 +41,9 @@ use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
     EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
     EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    EscapeRequest, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EscapeRequest, GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest,
+    GameRestartLevelRequest, GameSetPracticeCheckpointRequest, PerfFrameCopyRequest, PerfRes,
+    SessionStateRes,
 };
 use super::{StateSchedule, transitions};
 
@@ -80,7 +82,11 @@ impl Plugin for EditorPlugin {
             .init_resource::<EscapeRequest>()
             .init_resource::<AuthSubmitSignInRequest>()
             .init_resource::<AuthSignOutRequest>()
-            .init_resource::<AuthOpenSignupRequest>();
+            .init_resource::<AuthOpenSignupRequest>()
+            .init_resource::<GameQuitToMenuRequest>()
+            .init_resource::<GameRestartLevelRequest>()
+            .init_resource::<GameSetPracticeCheckpointRequest>()
+            .init_resource::<GameRemovePracticeCheckpointRequest>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -190,6 +196,10 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AuthSubmitSignInRequest>();
     world.init_resource::<AuthSignOutRequest>();
     world.init_resource::<AuthOpenSignupRequest>();
+    world.init_resource::<GameQuitToMenuRequest>();
+    world.init_resource::<GameRestartLevelRequest>();
+    world.init_resource::<GameSetPracticeCheckpointRequest>();
+    world.init_resource::<GameRemovePracticeCheckpointRequest>();
     super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
     // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,

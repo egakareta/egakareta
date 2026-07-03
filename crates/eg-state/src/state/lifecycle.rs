@@ -611,6 +611,7 @@ impl State {
                 pending: false,
                 message: None,
                 refresh_started: false,
+                external_navigation_enabled: false,
                 channel: {
                     let (tx, rx) = std::sync::mpsc::channel();
                     (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
@@ -1521,6 +1522,7 @@ impl State {
                 pending: false,
                 message: None,
                 refresh_started: false,
+                external_navigation_enabled: true,
                 channel: {
                     let (tx, rx) = std::sync::mpsc::channel();
                     (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))

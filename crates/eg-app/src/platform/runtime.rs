@@ -19,6 +19,10 @@ use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
 use eg_state::state::EscapeRequest;
+use eg_state::state::GameQuitToMenuRequest;
+use eg_state::state::GameRemovePracticeCheckpointRequest;
+use eg_state::state::GameRestartLevelRequest;
+use eg_state::state::GameSetPracticeCheckpointRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PerfFrameCopyRequest;
 use eg_state::state::RenderResizeRequest;
@@ -258,6 +262,10 @@ impl Runtime {
             Self::sync_app_auth_submit_sign_in_request(state, app.world_mut());
             Self::sync_app_auth_sign_out_request(state, app.world_mut());
             Self::sync_app_auth_open_signup_request(state, app.world_mut());
+            Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
+            Self::sync_app_game_restart_level_request(state, app.world_mut());
+            Self::sync_app_game_set_practice_checkpoint_request(state, app.world_mut());
+            Self::sync_app_game_remove_practice_checkpoint_request(state, app.world_mut());
             Self::dispatch_app_pending_commands(state, app.world_mut());
             state.drain_pending_async_results();
         });
@@ -916,6 +924,78 @@ impl Runtime {
         let _ = world.resource_mut::<AuthOpenSignupRequest>().take();
     }
 
+    /// Consume the App-world `GameQuitToMenuRequest` and apply the
+    /// legacy `State::apply_game_quit_to_menu` compatibility
+    /// method.
+    ///
+    /// Phase 3.48: `events::navigation::handle_game_quit_to_menu`
+    /// writes `GameQuitToMenuRequest.pending = true` instead of
+    /// staging `AppCommand::GameQuitToMenu` in `PendingCommands`.
+    /// The `back_to_menu` side effect (phase change + audio stop +
+    /// gameplay state reset) stays legacy-owned because the audio
+    /// backend + gameplay state live on the legacy `State`. The
+    /// sync runs before `dispatch_app_pending_commands` so the
+    /// request is consumed in the same frame and any state changes
+    /// (phase, session.game_paused, gameplay.state) propagate to the
+    /// App world via `dispatch_app_pending_commands` -> the mirror
+    /// refresh in `refresh_editor_playback_mirrors_from_legacy`.
+    fn sync_app_game_quit_to_menu_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<GameQuitToMenuRequest>().take() {
+            return;
+        }
+        state.apply_game_quit_to_menu();
+    }
+
+    /// Consume the App-world `GameRestartLevelRequest` and apply the
+    /// legacy `State::apply_game_restart_level` compatibility
+    /// method.
+    ///
+    /// Phase 3.48: same request pattern as
+    /// `sync_app_game_quit_to_menu_request`. The restart side effect
+    /// (gameplay clock reset, audio restart) stays legacy-owned.
+    fn sync_app_game_restart_level_request(state: &mut State, world: &mut World) {
+        if !world.resource_mut::<GameRestartLevelRequest>().take() {
+            return;
+        }
+        state.apply_game_restart_level();
+    }
+
+    /// Consume the App-world `GameSetPracticeCheckpointRequest` and
+    /// apply the legacy `State::apply_game_set_practice_checkpoint`
+    /// compatibility method.
+    ///
+    /// Phase 3.48: same request pattern as
+    /// `sync_app_game_quit_to_menu_request`. The checkpoint side
+    /// effect (session.practice_checkpoints.push + vertex rebuild)
+    /// stays legacy-owned.
+    fn sync_app_game_set_practice_checkpoint_request(state: &mut State, world: &mut World) {
+        if !world
+            .resource_mut::<GameSetPracticeCheckpointRequest>()
+            .take()
+        {
+            return;
+        }
+        state.apply_game_set_practice_checkpoint();
+    }
+
+    /// Consume the App-world `GameRemovePracticeCheckpointRequest`
+    /// and apply the legacy
+    /// `State::apply_game_remove_practice_checkpoint` compatibility
+    /// method.
+    ///
+    /// Phase 3.48: same request pattern as
+    /// `sync_app_game_quit_to_menu_request`. The pop + vertex
+    /// rebuild side effect stays legacy-owned.
+    fn sync_app_game_remove_practice_checkpoint_request(state: &mut State, world: &mut World) {
+        if !world
+            .resource_mut::<GameRemovePracticeCheckpointRequest>()
+            .take()
+        {
+            return;
+        }
+        state.apply_game_remove_practice_checkpoint();
+    }
+
     fn dispatch_app_pending_commands(state: &mut State, world: &mut World) {
         let mut pending = std::mem::take(&mut *world.resource_mut::<PendingCommands>());
         let had_commands = !pending.is_empty();
@@ -948,8 +1028,9 @@ mod tests {
         AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
         EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest,
-        MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
-        SessionStateRes,
+        GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
+        GameSetPracticeCheckpointRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes,
+        PlatformInputQueue, RenderResizeRequest, SessionStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -1360,6 +1441,126 @@ mod tests {
         assert!(
             pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
             "AuthOpenSignup must not stage a legacy command"
+        );
+    }
+
+    // --- Phase 3.48 / Navigation request carve-out tests ---
+    //
+    // The `GameQuitToMenu`, `GameRestartLevel`,
+    // `GameSetPracticeCheckpoint`, and
+    // `GameRemovePracticeCheckpoint` messages route through dedicated
+    // request resources; the runtime sync consumes them and calls the
+    // existing legacy `State::apply_game_*` compatibility methods.
+    // The end-to-end tests below exercise the full pipeline through
+    // `Runtime::run_app_frame`.
+
+    use eg_state::events::navigation::{
+        GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
+    };
+
+    /// `GameQuitToMenu` carve-out: the App-world handler writes
+    /// `GameQuitToMenuRequest.pending = true`; the runtime sync
+    /// consumes it and calls the legacy
+    /// `State::apply_game_quit_to_menu` method. The legacy
+    /// `quit_game_from_pause` has a phase-guard that early-returns
+    /// outside the `Playing` phase, so the test pins the request
+    /// was consumed and no legacy command was staged (the legacy
+    /// `back_to_menu` side effect is also a no-op outside `Playing`).
+    #[tokio::test]
+    async fn runtime_carve_out_game_quit_to_menu_consumes_request() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(GameQuitToMenu);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime.app.world().resource::<GameQuitToMenuRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume GameQuitToMenuRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameQuitToMenu must not stage a legacy command"
+        );
+    }
+
+    /// `GameRestartLevel` carve-out: same request pattern as
+    /// `GameQuitToMenu`.
+    #[tokio::test]
+    async fn runtime_carve_out_game_restart_level_consumes_request() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(GameRestartLevel);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime.app.world().resource::<GameRestartLevelRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume GameRestartLevelRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameRestartLevel must not stage a legacy command"
+        );
+    }
+
+    /// `GameSetPracticeCheckpoint` carve-out: same request pattern
+    /// as `GameQuitToMenu`.
+    #[tokio::test]
+    async fn runtime_carve_out_game_set_practice_checkpoint_consumes_request() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(GameSetPracticeCheckpoint);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime
+            .app
+            .world()
+            .resource::<GameSetPracticeCheckpointRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume GameSetPracticeCheckpointRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameSetPracticeCheckpoint must not stage a legacy command"
+        );
+    }
+
+    /// `GameRemovePracticeCheckpoint` carve-out: same request
+    /// pattern as `GameQuitToMenu`.
+    #[tokio::test]
+    async fn runtime_carve_out_game_remove_practice_checkpoint_consumes_request() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(GameRemovePracticeCheckpoint);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let request = runtime
+            .app
+            .world()
+            .resource::<GameRemovePracticeCheckpointRequest>();
+        assert!(
+            !request.pending,
+            "runtime must consume GameRemovePracticeCheckpointRequest after applying it"
+        );
+        let pending = runtime.app.world().resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameRemovePracticeCheckpoint must not stage a legacy command"
         );
     }
 

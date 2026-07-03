@@ -326,3 +326,106 @@ impl AuthOpenSignupRequest {
         pending
     }
 }
+
+/// App-world request to quit the current real gameplay level from the
+/// pause menu and return to the menu phase.
+///
+/// The quit side effect calls `State::back_to_menu`, which stops
+/// audio, resets the gameplay state, and transitions to the menu
+/// phase. The side effect stays legacy-owned for the carve-out.
+/// Phase 3.48 routes the message through this request resource
+/// instead of staging `AppCommand::GameQuitToMenu` in
+/// `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct GameQuitToMenuRequest {
+    pub pending: bool,
+}
+
+impl GameQuitToMenuRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to restart the current real gameplay level from
+/// the pause menu.
+///
+/// The restart side effect calls `State::restart_level`, which
+/// resets the gameplay clock, replayed objects, and audio. The
+/// side effect stays legacy-owned for the carve-out. Phase 3.48
+/// routes the message through this request resource instead of
+/// staging `AppCommand::GameRestartLevel` in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct GameRestartLevelRequest {
+    pub pending: bool,
+}
+
+impl GameRestartLevelRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to record the current gameplay position as a
+/// practice-mode checkpoint.
+///
+/// The checkpoint side effect calls
+/// `State::set_practice_checkpoint`, which appends a checkpoint to
+/// `session.practice_checkpoints` and rebuilds the checkpoint
+/// vertex meshes. The side effect stays legacy-owned for the
+/// carve-out. Phase 3.48 routes the message through this request
+/// resource instead of staging `AppCommand::GameSetPracticeCheckpoint`
+/// in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct GameSetPracticeCheckpointRequest {
+    pub pending: bool,
+}
+
+impl GameSetPracticeCheckpointRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
+/// App-world request to remove the latest practice-mode checkpoint.
+///
+/// The removal side effect calls
+/// `State::remove_practice_checkpoint`, which pops the latest
+/// checkpoint and rebuilds the checkpoint vertex meshes. The side
+/// effect stays legacy-owned for the carve-out. Phase 3.48 routes
+/// the message through this request resource instead of staging
+/// `AppCommand::GameRemovePracticeCheckpoint` in `PendingCommands`.
+#[derive(Resource, Default)]
+pub struct GameRemovePracticeCheckpointRequest {
+    pub pending: bool,
+}
+
+impl GameRemovePracticeCheckpointRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}

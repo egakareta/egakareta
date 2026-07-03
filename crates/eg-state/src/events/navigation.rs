@@ -26,7 +26,11 @@ use eg_types::AppPhase;
 
 use crate::commands::AppCommand;
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::{AppPhaseRes, EditorConfigRes, EditorInputRes, MenuStateRes, SessionStateRes};
+use crate::state::{
+    AppPhaseRes, EditorConfigRes, EditorInputRes, GameQuitToMenuRequest,
+    GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
+    MenuStateRes, SessionStateRes,
+};
 
 /// Primary action: in menu → start level, in game → turn, in editor → place block.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -64,12 +68,6 @@ pub struct GameResume;
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameRestartLevel;
 
-impl ToLegacy for GameRestartLevel {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameRestartLevel)
-    }
-}
-
 /// Enable or disable practice mode for the current real gameplay level.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct GameSetPracticeMode {
@@ -80,31 +78,13 @@ pub struct GameSetPracticeMode {
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameSetPracticeCheckpoint;
 
-impl ToLegacy for GameSetPracticeCheckpoint {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameSetPracticeCheckpoint)
-    }
-}
-
 /// Remove the latest practice-mode checkpoint.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameRemovePracticeCheckpoint;
 
-impl ToLegacy for GameRemovePracticeCheckpoint {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameRemovePracticeCheckpoint)
-    }
-}
-
 /// Quit the current real gameplay level from the pause menu.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameQuitToMenu;
-
-impl ToLegacy for GameQuitToMenu {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameQuitToMenu)
-    }
-}
 
 pub fn register_events(app: &mut App) {
     app.add_message::<TurnRight>()
@@ -210,12 +190,23 @@ pub fn handle_game_resume(
     }
 }
 
+// `GameRestartLevel` is a Phase 3.48 carve-out from the
+// `PendingCommands` → `State::dispatch` pipeline (same
+// request-resource pattern as
+// `events::auth::handle_resize_surface` and
+// `events::misc::handle_escape`): the handler writes
+// `GameRestartLevelRequest.pending = true` and
+// `Runtime::sync_app_game_restart_level_request` consumes the request
+// before the remaining `PendingCommands` drain and calls the
+// existing legacy `State::apply_game_restart_level` compatibility
+// method. The restart side effect (gameplay clock reset, audio
+// restart) stays legacy-owned.
 pub fn handle_game_restart_level(
     mut events: MessageReader<GameRestartLevel>,
-    mut pending: ResMut<PendingCommands>,
+    mut restart_request: ResMut<GameRestartLevelRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::GameRestartLevel);
+        restart_request.request();
     }
 }
 
@@ -237,33 +228,52 @@ pub fn handle_game_set_practice_mode(
     }
 }
 
+// `GameSetPracticeCheckpoint` is a Phase 3.48 carve-out: same
+// request-resource pattern as `GameRestartLevel`. The handler
+// writes `GameSetPracticeCheckpointRequest.pending = true` and
+// `Runtime::sync_app_game_set_practice_checkpoint_request` consumes
+// the request and calls the existing legacy
+// `State::apply_game_set_practice_checkpoint` compatibility method.
+// The checkpoint side effect (session.practice_checkpoints.push +
+// vertex rebuild) stays legacy-owned.
 pub fn handle_game_set_practice_checkpoint(
     mut events: MessageReader<GameSetPracticeCheckpoint>,
-    mut pending: ResMut<PendingCommands>,
+    mut checkpoint_request: ResMut<GameSetPracticeCheckpointRequest>,
 ) {
     for _ in events.read() {
-        pending
-            .app_commands
-            .push(AppCommand::GameSetPracticeCheckpoint);
+        checkpoint_request.request();
     }
 }
 
+// `GameRemovePracticeCheckpoint` is a Phase 3.48 carve-out: same
+// request-resource pattern as `GameRestartLevel`. The handler
+// writes `GameRemovePracticeCheckpointRequest.pending = true` and
+// `Runtime::sync_app_game_remove_practice_checkpoint_request`
+// consumes the request and calls the existing legacy
+// `State::apply_game_remove_practice_checkpoint` compatibility
+// method. The pop + vertex rebuild side effect stays legacy-owned.
 pub fn handle_game_remove_practice_checkpoint(
     mut events: MessageReader<GameRemovePracticeCheckpoint>,
-    mut pending: ResMut<PendingCommands>,
+    mut remove_request: ResMut<GameRemovePracticeCheckpointRequest>,
 ) {
     for _ in events.read() {
-        pending
-            .app_commands
-            .push(AppCommand::GameRemovePracticeCheckpoint);
+        remove_request.request();
     }
 }
 
+// `GameQuitToMenu` is a Phase 3.48 carve-out: same request-resource
+// pattern as `GameRestartLevel`. The handler writes
+// `GameQuitToMenuRequest.pending = true` and
+// `Runtime::sync_app_game_quit_to_menu_request` consumes the
+// request and calls the existing legacy
+// `State::apply_game_quit_to_menu` compatibility method. The
+// `back_to_menu` side effect (phase change + audio stop + gameplay
+// state reset) stays legacy-owned.
 pub fn handle_game_quit_to_menu(
     mut events: MessageReader<GameQuitToMenu>,
-    mut pending: ResMut<PendingCommands>,
+    mut quit_request: ResMut<GameQuitToMenuRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::GameQuitToMenu);
+        quit_request.request();
     }
 }

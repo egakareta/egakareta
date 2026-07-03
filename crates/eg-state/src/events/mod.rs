@@ -557,6 +557,10 @@ mod tests {
         world.init_resource::<crate::state::AuthSubmitSignInRequest>();
         world.init_resource::<crate::state::AuthSignOutRequest>();
         world.init_resource::<crate::state::AuthOpenSignupRequest>();
+        world.init_resource::<crate::state::GameQuitToMenuRequest>();
+        world.init_resource::<crate::state::GameRestartLevelRequest>();
+        world.init_resource::<crate::state::GameSetPracticeCheckpointRequest>();
+        world.init_resource::<crate::state::GameRemovePracticeCheckpointRequest>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -689,6 +693,114 @@ mod tests {
         assert!(
             pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
             "AuthOpenSignup must not stage a legacy command"
+        );
+    }
+
+    // --- Phase 3.48 / Navigation request carve-out tests ---
+    //
+    // The `GameQuitToMenu`, `GameRestartLevel`,
+    // `GameSetPracticeCheckpoint`, and `GameRemovePracticeCheckpoint`
+    // handlers in `events::navigation` write to dedicated request
+    // resources instead of staging `AppCommand`s in `PendingCommands`.
+    // The runtime sync consumes each request before
+    // `dispatch_app_pending_commands` runs and calls the existing
+    // legacy `State::apply_game_*` compatibility methods. The
+    // schedule-level tests below pin the request is set and no
+    // legacy command is staged.
+
+    use crate::events::navigation::{
+        GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
+    };
+
+    /// `GameQuitToMenu` is a carve-out: the handler writes
+    /// `GameQuitToMenuRequest.pending = true`. Pin the request is
+    /// set and no legacy command is staged.
+    #[test]
+    fn carve_out_game_quit_to_menu_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(GameQuitToMenu);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::GameQuitToMenuRequest>()
+                .pending,
+            "GameQuitToMenu handler must request an App-world quit-to-menu"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameQuitToMenu must not stage a legacy command"
+        );
+    }
+
+    /// `GameRestartLevel` is a carve-out: the handler writes
+    /// `GameRestartLevelRequest.pending = true`. Pin the request is
+    /// set and no legacy command is staged.
+    #[test]
+    fn carve_out_game_restart_level_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(GameRestartLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::GameRestartLevelRequest>()
+                .pending,
+            "GameRestartLevel handler must request an App-world level restart"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameRestartLevel must not stage a legacy command"
+        );
+    }
+
+    /// `GameSetPracticeCheckpoint` is a carve-out: the handler
+    /// writes `GameSetPracticeCheckpointRequest.pending = true`.
+    /// Pin the request is set and no legacy command is staged.
+    #[test]
+    fn carve_out_game_set_practice_checkpoint_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(GameSetPracticeCheckpoint);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::GameSetPracticeCheckpointRequest>()
+                .pending,
+            "GameSetPracticeCheckpoint handler must request an App-world checkpoint"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameSetPracticeCheckpoint must not stage a legacy command"
+        );
+    }
+
+    /// `GameRemovePracticeCheckpoint` is a carve-out: the handler
+    /// writes `GameRemovePracticeCheckpointRequest.pending = true`.
+    /// Pin the request is set and no legacy command is staged.
+    #[test]
+    fn carve_out_game_remove_practice_checkpoint_writes_request() {
+        let mut world = build_event_world();
+        world.write_message(GameRemovePracticeCheckpoint);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::GameRemovePracticeCheckpointRequest>()
+                .pending,
+            "GameRemovePracticeCheckpoint handler must request an App-world checkpoint removal"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "GameRemovePracticeCheckpoint must not stage a legacy command"
         );
     }
 

@@ -161,6 +161,52 @@ impl State {
         self.back_to_menu();
     }
 
+    /// Phase 3.48: public wrapper for `quit_game_from_pause`. The
+    /// App-world `GameQuitToMenu` message handler writes
+    /// `GameQuitToMenuRequest`; the runtime sync calls this method
+    /// (instead of draining `AppCommand::GameQuitToMenu` through
+    /// `PendingCommands`) so the phase + audio side effects stay
+    /// reachable from the App world without the legacy command
+    /// bridge.
+    pub fn apply_game_quit_to_menu(&mut self) {
+        self.quit_game_from_pause();
+    }
+
+    /// Phase 3.48: public wrapper for `restart_game_from_pause`. The
+    /// App-world `GameRestartLevel` message handler writes
+    /// `GameRestartLevelRequest`; the runtime sync calls this method
+    /// (instead of draining `AppCommand::GameRestartLevel` through
+    /// `PendingCommands`) so the gameplay restart + audio side
+    /// effects stay reachable from the App world without the legacy
+    /// command bridge.
+    pub fn apply_game_restart_level(&mut self) {
+        self.restart_game_from_pause();
+    }
+
+    /// Phase 3.48: public wrapper for `set_practice_checkpoint`. The
+    /// App-world `GameSetPracticeCheckpoint` message handler writes
+    /// `GameSetPracticeCheckpointRequest`; the runtime sync calls
+    /// this method (instead of draining
+    /// `AppCommand::GameSetPracticeCheckpoint` through
+    /// `PendingCommands`) so the practice-checkpoint append + vertex
+    /// rebuild side effects stay reachable from the App world
+    /// without the legacy command bridge.
+    pub fn apply_game_set_practice_checkpoint(&mut self) {
+        self.set_practice_checkpoint();
+    }
+
+    /// Phase 3.48: public wrapper for `remove_practice_checkpoint`.
+    /// The App-world `GameRemovePracticeCheckpoint` message handler
+    /// writes `GameRemovePracticeCheckpointRequest`; the runtime sync
+    /// calls this method (instead of draining
+    /// `AppCommand::GameRemovePracticeCheckpoint` through
+    /// `PendingCommands`) so the practice-checkpoint pop + vertex
+    /// rebuild side effects stay reachable from the App world without
+    /// the legacy command bridge.
+    pub fn apply_game_remove_practice_checkpoint(&mut self) {
+        self.remove_practice_checkpoint();
+    }
+
     /// Translate a keyboard event into zero or more `AppCommand`s and
     /// execute them. This replaces the monolithic `handle_keyboard_input`.
     pub fn process_keyboard_input(&mut self, key: &str, pressed: bool, just_pressed: bool) {
