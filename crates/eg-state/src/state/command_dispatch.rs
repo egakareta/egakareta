@@ -39,11 +39,7 @@ impl State {
             AppCommand::AuthSubmitSignIn => self.submit_auth_sign_in(),
             AppCommand::AuthSignOut => self.sign_out_auth_session(),
             AppCommand::AuthOpenSignup => self.open_auth_signup_page(),
-            AppCommand::CopyLatestPerfFrame => {
-                if let Some(text) = self.format_latest_frame() {
-                    let _ = bevy_clipboard::Clipboard::default().set_text(text);
-                }
-            }
+            AppCommand::CopyLatestPerfFrame => self.copy_latest_perf_frame_to_clipboard(),
 
             AppCommand::ResizeSurface { width, height } => {
                 self.resize_surface(eg_types::PhysicalSize::new(width, height));
@@ -75,7 +71,7 @@ impl State {
         self.pause_game_audio();
     }
 
-    fn resume_game(&mut self) {
+    pub(super) fn resume_game(&mut self) {
         if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
             return;
         }

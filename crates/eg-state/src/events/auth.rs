@@ -10,9 +10,11 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use eg_types::PhysicalSize;
 
 use crate::commands::AppCommand;
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
+use crate::state::{PerfFrameCopyRequest, RenderResizeRequest};
 
 /// Start the browser sign-in flow.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -48,26 +50,11 @@ impl ToLegacy for AuthOpenSignup {
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct CopyLatestPerfFrame;
 
-impl ToLegacy for CopyLatestPerfFrame {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::CopyLatestPerfFrame)
-    }
-}
-
 /// Resize render surface to the specified dimensions.
 #[derive(Message, Debug, Clone, Copy)]
 pub struct ResizeSurface {
     pub width: u32,
     pub height: u32,
-}
-
-impl ToLegacy for ResizeSurface {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::ResizeSurface {
-            width: self.width,
-            height: self.height,
-        })
-    }
 }
 
 pub fn register_events(app: &mut App) {
@@ -111,21 +98,18 @@ pub fn handle_auth_open_signup(
 
 pub fn handle_copy_latest_perf_frame(
     mut events: MessageReader<CopyLatestPerfFrame>,
-    mut pending: ResMut<PendingCommands>,
+    mut copy_request: ResMut<PerfFrameCopyRequest>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::CopyLatestPerfFrame);
+        copy_request.request();
     }
 }
 
 pub fn handle_resize_surface(
     mut events: MessageReader<ResizeSurface>,
-    mut pending: ResMut<PendingCommands>,
+    mut resize: ResMut<RenderResizeRequest>,
 ) {
     for event in events.read() {
-        pending.app_commands.push(AppCommand::ResizeSurface {
-            width: event.width,
-            height: event.height,
-        });
+        resize.request(PhysicalSize::new(event.width, event.height));
     }
 }

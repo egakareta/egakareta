@@ -13,17 +13,26 @@
 //! and `events::bpm`). The handlers mutate
 //! `SessionStateRes.0` directly:
 //!
+//! - `RenameLevel` -> `session.editor_level_name`
 //! - `SetShowMetadata` -> `session.editor_show_metadata`
 //! - `SetShowSettings` -> `session.editor_show_settings`
 //! - `ToggleSettings` -> toggles `session.editor_show_settings`
 //! - `SetSettingsSection` -> `session.editor_settings_section`
+//! - `SetGraphicsBackend` -> `session.app_settings.graphics_backend`
 //! - `SetKeybindCapture` -> `session.editor_keybind_capture_action`
+//! - `SetKeybind` / `ClearKeybindSlot` / `ResetKeybind` /
+//!   `ResetKeybinds` -> `session.app_settings.keybinds`
+//! - `SetUiScaleMultiplier` -> `session.app_settings.ui_scale_multiplier`
+//! - `UpdateMusic` -> `session.editor_music_metadata`
+//! - `UpdateCreatorMetadata` -> `session.editor_creator_metadata`
+//! - `UpdateSkyColor` -> `session.editor_sky_color`
+//! - `CaptureMenuPreviewCamera` / `UseAutoMenuPreviewCamera` ->
+//!   `session.editor_menu_preview_camera`
 //!
-//! The other session events (`LoadLevel`, `RenameLevel`,
-//! `SetKeybind`, `SetGraphicsBackend`, ...) keep the legacy
-//! `PendingCommands` path because their legacy setters have
-//! out-of-process side effects (level load, file IO, settings
-//! persist, audio backend switch).
+//! The other session events (`LoadLevel`, `SetAudioBackend`, ...)
+//! keep the legacy `PendingCommands` path because their legacy setters
+//! have out-of-process side effects (level load, file IO, audio
+//! backend switch).
 //!
 //! `Runtime::sync_app_session_state` propagates the carved-out
 //! fields back to the legacy `State.session` each frame so any
@@ -32,11 +41,14 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use eg_types::{BasicLevelMetadata, MusicMetadata, SettingsSection};
+use eg_types::{
+    AppPhase, AppSettings, BasicLevelMetadata, LevelPreviewCameraMetadata, MusicMetadata,
+    SettingsSection,
+};
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::SessionStateRes;
 use crate::state::editor_command::EditorCommand;
+use crate::state::{AppPhaseRes, EditorCameraRes, SessionStateRes};
 
 /// Load a level from a builtin resource name.
 #[derive(Message, Debug, Clone)]
@@ -314,12 +326,10 @@ pub fn handle_load_level(
 
 pub fn handle_rename_level(
     mut events: MessageReader<RenameLevel>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::RenameLevel(event.0.clone()));
+        session.editor_level_name = Some(event.0.clone());
     }
 }
 
@@ -370,12 +380,14 @@ pub fn handle_set_settings_section(
 
 pub fn handle_set_graphics_backend(
     mut events: MessageReader<SetGraphicsBackend>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetGraphicsBackend(event.0.clone()));
+        if session.graphics_backend_locked || session.app_settings.graphics_backend == event.0 {
+            continue;
+        }
+        session.app_settings.graphics_backend = event.0.clone();
+        session.settings_restart_required = true;
     }
 }
 
@@ -392,12 +404,10 @@ pub fn handle_set_audio_backend(
 
 pub fn handle_set_ui_scale_multiplier(
     mut events: MessageReader<SetUiScaleMultiplier>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetUiScaleMultiplier(event.0));
+        session.app_settings.ui_scale_multiplier = AppSettings::clamp_ui_scale_multiplier(event.0);
     }
 }
 
@@ -412,48 +422,41 @@ pub fn handle_set_keybind_capture(
 
 pub fn handle_set_keybind(
     mut events: MessageReader<SetKeybind>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending.editor_commands.push(EditorCommand::SetKeybind {
-            action: event.action.clone(),
-            slot: event.slot,
-            chord: event.chord.clone(),
-        });
+        session
+            .app_settings
+            .set_keybind_at_slot(&event.action, event.slot, event.chord.clone());
     }
 }
 
 pub fn handle_clear_keybind_slot(
     mut events: MessageReader<ClearKeybindSlot>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::ClearKeybindSlot {
-                action: event.action.clone(),
-                slot: event.slot,
-            });
+        session
+            .app_settings
+            .clear_keybind_slot(&event.action, event.slot);
     }
 }
 
 pub fn handle_reset_keybind(
     mut events: MessageReader<ResetKeybind>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::ResetKeybind(event.0.clone()));
+        session.app_settings.reset_keybind(&event.0);
     }
 }
 
 pub fn handle_reset_keybinds(
     mut events: MessageReader<ResetKeybinds>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::ResetKeybinds);
+        session.app_settings.reset_essential_keybinds();
     }
 }
 
@@ -468,34 +471,28 @@ pub fn handle_complete_import(
 
 pub fn handle_update_music(
     mut events: MessageReader<UpdateMusic>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::UpdateMusic(event.0.clone()));
+        session.editor_music_metadata = event.0.clone();
     }
 }
 
 pub fn handle_update_creator_metadata(
     mut events: MessageReader<UpdateCreatorMetadata>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::UpdateCreatorMetadata(event.0.clone()));
+        session.editor_creator_metadata = event.0.clone();
     }
 }
 
 pub fn handle_update_sky_color(
     mut events: MessageReader<UpdateSkyColor>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::UpdateSkyColor(event.0));
+        session.editor_sky_color = event.0.map(|component| component.clamp(0.0, 1.0));
     }
 }
 
@@ -512,22 +509,34 @@ pub fn handle_trigger_audio_import(
 
 pub fn handle_capture_menu_preview_camera(
     mut events: MessageReader<CaptureMenuPreviewCamera>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    camera: Res<EditorCameraRes>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::CaptureMenuPreviewCamera);
+        if phase.current != AppPhase::Editor {
+            continue;
+        }
+
+        let camera = &camera.0;
+        let target = camera.editor_camera_target();
+        let position = (target + camera.editor_camera_offset()).to_array();
+        session.editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+            position,
+            target: target.to_array(),
+        });
     }
 }
 
 pub fn handle_use_auto_menu_preview_camera(
     mut events: MessageReader<UseAutoMenuPreviewCamera>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::UseAutoMenuPreviewCamera);
+        if phase.current != AppPhase::Editor {
+            continue;
+        }
+        session.editor_menu_preview_camera = None;
     }
 }

@@ -76,12 +76,13 @@ pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
     register_state_command_pipeline, run_state_schedule_in_world, setup_state_app,
 };
+pub use render::resources::RenderResizeRequest;
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    MenuStateRes, PerfRes, SessionStateRes,
+    MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::UiStateSnapshot;
 
@@ -282,6 +283,87 @@ impl State {
     /// [`StateSchedule`] runs.
     pub fn prepare_app_world_for_state_schedule(&mut self, world: &mut bevy_ecs::world::World) {
         puffin::profile_scope!("StateSchedule");
+        // Phase 3.17: `SetSelectedTap` is an App-world carve-out, but
+        // tap insertion/removal/time-edit history still lives on the
+        // legacy `State`. Mirror the tap arrays into
+        // `EditorTimelineRes` before the schedule runs so the handler
+        // can validate and select against the current legacy-owned data.
+        {
+            let mut timeline = world.resource_mut::<EditorTimelineRes>();
+            timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
+            timeline.0.taps.tap_indicator_positions =
+                self.editor.timeline.taps.tap_indicator_positions.clone();
+            timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
+            timeline.0.playback.playing = self.editor.timeline.playback.playing;
+            timeline.0.playback.runtime = None;
+            timeline.0.playback.pending_seek_time_seconds =
+                self.editor.timeline.playback.pending_seek_time_seconds;
+            timeline.0.playback.seek_resync_cooldown_seconds =
+                self.editor.timeline.playback.seek_resync_cooldown_seconds;
+        }
+        {
+            let mut runtime = world.resource_mut::<EditorRuntimeRes>();
+            runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
+        }
+        // Phase 3.26: menu next/previous level messages can mutate
+        // `MenuStateRes.selected_level` directly while most menu
+        // reads still go through legacy `State.menu`. Mirror the
+        // legacy selection before the schedule runs so a stale App
+        // resource cannot clobber a legacy direct update on a no-op
+        // frame. Some state tests build a minimal App without
+        // `MenuStateRes`, so this mirror is conditional until the menu
+        // resource is inserted by all constructors.
+        if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
+            menu.0.selected_level = self.menu.state.selected_level;
+            menu.0.levels = self.menu.state.levels.clone();
+        }
+        // Phase 3.18: `GameResume` is an App-world carve-out, but
+        // pausing still happens through legacy paths such as Escape.
+        // Mirror the legacy pause flag before the schedule runs so a
+        // stale `SessionStateRes` cannot immediately undo a legacy
+        // pause on the next frame. The resume handler can still clear
+        // the resource during the schedule, and the runtime sync below
+        // applies the legacy resume side effects once.
+        world.resource_mut::<SessionStateRes>().game_paused = self.session.game_paused;
+        // Phase 3.19 / 3.24: settings carve-outs mutate fields on
+        // `SessionStateRes.app_settings` directly, while some tests
+        // and temporary callers can still mutate the legacy settings
+        // object directly. Mirror the carved-out settings before the
+        // schedule runs so stale App settings cannot clobber a legacy
+        // update on a no-op frame.
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.app_settings.ui_scale_multiplier =
+                self.session.app_settings.ui_scale_multiplier;
+            session.app_settings.keybinds = self.session.app_settings.keybinds.clone();
+        }
+        // Phase 3.23: `SetGraphicsBackend` mutates
+        // `SessionStateRes.app_settings.graphics_backend` and
+        // `settings_restart_required` directly. Mirror the legacy
+        // preference + lock before the schedule runs so stale App
+        // settings cannot clobber a legacy update, and so the direct
+        // handler honors the same lock guard as the legacy setter.
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.app_settings.graphics_backend =
+                self.session.app_settings.graphics_backend.clone();
+            session.settings_restart_required = self.session.settings_restart_required;
+            session.graphics_backend_locked = self.session.graphics_backend_locked;
+        }
+        // Phase 3.20-3.22 / 3.25: basic session metadata messages
+        // (`RenameLevel`, `UpdateMusic`, `UpdateCreatorMetadata`,
+        // `UpdateSkyColor`, menu-preview camera messages) are
+        // App-world session carve-outs. Mirror the legacy metadata
+        // before the schedule runs so a stale App resource cannot
+        // clobber a legacy direct update on a no-message frame.
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.editor_level_name = self.session.editor_level_name.clone();
+            session.editor_music_metadata = self.session.editor_music_metadata.clone();
+            session.editor_sky_color = self.session.editor_sky_color;
+            session.editor_creator_metadata = self.session.editor_creator_metadata.clone();
+            session.editor_menu_preview_camera = self.session.editor_menu_preview_camera.clone();
+        }
         // Phase 4a/4b: install the per-frame mirror closure. The
         // closure captures only the `Copy` values it needs (uniforms,
         // phase, editor mode, sky color, gamma toggle) — `State`

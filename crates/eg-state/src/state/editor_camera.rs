@@ -58,6 +58,14 @@ impl Clone for EditorCameraState {
 }
 
 impl EditorCameraState {
+    pub fn editor_camera_target(&self) -> Vec3 {
+        Vec3::new(self.editor_pan[0], self.editor_target_z, self.editor_pan[1])
+    }
+
+    pub fn editor_camera_offset(&self) -> Vec3 {
+        editor_camera_offset_for_pose(self.editor_yaw, self.editor_pitch)
+    }
+
     /// Install a new camera transition (Phase 3.11 carve-out
     /// helper). Equivalent to constructing
     /// `CameraTransition { ... }` and assigning it to

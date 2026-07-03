@@ -6,12 +6,43 @@
 
 */
 //! Timeline / playback / tap events.
+//!
+//! Phase 3.16 carves out the pure timeline-setting messages that only
+//! mutate App-world resource fields and already have matching legacy
+//! setters/getters:
+//! - `ShiftTimeline` and `SetTimelineTime` write
+//!   `EditorTimelineRes.0.clock.time_seconds`
+//! - `SetTimelineDuration` writes
+//!   `EditorTimelineRes.0.clock.{duration_seconds,time_seconds}`
+//! - `SetSelectedTap` writes
+//!   `EditorTimelineRes.0.taps.selected_index`
+//! - `SetSelectedTapTime` reorders
+//!   `EditorTimelineRes.0.taps.{tap_times,tap_indicator_positions}`,
+//!   updates `EditorTimelineRes.0.clock.time_seconds`, and moves
+//!   `EditorInputRes.0.cursor`
+//! - `RemoveTap` and `RemoveTapAt` remove from
+//!   `EditorTimelineRes.0.taps.{tap_times,tap_indicator_positions}`
+//!   and adjust `selected_index`
+//! - `ToggleTimelinePlayback` toggles
+//!   `EditorTimelineRes.0.playback.playing`, clears playback seek state,
+//!   and swaps `EditorInputRes.0.mode` through `EditorRuntimeRes`
+//! - `SetPlaybackSpeed`, `SetWaveformZoom`, and `SetWaveformScroll`
+//!   write `EditorTimingRes.0.{playback_speed,waveform_zoom,waveform_scroll}`
+//!
+//! The remaining timeline message (`Playtest`) stays on the `PendingCommands`
+//! path because it still routes through legacy phase/gameplay/audio startup
+//! state machines that need a dedicated App-world ownership pass.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use eg_editor_domain::{add_tap_with_indicator, remove_tap_with_indicator};
+use eg_types::{AppPhase, EditorMode};
 
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
 use crate::state::editor_command::EditorCommand;
+use crate::state::{
+    AppPhaseRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
+};
 
 /// Toggle timeline playback.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -176,135 +207,213 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_toggle_timeline_playback(
     mut events: MessageReader<ToggleTimelinePlayback>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut runtime: ResMut<EditorRuntimeRes>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for _ in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::ToggleTimelinePlayback);
+        if phase.current != AppPhase::Editor {
+            continue;
+        }
+
+        timeline.0.playback.playing = !timeline.0.playback.playing;
+        timeline.0.playback.runtime = None;
+        timeline.0.playback.pending_seek_time_seconds = None;
+        timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+
+        if timeline.0.playback.playing {
+            runtime.0.interaction.last_mode = Some(input.0.mode);
+            input.0.mode = EditorMode::Null;
+        } else {
+            input.0.mode = runtime
+                .0
+                .interaction
+                .last_mode
+                .take()
+                .unwrap_or(EditorMode::Place);
+        }
     }
 }
 
 pub fn handle_shift_timeline(
     mut events: MessageReader<ShiftTimeline>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::ShiftTimeline(event.0));
+        let current_time = timeline.0.clock.time_seconds;
+        let next_time = (current_time + event.0).clamp(0.0, timeline.0.clock.duration_seconds);
+        timeline.0.clock.time_seconds = next_time;
     }
 }
 
 pub fn handle_set_timeline_time(
     mut events: MessageReader<SetTimelineTime>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetTimelineTime(event.0));
+        timeline.0.clock.time_seconds = event.0.clamp(0.0, timeline.0.clock.duration_seconds);
     }
 }
 
 pub fn handle_set_timeline_duration(
     mut events: MessageReader<SetTimelineDuration>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetTimelineDuration(event.0));
+        timeline.0.clock.duration_seconds = event.0.max(0.1);
+        timeline.0.clock.time_seconds = timeline
+            .0
+            .clock
+            .time_seconds
+            .min(timeline.0.clock.duration_seconds);
     }
 }
 
-pub fn handle_add_tap(mut events: MessageReader<AddTap>, mut pending: ResMut<PendingCommands>) {
+pub fn handle_add_tap(mut events: MessageReader<AddTap>, mut timeline: ResMut<EditorTimelineRes>) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::AddTap);
+        let time_seconds = timeline.0.clock.time_seconds;
+        let indicator_position = tap_indicator_position_from_world(timeline.0.preview.position);
+        let selected_index = {
+            let taps = &mut timeline.0.taps;
+            add_tap_with_indicator(
+                &mut taps.tap_times,
+                &mut taps.tap_indicator_positions,
+                time_seconds,
+                indicator_position,
+            )
+        };
+        timeline.0.taps.selected_index = selected_index;
     }
 }
 
 pub fn handle_remove_tap(
     mut events: MessageReader<RemoveTap>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::RemoveTap);
+        let time_seconds = timeline.0.clock.time_seconds;
+        remove_tap_at_time(&mut timeline, time_seconds);
     }
 }
 
 pub fn handle_remove_tap_at(
     mut events: MessageReader<RemoveTapAt>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::RemoveTapAt(event.0));
+        remove_tap_at_time(&mut timeline, event.0);
     }
+}
+
+fn remove_tap_at_time(timeline: &mut EditorTimelineRes, time_seconds: f32) {
+    if let Some(removed_index) = remove_tap_with_indicator(
+        &mut timeline.0.taps.tap_times,
+        &mut timeline.0.taps.tap_indicator_positions,
+        time_seconds,
+    ) {
+        timeline.0.taps.selected_index = match timeline.0.taps.selected_index {
+            Some(selected_index) if selected_index == removed_index => None,
+            Some(selected_index) if selected_index > removed_index => Some(selected_index - 1),
+            selected_index => selected_index,
+        };
+    }
+}
+
+fn tap_indicator_position_from_world(position: [f32; 3]) -> [f32; 3] {
+    [position[0] - 0.5, position[1], position[2] - 0.5]
 }
 
 pub fn handle_set_selected_tap(
     mut events: MessageReader<SetSelectedTap>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSelectedTap(event.0));
+        timeline.0.taps.selected_index = event.0.filter(|index| {
+            *index < timeline.0.taps.tap_times.len()
+                && *index < timeline.0.taps.tap_indicator_positions.len()
+        });
     }
 }
 
 pub fn handle_set_selected_tap_time(
     mut events: MessageReader<SetSelectedTapTime>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetSelectedTapTime(event.0));
+        if phase.current != AppPhase::Editor || !event.0.is_finite() {
+            continue;
+        }
+
+        let duration_seconds = timeline.0.clock.duration_seconds.max(0.0);
+        let next_time = event.0.clamp(0.0, duration_seconds);
+        let taps = &mut timeline.0.taps;
+        let Some(selected_index) = taps.selected_index else {
+            continue;
+        };
+        if selected_index >= taps.tap_times.len()
+            || selected_index >= taps.tap_indicator_positions.len()
+        {
+            continue;
+        }
+
+        let old_time_seconds = taps.tap_times[selected_index];
+        if (old_time_seconds - next_time).abs() <= 0.0001 {
+            continue;
+        }
+
+        let selected_position = taps.tap_indicator_positions[selected_index];
+        taps.tap_times.remove(selected_index);
+        taps.tap_indicator_positions.remove(selected_index);
+        let next_index = taps
+            .tap_times
+            .partition_point(|time_seconds| *time_seconds < next_time);
+        taps.tap_times.insert(next_index, next_time);
+        taps.tap_indicator_positions
+            .insert(next_index, selected_position);
+        taps.selected_index = Some(next_index);
+        timeline.0.clock.time_seconds = next_time;
+        input.0.cursor = selected_position;
     }
 }
 
 pub fn handle_clear_taps(
     mut events: MessageReader<ClearTaps>,
-    mut pending: ResMut<PendingCommands>,
+    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for _ in events.read() {
-        pending.editor_commands.push(EditorCommand::ClearTaps);
+        timeline.0.taps.tap_times.clear();
+        timeline.0.taps.tap_indicator_positions.clear();
+        timeline.0.taps.selected_index = None;
     }
 }
 
 pub fn handle_set_playback_speed(
     mut events: MessageReader<SetPlaybackSpeed>,
-    mut pending: ResMut<PendingCommands>,
+    mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetPlaybackSpeed(event.0));
+        timing.0.playback_speed = event.0.clamp(0.1, 2.0);
     }
 }
 
 pub fn handle_set_waveform_zoom(
     mut events: MessageReader<SetWaveformZoom>,
-    mut pending: ResMut<PendingCommands>,
+    mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetWaveformZoom(event.0));
+        timing.0.waveform_zoom = event.0.clamp(0.1, 10.0);
     }
 }
 
 pub fn handle_set_waveform_scroll(
     mut events: MessageReader<SetWaveformScroll>,
-    mut pending: ResMut<PendingCommands>,
+    mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
-        pending
-            .editor_commands
-            .push(EditorCommand::SetWaveformScroll(event.0));
+        timing.0.waveform_scroll = event.0;
     }
 }
 

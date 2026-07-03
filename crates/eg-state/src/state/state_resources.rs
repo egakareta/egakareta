@@ -192,3 +192,25 @@ pub struct EditorHistoryRes(pub EditorHistoryState);
 /// from a system.
 #[derive(Resource, Default)]
 pub struct PerfRes(pub PerfState);
+
+/// App-world request to copy the latest profiler frame.
+///
+/// The latest frame data is still produced by the legacy `State.editor.perf`
+/// path, so Runtime consumes this request through the legacy formatter until
+/// perf frame ownership moves fully into App-world resources.
+#[derive(Resource, Default)]
+pub struct PerfFrameCopyRequest {
+    pub pending: bool,
+}
+
+impl PerfFrameCopyRequest {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}

@@ -40,7 +40,7 @@ use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    PerfRes, SessionStateRes,
+    PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 use super::{StateSchedule, transitions};
 
@@ -73,7 +73,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorTimingRes>()
             .init_resource::<EditorRuntimeRes>()
             .init_resource::<EditorHistoryRes>()
-            .init_resource::<PerfRes>();
+            .init_resource::<PerfRes>()
+            .init_resource::<PerfFrameCopyRequest>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -177,6 +178,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorRuntimeRes>();
     world.init_resource::<EditorHistoryRes>();
     world.init_resource::<PerfRes>();
+    world.init_resource::<PerfFrameCopyRequest>();
     super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
     // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,

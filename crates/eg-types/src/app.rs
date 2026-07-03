@@ -75,7 +75,7 @@ pub struct MenuState {
 }
 
 /// Manages cursor position, mode, and other editor-specific settings.
-#[derive(SmartDefault)]
+#[derive(Clone, SmartDefault)]
 pub struct EditorInputState {
     /// The cursor position, represented as a 3D coordinate in the level world space.
     pub cursor: [f32; 3],

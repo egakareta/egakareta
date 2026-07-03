@@ -69,10 +69,7 @@ pub fn handle_redo(mut events: MessageReader<Redo>, mut pending: ResMut<PendingC
 /// No-op handler for [`HistorySnapshot`]. Reserves the system slot in the
 /// `CommandSet` so a follow-up phase can wire a real pre-mutation
 /// snapshot system without re-orchestrating the schedule.
-pub fn handle_history_snapshot(
-    mut events: MessageReader<HistorySnapshot>,
-    _pending: ResMut<PendingCommands>,
-) {
+pub fn handle_history_snapshot(mut events: MessageReader<HistorySnapshot>) {
     // Drain the events so they don't accumulate frame-over-frame. No
     // command is generated — snapshots are written by a dedicated
     // pre-mutation system in a later phase.

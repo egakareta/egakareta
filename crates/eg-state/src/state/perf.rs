@@ -164,4 +164,10 @@ impl super::State {
     pub fn format_latest_frame(&self) -> Option<String> {
         self.editor.perf.format_latest_frame()
     }
+
+    pub fn copy_latest_perf_frame_to_clipboard(&self) {
+        if let Some(text) = self.format_latest_frame() {
+            let _ = bevy_clipboard::Clipboard::default().set_text(text);
+        }
+    }
 }

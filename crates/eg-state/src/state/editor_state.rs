@@ -688,6 +688,49 @@ impl State {
         self.editor.mode()
     }
 
+    /// Read-only view of the current selected tap index. Used by the
+    /// Phase 3.17 timeline-selection carve-out sync guard.
+    pub fn editor_selected_tap_index_value(&self) -> Option<usize> {
+        self.editor.timeline.taps.selected_index
+    }
+
+    /// Setter for the selected tap index. The Phase 3.17
+    /// timeline-selection carve-out syncs
+    /// `EditorTimelineRes.0.taps.selected_index` into this field via
+    /// `Runtime::sync_app_editor_timeline_state`.
+    pub fn set_editor_selected_tap_index(&mut self, selected_index: Option<usize>) {
+        self.editor_set_selected_tap_index(selected_index);
+    }
+
+    /// Sync tap arrays from the App-world timeline resource into the
+    /// legacy editor state. This is the temporary compatibility point
+    /// for direct tap-array handlers while history, preview caches, and
+    /// mesh rebuilds still live on `State`.
+    pub fn set_editor_tap_state(
+        &mut self,
+        tap_times: Vec<f32>,
+        tap_indicator_positions: Vec<[f32; 3]>,
+        selected_index: Option<usize>,
+    ) {
+        if self.editor.timeline.taps.tap_times == tap_times
+            && self.editor.timeline.taps.tap_indicator_positions == tap_indicator_positions
+            && self.editor.timeline.taps.selected_index == selected_index
+        {
+            return;
+        }
+
+        self.record_editor_history_state();
+        self.editor.timeline.taps.tap_times = tap_times;
+        self.editor.timeline.taps.tap_indicator_positions = tap_indicator_positions;
+        self.editor.set_selected_tap_index(selected_index);
+        self.editor.invalidate_samples();
+        self.refresh_editor_after_tap_change(None);
+        if let Some((_, _, selected_position)) = self.editor.selected_tap() {
+            self.editor.input.cursor = selected_position;
+            self.rebuild_editor_cursor_vertices();
+        }
+    }
+
     pub fn set_editor_ui_input_blocking_rects(
         &mut self,
         rects: Vec<[f32; 4]>,
@@ -740,6 +783,13 @@ impl State {
         super::EditorConfigRes(self.editor.config.clone())
     }
 
+    /// Snapshot the editor input state into an [`super::EditorInputRes`] so
+    /// App-world handlers that mutate input fields start from the same
+    /// cursor/mode/modifier state as the legacy `State`.
+    pub fn editor_input_resource(&self) -> super::EditorInputRes {
+        super::EditorInputRes(self.editor.input.clone())
+    }
+
     /// Snapshot the editor timing state into an
     /// [`super::EditorTimingRes`] so the App world can be seeded from
     /// the legacy `State` at construction time. Used for the bpm-tap
@@ -750,6 +800,36 @@ impl State {
     /// on the first frame for unchanged fields.
     pub fn editor_timing_resource(&self) -> super::EditorTimingRes {
         super::EditorTimingRes(self.editor.timing.clone())
+    }
+
+    /// Snapshot the editor timeline state into an
+    /// [`super::EditorTimelineRes`] so the App world can be seeded from
+    /// the legacy `State` at construction time. Used for the timeline
+    /// setting carve-out (see `events::timeline`): the timeline clock
+    /// fields live on `EditorTimelineRes`, and `Runtime::new` seeds the
+    /// resource from the legacy state so the change-guarded
+    /// `sync_app_editor_timeline_state` is a no-op on the first frame
+    /// for unchanged fields.
+    pub fn editor_timeline_resource(&self) -> super::EditorTimelineRes {
+        let mut timeline = super::EditorTimelineRes::default();
+        timeline.0.clock.time_seconds = self.editor.timeline.clock.time_seconds;
+        timeline.0.clock.duration_seconds = self.editor.timeline.clock.duration_seconds;
+        timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
+        timeline.0.taps.tap_indicator_positions =
+            self.editor.timeline.taps.tap_indicator_positions.clone();
+        timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
+        timeline.0.playback.playing = self.editor.timeline.playback.playing;
+        timeline.0.playback.pending_seek_time_seconds =
+            self.editor.timeline.playback.pending_seek_time_seconds;
+        timeline.0.playback.seek_resync_cooldown_seconds =
+            self.editor.timeline.playback.seek_resync_cooldown_seconds;
+        timeline
+    }
+
+    pub fn editor_runtime_resource(&self) -> super::EditorRuntimeRes {
+        let mut runtime = super::EditorRuntimeRes::default();
+        runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
+        runtime
     }
 
     /// Snapshot the simple UI-window fields of the legacy
@@ -764,8 +844,9 @@ impl State {
     /// `sync_app_session_state` is a no-op on the first frame for
     /// unchanged fields.
     ///
-    /// Also seeds `practice_mode_enabled` (Phase 3.15 navigation
-    /// carve-out — see `events::navigation::handle_game_set_practice_mode`).
+    /// Also seeds `game_paused` (Phase 3.18 `GameResume` carve-out)
+    /// and `practice_mode_enabled` (Phase 3.15 navigation carve-out —
+    /// see `events::navigation::handle_game_set_practice_mode`).
     /// Without this seed, a user who toggled practice mode on a
     /// previous frame would see the resource reset to `false` on
     /// the first frame, and the change-guarded sync would then
@@ -784,6 +865,10 @@ impl State {
             editor_show_settings: self.session.editor_show_settings,
             editor_settings_section: self.session.editor_settings_section,
             editor_keybind_capture_action: self.session.editor_keybind_capture_action.clone(),
+            app_settings: self.session.app_settings.clone(),
+            settings_restart_required: self.session.settings_restart_required,
+            graphics_backend_locked: self.session.graphics_backend_locked,
+            game_paused: self.session.game_paused,
             practice_mode_enabled: self.is_practice_mode_enabled(),
             ..Default::default()
         }
@@ -999,6 +1084,10 @@ impl State {
         self.editor.is_playing()
     }
 
+    pub fn editor_playback_last_mode(&self) -> Option<EditorMode> {
+        self.editor.runtime.interaction.last_mode
+    }
+
     /// Returns the current playback time of the editor timeline in seconds.
     pub fn editor_timeline_time_seconds(&self) -> f32 {
         self.editor.timeline_time_seconds()
@@ -1012,6 +1101,10 @@ impl State {
     /// Returns a slice of all tap event times recorded in the editor's timeline.
     pub fn editor_tap_times(&self) -> &[f32] {
         self.editor.tap_times()
+    }
+
+    pub fn editor_tap_indicator_positions(&self) -> &[[f32; 3]] {
+        &self.editor.timeline.taps.tap_indicator_positions
     }
 
     fn editor_timeline_position_at_seconds(&mut self, time_seconds: f32) -> [f32; 3] {
@@ -1548,6 +1641,27 @@ impl State {
         self.editor.input.show_hitbox_visualization
     }
 
+    /// Read-only accessor for the editor cursor position. The Phase
+    /// 3.27 navigation carve-out moves this through
+    /// `EditorInputRes.0.cursor` and the runtime bridge syncs it back
+    /// here until cursor mesh rebuilds move fully into App-world
+    /// systems.
+    pub fn editor_cursor_position(&self) -> [f32; 3] {
+        self.editor.input.cursor
+    }
+
+    /// Setter for the editor cursor position. This preserves the
+    /// legacy side effect from `move_editor_cursor`: rebuilding the
+    /// cursor mesh when the App-world cursor resource changes.
+    pub fn set_editor_cursor_position(&mut self, cursor: [f32; 3]) {
+        if self.phase != AppPhase::Editor || self.editor.input.cursor == cursor {
+            return;
+        }
+
+        self.editor.input.cursor = cursor;
+        self.rebuild_editor_cursor_vertices();
+    }
+
     /// Setter for the editor hitbox visualization toggle. The Phase
     /// 3.12 misc carve-out syncs the App-world resource into this
     /// field via `Runtime::sync_app_editor_input_state`; the change
@@ -1583,6 +1697,22 @@ impl State {
         // so the side-effect ordering (clear checkpoints → maybe resume
         // → else rebuild + restart + resume) is preserved.
         self.set_practice_mode_enabled_internal(enabled);
+    }
+
+    /// Read-only accessor for the raw `session.game_paused` flag.
+    /// Exposed so the Phase 3.18 `GameResume` carve-out can compare
+    /// the App-world pause resource with the legacy session field
+    /// without the phase-aware guard in `is_game_paused()`.
+    pub fn game_paused_value(&self) -> bool {
+        self.session.game_paused
+    }
+
+    /// Resume real gameplay through the existing legacy side-effect
+    /// path. The App-world `GameResume` handler only clears
+    /// `SessionStateRes.game_paused`; `Runtime::sync_app_session_state`
+    /// calls this when that resource changes from paused to resumed.
+    pub fn resume_game_from_pause(&mut self) {
+        self.resume_game();
     }
 
     pub fn toggle_editor_hitbox_visualization(&mut self) {

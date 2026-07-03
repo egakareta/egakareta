@@ -9,8 +9,8 @@
 //!
 //! Phase 3 fragments the monolithic `AppCommand` / `EditorCommand` enums
 //! into a per-semantic Bevy `Message` type. During the Phase 7
-//! compatibility window, messages are drained from the App `World`,
-//! converted back to the legacy enums via [`ToLegacy`], and staged in
+//! compatibility window, carved-out messages mutate App-world resources
+//! directly while remaining legacy-routed messages are staged in
 //! [`PendingCommands`] for `Runtime` to apply to legacy `State`.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
@@ -19,12 +19,11 @@
 //! handler systems in the [`CommandSet`] system set, then a single
 //! drain into [`PendingCommands`] at the end of the frame.
 //!
-//! The per-message drain systems are wired into the `StateSchedule` so
-//! a single Bevy system per message type drains that message into the
-//! [`PendingCommands`] resource. Runtime runs the schedule on the App
-//! world and drains staged commands into `State::dispatch`. Input-state
-//! messages update App-world resources directly instead of staging legacy
-//! editor commands.
+//! The per-message systems are wired into the `StateSchedule` so each
+//! message type has one explicit handler. Runtime runs the schedule on
+//! the App world and drains any staged legacy commands into
+//! `State::dispatch`. Input-state and carved-out command messages update
+//! App-world resources directly instead of staging legacy commands.
 //!
 //! ## Why messages?
 //!
@@ -144,11 +143,11 @@ impl PendingCommands {
     }
 }
 
-/// System set that contains the per-message drain systems.
+/// System set that contains the per-message command handlers.
 ///
-/// All systems in this set read a single `MessageReader<T>` and write
-/// [`PendingCommands`]. They run as part of the `StateSchedule` and
-/// feed Runtime with the commands to apply to the legacy subsystems.
+/// All systems in this set read a single `MessageReader<T>`. Carved-out
+/// handlers mutate App-world resources directly; legacy-routed handlers
+/// write [`PendingCommands`]. They run as part of the `StateSchedule`.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandSet;
 
@@ -158,7 +157,7 @@ pub struct CommandSet;
 /// The schedule itself is owned by `State` (Phase 2c / 7), so this
 /// helper does not add a `Schedule` — only the `Messages<T>` resources
 /// and the `PendingCommands` buffer. Use [`add_command_systems`] to
-/// add the per-message drain systems to a `Schedule`.
+/// add the per-message command handlers to a `Schedule`.
 pub fn register_command_events(app: &mut App) {
     // Add the message resources so `Messages<T>` is available.
     navigation::register_events(app);
@@ -481,12 +480,16 @@ pub fn add_command_systems(schedule: &mut Schedule) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::auth::ResizeSurface;
+    use crate::events::auth::{CopyLatestPerfFrame, ResizeSurface};
     use crate::events::editor_mode::SetEditorMode;
+    use crate::events::history::HistorySnapshot;
     use crate::events::navigation::TurnRight;
     use crate::events::snap::SetSnapToGrid;
     use bevy_ecs::message::Messages;
-    use eg_types::EditorMode;
+    use eg_types::{
+        DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode,
+        LevelMetadata, MenuState,
+    };
 
     #[test]
     fn pending_commands_default_is_empty() {
@@ -510,22 +513,6 @@ mod tests {
     fn to_legacy_turn_right_app_command() {
         let legacy = TurnRight.to_legacy();
         assert!(matches!(legacy, LegacyCommand::App(AppCommand::TurnRight)));
-    }
-
-    #[test]
-    fn to_legacy_resize_surface_carries_dimensions() {
-        let legacy = ResizeSurface {
-            width: 1280,
-            height: 720,
-        }
-        .to_legacy();
-        assert!(matches!(
-            legacy,
-            LegacyCommand::App(AppCommand::ResizeSurface {
-                width: 1280,
-                height: 720
-            })
-        ));
     }
 
     #[test]
@@ -554,25 +541,43 @@ mod tests {
         // helper must register every resource any of them reads. The
         // carve-out handlers (input_state, pointer) reach for
         // `EditorInputRes`, `EditorCameraRes`, and `AppPhaseRes`; the
-        // `snap` carve-out reaches for `EditorConfigRes`; the `bpm`
+        // `snap` carve-out reaches for `EditorConfigRes`; the `timeline`
+        // carve-out reaches for `EditorTimelineRes` + `EditorRuntimeRes`; the `bpm`
         // carve-out reaches for `EditorTimingRes`; the `session`
         // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
         // `SessionStateRes`; the `timing` carve-out reaches for
         // `EditorTimingRes`; the `spawn` carve-out reaches for
         // `EditorInputRes` (cursor) + `EditorSpawnRes` +
         // `EditorConfigRes`; the `camera` carve-out reaches for
-        // `EditorCameraRes` + `EditorTriggerRes`. The rest of the
-        // schedule only reads message buffers + the `PendingCommands`
-        // accumulator.
+        // `EditorCameraRes` + `EditorTriggerRes`; the resize carve-out
+        // reaches for `RenderResizeRequest`; the perf-frame copy carve-out
+        // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
+        // reads message buffers + the `PendingCommands` accumulator.
         world.init_resource::<crate::state::EditorInputRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
         world.init_resource::<crate::state::EditorConfigRes>();
         world.init_resource::<crate::state::EditorSpawnRes>();
         world.init_resource::<crate::state::EditorTriggerRes>();
+        world.init_resource::<crate::state::EditorTimelineRes>();
         world.init_resource::<crate::state::EditorTimingRes>();
+        world.init_resource::<crate::state::EditorRuntimeRes>();
         world.init_resource::<crate::state::SessionStateRes>();
         world.init_resource::<crate::state::PerfRes>();
+        world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.init_resource::<crate::state::AppPhaseRes>();
+        world.init_resource::<crate::state::RenderResizeRequest>();
+        world.insert_resource(crate::state::MenuStateRes::new(MenuState {
+            selected_level: 0,
+            levels: vec![
+                "NavigationLevelA".to_string(),
+                "NavigationLevelB".to_string(),
+                "NavigationLevelC".to_string(),
+            ],
+            preview_level_index: None,
+            preview_sky_color: LevelMetadata::default().sky_color,
+            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        }));
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         add_command_systems(&mut schedule);
@@ -590,20 +595,57 @@ mod tests {
     }
 
     #[test]
-    fn schedule_drains_resize_surface_with_payload() {
+    fn carve_out_resize_surface_writes_render_resize_request() {
         let mut world = build_event_world();
         world.write_message(ResizeSurface {
             width: 1920,
             height: 1080,
         });
         world.run_schedule(crate::state::StateSchedule);
+        let resize = world.resource::<crate::state::RenderResizeRequest>();
+        assert!(resize.pending);
+        assert_eq!(resize.size.width, 1920);
+        assert_eq!(resize.size.height, 1080);
+
         let pending = world.resource::<PendingCommands>();
-        assert_eq!(
-            pending.app_commands,
-            vec![AppCommand::ResizeSurface {
-                width: 1920,
-                height: 1080
-            }]
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "ResizeSurface must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn carve_out_copy_latest_perf_frame_writes_copy_request() {
+        let mut world = build_event_world();
+        world.write_message(CopyLatestPerfFrame);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::PerfFrameCopyRequest>()
+                .pending,
+            "CopyLatestPerfFrame handler must request an App-world perf-frame copy"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "CopyLatestPerfFrame must not stage a legacy command"
+        );
+    }
+
+    #[test]
+    fn history_snapshot_drains_without_pending_commands() {
+        let mut world = build_event_world();
+        world.write_message(HistorySnapshot {
+            label: "drag_release".to_string(),
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "HistorySnapshot must not stage a legacy command"
         );
     }
 
@@ -901,16 +943,48 @@ mod tests {
 
     // --- Session carve-out pattern ---
     //
-    // `SetShowMetadata`, `SetShowSettings`, `ToggleSettings`,
-    // `SetSettingsSection`, and `SetKeybindCapture` are carve-outs:
-    // their handlers mutate `SessionStateRes` directly. Pin the
-    // resource is updated and no legacy command is queued.
+    // `RenameLevel`, `SetShowMetadata`, `SetShowSettings`, `ToggleSettings`,
+    // `SetSettingsSection`, `SetGraphicsBackend`, `SetUiScaleMultiplier`,
+    // `UpdateMusic`, `UpdateCreatorMetadata`, `UpdateSkyColor`,
+    // `SetKeybindCapture`, the keybind mapping messages, and the
+    // menu-preview camera messages are carve-outs: their handlers
+    // mutate `SessionStateRes` directly. Pin the resource is updated
+    // and no legacy command is queued.
 
     use crate::events::session::{
-        SetKeybindCapture, SetSettingsSection, SetShowMetadata, SetShowSettings, ToggleSettings,
+        CaptureMenuPreviewCamera, ClearKeybindSlot, RenameLevel, ResetKeybind, ResetKeybinds,
+        SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection, SetShowMetadata,
+        SetShowSettings, SetUiScaleMultiplier, ToggleSettings, UpdateCreatorMetadata, UpdateMusic,
+        UpdateSkyColor, UseAutoMenuPreviewCamera,
     };
-    use crate::state::SessionStateRes;
-    use eg_types::SettingsSection;
+    use crate::state::{AppPhaseRes, EditorCameraRes, SessionStateRes};
+    use eg_types::{
+        AppPhase, BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata,
+        MusicMetadata, SettingsSection, default_essential_keybinds,
+    };
+
+    #[test]
+    fn carve_out_rename_level_mutates_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<SessionStateRes>().editor_level_name = None;
+
+        world.write_message(RenameLevel("AppWorldName".to_string()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_level_name
+                .as_deref(),
+            Some("AppWorldName"),
+            "RenameLevel handler must mutate SessionStateRes.editor_level_name"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "RenameLevel must not stage a legacy editor command"
+        );
+    }
 
     #[test]
     fn carve_out_set_show_metadata_mutates_session_resource() {
@@ -1000,6 +1074,380 @@ mod tests {
         );
         let pending = world.resource::<PendingCommands>();
         assert!(pending.editor_commands.is_empty());
+    }
+
+    #[test]
+    fn carve_out_set_ui_scale_multiplier_mutates_session_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<SessionStateRes>()
+            .app_settings
+            .ui_scale_multiplier = 1.0;
+
+        world.write_message(SetUiScaleMultiplier(8.0));
+        world.run_schedule(crate::state::StateSchedule);
+
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .app_settings
+                .ui_scale_multiplier,
+            3.0,
+            epsilon = 1e-6
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetUiScaleMultiplier must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_graphics_backend_mutates_session_resource() {
+        let mut world = build_event_world();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.graphics_backend_locked = false;
+            session.settings_restart_required = false;
+            session.app_settings.graphics_backend = "Auto".to_string();
+        }
+
+        world.write_message(SetGraphicsBackend("ManualBackend".to_string()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let session = world.resource::<SessionStateRes>();
+        assert_eq!(session.app_settings.graphics_backend, "ManualBackend");
+        assert!(
+            session.settings_restart_required,
+            "SetGraphicsBackend must mark restart required when it changes the setting"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetGraphicsBackend must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_graphics_backend_respects_locked_resource() {
+        let mut world = build_event_world();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.graphics_backend_locked = true;
+            session.settings_restart_required = false;
+            session.app_settings.graphics_backend = "LockedBackend".to_string();
+        }
+
+        world.write_message(SetGraphicsBackend("IgnoredBackend".to_string()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let session = world.resource::<SessionStateRes>();
+        assert_eq!(session.app_settings.graphics_backend, "LockedBackend");
+        assert!(
+            !session.settings_restart_required,
+            "locked SetGraphicsBackend must not mark restart required"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "locked SetGraphicsBackend must still avoid staging a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_keybind_mutates_session_resource() {
+        let mut world = build_event_world();
+        let chord = KeyChord::new("K", true, false, false);
+        world.write_message(SetKeybind {
+            action: "copy".to_string(),
+            slot: 0,
+            chord: chord.clone(),
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        let session = world.resource::<SessionStateRes>();
+        assert!(
+            session
+                .app_settings
+                .keybinds_for_action("copy")
+                .iter()
+                .any(|candidate| **candidate == chord),
+            "SetKeybind must write the normalized chord into SessionStateRes.app_settings"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetKeybind must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_clear_keybind_slot_mutates_session_resource() {
+        let mut world = build_event_world();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.app_settings.keybinds = vec![KeybindBinding {
+                action: "copy".to_string(),
+                chord: KeyChord::new("k", true, false, false),
+            }];
+        }
+
+        world.write_message(ClearKeybindSlot {
+            action: "copy".to_string(),
+            slot: 0,
+        });
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<SessionStateRes>()
+                .app_settings
+                .keybinds_for_action("copy")
+                .is_empty(),
+            "ClearKeybindSlot must remove the requested slot from SessionStateRes.app_settings"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ClearKeybindSlot must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_reset_keybind_mutates_session_resource() {
+        let mut world = build_event_world();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.app_settings.keybinds = vec![KeybindBinding {
+                action: "copy".to_string(),
+                chord: KeyChord::new("k", true, false, false),
+            }];
+        }
+
+        world.write_message(ResetKeybind("copy".to_string()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let expected_defaults: Vec<_> = default_essential_keybinds()
+            .into_iter()
+            .filter(|binding| binding.action == "copy")
+            .collect();
+        let session = world.resource::<SessionStateRes>();
+        let actual: Vec<_> = session
+            .app_settings
+            .keybinds
+            .iter()
+            .filter(|binding| binding.action == "copy")
+            .cloned()
+            .collect();
+        assert_eq!(
+            actual, expected_defaults,
+            "ResetKeybind must restore default bindings for the requested action"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ResetKeybind must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_reset_keybinds_mutates_session_resource() {
+        let mut world = build_event_world();
+        let custom = KeybindBinding {
+            action: "custom.action".to_string(),
+            chord: KeyChord::new("x", false, false, false),
+        };
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.app_settings.keybinds = vec![
+                KeybindBinding {
+                    action: "copy".to_string(),
+                    chord: KeyChord::new("k", true, false, false),
+                },
+                custom.clone(),
+            ];
+        }
+
+        world.write_message(ResetKeybinds);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let session = world.resource::<SessionStateRes>();
+        assert!(
+            session.app_settings.keybinds.contains(&custom),
+            "ResetKeybinds must preserve non-essential custom keybinds"
+        );
+        for default_binding in default_essential_keybinds() {
+            assert!(
+                session.app_settings.keybinds.contains(&default_binding),
+                "ResetKeybinds must restore essential default {default_binding:?}"
+            );
+        }
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ResetKeybinds must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_update_creator_metadata_mutates_session_resource() {
+        let mut world = build_event_world();
+        let metadata = BasicLevelMetadata {
+            name: "Metadata Carveout".to_string(),
+            creator: Some("codex".to_string()),
+            description: Some("direct session resource write".to_string()),
+            stars: 6.25,
+            tags: vec!["ecs".to_string(), "metadata".to_string()],
+        };
+
+        world.write_message(UpdateCreatorMetadata(metadata.clone()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            &world.resource::<SessionStateRes>().editor_creator_metadata,
+            &metadata,
+            "UpdateCreatorMetadata handler must mutate SessionStateRes.editor_creator_metadata"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "UpdateCreatorMetadata must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_update_music_mutates_session_resource() {
+        let mut world = build_event_world();
+        let metadata = MusicMetadata {
+            title: Some("Direct Track".to_string()),
+            author: Some("App World".to_string()),
+        };
+
+        world.write_message(UpdateMusic(metadata.clone()));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            &world.resource::<SessionStateRes>().editor_music_metadata,
+            &metadata,
+            "UpdateMusic handler must mutate SessionStateRes.editor_music_metadata"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "UpdateMusic must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_update_sky_color_mutates_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<SessionStateRes>().editor_sky_color = [0.0, 0.0, 0.0];
+
+        world.write_message(UpdateSkyColor([-1.0, 0.5, 2.0]));
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<SessionStateRes>().editor_sky_color,
+            [0.0, 0.5, 1.0],
+            "UpdateSkyColor handler must clamp and mutate SessionStateRes.editor_sky_color"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "UpdateSkyColor must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_capture_menu_preview_camera_mutates_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        {
+            let mut camera = world.resource_mut::<EditorCameraRes>();
+            camera.0.editor_pan = [2.0, -4.0];
+            camera.0.editor_target_z = 3.0;
+            camera.0.editor_yaw = 30.0f32.to_radians();
+            camera.0.editor_pitch = 40.0f32.to_radians();
+        }
+        let expected = {
+            let camera = &world.resource::<EditorCameraRes>().0;
+            let target = camera.editor_camera_target();
+            LevelPreviewCameraMetadata {
+                position: (target + camera.editor_camera_offset()).to_array(),
+                target: target.to_array(),
+            }
+        };
+
+        world.write_message(CaptureMenuPreviewCamera);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_menu_preview_camera,
+            Some(expected)
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "CaptureMenuPreviewCamera must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_use_auto_menu_preview_camera_mutates_session_resource() {
+        let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        world
+            .resource_mut::<SessionStateRes>()
+            .editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
+            position: [9.0, 8.0, 7.0],
+            target: [6.0, 5.0, 4.0],
+        });
+
+        world.write_message(UseAutoMenuPreviewCamera);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_menu_preview_camera,
+            None
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "UseAutoMenuPreviewCamera must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_menu_preview_camera_messages_respect_editor_phase() {
+        let mut world = build_event_world();
+        world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
+        let existing = Some(LevelPreviewCameraMetadata {
+            position: [9.0, 8.0, 7.0],
+            target: [6.0, 5.0, 4.0],
+        });
+        world
+            .resource_mut::<SessionStateRes>()
+            .editor_menu_preview_camera = existing.clone();
+
+        world.write_message(CaptureMenuPreviewCamera);
+        world.write_message(UseAutoMenuPreviewCamera);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_menu_preview_camera,
+            existing
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "phase-guarded menu preview camera messages must not stage legacy editor commands"
+        );
     }
 
     // --- Timing carve-out pattern ---
@@ -1354,7 +1802,6 @@ mod tests {
     use crate::events::camera::{
         AddCameraTrigger, AdjustZoom, SetCameraOrientation, SetTriggerSelected,
     };
-    use crate::state::EditorCameraRes;
     use crate::state::EditorTriggerRes;
 
     /// `AdjustZoom(delta)` moves the editor camera along its look
@@ -1779,7 +2226,39 @@ mod tests {
     // command; the runtime tests in `eg-app` pin the full
     // message → resource → sync → legacy state pipeline.
 
-    use crate::events::navigation::GameSetPracticeMode;
+    use crate::events::navigation::{GameResume, GameSetPracticeMode, NextLevel, PrevLevel};
+    use crate::events::timeline::{
+        AddTap, ClearTaps, RemoveTap, RemoveTapAt, SetPlaybackSpeed, SetSelectedTap,
+        SetSelectedTapTime, SetTimelineDuration, SetTimelineTime, SetWaveformScroll,
+        SetWaveformZoom, ShiftTimeline, ToggleTimelinePlayback,
+    };
+
+    /// `GameResume` is a carve-out: the handler writes the pause
+    /// flag directly to `SessionStateRes.game_paused` instead of
+    /// staging a legacy `AppCommand::GameResume`. Pin the resource is
+    /// updated and no legacy command is queued.
+    #[test]
+    fn carve_out_game_resume_mutates_session_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .game_paused = true;
+
+        world.write_message(GameResume);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused,
+            "GameResume handler must clear SessionStateRes.game_paused"
+        );
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty(),
+            "GameResume must not stage a legacy command (carve-out)"
+        );
+    }
 
     /// `GameSetPracticeMode(enabled)` is a carve-out: the
     /// handler writes the bool directly to
@@ -1819,6 +2298,629 @@ mod tests {
         assert!(
             pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
             "GameSetPracticeMode must not stage any legacy command (carve-out)"
+        );
+    }
+
+    /// `NextLevel` and `PrevLevel` are carve-outs: in `Menu` they mutate
+    /// `MenuStateRes.selected_level` directly instead of staging legacy
+    /// commands.
+    #[test]
+    fn carve_out_menu_next_prev_level_mutates_menu_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Menu);
+        world
+            .resource_mut::<crate::state::MenuStateRes>()
+            .0
+            .selected_level = 2;
+
+        world.write_message(NextLevel);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::MenuStateRes>()
+                .0
+                .selected_level,
+            0,
+            "NextLevel in Menu must wrap through MenuStateRes"
+        );
+
+        world.write_message(PrevLevel);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::MenuStateRes>()
+                .0
+                .selected_level,
+            2,
+            "PrevLevel in Menu must wrap through MenuStateRes"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty(),
+            "menu NextLevel/PrevLevel must not stage legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_editor_next_prev_level_mutates_cursor_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::MenuStateRes>()
+            .0
+            .selected_level = 1;
+        {
+            let mut config = world.resource_mut::<crate::state::EditorConfigRes>();
+            config.0.snap_to_grid = true;
+            config.0.snap_step = 0.25;
+        }
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.cursor = [1.0, 0.0, 2.0];
+            input.0.ctrl_held = false;
+        }
+
+        world.write_message(NextLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [1.25, 0.0, 2.0],
+            "NextLevel in Editor must move EditorInputRes.cursor by the snap step"
+        );
+
+        world.write_message(PrevLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [1.0, 0.0, 2.0],
+            "PrevLevel in Editor must move EditorInputRes.cursor back by the snap step"
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::MenuStateRes>()
+                .0
+                .selected_level,
+            1,
+            "editor navigation must leave MenuStateRes untouched"
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty(),
+            "editor NextLevel/PrevLevel must not stage legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_next_prev_level_is_noop_outside_menu_and_editor() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::EditorInputRes>()
+            .0
+            .cursor = [1.0, 0.0, 2.0];
+        world
+            .resource_mut::<crate::state::MenuStateRes>()
+            .0
+            .selected_level = 1;
+
+        world.write_message(NextLevel);
+        world.write_message(PrevLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [1.0, 0.0, 2.0],
+            "Playing NextLevel/PrevLevel must not move the editor cursor"
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::MenuStateRes>()
+                .0
+                .selected_level,
+            1,
+            "Playing NextLevel/PrevLevel must not move menu selection"
+        );
+        assert!(
+            world.resource::<PendingCommands>().app_commands.is_empty(),
+            "Playing NextLevel/PrevLevel must not stage legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_next_prev_level_missing_menu_resource_does_not_stage_legacy_command() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Menu);
+        world.remove_resource::<crate::state::MenuStateRes>();
+
+        world.write_message(NextLevel);
+        world.write_message(PrevLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
+            "missing MenuStateRes must not route NextLevel/PrevLevel through legacy commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_shift_timeline_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.clock.time_seconds = 1.0;
+        }
+
+        world.write_message(ShiftTimeline(1.5));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            2.5,
+            epsilon = 1e-6
+        );
+
+        world.write_message(ShiftTimeline(10.0));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            4.0,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ShiftTimeline must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_timeline_time_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 3.0;
+            timeline.0.clock.time_seconds = 0.0;
+        }
+
+        world.write_message(SetTimelineTime(1.25));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            1.25,
+            epsilon = 1e-6
+        );
+
+        world.write_message(SetTimelineTime(9.0));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            3.0,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetTimelineTime must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_timeline_duration_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 8.0;
+            timeline.0.clock.time_seconds = 6.0;
+        }
+
+        world.write_message(SetTimelineDuration(2.0));
+        world.run_schedule(crate::state::StateSchedule);
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        approx::assert_abs_diff_eq!(timeline.clock.duration_seconds, 2.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(timeline.clock.time_seconds, 2.0, epsilon = 1e-6);
+
+        world.write_message(SetTimelineDuration(0.0));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .duration_seconds,
+            0.1,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetTimelineDuration must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_selected_tap_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.taps.tap_times = vec![0.25, 1.0];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]];
+            timeline.0.taps.selected_index = None;
+        }
+
+        world.write_message(SetSelectedTap(Some(1)));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .taps
+                .selected_index,
+            Some(1)
+        );
+
+        world.write_message(SetSelectedTap(Some(99)));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .taps
+                .selected_index,
+            None,
+            "out-of-range selection must clear the selected tap"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetSelectedTap must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_selected_tap_time_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 2.0;
+            timeline.0.clock.time_seconds = 1.0;
+            timeline.0.taps.tap_times = vec![0.25, 1.0, 1.5];
+            timeline.0.taps.tap_indicator_positions =
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [2.0, 0.0, 2.0]];
+            timeline.0.taps.selected_index = Some(1);
+        }
+        world
+            .resource_mut::<crate::state::EditorInputRes>()
+            .0
+            .cursor = [9.0, 0.0, 9.0];
+
+        world.write_message(SetSelectedTapTime(1.75));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5, 1.75]);
+        assert_eq!(
+            timeline.taps.tap_indicator_positions,
+            vec![[0.0, 0.0, 0.0], [2.0, 0.0, 2.0], [1.0, 0.0, 1.0]],
+            "SetSelectedTapTime must keep the moved tap's indicator position"
+        );
+        assert_eq!(timeline.taps.selected_index, Some(2));
+        approx::assert_abs_diff_eq!(timeline.clock.time_seconds, 1.75, epsilon = 1e-6);
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            [1.0, 0.0, 1.0],
+            "SetSelectedTapTime must move the editor cursor to the selected tap position"
+        );
+
+        world.write_message(SetSelectedTapTime(9.0));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5, 2.0]);
+        assert_eq!(timeline.taps.selected_index, Some(2));
+        approx::assert_abs_diff_eq!(
+            timeline.clock.time_seconds,
+            timeline.clock.duration_seconds,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetSelectedTapTime must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_remove_tap_messages_mutate_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.time_seconds = 1.0;
+            timeline.0.taps.tap_times = vec![0.25, 1.0, 1.5];
+            timeline.0.taps.tap_indicator_positions =
+                vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [2.0, 0.0, 2.0]];
+            timeline.0.taps.selected_index = Some(2);
+        }
+
+        world.write_message(RemoveTap);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5]);
+        assert_eq!(
+            timeline.taps.tap_indicator_positions,
+            vec![[0.0, 0.0, 0.0], [2.0, 0.0, 2.0]]
+        );
+        assert_eq!(
+            timeline.taps.selected_index,
+            Some(1),
+            "removing an earlier tap must shift the selected tap index"
+        );
+
+        world.write_message(RemoveTapAt(1.5));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.25]);
+        assert_eq!(timeline.taps.tap_indicator_positions, vec![[0.0, 0.0, 0.0]]);
+        assert_eq!(
+            timeline.taps.selected_index, None,
+            "removing the selected tap must clear selection"
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "RemoveTap/RemoveTapAt must not stage legacy editor commands"
+        );
+    }
+
+    #[test]
+    fn carve_out_toggle_timeline_playback_mutates_timeline_and_input_resources() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Timing;
+
+        world.write_message(ToggleTimelinePlayback);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .playback
+                .playing
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            eg_types::EditorMode::Null
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorRuntimeRes>()
+                .0
+                .interaction
+                .last_mode,
+            Some(eg_types::EditorMode::Timing)
+        );
+
+        world.write_message(ToggleTimelinePlayback);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert!(!timeline.playback.playing);
+        assert!(timeline.playback.runtime.is_none());
+        assert!(timeline.playback.pending_seek_time_seconds.is_none());
+        approx::assert_abs_diff_eq!(
+            timeline.playback.seek_resync_cooldown_seconds,
+            0.0,
+            epsilon = 1e-6
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            eg_types::EditorMode::Timing
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorRuntimeRes>()
+                .0
+                .interaction
+                .last_mode,
+            None
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ToggleTimelinePlayback must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_add_tap_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.time_seconds = 1.0;
+            timeline.0.preview.position = [3.5, 0.0, 4.5];
+            timeline.0.taps.tap_times = vec![0.25, 1.5];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [2.0, 0.0, 2.0]];
+            timeline.0.taps.selected_index = None;
+        }
+
+        world.write_message(AddTap);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.0, 1.5]);
+        assert_eq!(
+            timeline.taps.tap_indicator_positions,
+            vec![[0.0, 0.0, 0.0], [3.0, 0.0, 4.0], [2.0, 0.0, 2.0]],
+            "AddTap must store the preview-derived tap indicator position"
+        );
+        assert_eq!(timeline.taps.selected_index, Some(1));
+
+        world.write_message(AddTap);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert_eq!(
+            timeline.taps.tap_times,
+            vec![0.25, 1.0, 1.5],
+            "AddTap must select an existing epsilon-matched tap instead of duplicating it"
+        );
+        assert_eq!(timeline.taps.selected_index, Some(1));
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "AddTap must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_clear_taps_mutates_editor_timeline_resource() {
+        let mut world = build_event_world();
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.taps.tap_times = vec![0.25, 1.0];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]];
+            timeline.0.taps.selected_index = Some(1);
+        }
+
+        world.write_message(ClearTaps);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert!(timeline.taps.tap_times.is_empty());
+        assert!(timeline.taps.tap_indicator_positions.is_empty());
+        assert_eq!(timeline.taps.selected_index, None);
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "ClearTaps must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_playback_speed_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        world.write_message(SetPlaybackSpeed(1.5));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimingRes>()
+                .0
+                .playback_speed,
+            1.5,
+            epsilon = 1e-6
+        );
+
+        world.write_message(SetPlaybackSpeed(9.0));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimingRes>()
+                .0
+                .playback_speed,
+            2.0,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetPlaybackSpeed must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_waveform_zoom_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        world.write_message(SetWaveformZoom(3.5));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimingRes>()
+                .0
+                .waveform_zoom,
+            3.5,
+            epsilon = 1e-6
+        );
+
+        world.write_message(SetWaveformZoom(0.01));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimingRes>()
+                .0
+                .waveform_zoom,
+            0.1,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetWaveformZoom must not stage a legacy editor command"
+        );
+    }
+
+    #[test]
+    fn carve_out_set_waveform_scroll_mutates_editor_timing_resource() {
+        let mut world = build_event_world();
+        world.write_message(SetWaveformScroll(2.25));
+        world.run_schedule(crate::state::StateSchedule);
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimingRes>()
+                .0
+                .waveform_scroll,
+            2.25,
+            epsilon = 1e-6
+        );
+
+        let pending = world.resource::<PendingCommands>();
+        assert!(
+            pending.editor_commands.is_empty(),
+            "SetWaveformScroll must not stage a legacy editor command"
         );
     }
 }

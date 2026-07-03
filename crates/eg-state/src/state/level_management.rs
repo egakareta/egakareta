@@ -18,11 +18,11 @@ use eg_platform::services::trigger_level_import;
 use eg_platform::task::spawn_background;
 use eg_types::{
     AppPhase, AppSettings, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode, KeyChord, SettingsSection,
+    DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode, KeyChord, KeybindBinding, SettingsSection,
 };
 use eg_types::{
     BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
+    LevelPreviewCameraMetadata, MenuState, MusicMetadata, SpawnMetadata,
 };
 use glam::Vec3;
 
@@ -368,6 +368,14 @@ impl State {
         self.session.editor_sky_color = color.map(|component| component.clamp(0.0, 1.0));
     }
 
+    pub fn editor_menu_preview_camera(&self) -> Option<&LevelPreviewCameraMetadata> {
+        self.session.editor_menu_preview_camera.as_ref()
+    }
+
+    pub fn set_editor_menu_preview_camera(&mut self, camera: Option<LevelPreviewCameraMetadata>) {
+        self.session.editor_menu_preview_camera = camera;
+    }
+
     pub fn editor_capture_menu_preview_camera(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -573,6 +581,14 @@ impl State {
         self.persist_app_settings();
     }
 
+    pub fn set_app_settings_keybinds(&mut self, keybinds: Vec<KeybindBinding>) {
+        if self.session.app_settings.keybinds == keybinds {
+            return;
+        }
+        self.session.app_settings.keybinds = keybinds;
+        self.persist_app_settings();
+    }
+
     pub fn persist_app_settings(&self) {
         let settings = self.session.app_settings.clone();
         eg_platform::task::spawn_background(async move {
@@ -610,6 +626,25 @@ impl State {
             .levels
             .get(self.menu.state.selected_level)
             .map(|s| s.as_str())
+    }
+
+    pub fn menu_state_resource(&self) -> super::MenuStateRes {
+        super::MenuStateRes::new(MenuState {
+            selected_level: self.menu.state.selected_level,
+            levels: self.menu.state.levels.clone(),
+            preview_level_index: self.menu.state.preview_level_index,
+            preview_sky_color: self.menu.state.preview_sky_color,
+            preview_camera_position: self.menu.state.preview_camera_position,
+            preview_camera_target: self.menu.state.preview_camera_target,
+        })
+    }
+
+    pub fn menu_selected_level_index(&self) -> usize {
+        self.menu.state.selected_level
+    }
+
+    pub fn set_menu_selected_level_index(&mut self, selected_level: usize) {
+        self.menu.state.selected_level = selected_level;
     }
 
     /// Triggers a platform-specific export of the current level as an `.egz` file.

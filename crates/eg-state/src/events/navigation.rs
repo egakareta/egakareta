@@ -8,29 +8,25 @@
 //! Navigation / phase events. One per `AppCommand` variant under
 //! `AppCommand::Navigation / Phase` in the legacy enum.
 //!
-//! `GameSetPracticeMode` is a **carve-out** from the `PendingCommands`
+//! `NextLevel`/`PrevLevel` in the menu, `GameResume`, and
+//! `GameSetPracticeMode` are **carve-outs** from the `PendingCommands`
 //! pipeline (same pattern as `events::snap`, `events::session`, ...).
-//! The handler mutates `SessionStateRes.practice_mode_enabled`
-//! directly, and the legacy `State.session.practice_mode_enabled` is
-//! synced from the resource at the top of the per-frame
-//! `StateSchedule`. The legacy setter
-//! (`set_practice_mode_enabled`) has heavy side effects (clears
-//! practice checkpoints, rebuilds vertices, restarts the level,
-//! resumes the game), so the change guard in
-//! `Runtime::sync_app_session_state` invokes the legacy setter only
-//! on real user-driven changes.
+//! The next/previous level handlers mutate `MenuStateRes` directly when
+//! the App phase is `Menu` and `EditorInputRes.cursor` directly when the
+//! App phase is `Editor`. The game pause/practice handlers mutate
+//! `SessionStateRes` directly, and the legacy `State.session` fields are
+//! synced from the resource in the runtime bridge.
 //!
-//! The `ToLegacy` impl is kept so the legacy dispatch path remains
-//! reachable from non-message call sites (the existing
-//! `command_dispatch` tests continue to drive
-//! `State::dispatch(AppCommand::GameSetPracticeMode(...))` directly).
+//! `ToLegacy` impls are kept only for navigation messages that still
+//! route through the legacy command drain.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use eg_types::AppPhase;
 
 use crate::commands::AppCommand;
 use crate::events::{LegacyCommand, PendingCommands, ToLegacy};
-use crate::state::SessionStateRes;
+use crate::state::{AppPhaseRes, EditorConfigRes, EditorInputRes, MenuStateRes, SessionStateRes};
 
 /// Primary action: in menu → start level, in game → turn, in editor → place block.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -46,21 +42,9 @@ impl ToLegacy for TurnRight {
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct NextLevel;
 
-impl ToLegacy for NextLevel {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::NextLevel)
-    }
-}
-
 /// Select the previous level in the menu or move editor cursor −X.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct PrevLevel;
-
-impl ToLegacy for PrevLevel {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::PrevLevel)
-    }
-}
 
 /// Toggle between editor and menu/playing.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -76,12 +60,6 @@ impl ToLegacy for ToggleEditor {
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameResume;
 
-impl ToLegacy for GameResume {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameResume)
-    }
-}
-
 /// Restart the current real gameplay level from the pause menu.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct GameRestartLevel;
@@ -96,12 +74,6 @@ impl ToLegacy for GameRestartLevel {
 #[derive(Message, Debug, Clone, Copy)]
 pub struct GameSetPracticeMode {
     pub enabled: bool,
-}
-
-impl ToLegacy for GameSetPracticeMode {
-    fn to_legacy(self) -> LegacyCommand {
-        LegacyCommand::App(AppCommand::GameSetPracticeMode(self.enabled))
-    }
 }
 
 /// Place a practice-mode checkpoint at the current gameplay position.
@@ -148,10 +120,8 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems. Each one drains a single `MessageReader<T>` and writes
-// the corresponding `AppCommand` to `PendingCommands`. These systems are
-// the only Bevy-side dispatch path; the legacy `State::dispatch` is still
-// the source of truth for command handling.
+// Dispatch systems. Legacy-routed messages still stage `AppCommand`s in
+// `PendingCommands`; carved-out messages mutate App-world resources directly.
 // -----------------------------------------------------------------------
 
 pub fn handle_turn_right(
@@ -165,20 +135,61 @@ pub fn handle_turn_right(
 
 pub fn handle_next_level(
     mut events: MessageReader<NextLevel>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    config: Res<EditorConfigRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut menu: Option<ResMut<MenuStateRes>>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::NextLevel);
+        match phase.current {
+            AppPhase::Menu => {
+                if let Some(menu) = menu.as_deref_mut() {
+                    let level_count = menu.0.levels.len();
+                    if level_count > 0 {
+                        menu.0.selected_level = (menu.0.selected_level + 1) % level_count;
+                    }
+                }
+            }
+            AppPhase::Editor => move_editor_cursor_x(&mut input, &config, 1.0),
+            _ => {}
+        }
     }
 }
 
 pub fn handle_prev_level(
     mut events: MessageReader<PrevLevel>,
-    mut pending: ResMut<PendingCommands>,
+    phase: Res<AppPhaseRes>,
+    config: Res<EditorConfigRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut menu: Option<ResMut<MenuStateRes>>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::PrevLevel);
+        match phase.current {
+            AppPhase::Menu => {
+                if let Some(menu) = menu.as_deref_mut() {
+                    let level_count = menu.0.levels.len();
+                    if level_count > 0 {
+                        menu.0.selected_level = if menu.0.selected_level == 0 {
+                            level_count - 1
+                        } else {
+                            menu.0.selected_level - 1
+                        };
+                    }
+                }
+            }
+            AppPhase::Editor => move_editor_cursor_x(&mut input, &config, -1.0),
+            _ => {}
+        }
     }
+}
+
+fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, direction: f32) {
+    let step = if config.0.snap_to_grid && !input.0.ctrl_held {
+        config.0.snap_step.max(0.05)
+    } else {
+        1.0
+    };
+    input.0.cursor[0] += direction * step;
 }
 
 pub fn handle_toggle_editor(
@@ -192,10 +203,10 @@ pub fn handle_toggle_editor(
 
 pub fn handle_game_resume(
     mut events: MessageReader<GameResume>,
-    mut pending: ResMut<PendingCommands>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        pending.app_commands.push(AppCommand::GameResume);
+        session.game_paused = false;
     }
 }
 

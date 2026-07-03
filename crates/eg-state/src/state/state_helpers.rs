@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorSubsystem, State};
+use super::{AppPhaseRes, EditorSubsystem, State};
 use eg_game::GameState;
 use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
@@ -212,6 +212,10 @@ impl EditorSubsystem {
 }
 
 impl State {
+    pub fn app_phase_resource(&self) -> AppPhaseRes {
+        AppPhaseRes::new(self.phase)
+    }
+
     pub(super) fn clear_editor_pan_keys(&mut self) {
         self.editor.clear_pan_keys();
     }
@@ -306,6 +310,29 @@ impl State {
         self.session.playtesting_editor = playtesting_editor;
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_game_paused_for_test(&mut self, game_paused: bool) {
+        self.session.game_paused = game_paused;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_menu_levels_for_test(&mut self, levels: Vec<String>) {
+        self.menu.state.levels = levels;
+        if self.menu.state.levels.is_empty() {
+            self.menu.state.selected_level = 0;
+        } else if self.menu.state.selected_level >= self.menu.state.levels.len() {
+            self.menu.state.selected_level = self.menu.state.levels.len() - 1;
+        }
+        self.menu.state.preview_level_index = None;
+    }
+
+    /// Test-only setter for `session.graphics_backend_locked`.
+    /// Production code derives this from startup backend overrides.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_graphics_backend_locked_for_test(&mut self, locked: bool) {
+        self.session.graphics_backend_locked = locked;
+    }
+
     /// Test-only setter for `session.practice_mode_enabled`.
     /// Production code must call `set_practice_mode_enabled`
     /// (which has the heavy side effects — clear checkpoints,
@@ -313,6 +340,33 @@ impl State {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_session_practice_mode_enabled_for_test(&mut self, enabled: bool) {
         self.session.practice_mode_enabled = enabled;
+    }
+
+    /// Test-only setter for the editor tap arrays and selected tap.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_editor_tap_state_for_test(
+        &mut self,
+        tap_times: Vec<f32>,
+        tap_indicator_positions: Vec<[f32; 3]>,
+        selected_index: Option<usize>,
+    ) {
+        self.editor.timeline.taps.tap_times = tap_times;
+        self.editor.timeline.taps.tap_indicator_positions = tap_indicator_positions;
+        self.editor.set_selected_tap_index(selected_index);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_editor_camera_pose_for_test(
+        &mut self,
+        pan: [f32; 2],
+        target_z: f32,
+        yaw: f32,
+        pitch: f32,
+    ) {
+        self.editor.camera.editor_pan = pan;
+        self.editor.camera.editor_target_z = target_z;
+        self.editor.camera.editor_yaw = yaw;
+        self.editor.camera.editor_pitch = pitch;
     }
 
     pub(super) fn enter_menu_phase(&mut self) {
