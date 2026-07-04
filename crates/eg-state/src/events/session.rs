@@ -7,8 +7,7 @@
 */
 //! Session / UI / level-management events.
 //!
-//! A subset of session events are a **carve-out** from the
-//! `PendingCommands` -> `State::dispatch_editor` pipeline (same
+//! A subset of session events mutate App-world resources directly (same
 //! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
 //! and `events::bpm`). The handlers mutate
 //! `SessionStateRes.0` directly:
@@ -29,10 +28,7 @@
 //! - `CaptureMenuPreviewCamera` / `UseAutoMenuPreviewCamera` ->
 //!   `session.editor_menu_preview_camera`
 //!
-//! The other session events (`LoadLevel`, `SetAudioBackend`, ...)
-//! keep the legacy `PendingCommands` path because their legacy setters
-//! have out-of-process side effects (level load, file IO, audio
-//! backend switch).
+//! Session side-effect events now write typed request resources because their legacy setters have out-of-process side effects (level load, file IO, audio backend switch).
 //!
 //! `Runtime::sync_app_session_state` propagates the carved-out
 //! fields back to the legacy `State.session` each frame so any

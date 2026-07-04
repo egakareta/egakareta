@@ -670,11 +670,10 @@ impl State {
     }
 
     pub fn update_level_imports(&mut self) {
-        // Phase 6b: the receiver is shared with the Phase 6b
-        // handler system via `Arc<Mutex<>>`. We drain under the
-        // lock, drop the lock, then process (the `import_*` methods
-        // take `&mut self` which conflicts with the held mutex
-        // guard).
+        // Compatibility helper for focused tests. Production frames drain
+        // this receiver through StateSchedule. We drain under the lock,
+        // drop the lock, then process (the `import_*` methods take
+        // `&mut self` which conflicts with the held mutex guard).
         let drained: Vec<Vec<u8>> = {
             let guard = self
                 .session

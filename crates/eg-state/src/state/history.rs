@@ -5,9 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorClipboard, EditorHistorySnapshot, EditorSubsystem, State};
+#[cfg(test)]
+use super::EditorClipboard;
+use super::{EditorHistorySnapshot, EditorSubsystem, State};
 use eg_editor_domain::derive_tap_indicator_positions;
-use eg_types::{AppPhase, LevelObject, TriggerTarget, next_level_object_id};
+use eg_types::AppPhase;
+#[cfg(test)]
+use eg_types::{LevelObject, TriggerTarget, next_level_object_id};
 
 #[derive(Default, Clone)]
 pub struct EditorHistoryState {
@@ -136,6 +140,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn copy_selected(&mut self) {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
@@ -162,6 +167,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn paste_from_clipboard(&mut self) -> bool {
         let Some(clipboard) = self.runtime.interaction.clipboard.clone() else {
             return false;
@@ -201,6 +207,7 @@ impl EditorSubsystem {
         true
     }
 
+    #[cfg(test)]
     pub(super) fn duplicate_selected(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
@@ -244,6 +251,7 @@ impl EditorSubsystem {
     }
 }
 
+#[cfg(test)]
 fn regenerate_object_ids_for_clipboard(
     objects: &mut [LevelObject],
     existing_objects: &[LevelObject],
@@ -305,12 +313,14 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn editor_copy_block(&mut self) {
         if self.phase == AppPhase::Editor {
             self.editor.copy_selected();
         }
     }
 
+    #[cfg(test)]
     pub(super) fn editor_paste_block(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.paste_from_clipboard() {
             self.sync_editor_objects();
@@ -318,6 +328,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn editor_duplicate_selected_block_in_place(&mut self) {
         if self.phase == AppPhase::Editor && self.editor.duplicate_selected() {
             self.sync_editor_objects();

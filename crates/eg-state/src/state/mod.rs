@@ -8,18 +8,19 @@
 mod async_bridge;
 mod audio_state;
 mod auth_state;
-mod command_dispatch;
 mod editor_actions;
 mod editor_camera;
 pub mod editor_command;
 mod editor_config_state;
-mod editor_dispatch;
 mod editor_interaction;
 mod editor_scene;
 mod editor_state;
 mod editor_timeline;
 mod editor_timing;
 mod editor_triggers;
+mod escape_compat;
+mod frame_time;
+mod gameplay_compat;
 mod history;
 mod input_bridge;
 mod level_management;
@@ -36,9 +37,7 @@ mod ui_snapshot;
 mod update;
 
 use crate::events as state_events;
-pub use state_events::{
-    CommandHandlerSet, PendingCommands, add_command_systems, register_command_events,
-};
+pub use state_events::{CommandHandlerSet, add_command_systems, register_command_events};
 
 #[cfg(test)]
 mod editor_domain_tests;
@@ -86,7 +85,7 @@ pub use state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
     CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, GameQuitToMenuRequest,
+    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
     GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
     LoadLevelRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes, PlaytestRequest,
     SessionStateRes, SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest,
@@ -130,13 +129,10 @@ pub struct SessionSubsystem {
     pub editor_show_settings: bool,
     pub editor_settings_section: SettingsSection,
     pub editor_keybind_capture_action: Option<(String, usize)>,
-    /// Phase 6b: the receiver end is wrapped in
-    /// `Arc<Mutex<Receiver<Vec<u8>>>>` so both the legacy
-    /// `update_level_imports` (called from `State::update`) and the
-    /// Phase 6b `level_import_handler_system` (called from
-    /// `State::tick_state`) can race for messages. See
-    /// `AuthChannelReceiver` in `state::auth_state` for the
-    /// rationale.
+    /// The receiver end is wrapped in
+    /// `Arc<Mutex<Receiver<Vec<u8>>>>` so the legacy field and the
+    /// App-world `LevelImportChannelRes` resource can share the same
+    /// channel. Production frames drain it through `StateSchedule`.
     pub editor_level_import_channel: (
         std::sync::mpsc::Sender<Vec<u8>>,
         crate::state::async_bridge::SharedLevelImportReceiver,
@@ -187,9 +183,9 @@ pub struct MenuSubsystem {
     pub state: MenuState,
 }
 
-/// Schedule label for the per-frame state update. Run via
-/// [`State::tick_state`]. Initially empty; systems are added in Phase 2c
-/// (transitions) and Phase 3 (command handlers).
+/// Schedule label for the per-frame state update. Runtime runs this
+/// after App update and before the remaining compatibility update/render
+/// path.
 #[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSchedule;
 
@@ -394,14 +390,13 @@ impl State {
             *uniforms = uniforms_snapshot;
             frame_input.0 = frame_input_snapshot;
         });
-        // Phase 6b: the channel wrappers are auto-installed from
-        // the `Arc<Mutex<Receiver<T>>>` fields on the legacy
-        // `State`. Both the State and the World hold an `Arc`
-        // clone of the same receiver; the `poll_channels_system`
-        // and the handler systems race for messages, but the
-        // first caller wins (the second sees an empty receiver).
+        // The channel wrappers are auto-installed from the
+        // `Arc<Mutex<Receiver<T>>>` fields on the legacy `State`.
+        // Both the State and the World hold an `Arc` clone of the
+        // same receiver; production frames drain those receivers
+        // through `StateSchedule`.
         //
-        // The `install_async_bridge_from_state` helper is
+        // The `install_async_bridge_from_state_arc` helper is
         // idempotent: a second call is a no-op.
         self.install_async_channel_resources(world);
     }
@@ -414,6 +409,15 @@ impl State {
         // to the matching `complete_*` methods / per-channel
         // mutation logic.
         async_bridge::drain_pending_async_result_fns(self);
+    }
+
+    /// Copy scheduled render POD values into the compatibility shell
+    /// before the remaining legacy update/render path runs.
+    pub fn apply_render_uniforms_resource(
+        &mut self,
+        uniforms: &render::resources::RenderUniformsRes,
+    ) {
+        self.frame_runtime.scheduled_color_space_uniform = Some(uniforms.color_space);
     }
 
     /// Compute the current per-frame `RenderFrameInput` snapshot

@@ -30,6 +30,7 @@ use super::resources::{
     RenderUniformsRes,
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
+use crate::state::FrameTimeRes;
 
 /// System sets for the rendering extraction plugin.
 ///
@@ -123,6 +124,17 @@ pub fn present_render_frame_system(
     let _ = (&gpu, &meshes, &surface_host, &uniforms, &frame_input);
 }
 
+/// Update the scheduled color-space POD uniform from App-world frame
+/// timing. The compatibility `State::update` path consumes this value
+/// to upload the GPU buffer until render presentation moves fully into
+/// systems.
+pub fn update_color_space_uniform_system(
+    frame_time: Res<FrameTimeRes>,
+    mut uniforms: ResMut<RenderUniformsRes>,
+) {
+    uniforms.color_space.time_seconds = frame_time.global_time_seconds;
+}
+
 /// Bevy [`QueryFilter`] for the authored object fields that trigger
 /// a mesh rebuild on change.
 ///
@@ -186,6 +198,9 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
         // `OnceLock<RenderMirrorState>` shared with `tick_state`.
         // See `state/render/mirror.rs` for the bridge.
         mirror_pod_state_via_bridge,
+        update_color_space_uniform_system
+            .after(mirror_pod_state_via_bridge)
+            .after(crate::state::frame_time::advance_frame_time_system),
         present_render_frame_system.in_set(RenderSet::Present),
     ));
 }

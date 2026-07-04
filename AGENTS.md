@@ -46,16 +46,16 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 ## 3. Code Architecture & Layout
 
 - `crates/eg-app/src/platform/runtime.rs`: `Runtime` is the current frame owner. It owns a `bevy_app::App` plus the legacy `State`/`FramePipeline` compatibility bridge. `Runtime::run_app_frame(raw_input)` drives `app.update()` first, then renders through the compatibility pipeline until the single-world deletion pass removes `State::world` and `FramePipeline`.
-- `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. `AppCommand`/`EditorCommand` still exist as the legacy compatibility target, but new Bevy-facing command work should add a semantic `Message` type plus `ToLegacy` bridge while legacy dispatch remains in place.
-- `crates/eg-state/src/commands.rs`: `AppCommand` is the legacy action dispatch enum. It is still routed through `State::dispatch()` by the compatibility bridge and will be deleted after Bevy handlers mutate resources/components directly. **New editor commands** should keep editor intent self-contained (`EditorCommand` + matching Bevy message bridge) rather than adding unrelated top-level `AppCommand` variants.
+- `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. New Bevy-facing command work should add a semantic `Message` type whose handler mutates App-world resources directly or writes a typed request resource for Runtime to consume while legacy side effects still live on `State`.
+- `crates/eg-state/src/commands.rs`: `AppCommand` is the legacy UI/input intent enum. It is translated at App-world ingress into typed Bevy messages by `eg-state::events` and `state::input_bridge`; do not add new top-level variants when an editor-specific `EditorCommand` + message bridge is enough.
 - `crates/eg-codec/src/lib.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
 - `crates/eg-level/src/import_export.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
 - `crates/eg-game/src/`: Core Engine (headless, no I/O). Must remain completely decoupled from rendering and I/O. It exposes an ECS core (`GamePlugin`, gameplay components/resources/systems) plus a compatibility `GameState` wrapper for legacy callers and editor preview.
 - `crates/eg-platform/src/`: Platform services shared by app/state/audio code.
 - `crates/eg-state/src/`: Application State & Editor Logic. This crate owns the Bevy schedule/resource boundary (`StateSchedule`, `StatePlugins`, async/result bridges, render extraction bridge) and the legacy `State` compatibility object.
 - `crates/eg-state/src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
-- `crates/eg-state/src/state/command_dispatch.rs`: Legacy `State::dispatch()` routes top-level `AppCommand` variants and input/keybind mapping. Prefer adding Bevy message handlers first, then bridging to this file while compatibility remains.
-- `crates/eg-state/src/state/editor_dispatch.rs`: Legacy `State::dispatch_editor()` routes `EditorCommand` variants. Prefer adding Bevy message handlers first, then bridging to this file while compatibility remains.
+- `crates/eg-state/src/state/input_bridge.rs`: Drains queued platform `InputEvent`s into App-world resources and typed Bevy messages before command handlers run.
+- `crates/eg-state/src/state/gameplay_compat.rs` / `escape_compat.rs`: Small remaining legacy side-effect adapters consumed by Runtime request sync while gameplay pause/practice and Escape state machines migrate fully into App-world systems.
 - `crates/eg-editor-domain/src/`: Editor Domain Logic
 - `crates/eg-ui/src/`: Egui UI Components
 - `crates/eg-mesh/src/`: Mesh Generation

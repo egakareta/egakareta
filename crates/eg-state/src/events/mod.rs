@@ -90,37 +90,6 @@ pub mod timing;
 // module paths. Public message *types* remain accessible via their
 // submodule path (e.g. `events::navigation::TurnRight`).
 
-/// Legacy command buffer left in place until the runtime bridge deletion pass.
-///
-/// Message handlers now use direct resource writes or typed request resources,
-/// so this buffer is expected to stay empty. It remains registered while
-/// adjacent runtime/tests are migrated away from the old drain point.
-#[derive(Resource, Default, Debug)]
-pub struct PendingCommands {
-    /// Commands to route through `State::dispatch`.
-    pub app_commands: Vec<AppCommand>,
-    /// Commands to route through `State::dispatch_editor`.
-    pub editor_commands: Vec<EditorCommand>,
-}
-
-impl PendingCommands {
-    /// True when no commands are buffered.
-    pub fn is_empty(&self) -> bool {
-        self.app_commands.is_empty() && self.editor_commands.is_empty()
-    }
-
-    /// Number of buffered commands (app + editor).
-    pub fn len(&self) -> usize {
-        self.app_commands.len() + self.editor_commands.len()
-    }
-
-    /// Clear the buffer.
-    pub fn clear(&mut self) {
-        self.app_commands.clear();
-        self.editor_commands.clear();
-    }
-}
-
 /// System set that contains the per-message command handlers.
 ///
 /// All systems in this set read a single `MessageReader<T>`. Handlers mutate
@@ -129,13 +98,12 @@ impl PendingCommands {
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandHandlerSet;
 
-/// Register every eg-state message type on the given `App` and keep the
-/// temporary [`PendingCommands`] compatibility resource initialized.
+/// Register every eg-state message type on the given `App`.
 ///
 /// The schedule itself is owned by `State` (Phase 2c / 7), so this
-/// helper does not add a `Schedule` — only the `Messages<T>` resources
-/// and the temporary `PendingCommands` buffer. Use [`add_command_systems`] to
-/// add the per-message command handlers to a `Schedule`.
+/// helper does not add a `Schedule` — only the `Messages<T>` resources.
+/// Use [`add_command_systems`] to add the per-message command handlers
+/// to a `Schedule`.
 pub fn register_command_events(app: &mut App) {
     // Add the message resources so `Messages<T>` is available.
     navigation::register_events(app);
@@ -154,17 +122,14 @@ pub fn register_command_events(app: &mut App) {
     session::register_events(app);
     input_state::register_events(app);
     pointer::register_events(app);
-
-    // Temporary compatibility buffer. No current message handler writes it.
-    app.init_resource::<PendingCommands>();
 }
 
 /// World-flavoured variant of [`register_command_events`] for callers
 /// that work with a bare `World` (e.g. `State` constructs its `World`
 /// directly without going through an `App`). Initializes the
-/// `Messages<T>` resource for every event type + the temporary
-/// [`PendingCommands`] buffer; does **not** add a schedule — see
-/// `register_state_command_pipeline` for the full `World` setup.
+/// `Messages<T>` resource for every event type; does **not** add a
+/// schedule — see `register_state_command_pipeline` for the full
+/// `World` setup.
 pub fn register_command_events_world(world: &mut World) {
     use bevy_ecs::message::Messages;
     // Navigation
@@ -286,8 +251,6 @@ pub fn register_command_events_world(world: &mut World) {
     world.init_resource::<Messages<pointer::PointerMoved>>();
     world.init_resource::<Messages<pointer::UpdateCursorFromScreen>>();
     world.init_resource::<Messages<pointer::CameraDrag>>();
-
-    world.init_resource::<PendingCommands>();
 }
 
 /// Write a legacy app command into the Bevy message bus.
@@ -644,10 +607,10 @@ pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
 
 /// Add every per-message drain system to a `Schedule`.
 ///
-/// `State::tick_state` runs the schedule, so the systems execute once
-/// per frame in the order they're added (Bevy schedules are not
-/// parallel-by-default for unconstrained systems, so this is
-/// deterministic). All systems target the [`CommandHandlerSet`].
+/// Runtime runs the schedule once per frame, so these systems execute
+/// in the order they're added (Bevy schedules are not parallel-by-default
+/// for unconstrained systems, so this is deterministic). All systems
+/// target the [`CommandHandlerSet`].
 pub fn add_command_systems(schedule: &mut Schedule) {
     // Bevy's `IntoScheduleConfigs` only goes up to 16 systems in a flat
     // tuple, so we add each domain's systems in its own `add_systems`
@@ -798,13 +761,16 @@ pub fn add_command_systems(schedule: &mut Schedule) {
             input_state::handle_set_pan_right_held,
         ))
         // Pointer / drag.
-        .add_systems((
-            pointer::handle_mouse_button,
-            pointer::handle_primary_click,
-            pointer::handle_pointer_moved,
-            pointer::handle_update_cursor_from_screen,
-            pointer::handle_camera_drag,
-        ));
+        .add_systems(
+            (
+                pointer::handle_mouse_button,
+                pointer::handle_pointer_moved,
+                pointer::handle_update_cursor_from_screen,
+                pointer::handle_camera_drag,
+                pointer::handle_primary_click,
+            )
+                .chain(),
+        );
 }
 
 #[cfg(test)]
@@ -822,24 +788,6 @@ mod tests {
         DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode,
         LevelMetadata, LevelObject, MenuState,
     };
-
-    #[test]
-    fn pending_commands_default_is_empty() {
-        let pending = PendingCommands::default();
-        assert!(pending.is_empty());
-        assert_eq!(pending.len(), 0);
-    }
-
-    #[test]
-    fn pending_commands_clear_resets_both() {
-        let mut pending = PendingCommands {
-            app_commands: vec![AppCommand::TurnRight],
-            editor_commands: vec![EditorCommand::SetSnapToGrid(false)],
-        };
-        assert!(!pending.is_empty());
-        pending.clear();
-        assert!(pending.is_empty());
-    }
 
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
@@ -862,7 +810,7 @@ mod tests {
         // `EditorCameraRes` + `EditorTriggerRes`; the resize carve-out
         // reaches for `RenderResizeRequest`; the perf-frame copy carve-out
         // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
-        // reads message buffers + the `PendingCommands` accumulator.
+        // reads message buffers and App-world resources.
         world.init_resource::<crate::state::EditorInputRes>();
         world.init_resource::<crate::state::EditorObjectsRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
@@ -920,7 +868,6 @@ mod tests {
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
         assert!(world.resource::<crate::state::TurnRightRequest>().pending);
-        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
@@ -933,7 +880,6 @@ mod tests {
                 .resource::<crate::state::ToggleEditorRequest>()
                 .pending
         );
-        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
@@ -948,12 +894,6 @@ mod tests {
         assert!(resize.pending);
         assert_eq!(resize.size.width, 1920);
         assert_eq!(resize.size.height, 1080);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "ResizeSurface must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -967,12 +907,6 @@ mod tests {
                 .resource::<crate::state::PerfFrameCopyRequest>()
                 .pending,
             "CopyLatestPerfFrame handler must request an App-world perf-frame copy"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "CopyLatestPerfFrame must not stage a legacy command"
         );
     }
 
@@ -991,12 +925,6 @@ mod tests {
                 .pending,
             "AuthSubmitSignIn handler must request an App-world sign-in"
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthSubmitSignIn must not stage a legacy command"
-        );
     }
 
     /// `AuthSignOut` is a carve-out: the handler writes
@@ -1011,12 +939,6 @@ mod tests {
         assert!(
             world.resource::<crate::state::AuthSignOutRequest>().pending,
             "AuthSignOut handler must request an App-world sign-out"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthSignOut must not stage a legacy command"
         );
     }
 
@@ -1035,12 +957,6 @@ mod tests {
                 .pending,
             "AuthOpenSignup handler must request an App-world signup-page open"
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthOpenSignup must not stage a legacy command"
-        );
     }
 
     // --- Phase 3.48 / Navigation request carve-out tests ---
@@ -1048,7 +964,7 @@ mod tests {
     // The `GameQuitToMenu`, `GameRestartLevel`,
     // `GameSetPracticeCheckpoint`, and `GameRemovePracticeCheckpoint`
     // handlers in `events::navigation` write to dedicated request
-    // resources instead of staging `AppCommand`s in `PendingCommands`.
+    // resources instead of staging `AppCommand`s through the legacy command bridge.
     // The runtime sync consumes each request and calls the existing
     // legacy `State::apply_game_*` compatibility methods. The
     // schedule-level tests below pin the request is set and no
@@ -1073,12 +989,6 @@ mod tests {
                 .pending,
             "GameQuitToMenu handler must request an App-world quit-to-menu"
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameQuitToMenu must not stage a legacy command"
-        );
     }
 
     /// `GameRestartLevel` is a carve-out: the handler writes
@@ -1095,12 +1005,6 @@ mod tests {
                 .resource::<crate::state::GameRestartLevelRequest>()
                 .pending,
             "GameRestartLevel handler must request an App-world level restart"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameRestartLevel must not stage a legacy command"
         );
     }
 
@@ -1119,12 +1023,6 @@ mod tests {
                 .pending,
             "GameSetPracticeCheckpoint handler must request an App-world checkpoint"
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameSetPracticeCheckpoint must not stage a legacy command"
-        );
     }
 
     /// `GameRemovePracticeCheckpoint` is a carve-out: the handler
@@ -1142,27 +1040,15 @@ mod tests {
                 .pending,
             "GameRemovePracticeCheckpoint handler must request an App-world checkpoint removal"
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameRemovePracticeCheckpoint must not stage a legacy command"
-        );
     }
 
     #[test]
-    fn history_snapshot_drains_without_pending_commands() {
+    fn history_snapshot_drains_without_legacy_command_bridge() {
         let mut world = build_event_world();
         world.write_message(HistorySnapshot {
             label: "drag_release".to_string(),
         });
         world.run_schedule(crate::state::StateSchedule);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "HistorySnapshot must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -1244,12 +1130,6 @@ mod tests {
                 .len(),
             1
         );
-        assert!(
-            world
-                .resource::<PendingCommands>()
-                .editor_commands
-                .is_empty()
-        );
 
         world.write_message(Redo);
         world.run_schedule(crate::state::StateSchedule);
@@ -1276,14 +1156,6 @@ mod tests {
                 .0
                 .redo
                 .is_empty()
-        );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "Undo/Redo must not stage legacy commands"
         );
     }
 
@@ -1333,14 +1205,6 @@ mod tests {
                 .undo
                 .len(),
             1
-        );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "RemoveBlock must not stage a legacy command"
         );
     }
 
@@ -1401,14 +1265,6 @@ mod tests {
                 .len(),
             2
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "Copy/Duplicate/Paste must not stage legacy commands"
-        );
     }
 
     #[test]
@@ -1465,14 +1321,6 @@ mod tests {
                 .undo
                 .len(),
             1
-        );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "UpdateSelectedBlock must not stage a legacy command"
         );
     }
 
@@ -1533,14 +1381,6 @@ mod tests {
                 .len(),
             1
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "SnapSelectionToGrid block branch must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -1584,14 +1424,6 @@ mod tests {
                 .iter()
                 .all(|time_seconds| time_seconds.is_finite())
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "SnapSelectionToGrid tap branch must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -1629,10 +1461,6 @@ mod tests {
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [11.0, 33.0]);
         approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
-        assert!(
-            world.resource::<PendingCommands>().is_empty(),
-            "FocusCameraTarget must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -1669,7 +1497,6 @@ mod tests {
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [5.5, 6.5]);
         approx::assert_abs_diff_eq!(camera.editor_target_z, 1.0, epsilon = 1e-6);
-        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
@@ -1711,10 +1538,6 @@ mod tests {
         approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(camera.editor_yaw, 0.4, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(camera.editor_pitch, 0.2, epsilon = 1e-5);
-        assert!(
-            world.resource::<PendingCommands>().is_empty(),
-            "FocusCameraTarget fallback must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -1826,23 +1649,12 @@ mod tests {
                 .len(),
             1
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty()
-                && world
-                    .resource::<PendingCommands>()
-                    .editor_commands
-                    .is_empty(),
-            "AddTransformTrigger must not stage a legacy command"
-        );
     }
 
     #[test]
     fn schedule_drains_set_editor_mode_into_editor_command() {
         // `SetEditorMode` is a Phase 3.13 carve-out: the handler
-        // mutates `EditorInputRes.0.mode` directly. Pin the
-        // resource update and confirm no legacy command is
-        // staged (the `PendingCommands` buffer stays empty for
-        // this message).
+        // mutates `EditorInputRes.0.mode` directly.
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
         world.run_schedule(crate::state::StateSchedule);
@@ -1851,11 +1663,6 @@ mod tests {
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Tapping,
             "SetEditorMode handler must mutate EditorInputRes.mode"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetEditorMode must not stage a legacy editor command"
         );
     }
 
@@ -1877,11 +1684,6 @@ mod tests {
                 .0
                 .snap_to_grid
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetSnapToGrid must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -1892,15 +1694,12 @@ mod tests {
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
         assert!(world.resource::<crate::state::TurnRightRequest>().pending);
-        assert!(world.resource::<PendingCommands>().is_empty());
     }
 
     #[test]
     fn empty_message_buffer_is_noop() {
         let mut world = build_event_world();
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.is_empty());
     }
 
     #[test]
@@ -1911,11 +1710,6 @@ mod tests {
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.is_empty(),
-            "request/direct messages must not stage legacy commands"
-        );
         assert!(world.resource::<crate::state::TurnRightRequest>().pending);
         assert!(
             world
@@ -1938,9 +1732,8 @@ mod tests {
     }
 
     // --- Carve-out pattern: handlers that mutate App-world resources
-    // directly, bypassing `PendingCommands`. Pin the contract: the
-    // message reaches the schedule, the handler mutates the resource,
-    // and the buffer is empty afterwards (no legacy command staged).
+    // directly. Pin the contract: the message reaches the schedule
+    // and the handler mutates the resource.
 
     use crate::events::input_state::{SetPanRightHeld, SetShiftHeld};
     use crate::state::EditorInputRes;
@@ -1965,11 +1758,6 @@ mod tests {
             "SetShiftHeld handler must mutate EditorInputRes"
         );
         // Carve-out: the message must not be staged as a legacy command.
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetShiftHeld must not stage a legacy editor command"
-        );
     }
 
     /// Repeated messages of the same carve-out type should leave the
@@ -2019,11 +1807,6 @@ mod tests {
             new_id,
             "SetBlockId handler must mutate EditorConfigRes.selected_block_id"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetBlockId must not stage a legacy editor command"
-        );
     }
 
     // --- BPM carve-out pattern ---
@@ -2072,11 +1855,6 @@ mod tests {
             "BpmTap with a single tap must not produce a result"
         );
         // Carve-out: the message must not be staged as a legacy command.
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "BpmTap must not stage a legacy editor command"
-        );
     }
 
     /// `BpmTapReset` is a carve-out: the handler clears the
@@ -2109,11 +1887,6 @@ mod tests {
                 .bpm_tap_result
                 .is_none(),
             "BpmTapReset must clear bpm_tap_result"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "BpmTapReset must not stage a legacy editor command"
         );
     }
 
@@ -2155,11 +1928,6 @@ mod tests {
             Some("AppWorldName"),
             "RenameLevel handler must mutate SessionStateRes.editor_level_name"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "RenameLevel must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2176,11 +1944,6 @@ mod tests {
             world.resource::<SessionStateRes>().editor_show_metadata,
             "SetShowMetadata handler must mutate SessionStateRes.editor_show_metadata"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetShowMetadata must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2192,8 +1955,6 @@ mod tests {
         world.run_schedule(crate::state::StateSchedule);
 
         assert!(world.resource::<SessionStateRes>().editor_show_settings);
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     #[test]
@@ -2227,8 +1988,6 @@ mod tests {
             world.resource::<SessionStateRes>().editor_settings_section,
             new_section
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     #[test]
@@ -2248,8 +2007,6 @@ mod tests {
                 .editor_keybind_capture_action,
             capture
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     #[test]
@@ -2270,11 +2027,6 @@ mod tests {
                 .ui_scale_multiplier,
             3.0,
             epsilon = 1e-6
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetUiScaleMultiplier must not stage a legacy editor command"
         );
     }
 
@@ -2297,11 +2049,6 @@ mod tests {
             session.settings_restart_required,
             "SetGraphicsBackend must mark restart required when it changes the setting"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetGraphicsBackend must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2322,11 +2069,6 @@ mod tests {
         assert!(
             !session.settings_restart_required,
             "locked SetGraphicsBackend must not mark restart required"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "locked SetGraphicsBackend must still avoid staging a legacy editor command"
         );
     }
 
@@ -2349,11 +2091,6 @@ mod tests {
                 .iter()
                 .any(|candidate| **candidate == chord),
             "SetKeybind must write the normalized chord into SessionStateRes.app_settings"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetKeybind must not stage a legacy editor command"
         );
     }
 
@@ -2381,11 +2118,6 @@ mod tests {
                 .keybinds_for_action("copy")
                 .is_empty(),
             "ClearKeybindSlot must remove the requested slot from SessionStateRes.app_settings"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ClearKeybindSlot must not stage a legacy editor command"
         );
     }
 
@@ -2418,11 +2150,6 @@ mod tests {
         assert_eq!(
             actual, expected_defaults,
             "ResetKeybind must restore default bindings for the requested action"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ResetKeybind must not stage a legacy editor command"
         );
     }
 
@@ -2458,11 +2185,6 @@ mod tests {
                 "ResetKeybinds must restore essential default {default_binding:?}"
             );
         }
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ResetKeybinds must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2484,11 +2206,6 @@ mod tests {
             &metadata,
             "UpdateCreatorMetadata handler must mutate SessionStateRes.editor_creator_metadata"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "UpdateCreatorMetadata must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2507,11 +2224,6 @@ mod tests {
             &metadata,
             "UpdateMusic handler must mutate SessionStateRes.editor_music_metadata"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "UpdateMusic must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2526,11 +2238,6 @@ mod tests {
             world.resource::<SessionStateRes>().editor_sky_color,
             [0.0, 0.5, 1.0],
             "UpdateSkyColor handler must clamp and mutate SessionStateRes.editor_sky_color"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "UpdateSkyColor must not stage a legacy editor command"
         );
     }
 
@@ -2563,11 +2270,6 @@ mod tests {
                 .editor_menu_preview_camera,
             Some(expected)
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "CaptureMenuPreviewCamera must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -2589,11 +2291,6 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .editor_menu_preview_camera,
             None
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "UseAutoMenuPreviewCamera must not stage a legacy editor command"
         );
     }
 
@@ -2618,11 +2315,6 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .editor_menu_preview_camera,
             existing
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "phase-guarded menu preview camera messages must not stage legacy editor commands"
         );
     }
 
@@ -2673,11 +2365,6 @@ mod tests {
             timing.revision > prev_revision,
             "AddTimingPoint handler must bump the revision"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "AddTimingPoint must not stage a legacy editor command"
-        );
     }
 
     /// `RemoveTimingPoint` removes the entry at the given index (or
@@ -2713,8 +2400,6 @@ mod tests {
         assert_eq!(timing.timing_points.len(), 1);
         assert_eq!(timing.timing_points[0].time_seconds, 1.0);
         assert!(timing.revision > prev_revision);
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `RemoveTimingPoint` with an out-of-range index is a no-op and
@@ -2777,8 +2462,6 @@ mod tests {
         assert_eq!(timing.timing_points.len(), 2);
         assert_eq!(timing.timing_points[0].time_seconds, 1.0);
         assert_eq!(timing.timing_points[1].time_seconds, 5.0);
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `SetTimingPointBpm` updates the BPM (clamped to >= 1.0).
@@ -2803,8 +2486,6 @@ mod tests {
             (world.resource::<EditorTimingRes>().0.timing_points[0].bpm - 1.0).abs() < 1e-6,
             "SetTimingPointBpm must clamp BPM to >= 1.0"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `SetTimingPointTimeSignature` updates the numerator/denominator
@@ -2832,8 +2513,6 @@ mod tests {
         let tp = &world.resource::<EditorTimingRes>().0.timing_points[0];
         assert_eq!(tp.time_signature_numerator, 1, "clamped to >= 1");
         assert_eq!(tp.time_signature_denominator, 1, "clamped to >= 1");
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `SetTimingSelected` updates the selected timing-point index.
@@ -2858,9 +2537,6 @@ mod tests {
             world.resource::<EditorTimingRes>().0.timing_selected_index,
             None
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     // --- Spawn carve-out pattern ---
@@ -2894,11 +2570,6 @@ mod tests {
             [4.0, 8.0, 12.0],
             "SetSpawnHere handler must copy cursor into EditorSpawnRes.position"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetSpawnHere must not stage a legacy editor command"
-        );
     }
 
     /// `RotateSpawnDirection` cycles `EditorSpawnRes.0.direction`
@@ -2920,12 +2591,6 @@ mod tests {
         assert_eq!(
             world.resource::<EditorSpawnRes>().0.direction,
             Direction::Forward
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "RotateSpawnDirection must not stage a legacy editor command"
         );
     }
 
@@ -2959,11 +2624,6 @@ mod tests {
                     .selected_block_rotation_degrees[1]
             );
         }
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "RotatePlacementPreview must not stage a legacy editor command"
-        );
     }
 
     // --- Camera + TriggerSelected carve-out pattern ---
@@ -2998,11 +2658,6 @@ mod tests {
                 || camera.editor_target_z != 0.0,
             "AdjustZoom handler must move the editor camera"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "AdjustZoom must not stage a legacy editor command"
-        );
     }
 
     /// `SetCameraOrientation` (no transition) sets the yaw +
@@ -3027,8 +2682,6 @@ mod tests {
         approx::assert_abs_diff_eq!(camera.editor_yaw, 1.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(camera.editor_pitch, 0.5, epsilon = 1e-6);
         assert!(camera.transition.is_none());
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `SetCameraOrientation` with a positive `transition_seconds`
@@ -3061,8 +2714,6 @@ mod tests {
             0.5,
             epsilon = 1e-6
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `SetTriggerSelected` mutates
@@ -3083,9 +2734,6 @@ mod tests {
         world.write_message(SetTriggerSelected(None));
         world.run_schedule(crate::state::StateSchedule);
         assert_eq!(world.resource::<EditorTriggerRes>().0.selected_index, None);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(pending.editor_commands.is_empty());
     }
 
     /// `AddCameraTrigger` captures the App-world editor camera pose as a
@@ -3133,11 +2781,6 @@ mod tests {
                 .len(),
             1,
             "AddCameraTrigger must record App-world editor history"
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty() && pending.app_commands.is_empty(),
-            "AddCameraTrigger must not stage a legacy command"
         );
     }
 
@@ -3192,11 +2835,6 @@ mod tests {
                 .resource::<crate::state::EditorObjectsRes>()
                 .object_mutation_pending
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty() && pending.app_commands.is_empty(),
-            "AddCameraFollowTrigger must not stage a legacy command"
-        );
     }
 
     #[test]
@@ -3215,22 +2853,13 @@ mod tests {
                 .is_empty(),
             "camera trigger creation must no-op outside editor phase"
         );
-        assert!(
-            world.resource::<PendingCommands>().is_empty(),
-            "phase-guarded camera trigger messages must not stage legacy commands"
-        );
     }
 
     // --- Phase 3.12 / Misc carve-out tests ---
     //
     // The `misc` event handlers for `ToggleHitboxVisualization`,
-    // `TogglePerfOverlay`, and `TogglePlaceWindow` write directly to
-    // App-world resources (`EditorInputRes`, `PerfRes`, and
-    // `SessionStateRes`) instead of staging a legacy
-    // `EditorCommand`. The `Escape` handler keeps the legacy
-    // `PendingCommands` path because the legacy
-    // `handle_editor_escape` is a multi-step context-sensitive
-    // state machine.
+    // `TogglePerfOverlay`, `TogglePlaceWindow`, and `Escape` write
+    // directly to App-world resources or typed request resources.
 
     use crate::events::misc::{
         Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow,
@@ -3273,12 +2902,6 @@ mod tests {
                 .0
                 .show_hitbox_visualization
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ToggleHitboxVisualization must not stage a legacy editor command"
-        );
     }
 
     /// `TogglePerfOverlay` is a carve-out: the handler mutates
@@ -3304,12 +2927,6 @@ mod tests {
         world.write_message(TogglePerfOverlay);
         world.run_schedule(crate::state::StateSchedule);
         assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "TogglePerfOverlay must not stage a legacy editor command"
-        );
     }
 
     /// `TogglePlaceWindow` is a carve-out: the handler mutates
@@ -3344,17 +2961,10 @@ mod tests {
                 .resource::<crate::state::SessionStateRes>()
                 .editor_show_place_window
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "TogglePlaceWindow must not stage a legacy editor command"
-        );
     }
 
-    /// `Escape` is a carve-out from the `PendingCommands` pipeline
-    /// (same request-resource pattern as `ResizeSurface` and
-    /// `CopyLatestPerfFrame`): the handler writes
+    /// `Escape` uses the same request-resource pattern as
+    /// `ResizeSurface` and `CopyLatestPerfFrame`: the handler writes
     /// `EscapeRequest.pending = true` and the runtime sync consumes
     /// it by calling `State::apply_editor_escape`. Pin the request
     /// is set and no legacy command is staged.
@@ -3368,12 +2978,6 @@ mod tests {
         assert!(
             world.resource::<crate::state::EscapeRequest>().pending,
             "Escape handler must request an App-world escape"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "Escape must not stage a legacy command"
         );
     }
 
@@ -3440,12 +3044,6 @@ mod tests {
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Select
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetEditorMode must not stage a legacy editor command"
-        );
     }
 
     /// `SelectRecentBlock` is a carve-out: the handler reads
@@ -3478,11 +3076,6 @@ mod tests {
         // Out-of-range index: no-op, no legacy command staged.
         world.write_message(SelectRecentBlock(10));
         world.run_schedule(crate::state::StateSchedule);
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SelectRecentBlock must not stage a legacy editor command"
-        );
         assert_eq!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3521,11 +3114,6 @@ mod tests {
         );
 
         // No legacy command is staged across the whole test.
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SelectRecentBlock must not stage a legacy editor command"
-        );
     }
 
     /// `PickSelectedBlock` is a carve-out: the handler reads the
@@ -3567,11 +3155,6 @@ mod tests {
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Place
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "PickSelectedBlock must not stage a legacy editor command"
         );
     }
 
@@ -3628,11 +3211,6 @@ mod tests {
                 .last_mode,
             Some(EditorMode::Place)
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "PickSelectedBlock must not stage a legacy editor command"
-        );
     }
 
     /// `PickBlockAt` is a carve-out: the handler reuses the existing
@@ -3687,11 +3265,6 @@ mod tests {
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Place
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "PickBlockAt must not stage a legacy editor command"
-        );
     }
 
     /// `Playtest` is a request-resource carve-out: the schedule records
@@ -3707,11 +3280,6 @@ mod tests {
         world.run_schedule(crate::state::StateSchedule);
 
         assert!(world.resource::<crate::state::PlaytestRequest>().pending);
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "Playtest must not stage a legacy editor command"
-        );
     }
 
     /// Session side-effect messages are request-resource carve-outs:
@@ -3754,11 +3322,6 @@ mod tests {
             world
                 .resource::<crate::state::TriggerAudioImportRequest>()
                 .pending
-        );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "session side-effect messages must not stage legacy editor commands"
         );
     }
 
@@ -3804,11 +3367,6 @@ mod tests {
                 .game_paused,
             "GameResume handler must clear SessionStateRes.game_paused"
         );
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty(),
-            "GameResume must not stage a legacy command (carve-out)"
-        );
     }
 
     /// `GameSetPracticeMode(enabled)` is a carve-out: the
@@ -3845,11 +3403,6 @@ mod tests {
         );
 
         // No legacy command is staged for either write.
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameSetPracticeMode must not stage any legacy command (carve-out)"
-        );
     }
 
     /// `NextLevel` and `PrevLevel` are carve-outs: in `Menu` they mutate
@@ -3886,12 +3439,6 @@ mod tests {
                 .selected_level,
             2,
             "PrevLevel in Menu must wrap through MenuStateRes"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty(),
-            "menu NextLevel/PrevLevel must not stage legacy commands"
         );
     }
 
@@ -3941,10 +3488,6 @@ mod tests {
             1,
             "editor navigation must leave MenuStateRes untouched"
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty(),
-            "editor NextLevel/PrevLevel must not stage legacy commands"
-        );
     }
 
     #[test]
@@ -3979,10 +3522,6 @@ mod tests {
             1,
             "Playing NextLevel/PrevLevel must not move menu selection"
         );
-        assert!(
-            world.resource::<PendingCommands>().app_commands.is_empty(),
-            "Playing NextLevel/PrevLevel must not stage legacy commands"
-        );
     }
 
     #[test]
@@ -3996,12 +3535,6 @@ mod tests {
         world.write_message(NextLevel);
         world.write_message(PrevLevel);
         world.run_schedule(crate::state::StateSchedule);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "missing MenuStateRes must not route NextLevel/PrevLevel through legacy commands"
-        );
     }
 
     #[test]
@@ -4035,12 +3568,6 @@ mod tests {
                 .time_seconds,
             4.0,
             epsilon = 1e-6
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ShiftTimeline must not stage a legacy editor command"
         );
     }
 
@@ -4076,12 +3603,6 @@ mod tests {
             3.0,
             epsilon = 1e-6
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetTimelineTime must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4109,12 +3630,6 @@ mod tests {
                 .duration_seconds,
             0.1,
             epsilon = 1e-6
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetTimelineDuration must not stage a legacy editor command"
         );
     }
 
@@ -4149,12 +3664,6 @@ mod tests {
                 .selected_index,
             None,
             "out-of-range selection must clear the selected tap"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetSelectedTap must not stage a legacy editor command"
         );
     }
 
@@ -4207,12 +3716,6 @@ mod tests {
             timeline.clock.duration_seconds,
             epsilon = 1e-6
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetSelectedTapTime must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4251,12 +3754,6 @@ mod tests {
         assert_eq!(
             timeline.taps.selected_index, None,
             "removing the selected tap must clear selection"
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "RemoveTap/RemoveTapAt must not stage legacy editor commands"
         );
     }
 
@@ -4315,12 +3812,6 @@ mod tests {
                 .last_mode,
             None
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ToggleTimelinePlayback must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4357,12 +3848,6 @@ mod tests {
             "AddTap must select an existing epsilon-matched tap instead of duplicating it"
         );
         assert_eq!(timeline.taps.selected_index, Some(1));
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "AddTap must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4382,12 +3867,6 @@ mod tests {
         assert!(timeline.taps.tap_times.is_empty());
         assert!(timeline.taps.tap_indicator_positions.is_empty());
         assert_eq!(timeline.taps.selected_index, None);
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "ClearTaps must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4413,12 +3892,6 @@ mod tests {
                 .playback_speed,
             2.0,
             epsilon = 1e-6
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetPlaybackSpeed must not stage a legacy editor command"
         );
     }
 
@@ -4446,12 +3919,6 @@ mod tests {
             0.1,
             epsilon = 1e-6
         );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetWaveformZoom must not stage a legacy editor command"
-        );
     }
 
     #[test]
@@ -4466,12 +3933,6 @@ mod tests {
                 .waveform_scroll,
             2.25,
             epsilon = 1e-6
-        );
-
-        let pending = world.resource::<PendingCommands>();
-        assert!(
-            pending.editor_commands.is_empty(),
-            "SetWaveformScroll must not stage a legacy editor command"
         );
     }
 }

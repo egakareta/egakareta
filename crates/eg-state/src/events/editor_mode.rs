@@ -55,9 +55,8 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `SetEditorMode` is a carve-out from the `PendingCommands` →
-// `State::dispatch_editor` pipeline (same pattern as `events::snap`,
-// `events::bpm`, and `events::misc`): the handler mutates
+// `SetEditorMode` mutates App-world state directly (same pattern as
+// `events::snap`, `events::bpm`, and `events::misc`): the handler mutates
 // `EditorInputRes.0.mode` directly, and the legacy
 // `State.editor.input.mode` is synced from the resource by
 // `Runtime::sync_app_editor_input_state` before any dispatch in the
@@ -85,9 +84,7 @@ pub fn handle_set_editor_mode(
     }
 }
 
-// `SetBlockId` is a carve-out from the `PendingCommands` ->
-// `State::dispatch_editor` pipeline (same pattern as `events::snap`):
-// the handler mutates `EditorConfigRes.0.selected_block_id` directly,
+// `SetBlockId` mutates `EditorConfigRes.0.selected_block_id` directly,
 // and the legacy `State.editor.config.selected_block_id` is synced from
 // the resource by `Runtime::sync_app_editor_config_state` before any
 // dispatch in the same frame.

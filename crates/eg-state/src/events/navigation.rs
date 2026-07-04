@@ -9,8 +9,8 @@
 //! `AppCommand::Navigation / Phase` in the legacy enum.
 //!
 //! `NextLevel`/`PrevLevel` in the menu, `GameResume`, and
-//! `GameSetPracticeMode` are **carve-outs** from the `PendingCommands`
-//! pipeline (same pattern as `events::snap`, `events::session`, ...).
+//! `GameSetPracticeMode` write App-world resources or typed requests directly
+//! (same pattern as `events::snap`, `events::session`, ...).
 //! The next/previous level handlers mutate `MenuStateRes` directly when
 //! the App phase is `Menu` and `EditorInputRes.cursor` directly when the
 //! App phase is `Editor`. The game pause/practice handlers mutate
@@ -177,14 +177,13 @@ pub fn handle_game_resume(
     }
 }
 
-// `GameRestartLevel` is a Phase 3.48 carve-out from the
-// `PendingCommands` → `State::dispatch` pipeline (same
+// `GameRestartLevel` writes a typed request resource (same
 // request-resource pattern as
 // `events::auth::handle_resize_surface` and
 // `events::misc::handle_escape`): the handler writes
 // `GameRestartLevelRequest.pending = true` and
 // `Runtime::sync_app_game_restart_level_request` consumes the request
-// before the remaining `PendingCommands` drain and calls the
+// during the typed request sync pass and calls the
 // existing legacy `State::apply_game_restart_level` compatibility
 // method. The restart side effect (gameplay clock reset, audio
 // restart) stays legacy-owned.
@@ -200,7 +199,7 @@ pub fn handle_game_restart_level(
 /// `GameSetPracticeMode` is a carve-out: the handler writes the
 /// enabled flag directly to `SessionStateRes.practice_mode_enabled`
 /// instead of staging a legacy `AppCommand`. The legacy
-/// `set_practice_mode_enabled` (in `State::command_dispatch`) has
+/// `set_practice_mode_enabled` compatibility setter has
 /// heavy side effects (clears `practice_checkpoints`, calls
 /// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
 /// `resume_game`); the change-guarded sync in

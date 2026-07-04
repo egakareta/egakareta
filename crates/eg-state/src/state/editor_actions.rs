@@ -5,28 +5,22 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{Vec2, Vec3};
+use glam::Vec2;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_PIXELS};
-use crate::commands::AppCommand;
-use crate::state::editor_command::EditorCommand;
-use eg_blocks::BlockId;
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
-    TimelineNearSearch, TimingDivisionDirection, add_tap_with_indicator,
-    build_editor_playtest_transition, derive_tap_indicator_positions,
-    derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
-    remove_topmost_block_at_cursor, snap_cell_to_step,
+    TimelineNearSearch, add_tap_with_indicator, build_editor_playtest_transition,
+    derive_tap_indicator_positions, derive_timeline_time_for_world_target_near_time,
+    derive_timing_division_tap_previews, remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
-    timing_division_time_in_direction, toggle_spawn_direction, topmost_block_index_at_cursor,
+    toggle_spawn_direction, topmost_block_index_at_cursor,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
 use eg_types::TriggerTarget;
 use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
-const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
-
 fn object_ids_for_removed_indices(
     objects: &[LevelObject],
     removed_indices: &[usize],
@@ -679,6 +673,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn editor_shift_timeline_time(&mut self, delta_seconds: f32) {
         if self.phase == AppPhase::Editor {
             let current_time = self.editor.timeline.clock.time_seconds;
@@ -719,6 +714,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn editor_snap_selection_to_grid(&mut self) -> bool {
         if self.phase != AppPhase::Editor {
             return false;
@@ -821,6 +817,7 @@ impl State {
         true
     }
 
+    #[cfg(test)]
     pub(super) fn editor_set_selected_tap_time(&mut self, time_seconds: f32) -> bool {
         if self.phase != AppPhase::Editor || !time_seconds.is_finite() {
             return false;
@@ -1129,92 +1126,6 @@ impl State {
         }
     }
 
-    // ── Editor command helpers (moved from command_dispatch) ─────────
-
-    /// Select the Nth recent placeable block and switch to Place mode.
-    pub(super) fn select_recent_block(&mut self, index: usize) {
-        let block_ids: Vec<BlockId> = self
-            .editor
-            .config
-            .recent_block_ids
-            .iter()
-            .filter_map(|id| {
-                let block = eg_blocks::BlockDefinition::get(id);
-                if block.placeable {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if let Some(id) = block_ids.get(index) {
-            self.set_editor_block_id(id.clone());
-            if self.editor.timeline.playback.playing {
-                self.set_editor_playback_effective_mode(EditorMode::Place);
-            } else {
-                self.set_editor_mode(EditorMode::Place);
-            }
-        }
-    }
-
-    pub(super) fn timeline_shift_to_division_command(
-        &self,
-        direction: TimingDivisionDirection,
-    ) -> Option<AppCommand> {
-        let current_time = self.editor.timeline.clock.time_seconds;
-        if let Some(target_time) = timing_division_time_in_direction(
-            current_time,
-            &self.editor.timing.timing_points,
-            self.editor.timeline.clock.duration_seconds,
-            direction,
-        ) {
-            return Some(AppCommand::Editor(EditorCommand::ShiftTimeline(
-                target_time - current_time,
-            )));
-        }
-
-        let fallback_delta = match direction {
-            TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
-            TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
-        };
-        Some(AppCommand::Editor(EditorCommand::ShiftTimeline(
-            fallback_delta,
-        )))
-    }
-
-    pub(super) fn editor_pick_selected_block_for_place(&mut self) -> bool {
-        if !self.is_editor() {
-            return false;
-        }
-
-        let selected_indices = self.editor.selected_indices_normalized();
-        let block_index = self
-            .editor
-            .input
-            .selected_block_index
-            .filter(|index| selected_indices.contains(index))
-            .or_else(|| selected_indices.first().copied());
-
-        let Some(block_id) = block_index
-            .and_then(|index| self.editor.objects.get(index))
-            .map(|object| object.block_id.clone())
-        else {
-            return false;
-        };
-
-        if !eg_blocks::BlockDefinition::get(&block_id).placeable {
-            return false;
-        }
-
-        if self.editor.timeline.playback.playing {
-            self.set_editor_playback_effective_mode(EditorMode::Place);
-        } else {
-            self.set_editor_mode(EditorMode::Place);
-        }
-        self.set_editor_block_id(block_id);
-        true
-    }
-
     pub fn editor_pick_block_at_screen(&mut self, x: f64, y: f64) -> bool {
         if !self.is_editor() || self.editor_pointer_over_ui_input(x, y) {
             return false;
@@ -1247,76 +1158,10 @@ impl State {
         true
     }
 
-    pub(super) fn editor_focus_camera_target(&mut self) -> bool {
-        if !self.is_editor() {
-            return false;
-        }
-
-        if self.editor_effective_mode_for_playback() == EditorMode::Tapping
-            && let Some((_, _, position)) = self.editor.selected_tap()
-        {
-            self.set_editor_camera_focus(tap_focus_point(position), None);
-            return true;
-        }
-
-        if let Some((min, size)) = self.editor.selected_group_bounds() {
-            self.set_editor_camera_focus(block_bounds_center(min, size), None);
-            return true;
-        }
-
-        if let Some((_, _, position)) = self.editor.selected_tap() {
-            self.set_editor_camera_focus(tap_focus_point(position), None);
-            return true;
-        }
-
-        let (eye, target) = self.editor_preview_camera_view();
-        let orientation = camera_orientation_from_eye_target(eye, target);
-        self.set_editor_camera_focus(target, orientation);
-        true
-    }
-
-    fn set_editor_camera_focus(&mut self, target: [f32; 3], orientation: Option<(f32, f32)>) {
-        self.editor.camera.transition = None;
-        self.editor.camera.editor_pan = [target[0], target[2]];
-        self.editor.camera.editor_target_z = target[1];
-        if let Some((rotation, pitch)) = orientation {
-            self.editor.camera.editor_yaw = rotation;
-            self.editor.camera.editor_pitch =
-                pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
-        }
-        self.editor.mark_dirty(EditorDirtyFlags::camera_changed());
-    }
-
     /// Whether any blocks are currently selected in the editor.
     pub(super) fn has_block_selection(&self) -> bool {
         !self.editor.selected_indices_normalized().is_empty()
     }
-}
-
-// ── Free functions (moved from command_dispatch) ──────────────────────
-
-fn block_bounds_center(position: [f32; 3], size: [f32; 3]) -> [f32; 3] {
-    [
-        position[0] + size[0] * 0.5,
-        position[1] + size[1] * 0.5,
-        position[2] + size[2] * 0.5,
-    ]
-}
-
-fn tap_focus_point(position: [f32; 3]) -> [f32; 3] {
-    [position[0] + 0.5, position[1], position[2] + 0.5]
-}
-
-fn camera_orientation_from_eye_target(eye: [f32; 3], target: [f32; 3]) -> Option<(f32, f32)> {
-    let offset = Vec3::from_array(eye) - Vec3::from_array(target);
-    let horizontal = Vec3::new(offset.x, 0.0, offset.z).length();
-    if horizontal <= f32::EPSILON && offset.y.abs() <= f32::EPSILON {
-        return None;
-    }
-
-    let rotation = (-offset.x).atan2(-offset.z);
-    let pitch = offset.y.atan2(horizontal);
-    Some((rotation, pitch))
 }
 
 #[cfg(test)]
@@ -1620,7 +1465,7 @@ mod tests {
         state.editor.timeline.taps.tap_indicator_positions = vec![[0.24, 0.0, 1.76]];
         state.editor.timeline.taps.selected_index = Some(0);
 
-        state.process_keyboard_input("g", true, true);
+        assert!(state.editor_snap_selection_to_grid());
 
         assert_eq!(
             state.editor.timeline.taps.tap_indicator_positions[0],

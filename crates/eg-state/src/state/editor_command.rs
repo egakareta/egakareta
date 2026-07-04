@@ -8,9 +8,8 @@
 //! Editor-specific command sub-enum.
 //!
 //! New editor commands should be added here instead of in `AppCommand`.
-//! The `State::dispatch_editor()` method routes these to the appropriate
-//! `EditorSubsystem` / `State` methods, keeping editor feature additions
-//! self-contained within the `state/` module.
+//! `eg-state::events::write_editor_command_message` translates these into
+//! typed Bevy messages, keeping editor feature additions self-contained.
 
 use eg_blocks::BlockId;
 use eg_types::{

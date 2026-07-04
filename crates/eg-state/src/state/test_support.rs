@@ -177,7 +177,7 @@ mod tests {
     use crate::state::{
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        PerfRes, SessionStateRes,
+        FrameTimeRes, PerfRes, SessionStateRes,
     };
     use eg_types::AppPhase;
 
@@ -196,6 +196,7 @@ mod tests {
         app.assert_resource_exists::<EditorTimingRes>();
         app.assert_resource_exists::<EditorRuntimeRes>();
         app.assert_resource_exists::<EditorHistoryRes>();
+        app.assert_resource_exists::<FrameTimeRes>();
         app.assert_resource_exists::<PerfRes>();
     }
 

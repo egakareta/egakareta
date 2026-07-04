@@ -9,8 +9,9 @@
 //!
 //! The legacy `State` struct holds five `mpsc::Receiver`s that the
 //! platform layer (auth service, audio service, level importer) and
-//! background tasks write to. Today those receivers are drained
-//! inline by `update_*` methods called from `State::update`.
+//! background tasks write to. The production frame now drains those
+//! receivers through `StateSchedule`; the older direct `update_*`
+//! helpers remain for focused compatibility tests.
 //!
 //! Phase 6a introduces **Bevy resources** that wrap each receiver
 //! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
@@ -20,11 +21,10 @@
 //! result event into the World (Phase 6a's five new
 //! [`async_results`](crate::events::async_results) message types).
 //!
-//! The existing inline `update_*` methods keep running — both the
-//! new poll system and the legacy drains call `try_recv`, so each
-//! message is consumed exactly once across the whole frame. Phase
-//! 6b replaces the inline drains with handler systems that consume
-//! the events.
+//! `StateSchedule` is the production owner for these drains. Direct
+//! calls to the older helper methods still call `try_recv`, so tests
+//! can exercise the compatibility bodies without running a full App
+//! schedule.
 //!
 //! ## Why a `Mutex<Receiver<T>>` wrapper?
 //!
@@ -48,8 +48,8 @@
 //! `mpsc::Receiver<T>`) which makes it `!Send`. We use the same
 //! thread-local bridge pattern as Phase 4a (`state::render::mirror`):
 //! each handler system installs a `FnOnce(&mut State)` closure
-//! into a thread-local slot; `State::tick_state` drains the slot
-//! and applies each closure after the schedule finishes.
+//! into a thread-local slot; the runtime drains the slot and applies
+//! each closure after the schedule finishes.
 //!
 //! ## Schedule graph (post Phase 6b)
 //!
@@ -65,7 +65,7 @@
 //!     audio_preload_handler_system     // AudioPreloadResultEvent
 //!     level_import_handler_system      // LevelImportResultEvent
 //!   render::mirror_pod_state_via_bridge
-//!   State::tick_state drains pending async result closures → mutates State
+//!   Runtime/compatibility test harness drains pending async-result closures
 //! ```
 //!
 //! REFACTOR POINT(full-bevy): the `mpsc` channels disappear in the
@@ -95,21 +95,21 @@ use crate::state::State;
 // Type aliases for the shared `Arc<Mutex<Receiver<T>>>` channels
 // ---------------------------------------------------------------------------
 
-/// Phase 6b: shared `Arc<Mutex<Receiver<AuthServiceMessage>>>`
-/// held by both the legacy `State::auth.channel.1` field and the
-/// World's `AuthChannelRes` resource.
+/// Shared `Arc<Mutex<Receiver<AuthServiceMessage>>>` held by both the
+/// legacy `State::auth.channel.1` field and the World's
+/// `AuthChannelRes` resource.
 pub type SharedAuthReceiver = std::sync::Arc<Mutex<Receiver<AuthServiceMessage>>>;
 
-/// Phase 6b: shared `Arc<Mutex<Receiver<(String, Vec<u8>)>>>`.
+/// Shared `Arc<Mutex<Receiver<(String, Vec<u8>)>>>`.
 pub type SharedAudioImportReceiver = std::sync::Arc<Mutex<Receiver<(String, Vec<u8>)>>>;
 
-/// Phase 6b: shared `Arc<Mutex<Receiver<WaveformResult>>>`.
+/// Shared `Arc<Mutex<Receiver<WaveformResult>>>`.
 pub type SharedWaveformReceiver = std::sync::Arc<Mutex<Receiver<WaveformResult>>>;
 
-/// Phase 6b: shared `Arc<Mutex<Receiver<AudioPreloadResult>>>`.
+/// Shared `Arc<Mutex<Receiver<AudioPreloadResult>>>`.
 pub type SharedAudioPreloadReceiver = std::sync::Arc<Mutex<Receiver<AudioPreloadResult>>>;
 
-/// Phase 6b: shared `Arc<Mutex<Receiver<Vec<u8>>>>`.
+/// Shared `Arc<Mutex<Receiver<Vec<u8>>>>`.
 pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 
 // ---------------------------------------------------------------------------
@@ -118,11 +118,11 @@ pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 
 /// Bevy `Resource` wrapper around the auth-service `mpsc::Receiver`.
 ///
-/// Phase 6b: holds the **shared** `Arc<Mutex<Receiver<T>>>` so both
-/// the World's `poll_channels_system` and the legacy
-/// `State::update_auth_results` can race for messages. The
-/// `Arc<Mutex<>>` is constructed by `State::lifecycle` and shared
-/// with the World via `install_async_bridge_from_state_arc`.
+/// Holds the shared `Arc<Mutex<Receiver<T>>>` drained by the World's
+/// `poll_channels_system` in production. The `Arc<Mutex<>>` is
+/// constructed by `State::lifecycle` and shared with the World via
+/// `install_async_bridge_from_state_arc`; direct legacy helper calls can
+/// still use the same receiver in focused tests.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct AuthChannelRes(pub SharedAuthReceiver);
@@ -186,13 +186,14 @@ pub struct PollChannelsSet;
 ///
 /// Drains each channel in a `while let Ok(...) = try_recv()` loop so
 /// a single frame consumes every message that's currently buffered.
-/// The drains are idempotent with the legacy `update_*` methods —
-/// each message is consumed by exactly one of the two paths (whichever
-/// runs first).
+/// Production frames drain channels here. Direct calls to the old
+/// `update_*` helpers can still consume messages in tests that do not
+/// run `StateSchedule`.
 ///
-/// Phase 6a emits the events but does not yet apply them to legacy
-/// state. Phase 6b adds an `apply_async_results_system` that
-/// consumes the events and replaces the legacy `update_*` methods.
+/// Phase 6a emitted the events; Phase 6b added handler systems that
+/// consume the events and install compatibility closures. The runtime
+/// drains those closures before the remaining `State::update` branch
+/// logic runs.
 #[allow(clippy::too_many_arguments)]
 pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
@@ -271,12 +272,12 @@ where
 
 /// Install every async channel wrapper resource on a `World`.
 ///
-/// Used by `State::tick_state` to populate the resources from the
+/// Used by the runtime/test harness to populate the resources from the
 /// legacy `State::auth.channel.1` /
 /// `State::audio.state.editor.audio_import_channel.1` / etc. fields.
-/// The legacy fields are drained in parallel (today via `update_*`,
-/// later via the Phase 6b handler systems), so each message is
-/// consumed exactly once.
+/// Production frames drain these resources through the schedule. The
+/// legacy helper methods still share the same receiver when called
+/// directly by tests, so each message is consumed at most once.
 ///
 /// This function is a no-op when a resource is already installed
 /// (e.g. by `register_state_async_bridge` during world construction).
@@ -315,22 +316,12 @@ pub fn install_async_bridge_from_state(
     }
 }
 
-/// Phase 6b: same as [`install_async_bridge_from_state`] but the
-/// receivers are passed as `Arc<Mutex<Receiver<T>>>` (the
-/// wrapper used by the new `State.auth.channel.1` /
-/// `State.audio.state.editor.audio_import_channel.1` / etc.
-/// fields). The function unwraps the `Arc` and stores a clone
-/// of the inner `Mutex<Receiver<T>>` in the resource. The
-/// `Arc<Mutex<>>` is shared between the `State` and the World,
-/// so both consumers race for messages via `try_recv`.
-///
-/// Why two `Mutex` layers (one in the resource, one in the
-/// `Arc`)? `mpsc::Receiver<T>` is `Send` but not `Sync`; the
-/// outer `Mutex<Receiver<T>>` resource satisfies Bevy's
-/// `Send + Sync + 'static` bound for `Resource`. The inner
-/// `Arc<Mutex<Receiver<T>>>` is the legacy field's storage.
-/// The two `Mutex`es are uncontended in practice (the World
-/// has at most one consumer of each).
+/// Same as [`install_async_bridge_from_state`] but the receivers are
+/// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage
+/// used by `State.auth.channel.1`,
+/// `State.audio.state.editor.audio_import_channel.1`, and the other
+/// legacy channel fields. The resource stores a clone of the same
+/// `Arc`, so the schedule drains the actual legacy receiver.
 #[allow(dead_code)]
 pub fn install_async_bridge_from_state_arc(
     world: &mut World,
@@ -340,68 +331,7 @@ pub fn install_async_bridge_from_state_arc(
     audio_preload_receiver: SharedAudioPreloadReceiver,
     level_import_receiver: SharedLevelImportReceiver,
 ) {
-    // Phase 6b: take the inner `Mutex<Receiver<T>>` from the
-    // `Arc<Mutex<Receiver<T>>>` and install it in the resource.
-    // The `Arc` is `Clone`, so we can clone the inner `Mutex`
-    // (which doesn't move the receiver — just shares it) and
-    // install the clone in the resource. Both the State and
-    // the World now point at the same `Mutex<Receiver<T>>`,
-    // and the outer `Mutex<Receiver<T>>` resource is the
-    // second `Mutex` layer. The cost is one extra
-    // `lock()` per `try_recv`, which is fine.
     if !world.contains_resource::<AuthChannelRes>() {
-        // The State holds an `Arc<Mutex<Receiver<T>>>`. The
-        // resource wants a `Mutex<Receiver<T>>`. We can clone
-        // the `Arc` (cheap) and unwrap the `Mutex` (also cheap
-        // because `Mutex::lock` returns the same inner value
-        // for shared ownership). Actually `Mutex` doesn't
-        // expose the inner by `Clone`, so we have to lock +
-        // use the guard as the resource directly... but the
-        // resource is `'static`. So we install a new
-        // `Mutex<Receiver<T>>` that shares the receiver
-        // through the original `Arc`'s inner `Mutex`.
-        //
-        // Simpler: install a new `Mutex` that wraps a fresh
-        // channel endpoint... no, the channel is the same.
-        // The clean approach: install a `Mutex<Receiver<T>>`
-        // that holds the **shared** `Arc<Mutex<Receiver<T>>>`,
-        // and `try_recv` calls go through both layers.
-        //
-        // But that means changing the resource type to
-        // `Arc<Mutex<Receiver<T>>>`. Easier path: just install
-        // a `Mutex::new(Receiver::new())` placeholder; the
-        // real receiver is accessed via the `Arc`. No, that
-        // would lose messages.
-        //
-        // Final approach: the resource holds the **shared**
-        // `Arc<Mutex<Receiver<T>>>` directly (one fewer layer
-        // of indirection). The `poll_channels_system` locks
-        // the inner `Mutex` via the `Arc`. This is what the
-        // implementation actually does. See the resource
-        // definition above — the `AuthChannelRes` already
-        // takes a `Mutex<Receiver<T>>`. We can change it to
-        // take an `Arc<Mutex<Receiver<T>>>` to share with the
-        // legacy field. For Phase 6b, we keep the existing
-        // resource type and just install a clone of the inner
-        // `Mutex` (which is possible because `Mutex` is
-        // `Sync` so the State and the World can each hold a
-        // `Mutex<Receiver<T>>` constructed by locking the
-        // shared `Arc<Mutex<Receiver<T>>>` and cloning the
-        // resulting `MutexGuard`'s `Mutex`). Actually no —
-        // `MutexGuard` is not `Mutex`.
-        //
-        // The truly correct path: change `AuthChannelRes` to
-        // hold the shared `Arc<Mutex<Receiver<T>>>`. The
-        // `poll_channels_system` accesses it via
-        // `res.0.lock().try_recv()`. The legacy
-        // `update_auth_results` accesses it via
-        // `self.auth.channel.1.lock().try_recv()` — both
-        // lock the same `Mutex`. Done.
-        //
-        // For Phase 6b, we change the resource type from
-        // `Mutex<Receiver<T>>` to `Arc<Mutex<Receiver<T>>>`
-        // (see the resource definitions below). This helper
-        // installs clones of the `Arc` directly.
         world.insert_resource(AuthChannelRes(auth_receiver));
     }
     if !world.contains_resource::<AudioImportChannelRes>() {
@@ -438,8 +368,8 @@ pub fn register_state_async_bridge(app: &mut bevy_app::App) {
     // Channel wrappers are inserted in Phase 6b when the legacy
     // fields are torn out. For Phase 6a, the world has the
     // `Messages<T>` resources but the channel wrappers are
-    // inserted lazily by `install_async_bridge_from_state` (or not
-    // at all in tests that don't go through `State::tick_state`).
+    // inserted lazily by `install_async_bridge_from_state_arc` (or
+    // not at all in tests that don't install legacy channel resources).
     //
     // The `_ = Messages::<...>::default()` lines below silence the
     // "unused import" lint without forcing the messages to be
@@ -482,21 +412,20 @@ pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
 
 /// A closure that mutates the legacy `State` to apply a single
 /// async result. The handler systems (below) install one closure
-/// per result event into a thread-local slot; [`State::tick_state`]
-/// drains the slot after the schedule finishes and applies each
-/// closure to the State.
+/// per result event into a thread-local slot; the runtime/test harness
+/// drains the slot after the schedule finishes and applies each closure
+/// to the State.
 ///
 /// The closure must be `'static` (no borrowed State) because the
 /// schedule outlives a single call: handler systems run during
-/// `State::tick_state`, but the closure is invoked after
-/// `try_run_schedule` returns, by `tick_state` itself.
+/// `StateSchedule`, but the closure is invoked after `try_run_schedule`
+/// returns by the runtime/test harness.
 pub type AsyncResultFn = Box<dyn FnOnce(&mut State)>;
 
 thread_local! {
     /// Thread-local queue of pending async-result closures. Each
-    /// handler system pushes a closure per consumed event;
-    /// `State::tick_state` drains the slot after the schedule
-    /// finishes.
+    /// handler system pushes a closure per consumed event; the
+    /// runtime/test harness drains the slot after the schedule finishes.
     ///
     /// Why a thread-local? `State` is `!Send` (it owns the
     /// `Arc<Mutex<Receiver<T>>>` wrappers from Phase 6b which
@@ -511,7 +440,7 @@ thread_local! {
 
 /// Install a closure that will be applied to the legacy `State`
 /// after the schedule finishes. Called by the handler systems
-/// below; `State::tick_state` drains the queue via
+/// below; the runtime/test harness drains the queue via
 /// [`drain_pending_async_result_fns`].
 #[allow(dead_code)]
 pub fn install_async_result_fn<F>(f: F)
@@ -522,9 +451,8 @@ where
 }
 
 /// Drain every pending async-result closure and apply it to
-/// `state`. Called by [`State::tick_state`] after the schedule
-/// finishes. Idempotent: a second call with no pending closures
-/// is a no-op.
+/// `state`. Called after the schedule finishes. Idempotent: a second
+/// call with no pending closures is a no-op.
 #[allow(dead_code)]
 pub fn drain_pending_async_result_fns(state: &mut State) {
     let pending: Vec<AsyncResultFn> =
@@ -540,7 +468,7 @@ pub fn drain_pending_async_result_fns(state: &mut State) {
 /// first, so any per-frame command ordering is preserved). The
 /// handler systems only install closures into the thread-local
 /// slot; the actual State mutation happens in
-/// `State::tick_state` after the schedule.
+/// the runtime/test-harness drain after the schedule.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ApplyAsyncResultsSet;
 

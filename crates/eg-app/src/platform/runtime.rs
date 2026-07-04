@@ -9,8 +9,6 @@ use crate::load_menu_textures;
 use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
 use bevy_ecs::world::World;
-#[cfg(test)]
-use eg_state::events::PendingCommands;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthOpenSignupRequest;
 use eg_state::state::AuthSignOutRequest;
@@ -22,6 +20,7 @@ use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
 use eg_state::state::EscapeRequest;
 use eg_state::state::ExportLevelRequest;
+use eg_state::state::FrameTimeRes;
 use eg_state::state::GameQuitToMenuRequest;
 use eg_state::state::GameRemovePracticeCheckpointRequest;
 use eg_state::state::GameRestartLevelRequest;
@@ -31,6 +30,7 @@ use eg_state::state::MenuStateRes;
 use eg_state::state::PerfFrameCopyRequest;
 use eg_state::state::PlaytestRequest;
 use eg_state::state::RenderResizeRequest;
+use eg_state::state::RenderUniformsRes;
 use eg_state::state::SessionStateRes;
 use eg_state::state::SetAudioBackendRequest;
 use eg_state::state::State;
@@ -228,6 +228,7 @@ impl Runtime {
         // effect). Seeding once at construction makes the first
         // frame a no-op for unchanged fields.
         app.world_mut().insert_resource(state.perf_resource());
+        app.world_mut().insert_resource(state.frame_time_resource());
 
         Self {
             state,
@@ -252,6 +253,8 @@ impl Runtime {
             app.update();
             state.prepare_app_world_for_state_schedule(app.world_mut());
             run_state_schedule_in_world(app.world_mut());
+            Self::sync_app_frame_time_state(state, app.world());
+            Self::sync_app_render_uniforms_state(state, app.world());
             Self::sync_app_editor_history_state(state, app.world());
             Self::sync_app_editor_input_state(state, app.world());
             Self::sync_app_editor_config_state(state, app.world());
@@ -292,6 +295,14 @@ impl Runtime {
 
     fn sync_app_editor_history_state(state: &mut State, world: &World) {
         state.set_editor_history_state(world.resource::<EditorHistoryRes>().0.clone());
+    }
+
+    fn sync_app_frame_time_state(state: &mut State, world: &World) {
+        state.apply_frame_time_resource(world.resource::<FrameTimeRes>());
+    }
+
+    fn sync_app_render_uniforms_state(state: &mut State, world: &World) {
+        state.apply_render_uniforms_resource(world.resource::<RenderUniformsRes>());
     }
 
     fn sync_app_editor_runtime_state(state: &mut State, world: &World) {
@@ -618,10 +629,10 @@ impl Runtime {
     /// `editor_pitch` + `transition` (`events::camera`): the
     /// `AdjustZoom` and `SetCameraOrientation` handlers write
     /// the resource directly. The `AddCameraTrigger` and
-    /// `AddCameraFollowTrigger` messages keep the legacy
-    /// `PendingCommands` path because they push to
-    /// `editor.objects` (a `Vec<LevelObject>`), which is out
-    /// of scope for the Phase 3.11 carve-out.
+    /// `AddCameraFollowTrigger` handlers mutate `EditorObjectsRes`
+    /// directly; Runtime then syncs the resulting object mutation
+    /// into the legacy editor object store while that store still
+    /// owns presentation side effects.
     ///
     /// The sync is change-guarded so a no-op frame does not
     /// re-invoke the legacy setter (which records history and
@@ -857,7 +868,7 @@ impl Runtime {
     ///
     /// Phase 3.46: `events::misc::handle_escape` writes
     /// `EscapeRequest.pending = true` instead of staging
-    /// `EditorCommand::Escape` in `PendingCommands`, so the App
+    /// `EditorCommand::Escape` through the legacy command bridge, so the App
     /// world owns the "user pressed Escape" intent while the legacy
     /// state still owns the state machine. The sync runs after
     /// `sync_app_perf_frame_copy_request` / `sync_app_render_resize_request`
@@ -876,7 +887,7 @@ impl Runtime {
     ///
     /// Phase 3.47: `events::auth::handle_auth_submit_sign_in` writes
     /// `AuthSubmitSignInRequest.pending = true` instead of staging
-    /// `AppCommand::AuthSubmitSignIn` in `PendingCommands`. The
+    /// `AppCommand::AuthSubmitSignIn` through the legacy command bridge. The
     /// sign-in side effect (network IO via `trigger_auth_sign_in`
     /// on the auth channel) stays legacy-owned because the auth
     /// channel `Sender` lives on the legacy `State`. The sync runs
@@ -940,7 +951,7 @@ impl Runtime {
     ///
     /// Phase 3.48: `events::navigation::handle_game_quit_to_menu`
     /// writes `GameQuitToMenuRequest.pending = true` instead of
-    /// staging `AppCommand::GameQuitToMenu` in `PendingCommands`.
+    /// staging `AppCommand::GameQuitToMenu` through the legacy command bridge.
     /// The `back_to_menu` side effect (phase change + audio stop +
     /// gameplay state reset) stays legacy-owned because the audio
     /// backend + gameplay state live on the legacy `State`. The
@@ -1050,11 +1061,9 @@ impl Runtime {
         }
     }
 
-    /// Queue platform input in the App world, then apply it through the
-    /// legacy State input path during the compatibility window.
+    /// Queue platform input in the App world for scheduled processing.
     pub fn process_input_event(&mut self, event: eg_state::commands::InputEvent) {
-        enqueue_platform_input(self.app.world_mut(), event.clone());
-        self.state.process_input_event(event);
+        enqueue_platform_input(self.app.world_mut(), event);
     }
 }
 
@@ -1066,9 +1075,9 @@ mod tests {
         AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
         EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest,
-        GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
-        GameSetPracticeCheckpointRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes,
-        PlatformInputQueue, RenderResizeRequest, SessionStateRes,
+        FrameTimeRes, GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest,
+        GameRestartLevelRequest, GameSetPracticeCheckpointRequest, MenuStateRes,
+        PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -1155,6 +1164,10 @@ mod tests {
         assert!(
             world.contains_resource::<EditorHistoryRes>(),
             "EditorHistoryRes registered by EditorPlugin"
+        );
+        assert!(
+            world.contains_resource::<FrameTimeRes>(),
+            "FrameTimeRes registered by EditorPlugin"
         );
         assert!(
             world.contains_resource::<PerfRes>(),
@@ -1256,12 +1269,15 @@ mod tests {
         assert_eq!(app_ctx.pixels_per_point(), output.pixels_per_point);
     }
 
-    /// Platform input now enters the App world before the legacy
-    /// `State::process_input_event` compatibility path consumes it.
+    /// Platform input now enters the App world; the state schedule driver
+    /// drains it into resources/messages during the next frame.
     #[tokio::test]
     async fn runtime_process_input_event_queues_app_world_input() {
         let state = State::new_test().await;
         let mut runtime = Runtime::new(state);
+        let initial_width = runtime.state.surface_width();
+        let initial_height = runtime.state.surface_height();
+        let initial_queue_len = runtime.app.world().resource::<PlatformInputQueue>().len();
 
         runtime.process_input_event(eg_state::commands::InputEvent::Resize {
             width: 640,
@@ -1269,21 +1285,27 @@ mod tests {
         });
 
         let queue = runtime.app.world().resource::<PlatformInputQueue>();
-        assert_eq!(queue.len(), 1);
+        assert_eq!(queue.len(), initial_queue_len + 1);
         assert!(matches!(
-            queue.events()[0],
-            eg_state::commands::InputEvent::Resize {
+            queue.events().last(),
+            Some(eg_state::commands::InputEvent::Resize {
                 width: 640,
                 height: 360
-            }
+            })
         ));
+        assert_eq!(runtime.state.surface_width(), initial_width);
+        assert_eq!(runtime.state.surface_height(), initial_height);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
         assert_eq!(runtime.state.surface_width(), 640);
         assert_eq!(runtime.state.surface_height(), 360);
     }
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,
     /// then explicitly runs the eg-state `StateSchedule` on the App's
-    /// World before draining pending commands.
+    /// World before syncing typed request resources and scheduled frame
+    /// timing back through the remaining compatibility shell.
     #[tokio::test]
     async fn runtime_run_app_frame_updates_app_state_schedule() {
         let state = State::new_test().await;
@@ -1294,12 +1316,23 @@ mod tests {
             .world_mut()
             .resource_mut::<AppPhaseRes>()
             .set(eg_types::AppPhase::Playing);
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
         assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
+        let app_frame_time = *runtime.app.world().resource::<FrameTimeRes>();
+        assert!(
+            app_frame_time.delta_seconds > 0.0,
+            "StateSchedule must advance App-world frame timing"
+        );
+        assert_eq!(
+            runtime.state.frame_time_resource().delta_seconds,
+            app_frame_time.delta_seconds,
+            "Runtime must sync scheduled frame delta into legacy State before compatibility update"
+        );
     }
 
     /// Plain `app.update()` no longer drives the mirror `StateSchedule`.
@@ -1373,11 +1406,6 @@ mod tests {
             !resize.pending,
             "runtime must consume RenderResizeRequest after applying it"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "ResizeSurface must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -1395,19 +1423,14 @@ mod tests {
             !request.pending,
             "runtime must consume PerfFrameCopyRequest after handling it"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "CopyLatestPerfFrame must not stage a legacy command"
-        );
     }
 
     /// `AuthSubmitSignIn` is a Phase 3.47 carve-out: the App-world
     /// handler writes `AuthSubmitSignInRequest.pending = true`, the
     /// runtime sync consumes the request and calls the legacy
     /// `State::submit_auth_sign_in` compatibility method, and no
-    /// legacy `AppCommand::AuthSubmitSignIn` is staged in
-    /// `PendingCommands`. The legacy `auth.pending` flag is also
+    /// legacy `AppCommand::AuthSubmitSignIn` is staged through the
+    /// legacy command bridge. The legacy `auth.pending` flag is also
     /// set by the legacy side effect.
     #[tokio::test]
     async fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
@@ -1423,11 +1446,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume AuthSubmitSignInRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthSubmitSignIn must not stage a legacy command"
         );
     }
 
@@ -1447,11 +1465,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume AuthSignOutRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthSignOut must not stage a legacy command"
         );
     }
 
@@ -1474,11 +1487,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume AuthOpenSignupRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AuthOpenSignup must not stage a legacy command"
         );
     }
 
@@ -1517,11 +1525,6 @@ mod tests {
             !request.pending,
             "runtime must consume GameQuitToMenuRequest after applying it"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameQuitToMenu must not stage a legacy command"
-        );
     }
 
     /// `GameRestartLevel` carve-out: same request pattern as
@@ -1538,11 +1541,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume GameRestartLevelRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameRestartLevel must not stage a legacy command"
         );
     }
 
@@ -1567,11 +1565,6 @@ mod tests {
             !request.pending,
             "runtime must consume GameSetPracticeCheckpointRequest after applying it"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameSetPracticeCheckpoint must not stage a legacy command"
-        );
     }
 
     /// `GameRemovePracticeCheckpoint` carve-out: same request
@@ -1594,11 +1587,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume GameRemovePracticeCheckpointRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameRemovePracticeCheckpoint must not stage a legacy command"
         );
     }
 
@@ -1973,11 +1961,6 @@ mod tests {
         );
         assert_eq!(runtime.state.editor_selected_block_id(), &picked);
         assert_eq!(runtime.state.editor_mode(), eg_types::EditorMode::Place);
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "PickSelectedBlock must not stage a legacy command"
-        );
     }
 
     /// `SetBlockId` carve-out no-op frame: when no `SetBlockId` message
@@ -2072,11 +2055,6 @@ mod tests {
                 .object_mutation_pending,
             "object mutation flag must be consumed by Runtime sync"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "block carve-out messages must not stage legacy commands"
-        );
     }
 
     #[tokio::test]
@@ -2137,11 +2115,6 @@ mod tests {
                 .object_mutation_pending,
             "object mutation flag must be consumed by Runtime sync"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AddTransformTrigger must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -2186,11 +2159,6 @@ mod tests {
                 .object_mutation_pending,
             "object mutation flag must be consumed by Runtime sync"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AddCameraTrigger must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -2232,11 +2200,6 @@ mod tests {
                 .resource::<EditorObjectsRes>()
                 .object_mutation_pending,
             "object mutation flag must be consumed by Runtime sync"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "SnapSelectionToGrid block branch must not stage a legacy command"
         );
     }
 
@@ -2285,11 +2248,6 @@ mod tests {
             [1.0, 0.0, 2.0],
             "runtime sync must keep the App cursor on the snapped selected tap"
         );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "SnapSelectionToGrid tap branch must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -2314,11 +2272,6 @@ mod tests {
         let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [11.0, 33.0]);
         approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "FocusCameraTarget must not stage a legacy command"
-        );
     }
 
     // --- Phase 3.7 / BPM carve-out tests ---
@@ -4166,15 +4119,6 @@ mod tests {
             runtime.state.editor_cursor_position(),
             runtime.state.editor_tap_indicator_positions()[2]
         );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "SetSelectedTapTime must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -4243,15 +4187,6 @@ mod tests {
                 .last_mode,
             runtime.state.editor_playback_last_mode()
         );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "ToggleTimelinePlayback must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -4280,15 +4215,6 @@ mod tests {
             timeline.taps.tap_indicator_positions,
             runtime.state.editor_tap_indicator_positions(),
             "runtime sync must copy legacy's final derived tap indicators back into the App world"
-        );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "AddTap must not stage a legacy command"
         );
     }
 
@@ -4332,15 +4258,6 @@ mod tests {
             timeline.taps.tap_indicator_positions,
             runtime.state.editor_tap_indicator_positions()
         );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "RemoveTap/RemoveTapAt must not stage legacy commands"
-        );
     }
 
     #[tokio::test]
@@ -4365,15 +4282,6 @@ mod tests {
         assert!(runtime.state.editor_tap_times().is_empty());
         assert!(runtime.state.editor_tap_indicator_positions().is_empty());
         assert_eq!(runtime.state.editor_selected_tap_index_value(), None);
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "ClearTaps must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -4699,14 +4607,10 @@ mod tests {
 
     // ---- Phase 3.11 camera + trigger-selected carve-out tests ----
     //
-    // 3 of the 5 `events::camera::*` messages are carve-outs that
-    // mutate `EditorCameraRes.0` (AdjustZoom, SetCameraOrientation)
-    // or `EditorTriggerRes.0.selected_index` (SetTriggerSelected)
+    // All 5 `events::camera::*` messages are carve-outs that mutate
+    // App-world camera, trigger-selection, or editor-object resources
     // directly. The runtime tests below pin the end-to-end path:
-    // message → App-world resource → legacy State field. The
-    // `AddCameraTrigger` and `AddCameraFollowTrigger` messages
-    // keep the legacy `PendingCommands` path because they push to
-    // `editor.objects` (out of scope for the Phase 3.11 carve-out).
+    // message -> App-world resource -> legacy State field.
 
     use eg_state::events::camera::{AdjustZoom, SetCameraOrientation, SetTriggerSelected};
 
@@ -4885,28 +4789,17 @@ mod tests {
         assert_eq!(runtime.state.editor_selected_trigger_index_value(), Some(2));
     }
 
-    /// `AddCameraTrigger` and `AddCameraFollowTrigger` are NOT
-    /// carve-outs: they keep the legacy `PendingCommands` path
-    /// because the legacy setters push to `editor.objects` (a
-    /// complex store with history + sync side effects). The
-    /// schedule-level test `add_camera_trigger_still_uses_pending_commands`
-    /// in `events::tests` pins the dispatch path. The
-    /// `editor_dispatch` integration tests in
-    /// `state::editor_dispatch` cover the full legacy path. This
-    /// carve-out test set focuses on the 3 messages that DO
-    /// carve out (AdjustZoom, SetCameraOrientation,
-    /// SetTriggerSelected); the legacy-path messages are
-    /// covered elsewhere.
+    /// `AddCameraTrigger` and `AddCameraFollowTrigger` are now
+    /// carve-outs: they mutate `EditorObjectsRes` and mark object
+    /// sync pending instead of staging legacy commands. The runtime
+    /// test near the editor-object carve-outs pins the end-to-end
+    /// path into the legacy `State` object store while that store
+    /// still owns presentation side effects.
     #[tokio::test]
-    async fn runtime_add_camera_trigger_not_a_carve_out_note() {
-        // This is a placeholder test that documents why we
-        // intentionally did not add a runtime-level test for
-        // AddCameraTrigger/AddCameraFollowTrigger. The legacy
-        // path is covered by `events::tests::add_camera_trigger_still_uses_pending_commands`
-        // and the existing `editor_dispatch` integration tests.
-        // The placeholder pins the carve-out decision so a
-        // future refactor that flips the message to a carve-out
-        // knows to also move the test.
+    async fn runtime_add_camera_trigger_carve_out_note() {
+        // This placeholder remains as a compact pointer to the
+        // runtime-level AddCameraTrigger/AddCameraFollowTrigger
+        // coverage near the editor-object carve-outs above.
     }
 
     // --- Phase 3.12 / Misc carve-out tests ---
@@ -5070,15 +4963,6 @@ mod tests {
             1,
             "sync_app_menu_state must propagate selected_level to legacy State"
         );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "menu NextLevel must not stage a legacy command"
-        );
     }
 
     #[tokio::test]
@@ -5105,15 +4989,6 @@ mod tests {
             runtime.state.editor_cursor_position(),
             [0.25, 0.0, 0.0],
             "sync_app_editor_input_state must propagate cursor movement to legacy State"
-        );
-
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "editor NextLevel must not stage a legacy command"
         );
     }
 
@@ -5228,14 +5103,6 @@ mod tests {
             "sync_app_session_state must propagate practice_mode_enabled to legacy state"
         );
         // No legacy command was staged (carve-out).
-        let pending = runtime
-            .app
-            .world()
-            .resource::<eg_state::events::PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "GameSetPracticeMode must not stage any legacy command (carve-out)"
-        );
     }
 
     /// No-op frame for practice mode: when no
@@ -5496,9 +5363,9 @@ mod tests {
     /// writes `EscapeRequest.pending = true`, the runtime sync
     /// consumes the request and calls the legacy
     /// `State::apply_editor_escape` compatibility method, and no
-    /// legacy `EditorCommand::Escape` is staged in `PendingCommands`.
+    /// legacy `EditorCommand::Escape` is staged through the legacy command bridge.
     #[tokio::test]
-    async fn runtime_carve_out_escape_consumes_request_without_pending_commands() {
+    async fn runtime_carve_out_escape_consumes_request_without_legacy_command_bridge() {
         use eg_state::events::misc::Escape;
 
         let state = State::new_test().await;
@@ -5511,11 +5378,6 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume EscapeRequest after applying it"
-        );
-        let pending = runtime.app.world().resource::<PendingCommands>();
-        assert!(
-            pending.app_commands.is_empty() && pending.editor_commands.is_empty(),
-            "Escape must not stage a legacy command"
         );
     }
 

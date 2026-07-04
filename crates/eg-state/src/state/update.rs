@@ -539,47 +539,8 @@ impl State {
         segments
     }
 
-    /// Advances the application state by one frame.
-    ///
-    /// This method handles:
-    /// - Audio and waveform loading updates.
-    /// - Smoothing and recording FPS performance metrics.
-    /// - Accumulating time for the fixed-step simulation.
-    /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
-    /// - Managing input-driven camera movements.
-    pub fn update(&mut self) {
-        puffin::GlobalProfiler::lock().new_frame();
-        puffin::profile_scope!("FrameTotal");
-        {
-            puffin::profile_scope!("FrameAsyncPolls");
-            self.update_auth_results();
-            self.update_audio_imports();
-        }
-        if self.phase == AppPhase::Editor {
-            puffin::profile_scope!("FrameLevelImports");
-            self.update_level_imports();
-        }
-        {
-            puffin::profile_scope!("FrameAudioWaveformPolls");
-            self.update_runtime_audio_preloads();
-            self.update_waveform_loading();
-        }
-        const FIXED_DT: f32 = 1.0 / 120.0;
-
-        let now = web_time::Instant::now();
-        let frame_dt = (now - self.frame_runtime.editor.last_frame).as_secs_f32();
-        self.frame_runtime.editor.last_frame = now;
-        let instant_fps = 1.0 / frame_dt.max(1e-4);
-        if self.editor.perf.fps_smoothed <= 0.0 {
-            self.editor.perf.fps_smoothed = instant_fps;
-        } else {
-            self.editor.perf.fps_smoothed = self.editor.perf.fps_smoothed * 0.9 + instant_fps * 0.1;
-        }
-        self.frame_runtime.editor.accumulator =
-            (self.frame_runtime.editor.accumulator + frame_dt).min(0.25);
-        self.frame_runtime.global_time_seconds += frame_dt.max(0.0);
-
-        let color_space_uniform = ColorSpaceUniform {
+    fn current_color_space_uniform(&self) -> ColorSpaceUniform {
+        ColorSpaceUniform {
             apply_gamma_correction: if self.render_gpu().apply_gamma_correction {
                 1.0
             } else {
@@ -590,15 +551,44 @@ impl State {
                 self.render_gpu().config.width.max(1) as f32,
                 self.render_gpu().config.height.max(1) as f32,
             ],
-        };
-        {
-            puffin::profile_scope!("ColorSpaceUniformUpload");
-            self.render_gpu().queue.write_buffer(
-                &self.render_gpu().color_space_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&color_space_uniform),
-            );
         }
+    }
+
+    fn color_space_uniform_for_legacy_update(&mut self) -> ColorSpaceUniform {
+        self.frame_runtime
+            .scheduled_color_space_uniform
+            .take()
+            .unwrap_or_else(|| self.current_color_space_uniform())
+    }
+
+    fn upload_color_space_uniform(&self, color_space_uniform: ColorSpaceUniform) {
+        puffin::profile_scope!("ColorSpaceUniformUpload");
+        self.render_gpu().queue.write_buffer(
+            &self.render_gpu().color_space_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&color_space_uniform),
+        );
+    }
+
+    /// Advances the application state by one frame.
+    ///
+    /// This method handles:
+    /// - Starting auth refreshes for existing sessions.
+    /// - Consuming the scheduled frame delta for the fixed-step simulation.
+    /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
+    /// - Managing input-driven camera movements.
+    pub fn update(&mut self) {
+        puffin::profile_scope!("FrameTotal");
+        {
+            puffin::profile_scope!("FrameAuthRefresh");
+            self.refresh_auth_session_if_needed();
+        }
+        const FIXED_DT: f32 = 1.0 / 120.0;
+
+        let frame_dt = self.frame_delta_for_legacy_update();
+
+        let color_space_uniform = self.color_space_uniform_for_legacy_update();
+        self.upload_color_space_uniform(color_space_uniform);
 
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
@@ -1064,6 +1054,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::State;
+    use eg_audio::audio::runtime_asset_source_key;
     use eg_game::{GameState, TimelineSimulationRuntime};
     use eg_types::{
         AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, Direction, EasingDirection, EditorMode,
@@ -1498,6 +1489,37 @@ mod tests {
         state.update();
 
         assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
+    }
+
+    #[tokio::test]
+    async fn update_does_not_drain_async_audio_import_channel() {
+        let mut state = State::new_test().await;
+        state.phase = AppPhase::Editor;
+        state.set_editor_level_name("ScheduledAsyncOnly".to_string());
+        state
+            .audio
+            .state
+            .editor
+            .audio_import_channel
+            .0
+            .send(("audio.mp3".to_string(), vec![5, 6, 7]))
+            .expect("audio import send should succeed");
+
+        state.update();
+
+        let source_key = runtime_asset_source_key("ScheduledAsyncOnly", "audio.mp3");
+        assert_eq!(
+            state.audio.state.editor.cache.bytes_for_source(&source_key),
+            None,
+            "State::update should leave async channel draining to StateSchedule"
+        );
+
+        state.update_audio_imports();
+        assert_eq!(
+            state.audio.state.editor.cache.bytes_for_source(&source_key),
+            Some(&vec![5, 6, 7]),
+            "the legacy helper still drains the queued result when called directly"
+        );
     }
 
     #[tokio::test]

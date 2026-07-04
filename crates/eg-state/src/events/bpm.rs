@@ -7,8 +7,7 @@
 */
 //! BPM tapping events.
 //!
-//! These are a **carve-out** from the `PendingCommands` ->
-//! `State::dispatch_editor` pipeline (same pattern as
+//! These handlers mutate App-world timing resources directly (same pattern as
 //! `events::snap` and `events::editor_mode::handle_set_block_id`).
 //! The handlers mutate `EditorTimingRes.0.bpm_tap_times` and
 //! `EditorTimingRes.0.bpm_tap_result` directly, doing the same

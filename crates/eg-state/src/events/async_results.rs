@@ -9,17 +9,15 @@
 //!
 //! The legacy `State` struct holds five `mpsc` channels that the
 //! platform layer (auth service, audio service, level importer) and
-//! background tasks write to. Today those channels are drained
-//! inline by `update_*` methods called from `State::update`.
+//! background tasks write to. Production frames drain those channels
+//! through `StateSchedule`.
 //!
-//! Phase 6a introduces a Bevy `Message` per channel so a
+//! Phase 6a introduced a Bevy `Message` per channel so a
 //! `PollChannelsSet` system can drain the receivers and emit
-//! per-message result events into the World. Future phases (6b) add
-//! handler systems that consume the events and replace the inline
-//! drain logic. Today both the new poll system and the existing
-//! `update_*` methods run - they are idempotent (both call
-//! `try_recv` so a message is consumed exactly once across the
-//! whole frame).
+//! per-message result events into the World. Phase 6b added handler
+//! systems that consume the events and install compatibility closures;
+//! the runtime drains those closures before the remaining legacy update
+//! branch logic runs.
 //!
 //! ## Why messages and not direct resource writes?
 //!

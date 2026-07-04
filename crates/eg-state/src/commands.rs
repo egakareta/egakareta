@@ -56,9 +56,9 @@ pub enum AppCommand {
 
 /// Unified input event produced by platform adapters.
 ///
-/// Platform runtimes translate their raw
-/// platform events into `InputEvent`s, which `State` processes
-/// through a single code-path.
+/// Platform runtimes translate their raw platform events into
+/// `InputEvent`s, which the App-world input schedule drains into
+/// resources and semantic messages.
 #[derive(Debug, Clone)]
 pub enum InputEvent {
     /// A keyboard key was pressed or released.

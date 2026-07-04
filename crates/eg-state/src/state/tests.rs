@@ -8,7 +8,8 @@
 use super::EditorDirtyFlags;
 use super::State;
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorRuntimeRes, PerfRes, SessionStateRes, TurnRightRequest,
+    AppPhaseRes, EditorInputRes, EditorRuntimeRes, FrameTimeRes, PerfRes, SessionStateRes,
+    TurnRightRequest,
 };
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
@@ -271,8 +272,50 @@ async fn app_world_is_seeded_with_default_resources() {
         "EditorRuntimeRes should be registered"
     );
     assert!(
+        world.get_resource::<FrameTimeRes>().is_some(),
+        "FrameTimeRes should be registered"
+    );
+    assert!(
         world.get_resource::<PerfRes>().is_some(),
         "PerfRes should be registered"
+    );
+}
+
+#[test]
+fn test_app_tick_state_advances_frame_time_resource() {
+    let mut app = crate::state::test_support::TestApp::minimal();
+    {
+        let mut frame_time = app.world_mut().resource_mut::<FrameTimeRes>();
+        frame_time.last_frame = web_time::Instant::now() - std::time::Duration::from_millis(20);
+    }
+
+    app.tick_state();
+
+    let frame_time = *app.world().resource::<FrameTimeRes>();
+    assert!(
+        frame_time.delta_seconds > 0.0,
+        "StateSchedule must advance FrameTimeRes.delta_seconds"
+    );
+    assert!(
+        frame_time.global_time_seconds > 0.0,
+        "StateSchedule must advance FrameTimeRes.global_time_seconds"
+    );
+    assert!(
+        frame_time.fps_smoothed > 0.0,
+        "StateSchedule must update frame FPS smoothing"
+    );
+    assert_eq!(
+        app.world().resource::<PerfRes>().0.fps_smoothed,
+        frame_time.fps_smoothed,
+        "PerfRes FPS must be driven from App-world frame timing"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<crate::state::render::resources::RenderUniformsRes>()
+            .color_space
+            .time_seconds,
+        frame_time.global_time_seconds,
+        "RenderUniformsRes color-space time must be driven from App-world frame timing"
     );
 }
 
@@ -329,15 +372,14 @@ async fn tick_state_runs_phase_transition_system() {
 }
 
 // ── Phase 3 — command / event fragmentation tests ───────────────
-#[tokio::test]
-async fn tick_state_writes_command_messages_without_dispatching() {
-    // Runtime owns the production App-world request consumption during the
-    // compatibility window; requests are not applied to legacy State here.
+#[test]
+fn test_app_tick_state_writes_command_messages_to_app_resources() {
+    // Runtime owns request consumption during the compatibility window;
+    // the schedule only writes App-world resources.
     use crate::events::editor_mode::SetEditorMode;
     use crate::events::navigation::TurnRight;
     use eg_types::EditorMode;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Write a TurnRight message.
@@ -350,9 +392,8 @@ async fn tick_state_writes_command_messages_without_dispatching() {
     app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
-    // Tick: per-event systems fire and write App-world resources/requests,
-    // but the legacy State dispatcher is not invoked.
-    tick_state_with_app(&mut state, &mut app);
+    // Tick: per-event systems fire and write App-world resources/requests.
+    app.tick_state();
 
     assert!(
         app.world().resource::<TurnRightRequest>().pending,
@@ -363,40 +404,36 @@ async fn tick_state_writes_command_messages_without_dispatching() {
         EditorMode::Place,
         "SetEditorMode handler must mutate EditorInputRes.mode"
     );
-    assert!(
-        state.is_menu(),
-        "TurnRight staged in the App world must not start gameplay"
+    assert_eq!(
+        app.world().resource::<AppPhaseRes>().get(),
+        AppPhase::Menu,
+        "TurnRight request write must not start gameplay in the schedule"
     );
 }
 
-#[tokio::test]
-async fn tick_state_writes_input_state_without_staging_commands() {
+#[test]
+fn test_app_tick_state_writes_input_state_directly() {
     use crate::events::input_state::{SetCtrlHeld, SetPanRightHeld, SetShiftHeld};
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
 
     app.world_mut().write_message(SetShiftHeld(true));
     app.world_mut().write_message(SetCtrlHeld(true));
     app.world_mut().write_message(SetPanRightHeld(true));
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     let input = &app.world().resource::<EditorInputRes>().0;
     assert!(input.shift_held);
     assert!(input.ctrl_held);
     assert!(input.pan_right_held);
-    assert!(!state.editor.input.shift_held);
-    assert!(!state.editor.input.ctrl_held);
-    assert!(!state.editor.input.pan_right_held);
 }
 
-#[tokio::test]
-async fn tick_state_writes_pointer_state_without_staging_commands() {
+#[test]
+fn test_app_tick_state_writes_pointer_state_directly() {
     use crate::events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick};
     use crate::state::{AppPhaseRes, EditorCameraRes};
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
 
@@ -411,30 +448,25 @@ async fn tick_state_writes_pointer_state_without_staging_commands() {
     app.world_mut()
         .write_message(PrimaryClick { x: 30.0, y: 40.0 });
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     let input = &app.world().resource::<EditorInputRes>().0;
     assert_eq!(input.pointer_screen, Some([30.0, 40.0]));
     assert!(input.left_mouse_down);
     assert!(input.right_dragging);
-    assert_eq!(state.editor.input.pointer_screen, None);
-    assert!(!state.editor.input.left_mouse_down);
-    assert!(!state.editor.input.right_dragging);
 
     let camera = &app.world().resource::<EditorCameraRes>().0;
     assert!(camera.editor_yaw < eg_types::DEFAULT_CAMERA_YAW);
     assert!(camera.editor_pitch < eg_types::DEFAULT_CAMERA_PITCH);
 }
 
-#[tokio::test]
-async fn tick_state_applies_undo_without_pending_command() {
+#[test]
+fn test_app_tick_state_applies_undo_to_app_resources() {
     // Verify that the editor Undo message is handled in App-world resources
     // instead of relying on legacy dispatch.
     use crate::events::history::Undo;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    state.enter_editor_phase("Phase3UndoTest".to_string());
     app.world_mut()
         .resource_mut::<AppPhaseRes>()
         .set(AppPhase::Editor);
@@ -444,10 +476,9 @@ async fn tick_state_applies_undo_without_pending_command() {
         position: [1.0, 0.0, 2.0],
         ..LevelObject::default()
     };
-    state
-        .editor
-        .runtime
-        .history
+    app.world_mut()
+        .resource_mut::<crate::state::EditorHistoryRes>()
+        .0
         .undo
         .push(crate::state::EditorHistorySnapshot {
             objects: vec![undo_object.clone()],
@@ -468,7 +499,7 @@ async fn tick_state_applies_undo_without_pending_command() {
         });
 
     app.world_mut().write_message(Undo);
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     assert_eq!(
         app.world()
@@ -478,40 +509,35 @@ async fn tick_state_applies_undo_without_pending_command() {
     );
 }
 
-#[tokio::test]
-async fn tick_state_carve_out_practice_mode_mutates_session_resource() {
+#[test]
+fn test_app_tick_state_practice_mode_mutates_session_resource() {
     // Phase 3.15: `GameSetPracticeMode` is a carve-out — the
     // handler writes `SessionStateRes.practice_mode_enabled`
-    // directly instead of staging a legacy `AppCommand`. Pin the
-    // resource is updated without legacy dispatch. The
-    // change-guarded runtime sync (which would invoke the legacy
+    // directly instead of routing through legacy `State`. Pin the
+    // resource update here; the change-guarded runtime sync (which
+    // would invoke the legacy
     // `set_practice_mode_enabled` setter with the heavy side
     // effects — clear checkpoints, restart level, resume game) is
     // exercised in `eg-app` runtime tests because it requires a
     // real `Runtime`.
     use crate::events::navigation::GameSetPracticeMode;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    state.enter_editor_phase("Phase3PracticeTest".to_string());
-    state.phase = eg_types::AppPhase::Playing;
-    state.session.playtesting_editor = false;
-
-    assert!(!state.session.practice_mode_enabled);
+    assert!(
+        !app.world()
+            .resource::<SessionStateRes>()
+            .practice_mode_enabled
+    );
 
     app.world_mut()
         .write_message(GameSetPracticeMode { enabled: true });
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     assert!(
         app.world()
             .resource::<SessionStateRes>()
             .practice_mode_enabled,
         "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
-    );
-    assert!(
-        !state.session.practice_mode_enabled,
-        "tick_state must not mutate legacy session state (sync is a Runtime concern)"
     );
 }
 
@@ -568,8 +594,10 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     use crate::events::async_results::AudioImportResultEvent;
     use crate::state::async_bridge::AudioImportChannelRes;
     use bevy_ecs::message::Messages;
+    use eg_audio::audio::runtime_asset_source_key;
 
     let mut state = State::new_test().await;
+    state.set_editor_level_name("ScheduleAudioImport".to_string());
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Create a fresh channel whose receiver sits in the Bevy
@@ -600,6 +628,19 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     assert_eq!(events.len(), 1, "expected one audio import event");
     assert_eq!(events[0].filename, "level1.ogg");
     assert_eq!(events[0].bytes, Some(vec![1, 2, 3, 4]));
+    assert_eq!(
+        state
+            .audio
+            .state
+            .editor
+            .cache
+            .bytes_for_source(&runtime_asset_source_key(
+                "ScheduleAudioImport",
+                "audio.mp3"
+            )),
+        Some(&vec![1, 2, 3, 4]),
+        "StateSchedule async-result handler should apply audio imports before State::update"
+    );
 }
 
 #[tokio::test]
@@ -1010,10 +1051,10 @@ async fn tick_state_mirrors_render_uniforms_in_editor_playtest() {
     );
 }
 
-/// Phase 4b-4: `time_seconds` (from
-/// `frame_runtime.global_time_seconds`) is mirrored into
-/// `ColorSpaceUniform.time_seconds` and the gamma toggle is mirrored
-/// as a `0.0` / `1.0` bit. This test pins both.
+/// Phase 6d: `ColorSpaceUniform.time_seconds` is driven from
+/// `FrameTimeRes` in the App-world schedule, while the remaining
+/// gamma/viewport fields still come from the compatibility render POD
+/// mirror.
 #[tokio::test]
 async fn tick_state_mirrors_color_space_time_and_gamma() {
     use crate::state::render::resources::RenderUniformsRes;
@@ -1021,11 +1062,13 @@ async fn tick_state_mirrors_color_space_time_and_gamma() {
 
     let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    // Set a non-zero global time + enable gamma so the test
-    // exercises both fields (defaults at zero would trivially
-    // match).
-    state.frame_runtime.global_time_seconds = 12.5;
+    state.frame_runtime.global_time_seconds = 99.0;
     state.render_gpu_mut().apply_gamma_correction = true;
+    {
+        let mut frame_time = app.world_mut().resource_mut::<FrameTimeRes>();
+        frame_time.global_time_seconds = 12.5;
+        frame_time.last_frame = web_time::Instant::now();
+    }
 
     let expected_viewport = [
         state.render_gpu().config.width.max(1) as f32,
@@ -1034,8 +1077,17 @@ async fn tick_state_mirrors_color_space_time_and_gamma() {
 
     tick_state_with_app(&mut state, &mut app);
 
+    let expected_time = app.world().resource::<FrameTimeRes>().global_time_seconds;
     let uniforms = app.world().resource::<RenderUniformsRes>();
-    assert_abs_diff_eq!(uniforms.color_space.time_seconds, 12.5, epsilon = 1e-6);
+    assert_abs_diff_eq!(
+        uniforms.color_space.time_seconds,
+        expected_time,
+        epsilon = 1e-6
+    );
+    assert!(
+        (uniforms.color_space.time_seconds - 99.0).abs() > 1.0,
+        "color-space time should no longer be sourced from legacy frame_runtime.global_time_seconds"
+    );
     assert_abs_diff_eq!(
         uniforms.color_space.apply_gamma_correction,
         1.0,

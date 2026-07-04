@@ -664,26 +664,6 @@ impl State {
         self.editor.runtime.dirty.rebuild_tap_indicators = true;
     }
 
-    pub(super) fn refresh_editor_tapping_preview_on_mode_entry(&mut self) {
-        if self.phase != AppPhase::Editor
-            || self.editor_effective_mode_for_playback() != EditorMode::Tapping
-        {
-            return;
-        }
-
-        self.editor.timeline.tap_division_preview_cache_revision = 0;
-        self.editor
-            .timeline
-            .tap_division_preview_cache_timing_revision = 0;
-        self.editor.timeline.tap_division_preview_cache.clear();
-        self.editor.sync_tap_indicators_to_spawn();
-        self.rebuild_editor_timeline_snapshot_cache_if_needed();
-
-        let mut dirty = EditorDirtyFlags::tap_timeline_changed();
-        dirty.rebuild_cursor = true;
-        self.mark_editor_dirty(dirty);
-    }
-
     pub fn editor_mode(&self) -> EditorMode {
         self.editor.mode()
     }
@@ -1778,9 +1758,9 @@ impl State {
     /// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
     /// `resume_game`) fire only on real user-driven changes.
     pub fn set_practice_mode_enabled(&mut self, enabled: bool) {
-        // Delegate to the existing private setter in `command_dispatch`
-        // so the side-effect ordering (clear checkpoints → maybe resume
-        // → else rebuild + restart + resume) is preserved.
+        // Delegate to the gameplay compatibility setter so the side-effect
+        // ordering (clear checkpoints → maybe resume → else rebuild +
+        // restart + resume) is preserved.
         self.set_practice_mode_enabled_internal(enabled);
     }
 
@@ -2112,8 +2092,8 @@ impl State {
     /// Number of camera/transform trigger objects currently in the
     /// level. Used by tests that verify the legacy
     /// `AddCameraTrigger` / `AddCameraFollowTrigger` path still
-    /// grows the object store (Phase 3.11 carve-out leaves these
-    /// two messages on the legacy `PendingCommands` path).
+    /// grows the object store while the App-world camera-trigger
+    /// carve-out syncs those messages back into the legacy object store.
     pub fn editor_trigger_object_count(&self) -> usize {
         self.editor.trigger_object_count()
     }
@@ -2460,7 +2440,7 @@ mod tests {
         state.editor.input.selected_block_indices = vec![0];
         state.editor.input.selected_block_index = Some(0);
 
-        state.process_keyboard_input("t", true, true);
+        assert!(state.add_editor_transform_trigger());
         assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         assert_eq!(state.editor.trigger_objects().len(), 1);
         assert_eq!(state.editor.input.selected_block_indices, vec![1]);

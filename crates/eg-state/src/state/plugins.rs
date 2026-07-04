@@ -41,7 +41,7 @@ use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
     CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, GameQuitToMenuRequest,
+    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
     GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
     LoadLevelRequest, PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes,
     SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
@@ -78,6 +78,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorTimingRes>()
             .init_resource::<EditorRuntimeRes>()
             .init_resource::<EditorHistoryRes>()
+            .init_resource::<FrameTimeRes>()
             .init_resource::<PerfRes>()
             .init_resource::<PerfFrameCopyRequest>()
             .init_resource::<EscapeRequest>()
@@ -172,9 +173,11 @@ pub fn setup_state_app(app: &mut App) {
 /// Phase 7 keeps the legacy `State` object as the compatibility owner for
 /// rendering and input, but Runtime now controls the frame order explicitly:
 /// `app.update()` runs App systems, then Runtime invokes this helper before
-/// draining App-world `PendingCommands` into the legacy State.
+/// syncing typed App-world request resources into the remaining legacy
+/// side-effect methods.
 pub fn run_state_schedule_in_world(world: &mut World) {
     transitions::phase_transition_system(world.resource_mut::<AppPhaseRes>());
+    super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
 }
 
@@ -199,6 +202,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorTimingRes>();
     world.init_resource::<EditorRuntimeRes>();
     world.init_resource::<EditorHistoryRes>();
+    world.init_resource::<FrameTimeRes>();
     world.init_resource::<PerfRes>();
     world.init_resource::<PerfFrameCopyRequest>();
     world.init_resource::<EscapeRequest>();
@@ -231,13 +235,11 @@ pub fn register_state_resources(world: &mut World) {
 /// [`StateSchedule`] on a `World`.
 ///
 /// Phase 3: alongside the eg-state resources, this also initializes
-/// the `Messages<T>` buffers for every event type and the
-/// [`crate::events::PendingCommands`] resource, then adds the
-/// [`StateSchedule`] to the world. The schedule contains the
-/// per-message drain systems that convert events to legacy commands
-/// and stage them in `PendingCommands` for Runtime to forward to
-/// `State::dispatch` / `State::dispatch_editor` during the compatibility
-/// window.
+/// the `Messages<T>` buffers for every event type, then adds the
+/// [`StateSchedule`] to the world. The schedule contains per-message
+/// handlers that mutate App-world resources directly or write typed request
+/// resources for Runtime to consume while legacy side effects still live on
+/// `State`.
 ///
 /// Phase 4a: the schedule also contains the
 /// `mirror_pod_state_via_bridge` system from
@@ -267,14 +269,21 @@ pub fn register_state_command_pipeline(world: &mut World) {
     // `install_async_bridge_from_state`).
     crate::state::async_bridge::register_state_async_bridge_world(world);
 
-    // Build the per-frame schedule that drains the per-event
-    // message resources into `PendingCommands`, then runs the
-    // Phase 4a render mirror bridge, the Phase 6a channel poll
-    // systems, and the Phase 6b result handler systems. The
-    // schedule is added to the world's scheduler so
-    // `world.run_schedule(...)` (used by `State::tick_state`) can
-    // invoke it.
+    // Build the per-frame schedule that handles the per-event
+    // message resources, updates App-world resources / typed
+    // request resources, then runs the Phase 4a render mirror
+    // bridge, the Phase 6a channel poll systems, and the Phase 6b
+    // result handler systems. The schedule is added to the world's
+    // scheduler so runtime and test harnesses can invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
+    schedule.configure_sets(
+        (
+            crate::state::async_bridge::PollChannelsSet,
+            crate::state::async_bridge::ApplyAsyncResultsSet,
+        )
+            .chain(),
+    );
+    schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
     crate::events::add_command_systems(&mut schedule);
     crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
     crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);

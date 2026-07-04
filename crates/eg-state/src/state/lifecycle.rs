@@ -627,13 +627,16 @@ impl State {
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
                     last_frame: now,
+                    delta_seconds: 0.0,
                     accumulator: 0.0,
+                    scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
                     line_uniform,
                     gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
+                scheduled_color_space_uniform: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
@@ -1538,13 +1541,16 @@ impl State {
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
                     last_frame: now,
+                    delta_seconds: 0.0,
                     accumulator: 0.0,
+                    scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
                     line_uniform,
                     gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
+                scheduled_color_space_uniform: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {

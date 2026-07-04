@@ -16,11 +16,10 @@ use eg_types::AuthSession;
 /// resource (`AuthChannelRes`) via `Arc<Mutex<>>` so the per-frame
 /// `poll_channels_system` can drain it.
 ///
-/// Phase 6b: `Receiver<T>` is not `Clone`; wrapping it in
-/// `Arc<Mutex<>>` lets both the legacy `update_auth_results` (called
-/// from `State::update`) and the Phase 6b handler system (called from
-/// `State::tick_state`) race for the same messages without
-/// double-processing — the first caller wins each message.
+/// `Receiver<T>` is not `Clone`; wrapping it in `Arc<Mutex<>>` lets the
+/// World resource and the legacy field share the same receiver. Production
+/// frames drain auth results through `StateSchedule`; `State::update`
+/// only starts a refresh when an existing session needs one.
 pub type AuthChannelReceiver =
     std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<AuthServiceMessage>>>;
 
@@ -124,10 +123,14 @@ impl State {
         }
     }
 
-    pub fn update_auth_results(&mut self) {
+    pub(crate) fn refresh_auth_session_if_needed(&mut self) {
         if self.auth.session.is_some() && !self.auth.refresh_started {
             self.refresh_auth_session();
         }
+    }
+
+    pub fn update_auth_results(&mut self) {
+        self.refresh_auth_session_if_needed();
 
         // Phase 6b: the receiver is shared with the Phase 6b handler
         // system via `Arc<Mutex<>>`. We drain the receiver into a

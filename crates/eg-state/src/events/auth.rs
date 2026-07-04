@@ -52,13 +52,12 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `AuthSubmitSignIn` is a carve-out from the `PendingCommands` →
-// `State::dispatch` pipeline (same request-resource pattern as
+// `AuthSubmitSignIn` writes a typed request resource (same pattern as
 // `events::misc::handle_escape` and
 // `events::auth::handle_resize_surface`): the handler writes
 // `AuthSubmitSignInRequest.pending = true` and
 // `Runtime::sync_app_auth_submit_sign_in_request` consumes the
-// request before the remaining `PendingCommands` drain and calls
+// request during the typed request sync pass and calls
 // the existing legacy `State::submit_auth_sign_in` compatibility
 // method. The sign-in side effect (network IO via
 // `trigger_auth_sign_in` on the auth channel) stays legacy-owned
@@ -72,8 +71,7 @@ pub fn handle_auth_submit_sign_in(
     }
 }
 
-// `AuthSignOut` is a carve-out from the `PendingCommands` →
-// `State::dispatch` pipeline (same request-resource pattern as
+// `AuthSignOut` writes a typed request resource (same pattern as
 // `AuthSubmitSignIn`): the handler writes
 // `AuthSignOutRequest.pending = true` and
 // `Runtime::sync_app_auth_sign_out_request` consumes the request
@@ -90,8 +88,7 @@ pub fn handle_auth_sign_out(
     }
 }
 
-// `AuthOpenSignup` is a carve-out from the `PendingCommands` →
-// `State::dispatch` pipeline (same request-resource pattern as
+// `AuthOpenSignup` writes a typed request resource (same pattern as
 // `AuthSubmitSignIn`): the handler writes
 // `AuthOpenSignupRequest.pending = true` and
 // `Runtime::sync_app_auth_open_signup_request` consumes the

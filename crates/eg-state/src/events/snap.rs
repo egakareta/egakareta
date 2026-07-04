@@ -7,8 +7,8 @@
 */
 //! Snap / grid events.
 //!
-//! These are a **carve-out** from the `PendingCommands` -> `State::dispatch`
-//! pipeline (same pattern as the `input_state` and `pointer` modules).
+//! These handlers mutate App-world state directly (same pattern as the
+//! `input_state` and `pointer` modules).
 //! The handlers mutate `EditorConfigRes` directly, and the legacy
 //! `State.editor.config` fields are synced from the resource at the top of
 //! the per-frame `StateSchedule`.

@@ -22,10 +22,10 @@ use eg_types::PersistentWaveformCacheEntry;
 // REFACTOR POINT(full-bevy): `AudioSubsystem` becomes Bevy audio resources or
 // stays as a custom resource behind Bevy systems; direct `State` polling goes away.
 
-/// Receiver end of the audio-preload channel. Shared between the
-/// legacy `update_runtime_audio_preloads` (in `State::update`) and
-/// the Phase 6b `audio_preload_handler_system` (in
-/// `State::tick_state`). See [`AuthChannelReceiver`] in
+/// Receiver end of the audio-preload channel. Production frames drain
+/// this through `StateSchedule`; the legacy
+/// `update_runtime_audio_preloads` helper remains for focused
+/// compatibility tests. See [`AuthChannelReceiver`] in
 /// `state::auth_state` for the rationale.
 pub type AudioPreloadChannelReceiver =
     std::sync::Arc<std::sync::Mutex<Receiver<AudioPreloadResult>>>;
@@ -38,16 +38,16 @@ pub struct RuntimeAudioPreloadState {
     pub last_warmup_request: Option<(String, f32)>,
 }
 
-/// Receiver end of the audio-import channel. Shared between the
-/// legacy `update_audio_imports` and the Phase 6b
-/// `audio_import_handler_system`.
+/// Receiver end of the audio-import channel. Production frames drain this
+/// through `StateSchedule`; the legacy `update_audio_imports` helper
+/// remains for focused compatibility tests.
 pub type AudioImportChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<(String, Vec<u8>)>>>;
 
 pub type AudioImportChannel = (Sender<(String, Vec<u8>)>, AudioImportChannelReceiver);
 
-/// Receiver end of the waveform-load channel. Shared between the
-/// legacy `update_waveform_loading` and the Phase 6b
-/// `waveform_handler_system`.
+/// Receiver end of the waveform-load channel. Production frames drain this
+/// through `StateSchedule`; the legacy `update_waveform_loading` helper
+/// remains for focused compatibility tests.
 pub type WaveformLoadChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<WaveformResult>>>;
 
 pub struct EditorAudioState {

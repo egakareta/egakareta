@@ -38,9 +38,8 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `ToggleHitboxVisualization` is a carve-out from the `PendingCommands`
-// → `State::dispatch_editor` pipeline (same pattern as `events::snap`,
-// `events::bpm`, and `events::timing`): the handler mutates
+// `ToggleHitboxVisualization` mutates App-world state directly (same pattern
+// as `events::snap`, `events::bpm`, and `events::timing`): the handler mutates
 // `EditorInputRes.0.show_hitbox_visualization` directly, and the
 // legacy `State.editor.input.show_hitbox_visualization` is synced from
 // the resource by `Runtime::sync_app_editor_input_state` before any
@@ -86,18 +85,16 @@ pub fn handle_toggle_place_window(
     }
 }
 
-// `Escape` is a carve-out from the `PendingCommands` →
-// `State::dispatch_editor` pipeline (same request-resource pattern
-// as `events::auth::handle_resize_surface` and
+// `Escape` writes a typed request resource (same request-resource pattern as
+// `events::auth::handle_resize_surface` and
 // `events::auth::handle_copy_latest_perf_frame`): the handler
 // writes `EscapeRequest.pending = true`, and
 // `Runtime::sync_app_escape_request` consumes the request before the
-// remaining `PendingCommands` drain and calls the existing legacy
+// typed request sync pass and calls the existing legacy
 // `State::apply_editor_escape` compatibility method. This keeps
 // the multi-step context-sensitive state machine in `handle_editor_escape`
 // (stop playback → reset timeline → back to menu) reachable from
-// the App world without staging `EditorCommand::Escape` in
-// `PendingCommands`.
+// the App world without staging a legacy editor dispatch.
 pub fn handle_escape(
     mut events: MessageReader<Escape>,
     mut escape_request: ResMut<crate::state::EscapeRequest>,

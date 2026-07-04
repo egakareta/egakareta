@@ -86,6 +86,56 @@ impl Default for AppPhaseRes {
 }
 
 // ---------------------------------------------------------------------------
+// Frame timing
+// ---------------------------------------------------------------------------
+
+/// Manual frame timing resource used while `State::update` is being
+/// decomposed into scheduled systems.
+///
+/// REFACTOR POINT(full-bevy): replace `FrameTimeRes` with `bevy_time`
+/// `Time<Virtual>` / `Time<Fixed>` resources once the custom frame
+/// driver moves to the full Bevy app runner.
+#[derive(Resource, Clone, Copy)]
+pub struct FrameTimeRes {
+    pub last_frame: web_time::Instant,
+    pub delta_seconds: f32,
+    pub accumulator: f32,
+    pub global_time_seconds: f32,
+    pub fps_smoothed: f32,
+}
+
+impl FrameTimeRes {
+    pub fn advance(&mut self) {
+        let now = web_time::Instant::now();
+        let frame_dt = (now - self.last_frame).as_secs_f32();
+        self.last_frame = now;
+        self.delta_seconds = frame_dt;
+
+        let instant_fps = 1.0 / frame_dt.max(1e-4);
+        if self.fps_smoothed <= 0.0 {
+            self.fps_smoothed = instant_fps;
+        } else {
+            self.fps_smoothed = self.fps_smoothed * 0.9 + instant_fps * 0.1;
+        }
+
+        self.accumulator = (self.accumulator + frame_dt).min(0.25);
+        self.global_time_seconds += frame_dt.max(0.0);
+    }
+}
+
+impl Default for FrameTimeRes {
+    fn default() -> Self {
+        Self {
+            last_frame: web_time::Instant::now(),
+            delta_seconds: 0.0,
+            accumulator: 0.0,
+            global_time_seconds: 0.0,
+            fps_smoothed: 0.0,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Session / menu / editor domain resources (default-constructible only)
 // ---------------------------------------------------------------------------
 
@@ -233,7 +283,7 @@ impl PerfFrameCopyRequest {
 /// (toggle game pause → back to menu → clear selection → toggle timeline
 /// playback → reset timeline time → back to menu). Phase 3.46 routes
 /// the message through this request resource instead of staging
-/// `EditorCommand::Escape` in `PendingCommands`, so the App world owns
+/// `EditorCommand::Escape` through the legacy command bridge, so the App world owns
 /// the "user pressed Escape" intent while the legacy `State` still owns
 /// the multi-step state machine. Runtime consumes the request via
 /// `State::apply_editor_escape` (which wraps
@@ -261,7 +311,7 @@ impl EscapeRequest {
 /// `trigger_auth_sign_in` which sends a message on the auth channel),
 /// so it stays legacy-owned for the carve-out. Phase 3.47 routes
 /// the message through this request resource instead of staging
-/// `AppCommand::AuthSubmitSignIn` in `PendingCommands`.
+/// `AppCommand::AuthSubmitSignIn` through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct AuthSubmitSignInRequest {
     pub pending: bool,
@@ -285,7 +335,7 @@ impl AuthSubmitSignInRequest {
 /// `trigger_auth_sign_out` which sends a message on the auth
 /// channel), so it stays legacy-owned for the carve-out. Phase 3.47
 /// routes the message through this request resource instead of
-/// staging `AppCommand::AuthSignOut` in `PendingCommands`.
+/// staging `AppCommand::AuthSignOut` through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct AuthSignOutRequest {
     pub pending: bool,
@@ -309,7 +359,7 @@ impl AuthSignOutRequest {
 /// (`eg_platform::auth::open_signup_page`), so it stays
 /// legacy-owned for the carve-out. Phase 3.47 routes the message
 /// through this request resource instead of staging
-/// `AppCommand::AuthOpenSignup` in `PendingCommands`.
+/// `AppCommand::AuthOpenSignup` through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct AuthOpenSignupRequest {
     pub pending: bool,
@@ -335,7 +385,7 @@ impl AuthOpenSignupRequest {
 /// phase. The side effect stays legacy-owned for the carve-out.
 /// Phase 3.48 routes the message through this request resource
 /// instead of staging `AppCommand::GameQuitToMenu` in
-/// `PendingCommands`.
+/// legacy command bridge.
 #[derive(Resource, Default)]
 pub struct GameQuitToMenuRequest {
     pub pending: bool,
@@ -360,7 +410,7 @@ impl GameQuitToMenuRequest {
 /// resets the gameplay clock, replayed objects, and audio. The
 /// side effect stays legacy-owned for the carve-out. Phase 3.48
 /// routes the message through this request resource instead of
-/// staging `AppCommand::GameRestartLevel` in `PendingCommands`.
+/// staging `AppCommand::GameRestartLevel` through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct GameRestartLevelRequest {
     pub pending: bool,
@@ -387,7 +437,7 @@ impl GameRestartLevelRequest {
 /// vertex meshes. The side effect stays legacy-owned for the
 /// carve-out. Phase 3.48 routes the message through this request
 /// resource instead of staging `AppCommand::GameSetPracticeCheckpoint`
-/// in `PendingCommands`.
+/// through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct GameSetPracticeCheckpointRequest {
     pub pending: bool,
@@ -412,7 +462,7 @@ impl GameSetPracticeCheckpointRequest {
 /// checkpoint and rebuilds the checkpoint vertex meshes. The side
 /// effect stays legacy-owned for the carve-out. Phase 3.48 routes
 /// the message through this request resource instead of staging
-/// `AppCommand::GameRemovePracticeCheckpoint` in `PendingCommands`.
+/// `AppCommand::GameRemovePracticeCheckpoint` through the legacy command bridge.
 #[derive(Resource, Default)]
 pub struct GameRemovePracticeCheckpointRequest {
     pub pending: bool,
