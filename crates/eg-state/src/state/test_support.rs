@@ -43,9 +43,8 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
+use super::StateSchedule;
 use super::plugins::{register_state_command_pipeline, setup_state_app};
-use super::transitions::phase_transition_system;
-use super::{AppPhaseRes, StateSchedule};
 
 /// Test harness for the eg-state plugin graph.
 ///
@@ -119,31 +118,19 @@ impl TestApp {
 
     /// Run a single frame of the eg-state pipeline.
     ///
-    /// Bevy-native equivalent of `State::tick_state()`. Calls
-    /// `phase_transition_system` (the free function that detects
-    /// `AppPhase` changes) and then runs the per-frame
-    /// [`StateSchedule`]. The render mirror bridge, channel poll
-    /// systems, and async result handlers are all invoked through
-    /// the schedule; only `phase_transition_system` is called
-    /// separately (it is a free function, not a system, mirroring
-    /// the legacy `State::tick_state` ordering).
+    /// Bevy-native equivalent of `State::tick_state()`. Runs the
+    /// per-frame [`StateSchedule`], which owns phase transition
+    /// detection, command handlers, render mirror bridging, channel
+    /// polling, and async result handlers.
     pub fn tick_state(&mut self) {
-        phase_transition_system(self.world_mut().resource_mut::<AppPhaseRes>());
         let _ = self.world_mut().try_run_schedule(StateSchedule);
     }
 
     /// Run the [`StateSchedule`] once on the World.
     ///
-    /// Equivalent to the second half of `State::tick_state()` — the
-    /// per-event drain systems, the render mirror bridge, the
-    /// async result handlers, and the per-frame present system. Use
-    /// this when the test wants the schedule without the
-    /// `phase_transition_system` prelude (e.g. testing message
-    /// handling in isolation). For the full pipeline, prefer
-    /// [`TestApp::tick_state`].
-    ///
-    /// Returns `true` if the schedule completed without panicking
-    /// (Bevy 0.19's `try_run_schedule` is the underlying API).
+    /// Equivalent to [`TestApp::tick_state`], returning whether the
+    /// schedule completed without panicking (Bevy 0.19's
+    /// `try_run_schedule` is the underlying API).
     pub fn run_state_schedule(&mut self) -> bool {
         self.world_mut().try_run_schedule(StateSchedule).is_ok()
     }
@@ -242,10 +229,6 @@ mod tests {
 
     #[test]
     fn test_app_phase_transition_via_tick_state() {
-        // Mirrors the legacy `tick_state_runs_phase_transition_system`
-        // test but on the Bevy-native `TestApp`. The pipeline is the
-        // same: `phase_transition_system` runs as a prelude, then the
-        // `StateSchedule` runs.
         let mut app = TestApp::minimal();
 
         // Initial tick: no transition.
@@ -260,7 +243,7 @@ mod tests {
             .resource_mut::<AppPhaseRes>()
             .set(AppPhase::Playing);
 
-        // tick_state detects the change and updates `previous_app_phase`.
+        // StateSchedule detects the change and updates `previous_app_phase`.
         app.tick_state();
         assert_eq!(
             app.world().resource::<AppPhaseRes>().get(),

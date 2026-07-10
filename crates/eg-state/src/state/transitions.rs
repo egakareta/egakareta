@@ -30,29 +30,28 @@
 //! `previous_app_phase` bookkeeping is replaced by Bevy's `States` derive
 //! + schedule-level transition detection.
 
+#[cfg(test)]
 use bevy_ecs::change_detection::Mut;
+use bevy_ecs::prelude::ResMut;
 use eg_types::AppPhase;
 
 use super::state_resources::AppPhaseRes;
 
-/// Detect `AppPhase` changes and run the appropriate enter/exit
-/// transitions. Called once per frame from [`super::State::tick_state`].
-///
-/// Side effects (per phase):
-/// - **Enter Menu:** reset `EditorRuntimeRes.dirty` (force one
-///   sync of the menu preview).
-/// - **Enter Playing:** no-op for Phase 2c; the level-load systems
-///   that should fire here live in `level_management.rs` and are
-///   triggered by the existing `start_level` method. Phase 3 wires
-///   this through `NavigationEvent`.
-/// - **Enter Editor:** no-op for Phase 2c; same as Playing.
-/// - **Enter GameOver:** no-op for Phase 2c.
-///
-/// Takes a [`Mut<AppPhaseRes>`] directly (not `ResMut`) so it can be
-/// invoked from outside a Bevy schedule (`State::tick_state` runs it
-/// once per frame against a borrowed world). To run this as a system
-/// in a schedule, wrap the call in a `move |mut r: ResMut<_>|` closure.
+/// Test helper for focused transition tests that do not build a schedule.
+#[cfg(test)]
 pub fn phase_transition_system(mut phase: Mut<'_, AppPhaseRes>) {
+    apply_phase_transition(&mut phase);
+}
+
+/// Detect `AppPhase` changes and run the appropriate enter/exit transitions.
+///
+/// Production frames run this as the first phase of `StateSchedule` so phase
+/// bookkeeping is no longer a manual Runtime/TestApp prelude.
+pub fn phase_transition_schedule_system(mut phase: ResMut<'_, AppPhaseRes>) {
+    apply_phase_transition(&mut phase);
+}
+
+fn apply_phase_transition(phase: &mut AppPhaseRes) {
     let current = phase.get();
     if phase.previous_app_phase == current {
         return;

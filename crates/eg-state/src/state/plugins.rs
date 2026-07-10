@@ -36,6 +36,7 @@
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 
+use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
@@ -46,7 +47,6 @@ use super::state_resources::{
     LoadLevelRequest, PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes,
     SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
 };
-use super::{StateSchedule, transitions};
 
 /// Registers the headless gameplay systems. Currently a thin shim around
 /// [`eg_game::GamePlugin`]; in later phases the gameplay plugin will
@@ -173,11 +173,10 @@ pub fn setup_state_app(app: &mut App) {
 ///
 /// Phase 7 keeps the legacy `State` object as the compatibility owner for
 /// rendering and input, but Runtime now controls the frame order explicitly:
-/// `app.update()` runs App systems, then Runtime invokes this helper before
-/// syncing typed App-world request resources into the remaining legacy
-/// side-effect methods.
+/// `app.update()` runs App systems, then Runtime invokes this helper. The
+/// `StateSchedule` owns phase-transition detection before command handlers and
+/// frame/update systems run.
 pub fn run_state_schedule_in_world(world: &mut World) {
-    transitions::phase_transition_system(world.resource_mut::<AppPhaseRes>());
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
 }
@@ -280,6 +279,7 @@ pub fn register_state_command_pipeline(world: &mut World) {
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     schedule.configure_sets(
         (
+            crate::events::CommandHandlerSet,
             crate::state::async_bridge::PollChannelsSet,
             crate::state::async_bridge::ApplyAsyncResultsSet,
         )
@@ -287,6 +287,7 @@ pub fn register_state_command_pipeline(world: &mut World) {
     );
     schedule.add_systems(
         (
+            crate::state::transitions::phase_transition_schedule_system,
             crate::state::frame_time::advance_frame_time_system,
             crate::state::frame_time::reset_menu_editor_frame_accumulator_system,
         )
