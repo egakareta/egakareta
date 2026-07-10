@@ -23,15 +23,22 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use eg_types::AppPhase;
+use bevy_ecs::system::SystemParam;
+use eg_blocks::BlockDefinition;
+use eg_editor_domain::create_block_at_cursor;
+use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AppPhaseRes, EditorConfigRes, EditorInputRes, GameQuitToMenuRequest,
-    GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
-    MenuStateRes, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
+    AppPhaseRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
+    EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
+    GameSetPracticeCheckpointRequest, MenuStateRes, SessionStateRes, ToggleEditorRequest,
+    TurnRightRequest,
 };
 
-/// Primary action: in menu → start level, in game → turn, in editor → place block.
+/// Primary action: in editor this places a block directly in App-world
+/// resources; in game-over it returns to menu by mutating `AppPhaseRes`.
+/// Other phases still request the legacy start/turn side effect.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TurnRight;
 
@@ -87,17 +94,88 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems. Request-backed messages write App-world request resources;
+// Dispatch systems. Request-backed branches write App-world request resources;
 // direct carve-outs mutate App-world resources directly.
 // -----------------------------------------------------------------------
 
-pub fn handle_turn_right(
-    mut events: MessageReader<TurnRight>,
-    mut request: ResMut<TurnRightRequest>,
-) {
+pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: TurnRightResources) {
     for _ in events.read() {
-        request.request();
+        match resources.phase.current {
+            AppPhase::Editor => place_editor_block_from_turn_right(&mut resources),
+            AppPhase::GameOver => resources.phase.set(AppPhase::Menu),
+            _ => resources.request.request(),
+        }
     }
+}
+
+#[derive(SystemParam)]
+pub struct TurnRightResources<'w> {
+    phase: ResMut<'w, AppPhaseRes>,
+    objects: ResMut<'w, EditorObjectsRes>,
+    input: ResMut<'w, EditorInputRes>,
+    config: Res<'w, EditorConfigRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+    timing: Res<'w, EditorTimingRes>,
+    trigger: Res<'w, EditorTriggerRes>,
+    history: ResMut<'w, EditorHistoryRes>,
+    request: ResMut<'w, TurnRightRequest>,
+}
+
+fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
+    record_editor_history_for_placement(resources);
+
+    let default_size = BlockDefinition::get(&resources.config.0.selected_block_id)
+        .render
+        .default_size;
+    let placed = create_block_at_cursor(
+        resources.input.0.cursor,
+        &resources.config.0.selected_block_id,
+        default_size,
+        resources.config.0.selected_block_rotation_degrees,
+    )
+    .with_generated_id(&resources.objects.objects);
+
+    let placed_index = resources.objects.objects.len();
+    resources.objects.objects.push(placed);
+
+    if resources.input.0.shift_held {
+        resources.input.0.selected_block_index = None;
+        resources.input.0.selected_block_indices.clear();
+        resources.input.0.hovered_block_index = None;
+    } else {
+        resources.input.0.selected_block_index = Some(placed_index);
+        resources.input.0.selected_block_indices = vec![placed_index];
+        resources.input.0.hovered_block_index = Some(placed_index);
+        resources.input.0.mode = EditorMode::Scale;
+    }
+
+    resources.objects.object_mutation_pending = true;
+}
+
+fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_>) {
+    const MAX_HISTORY: usize = 256;
+    if resources.history.0.undo.len() >= MAX_HISTORY {
+        resources.history.0.undo.remove(0);
+    }
+    resources.history.0.undo.push(EditorHistorySnapshot {
+        objects: resources.objects.objects.clone(),
+        selected_block_index: resources.input.0.selected_block_index,
+        selected_block_indices: resources.input.0.selected_block_indices.clone(),
+        cursor: resources.input.0.cursor,
+        selected_block_id: resources.config.0.selected_block_id.clone(),
+        selected_block_rotation_degrees: resources.config.0.selected_block_rotation_degrees,
+        recent_block_ids: resources.config.0.recent_block_ids.clone(),
+        spawn: resources.spawn.0.clone(),
+        timeline_time_seconds: resources.timeline.0.clock.time_seconds,
+        timeline_duration_seconds: resources.timeline.0.clock.duration_seconds,
+        tap_times: resources.timeline.0.taps.tap_times.clone(),
+        tap_indicator_positions: resources.timeline.0.taps.tap_indicator_positions.clone(),
+        selected_tap_index: resources.timeline.0.taps.selected_index,
+        timing_points: resources.timing.0.timing_points.clone(),
+        selected_trigger_index: resources.trigger.0.selected_index,
+    });
+    resources.history.0.redo.clear();
 }
 
 pub fn handle_next_level(

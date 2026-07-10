@@ -82,7 +82,7 @@ pub use render::resources::{RenderResizeRequest, RenderUniformsRes};
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
-    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
+    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
     CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
     EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
@@ -316,26 +316,17 @@ impl State {
             runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
             runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
         }
-        // Phase 3.26: menu next/previous level messages can mutate
-        // `MenuStateRes.selected_level` directly while most menu
-        // reads still go through legacy `State.menu`. Mirror the
-        // legacy selection before the schedule runs so a stale App
-        // resource cannot clobber a legacy direct update on a no-op
-        // frame. Some state tests build a minimal App without
-        // `MenuStateRes`, so this mirror is conditional until the menu
-        // resource is inserted by all constructors.
-        if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
-            menu.0.selected_level = self.menu.state.selected_level;
-            menu.0.levels = self.menu.state.levels.clone();
+        // Phase 3.18 / 3.52: pause/resume intent is App-world
+        // authoritative, but playtest/real-gameplay classification and
+        // direct legacy callers can still update the compatibility
+        // `State.session` fields. Mirror those fields before the schedule
+        // runs so stale resources cannot misclassify Escape or undo a
+        // legacy pause on the next frame.
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.playtesting_editor = self.session.playtesting_editor;
+            session.game_paused = self.session.game_paused;
         }
-        // Phase 3.18: `GameResume` is an App-world carve-out, but
-        // pausing still happens through legacy paths such as Escape.
-        // Mirror the legacy pause flag before the schedule runs so a
-        // stale `SessionStateRes` cannot immediately undo a legacy
-        // pause on the next frame. The resume handler can still clear
-        // the resource during the schedule, and the runtime sync below
-        // applies the legacy resume side effects once.
-        world.resource_mut::<SessionStateRes>().game_paused = self.session.game_paused;
         // Phase 3.19 / 3.24: settings carve-outs mutate fields on
         // `SessionStateRes.app_settings` directly, while some tests
         // and temporary callers can still mutate the legacy settings
@@ -360,20 +351,6 @@ impl State {
                 self.session.app_settings.graphics_backend.clone();
             session.settings_restart_required = self.session.settings_restart_required;
             session.graphics_backend_locked = self.session.graphics_backend_locked;
-        }
-        // Phase 3.20-3.22 / 3.25: basic session metadata messages
-        // (`RenameLevel`, `UpdateMusic`, `UpdateCreatorMetadata`,
-        // `UpdateSkyColor`, menu-preview camera messages) are
-        // App-world session carve-outs. Mirror the legacy metadata
-        // before the schedule runs so a stale App resource cannot
-        // clobber a legacy direct update on a no-message frame.
-        {
-            let mut session = world.resource_mut::<SessionStateRes>();
-            session.editor_level_name = self.session.editor_level_name.clone();
-            session.editor_music_metadata = self.session.editor_music_metadata.clone();
-            session.editor_sky_color = self.session.editor_sky_color;
-            session.editor_creator_metadata = self.session.editor_creator_metadata.clone();
-            session.editor_menu_preview_camera = self.session.editor_menu_preview_camera.clone();
         }
         // Phase 4a/4b: install the per-frame mirror closure. The
         // closure captures only the `Copy` values it needs (uniforms,
@@ -696,6 +673,17 @@ impl State {
     /// Returns true if the application is currently in menu mode.
     pub fn is_menu(&self) -> bool {
         self.phase == AppPhase::Menu
+    }
+
+    /// Returns the legacy compatibility shell's current app phase.
+    pub fn app_phase_value(&self) -> AppPhase {
+        self.phase
+    }
+
+    /// Mirror a direct App-world phase carve-out into the compatibility
+    /// shell while phase ownership is still split.
+    pub fn set_phase_from_app(&mut self, phase: AppPhase) {
+        self.phase = phase;
     }
 
     /// Returns true when a real gameplay session is paused.

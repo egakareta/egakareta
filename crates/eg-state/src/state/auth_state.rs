@@ -5,7 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::State;
+use bevy_ecs::prelude::*;
+
+use super::{
+    AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest, State,
+};
 use eg_platform::services::{
     AuthServiceMessage, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
 };
@@ -18,8 +22,9 @@ use eg_types::AuthSession;
 ///
 /// `Receiver<T>` is not `Clone`; wrapping it in `Arc<Mutex<>>` lets the
 /// World resource and the legacy field share the same receiver. Production
-/// frames drain auth results through `StateSchedule`; `State::update`
-/// only starts a refresh when an existing session needs one.
+/// frames drain auth results and start guarded refreshes through
+/// `StateSchedule`; direct legacy auth methods remain for focused
+/// compatibility tests.
 pub type AuthChannelReceiver =
     std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<AuthServiceMessage>>>;
 
@@ -36,6 +41,25 @@ pub struct AuthSubsystem {
 }
 
 impl State {
+    pub fn auth_state_resource(&self) -> AuthStateRes {
+        AuthStateRes {
+            session: self.auth.session.clone(),
+            pending: self.auth.pending,
+            message: self.auth.message.clone(),
+            refresh_started: self.auth.refresh_started,
+            external_navigation_enabled: self.auth.external_navigation_enabled,
+            sender: self.auth.channel.0.clone(),
+        }
+    }
+
+    pub fn apply_auth_state_resource(&mut self, auth: &AuthStateRes) {
+        self.auth.session = auth.session.clone();
+        self.auth.pending = auth.pending;
+        self.auth.message = auth.message.clone();
+        self.auth.refresh_started = auth.refresh_started;
+        self.auth.external_navigation_enabled = auth.external_navigation_enabled;
+    }
+
     pub fn auth_display_name(&self) -> Option<&str> {
         self.auth
             .session
@@ -70,6 +94,7 @@ impl State {
         self.auth.message = message;
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn submit_auth_sign_in(&mut self) {
         if self.auth.pending {
             return;
@@ -80,6 +105,7 @@ impl State {
         trigger_auth_sign_in(self.auth.channel.0.clone());
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn refresh_auth_session(&mut self) {
         if self.auth.pending || self.auth.refresh_started {
             return;
@@ -98,6 +124,7 @@ impl State {
         trigger_auth_refresh(refresh_token, self.auth.channel.0.clone());
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn sign_out_auth_session(&mut self) {
         if self.auth.pending {
             return;
@@ -113,6 +140,7 @@ impl State {
         trigger_auth_sign_out(access_token, self.auth.channel.0.clone());
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn open_auth_signup_page(&mut self) {
         if !self.auth.external_navigation_enabled {
             return;
@@ -123,12 +151,14 @@ impl State {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn refresh_auth_session_if_needed(&mut self) {
         if self.auth.session.is_some() && !self.auth.refresh_started {
             self.refresh_auth_session();
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn update_auth_results(&mut self) {
         self.refresh_auth_session_if_needed();
 
@@ -162,6 +192,7 @@ impl State {
     /// Phase 6b: visible to the `auth_handler_system` in
     /// `state::async_bridge`. The system installs a closure that
     /// calls this method, so it must be at least `pub(crate)`.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn complete_auth_sign_in(&mut self, result: Result<AuthSession, String>) {
         self.auth.pending = false;
         match result {
@@ -177,6 +208,7 @@ impl State {
     }
 
     /// Phase 6b: visible to `auth_handler_system`.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn complete_auth_refresh(&mut self, result: Result<AuthSession, String>) {
         match result {
             Ok(session) => {
@@ -192,6 +224,7 @@ impl State {
     }
 
     /// Phase 6b: visible to `auth_handler_system`.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn complete_auth_sign_out(&mut self, result: Result<(), String>) {
         self.auth.pending = false;
         self.auth.refresh_started = false;
@@ -205,6 +238,125 @@ impl State {
             }
         }
     }
+}
+
+impl AuthStateRes {
+    pub fn submit_auth_sign_in(&mut self) {
+        if self.pending {
+            return;
+        }
+
+        self.pending = true;
+        self.message = Some("Complete sign-in in your browser.".to_string());
+        trigger_auth_sign_in(self.sender.clone());
+    }
+
+    pub fn refresh_auth_session(&mut self) {
+        if self.pending || self.refresh_started {
+            return;
+        }
+
+        let Some(refresh_token) = self
+            .session
+            .as_ref()
+            .map(|session| session.session.refresh_token.clone())
+        else {
+            return;
+        };
+
+        self.refresh_started = true;
+        trigger_auth_refresh(refresh_token, self.sender.clone());
+    }
+
+    pub(crate) fn refresh_auth_session_if_needed(&mut self) {
+        if self.session.is_some() && !self.refresh_started {
+            self.refresh_auth_session();
+        }
+    }
+
+    pub fn sign_out_auth_session(&mut self) {
+        if self.pending {
+            return;
+        }
+
+        let access_token = self
+            .session
+            .as_ref()
+            .map(|session| session.session.access_token.clone());
+        self.pending = true;
+        self.message = None;
+        trigger_auth_sign_out(access_token, self.sender.clone());
+    }
+
+    pub fn open_auth_signup_page(&mut self) {
+        if !self.external_navigation_enabled {
+            return;
+        }
+
+        if let Err(error) = eg_platform::auth::open_signup_page() {
+            self.message = Some(error);
+        }
+    }
+
+    pub(crate) fn complete_auth_sign_in(&mut self, result: Result<AuthSession, String>) {
+        self.pending = false;
+        match result {
+            Ok(session) => {
+                self.session = Some(session);
+                self.refresh_started = true;
+                self.message = None;
+            }
+            Err(error) => {
+                self.message = Some(error);
+            }
+        }
+    }
+
+    pub(crate) fn complete_auth_refresh(&mut self, result: Result<AuthSession, String>) {
+        match result {
+            Ok(session) => {
+                self.session = Some(session);
+                self.refresh_started = true;
+            }
+            Err(error) => {
+                self.session = None;
+                self.refresh_started = false;
+                self.message = Some(error);
+            }
+        }
+    }
+
+    pub(crate) fn complete_auth_sign_out(&mut self, result: Result<(), String>) {
+        self.pending = false;
+        self.refresh_started = false;
+        self.session = None;
+        match result {
+            Ok(()) => {
+                self.message = None;
+            }
+            Err(error) => {
+                self.message = Some(error);
+            }
+        }
+    }
+}
+
+pub fn process_auth_requests_system(
+    mut auth: ResMut<AuthStateRes>,
+    mut sign_in_request: ResMut<AuthSubmitSignInRequest>,
+    mut sign_out_request: ResMut<AuthSignOutRequest>,
+    mut open_signup_request: ResMut<AuthOpenSignupRequest>,
+) {
+    if sign_in_request.take() {
+        auth.submit_auth_sign_in();
+    }
+    if sign_out_request.take() {
+        auth.sign_out_auth_session();
+    }
+    if open_signup_request.take() {
+        auth.open_auth_signup_page();
+    }
+    auth.refresh_auth_session_if_needed();
 }
 
 #[cfg(test)]
@@ -231,6 +383,30 @@ mod tests {
                 country: "UN".to_string(),
             }),
         }
+    }
+
+    #[test]
+    fn process_auth_requests_system_consumes_requests_in_schedule() {
+        let mut world = World::new();
+        world.insert_resource(AuthStateRes {
+            pending: true,
+            ..AuthStateRes::default()
+        });
+        world.insert_resource(AuthSubmitSignInRequest { pending: true });
+        world.insert_resource(AuthSignOutRequest { pending: true });
+        world.insert_resource(AuthOpenSignupRequest { pending: true });
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(process_auth_requests_system);
+        schedule.run(&mut world);
+
+        assert!(!world.resource::<AuthSubmitSignInRequest>().pending);
+        assert!(!world.resource::<AuthSignOutRequest>().pending);
+        assert!(!world.resource::<AuthOpenSignupRequest>().pending);
+        assert!(
+            world.resource::<AuthStateRes>().pending,
+            "pending guard should keep this test side-effect free"
+        );
     }
 
     #[tokio::test]

@@ -132,23 +132,47 @@ pub fn handle_toggle_timeline_playback(
             continue;
         }
 
-        timeline.0.playback.playing = !timeline.0.playback.playing;
-        timeline.0.playback.runtime = None;
-        timeline.0.playback.pending_seek_time_seconds = None;
-        timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
-
         if timeline.0.playback.playing {
-            runtime.0.interaction.last_mode = Some(input.0.mode);
-            input.0.mode = EditorMode::Null;
+            stop_editor_timeline_playback(&mut input, &mut runtime, &mut timeline);
         } else {
-            input.0.mode = runtime
-                .0
-                .interaction
-                .last_mode
-                .take()
-                .unwrap_or(EditorMode::Place);
+            start_editor_timeline_playback(&mut input, &mut runtime, &mut timeline);
         }
     }
+}
+
+pub(crate) fn stop_editor_timeline_playback(
+    input: &mut EditorInputRes,
+    runtime: &mut EditorRuntimeRes,
+    timeline: &mut EditorTimelineRes,
+) -> bool {
+    if !timeline.0.playback.playing {
+        return false;
+    }
+
+    timeline.0.playback.playing = false;
+    timeline.0.playback.runtime = None;
+    timeline.0.playback.pending_seek_time_seconds = None;
+    timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+    input.0.mode = runtime
+        .0
+        .interaction
+        .last_mode
+        .take()
+        .unwrap_or(EditorMode::Place);
+    true
+}
+
+fn start_editor_timeline_playback(
+    input: &mut EditorInputRes,
+    runtime: &mut EditorRuntimeRes,
+    timeline: &mut EditorTimelineRes,
+) {
+    timeline.0.playback.playing = true;
+    timeline.0.playback.runtime = None;
+    timeline.0.playback.pending_seek_time_seconds = None;
+    timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+    runtime.0.interaction.last_mode = Some(input.0.mode);
+    input.0.mode = EditorMode::Null;
 }
 
 pub fn handle_shift_timeline(

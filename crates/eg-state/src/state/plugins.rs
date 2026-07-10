@@ -38,7 +38,7 @@ use bevy_ecs::prelude::*;
 
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
-    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
+    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
     CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
     EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
@@ -82,6 +82,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<PerfRes>()
             .init_resource::<PerfFrameCopyRequest>()
             .init_resource::<EscapeRequest>()
+            .init_resource::<AuthStateRes>()
             .init_resource::<AuthSubmitSignInRequest>()
             .init_resource::<AuthSignOutRequest>()
             .init_resource::<AuthOpenSignupRequest>()
@@ -206,6 +207,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<PerfRes>();
     world.init_resource::<PerfFrameCopyRequest>();
     world.init_resource::<EscapeRequest>();
+    world.init_resource::<AuthStateRes>();
     world.init_resource::<AuthSubmitSignInRequest>();
     world.init_resource::<AuthSignOutRequest>();
     world.init_resource::<AuthOpenSignupRequest>();
@@ -283,8 +285,26 @@ pub fn register_state_command_pipeline(world: &mut World) {
         )
             .chain(),
     );
-    schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
+    schedule.add_systems(
+        (
+            crate::state::frame_time::advance_frame_time_system,
+            crate::state::frame_time::reset_menu_editor_frame_accumulator_system,
+        )
+            .chain(),
+    );
     crate::events::add_command_systems(&mut schedule);
+    schedule.add_systems(
+        crate::state::auth_state::process_auth_requests_system
+            .after(crate::events::auth::handle_auth_submit_sign_in)
+            .after(crate::events::auth::handle_auth_sign_out)
+            .after(crate::events::auth::handle_auth_open_signup)
+            .before(crate::state::async_bridge::PollChannelsSet),
+    );
+    schedule.add_systems(
+        crate::state::perf::process_perf_frame_copy_request_system
+            .after(crate::events::auth::handle_copy_latest_perf_frame)
+            .before(crate::state::async_bridge::PollChannelsSet),
+    );
     crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
     crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);
     crate::state::render::plugin::add_mirror_render_systems(&mut schedule);

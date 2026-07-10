@@ -579,12 +579,9 @@ impl State {
     /// - Managing input-driven camera movements.
     pub fn update(&mut self) {
         puffin::profile_scope!("FrameTotal");
-        {
-            puffin::profile_scope!("FrameAuthRefresh");
-            self.refresh_auth_session_if_needed();
-        }
         const FIXED_DT: f32 = 1.0 / 120.0;
 
+        let using_scheduled_frame_time = self.frame_runtime.editor.scheduled_delta_available;
         let frame_dt = self.frame_delta_for_legacy_update();
 
         let color_space_uniform = self.color_space_uniform_for_legacy_update();
@@ -592,7 +589,9 @@ impl State {
 
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
-            self.frame_runtime.editor.accumulator = 0.0;
+            if !using_scheduled_frame_time {
+                self.frame_runtime.editor.accumulator = 0.0;
+            }
             self.frame_runtime.player_render.gem_shatter_effects.clear();
             self.render_meshes_mut().gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
@@ -602,7 +601,9 @@ impl State {
 
         if self.phase == AppPhase::Editor {
             puffin::profile_scope!("EditorUpdate");
-            self.frame_runtime.editor.accumulator = 0.0;
+            if !using_scheduled_frame_time {
+                self.frame_runtime.editor.accumulator = 0.0;
+            }
             self.render_meshes_mut().trail.clear();
 
             if self.editor.timeline.playback.playing {

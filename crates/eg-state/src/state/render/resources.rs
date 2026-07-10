@@ -141,12 +141,13 @@ impl Default for RenderFrameInputRes {
 /// The platform layer (winit / wasm canvas) pushes the latest surface
 /// size into this resource on `WindowEvent::Resized` / canvas resize.
 /// The [`RenderPlugin`](super::plugin) drains it during
-/// `RenderPresentSet` and calls `State::resize_surface` (Phase 4b: a
-/// dedicated `apply_resize_surface_system`).
+/// `RenderPresentSet` and applies the size to [`RenderGpuRes`] plus
+/// [`RenderSurfaceHostRes`] when they are present. During the
+/// compatibility window it also records the accepted size so Runtime
+/// can mirror the scheduled result into legacy `State` render resources.
 ///
-/// Phase 4a only **defines** the resource; the platform-side wiring
-/// lands with the Phase 7 `App` work. The resource is inserted with
-/// an empty default so Bevy schedules can already reach it.
+/// The resource is inserted with an empty default so Bevy schedules can
+/// reach it even in bare test worlds.
 #[allow(dead_code)]
 #[derive(Resource, Clone, Copy)]
 pub struct RenderResizeRequest {
@@ -154,6 +155,12 @@ pub struct RenderResizeRequest {
     pub size: eg_types::PhysicalSize<u32>,
     /// True if a resize is pending (consumed by the apply system).
     pub pending: bool,
+    /// Latest non-zero size accepted by the scheduled resize system.
+    ///
+    /// The compatibility runtime mirrors this into legacy `State`
+    /// render resources until `RenderGpuRes` and `RenderSurfaceHostRes`
+    /// are physically owned by the App world.
+    pub applied_size: Option<eg_types::PhysicalSize<u32>>,
 }
 
 impl Default for RenderResizeRequest {
@@ -164,6 +171,7 @@ impl Default for RenderResizeRequest {
                 height: 0,
             },
             pending: false,
+            applied_size: None,
         }
     }
 }
@@ -186,6 +194,19 @@ impl RenderResizeRequest {
         } else {
             None
         }
+    }
+
+    /// Record the size accepted by the scheduled resize system.
+    #[allow(dead_code)]
+    pub fn mark_applied(&mut self, size: eg_types::PhysicalSize<u32>) {
+        self.applied_size = Some(size);
+    }
+
+    /// Pop the latest scheduled resize application for compatibility
+    /// mirroring into legacy `State` render resources.
+    #[allow(dead_code)]
+    pub fn take_applied_size(&mut self) -> Option<eg_types::PhysicalSize<u32>> {
+        self.applied_size.take()
     }
 }
 
@@ -265,6 +286,24 @@ mod tests {
             })
         ));
         assert!(req.take().is_none());
+    }
+
+    #[test]
+    fn resize_request_take_applied_size_returns_size_once() {
+        let mut req = RenderResizeRequest::default();
+        req.mark_applied(PhysicalSize {
+            width: 800,
+            height: 600,
+        });
+
+        assert!(matches!(
+            req.take_applied_size(),
+            Some(PhysicalSize {
+                width: 800,
+                height: 600
+            })
+        ));
+        assert!(req.take_applied_size().is_none());
     }
 
     #[test]

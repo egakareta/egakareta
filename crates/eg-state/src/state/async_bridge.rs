@@ -89,7 +89,7 @@ use crate::events::async_results::{
     AudioImportResultEvent, AudioPreloadResultEvent, AuthServiceResultEvent,
     LevelImportResultEvent, WaveformResultEvent,
 };
-use crate::state::State;
+use crate::state::{AuthStateRes, State};
 
 // ---------------------------------------------------------------------------
 // Type aliases for the shared `Arc<Mutex<Receiver<T>>>` channels
@@ -472,19 +472,21 @@ pub fn drain_pending_async_result_fns(state: &mut State) {
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ApplyAsyncResultsSet;
 
-/// Consume `AuthServiceResultEvent`s and install one closure per
-/// event into the thread-local async-result slot. The closure
-/// routes the `AuthServiceMessage` to the matching `complete_*`
-/// method on `State`.
+/// Consume `AuthServiceResultEvent`s and apply them to App-world auth state.
+/// Legacy `State` is synced from `AuthStateRes` by Runtime during the
+/// compatibility window.
 #[allow(dead_code)]
-pub fn auth_handler_system(mut events: MessageReader<AuthServiceResultEvent>) {
+pub fn auth_handler_system(
+    mut events: MessageReader<AuthServiceResultEvent>,
+    mut auth: ResMut<AuthStateRes>,
+) {
     for event in events.read() {
         let message = event.message.clone();
-        install_async_result_fn(move |state: &mut State| match message {
-            AuthServiceMessage::SignedIn(result) => state.complete_auth_sign_in(result),
-            AuthServiceMessage::Refreshed(result) => state.complete_auth_refresh(result),
-            AuthServiceMessage::SignedOut(result) => state.complete_auth_sign_out(result),
-        });
+        match message {
+            AuthServiceMessage::SignedIn(result) => auth.complete_auth_sign_in(result),
+            AuthServiceMessage::Refreshed(result) => auth.complete_auth_refresh(result),
+            AuthServiceMessage::SignedOut(result) => auth.complete_auth_sign_out(result),
+        }
     }
 }
 
@@ -822,6 +824,7 @@ mod tests {
     fn build_world() -> World {
         let mut world = World::new();
         register_state_async_bridge_world(&mut world);
+        world.init_resource::<AuthStateRes>();
         world
     }
 
@@ -1033,13 +1036,18 @@ mod tests {
     }
 
     #[test]
-    fn auth_handler_system_routes_to_complete_sign_out() {
+    fn auth_handler_system_updates_auth_resource_for_sign_out() {
         // Write an `AuthServiceResultEvent::SignedOut(Ok(()))` into
-        // the buffer, run the handler system, drain the
-        // thread-local slot, and verify the State was updated
-        // (`auth.session = None`, `auth.pending = false`).
+        // the buffer, run the handler system, and verify the
+        // App-world auth resource was updated (`session = None`,
+        // `pending = false`).
         use crate::events::async_results::AuthServiceResultEvent;
         let mut world = build_world();
+        {
+            let mut auth = world.resource_mut::<AuthStateRes>();
+            auth.pending = true;
+            auth.session = Some(test_auth_session());
+        }
         world.write_message(AuthServiceResultEvent::new(AuthServiceMessage::SignedOut(
             Ok(()),
         )));
@@ -1048,14 +1056,9 @@ mod tests {
         schedule.add_systems(auth_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        // The State starts with `pending = true` so the
-        // SignedOut path has something to clear.
-        fake_state.auth.pending = true;
-        fake_state.auth.session = Some(test_auth_session());
-        drain_pending_async_result_fns(&mut fake_state);
-        assert!(!fake_state.auth.pending);
-        assert!(fake_state.auth.session.is_none());
+        let auth = world.resource::<AuthStateRes>();
+        assert!(!auth.pending);
+        assert!(auth.session.is_none());
     }
 
     #[test]

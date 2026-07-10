@@ -10,6 +10,13 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
+
+use super::timeline::stop_editor_timeline_playback;
+use crate::state::{
+    AppPhaseRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
+    EscapeRequest, PerfRes, SessionStateRes,
+};
 
 /// Toggle editor hitbox visualization.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -23,7 +30,7 @@ pub struct TogglePerfOverlay;
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TogglePlaceWindow;
 
-/// Escape key context-sensitive (stop playback → reset timeline → back to menu).
+/// Escape key context-sensitive (pause game → stop playback → reset timeline → back to menu).
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct Escape;
 
@@ -46,7 +53,7 @@ pub fn register_events(app: &mut App) {
 // dispatch in the same frame.
 pub fn handle_toggle_hitbox_visualization(
     mut events: MessageReader<ToggleHitboxVisualization>,
-    mut input: ResMut<crate::state::EditorInputRes>,
+    mut input: ResMut<EditorInputRes>,
 ) {
     for _ in events.read() {
         input.0.show_hitbox_visualization = !input.0.show_hitbox_visualization;
@@ -62,7 +69,7 @@ pub fn handle_toggle_hitbox_visualization(
 // the global `puffin` side effect) when the value differs.
 pub fn handle_toggle_perf_overlay(
     mut events: MessageReader<TogglePerfOverlay>,
-    mut perf: ResMut<crate::state::PerfRes>,
+    mut perf: ResMut<PerfRes>,
 ) {
     for _ in events.read() {
         perf.0.overlay_enabled = !perf.0.overlay_enabled;
@@ -78,28 +85,91 @@ pub fn handle_toggle_perf_overlay(
 // other session-related side effects on every frame.
 pub fn handle_toggle_place_window(
     mut events: MessageReader<TogglePlaceWindow>,
-    mut session: ResMut<crate::state::SessionStateRes>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
         session.editor_show_place_window = !session.editor_show_place_window;
     }
 }
 
-// `Escape` writes a typed request resource (same request-resource pattern as
-// `events::auth::handle_resize_surface` and
-// `events::auth::handle_copy_latest_perf_frame`): the handler
-// writes `EscapeRequest.pending = true`, and
-// `Runtime::sync_app_escape_request` consumes the request before the
-// typed request sync pass and calls the existing legacy
-// `State::apply_editor_escape` compatibility method. This keeps
-// the multi-step context-sensitive state machine in `handle_editor_escape`
-// (stop playback → reset timeline → back to menu) reachable from
-// the App world without staging a legacy editor dispatch.
-pub fn handle_escape(
-    mut events: MessageReader<Escape>,
-    mut escape_request: ResMut<crate::state::EscapeRequest>,
-) {
+// `Escape` handles local branches directly in App-world resources:
+// real-gameplay pause, editor selection clearing, editor timeline playback
+// stop, and editor timeline clock reset. Back-to-menu still writes
+// `EscapeRequest.pending = true` for Runtime to consume through the legacy
+// compatibility state machine.
+pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
     for _ in events.read() {
-        escape_request.request();
+        match resources.phase.current {
+            eg_types::AppPhase::Playing if !resources.session.playtesting_editor => {
+                resources.session.game_paused = !resources.session.game_paused;
+                continue;
+            }
+            eg_types::AppPhase::Editor => {
+                if clear_editor_selection_for_escape(
+                    &mut resources.input,
+                    &mut resources.objects,
+                    &mut resources.timeline,
+                ) {
+                    continue;
+                }
+
+                if stop_editor_timeline_playback(
+                    &mut resources.input,
+                    &mut resources.runtime,
+                    &mut resources.timeline,
+                ) {
+                    continue;
+                }
+
+                if resources.timeline.0.clock.time_seconds > 0.001 {
+                    resources.timeline.0.clock.time_seconds = 0.0;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        resources.escape_request.request();
     }
+}
+
+#[derive(SystemParam)]
+pub struct EscapeResources<'w> {
+    phase: Res<'w, AppPhaseRes>,
+    input: ResMut<'w, EditorInputRes>,
+    objects: ResMut<'w, EditorObjectsRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+    runtime: ResMut<'w, EditorRuntimeRes>,
+    session: ResMut<'w, SessionStateRes>,
+    escape_request: ResMut<'w, EscapeRequest>,
+}
+
+fn clear_editor_selection_for_escape(
+    input: &mut EditorInputRes,
+    objects: &mut EditorObjectsRes,
+    timeline: &mut EditorTimelineRes,
+) -> bool {
+    let had_block_selection = input.0.selected_block_index.is_some()
+        || !input.0.selected_block_indices.is_empty()
+        || input.0.hovered_block_index.is_some();
+    let had_tap_selection = selected_tap_exists(timeline);
+
+    if had_block_selection {
+        input.0.selected_block_index = None;
+        input.0.selected_block_indices.clear();
+        input.0.hovered_block_index = None;
+        objects.object_mutation_pending = true;
+    }
+
+    if had_tap_selection {
+        timeline.0.taps.selected_index = None;
+    }
+
+    had_block_selection || had_tap_selection
+}
+
+fn selected_tap_exists(timeline: &EditorTimelineRes) -> bool {
+    timeline.0.taps.selected_index.is_some_and(|index| {
+        index < timeline.0.taps.tap_times.len()
+            && index < timeline.0.taps.tap_indicator_positions.len()
+    })
 }

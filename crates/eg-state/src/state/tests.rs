@@ -319,6 +319,27 @@ fn test_app_tick_state_advances_frame_time_resource() {
     );
 }
 
+#[test]
+fn test_app_tick_state_resets_menu_editor_frame_accumulator() {
+    let mut app = crate::state::test_support::TestApp::minimal();
+    {
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Menu);
+        let mut frame_time = app.world_mut().resource_mut::<FrameTimeRes>();
+        frame_time.last_frame = web_time::Instant::now() - std::time::Duration::from_millis(20);
+        frame_time.accumulator = 0.2;
+    }
+
+    app.tick_state();
+
+    assert_eq!(
+        app.world().resource::<FrameTimeRes>().accumulator,
+        0.0,
+        "StateSchedule must own the non-playing accumulator reset before legacy update"
+    );
+}
+
 #[tokio::test]
 async fn tick_state_is_safe_to_call_with_empty_schedule() {
     let mut state = State::new_test().await;
@@ -382,7 +403,7 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
-    // Write a TurnRight message.
+    // Write a TurnRight message while the default test phase is Menu.
     app.world_mut().write_message(TurnRight);
     // Write a SetEditorMode(Place) message. Phase 3.13 carved
     // this out: the handler mutates `EditorInputRes.0.mode`
@@ -397,7 +418,7 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
 
     assert!(
         app.world().resource::<TurnRightRequest>().pending,
-        "TurnRight handler must write TurnRightRequest"
+        "Menu TurnRight handler must write TurnRightRequest"
     );
     assert_eq!(
         app.world().resource::<EditorInputRes>().0.mode,
@@ -407,7 +428,7 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
     assert_eq!(
         app.world().resource::<AppPhaseRes>().get(),
         AppPhase::Menu,
-        "TurnRight request write must not start gameplay in the schedule"
+        "Menu TurnRight request write must not start gameplay in the schedule"
     );
 }
 

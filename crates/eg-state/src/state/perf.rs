@@ -7,7 +7,10 @@
 */
 use std::fmt::Write as _;
 
+use bevy_ecs::prelude::*;
 use puffin::{FrameView, GlobalFrameView, Reader, ScopeCollection};
+
+use super::{PerfFrameCopyRequest, PerfRes};
 
 #[derive(Default)]
 pub struct PerfState {
@@ -104,6 +107,19 @@ impl PerfState {
     }
 }
 
+pub fn process_perf_frame_copy_request_system(
+    mut request: ResMut<PerfFrameCopyRequest>,
+    perf: Res<PerfRes>,
+) {
+    if !request.take() {
+        return;
+    }
+
+    if let Some(text) = perf.0.format_latest_frame() {
+        let _ = bevy_clipboard::Clipboard::default().set_text(text);
+    }
+}
+
 impl super::State {
     pub fn toggle_perf_overlay(&mut self) {
         self.editor.perf.overlay_enabled = !self.editor.perf.overlay_enabled;
@@ -169,5 +185,30 @@ impl super::State {
         if let Some(text) = self.format_latest_frame() {
             let _ = bevy_clipboard::Clipboard::default().set_text(text);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy_ecs::prelude::*;
+
+    use super::process_perf_frame_copy_request_system;
+    use crate::state::{PerfFrameCopyRequest, PerfRes};
+
+    #[test]
+    fn perf_frame_copy_system_consumes_request_without_frame_data() {
+        let mut world = World::new();
+        world.init_resource::<PerfRes>();
+        world.init_resource::<PerfFrameCopyRequest>();
+        world.resource_mut::<PerfFrameCopyRequest>().request();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(process_perf_frame_copy_request_system);
+        schedule.run(&mut world);
+
+        assert!(
+            !world.resource::<PerfFrameCopyRequest>().pending,
+            "perf copy request must be consumed by the scheduled system"
+        );
     }
 }

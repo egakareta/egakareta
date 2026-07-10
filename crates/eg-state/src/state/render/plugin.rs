@@ -135,6 +135,29 @@ pub fn update_color_space_uniform_system(
     uniforms.color_space.time_seconds = frame_time.global_time_seconds;
 }
 
+pub fn apply_resize_surface_system(
+    mut request: ResMut<RenderResizeRequest>,
+    mut gpu: Option<NonSendMut<RenderGpuRes>>,
+    surface_host: Option<NonSend<RenderSurfaceHostRes>>,
+) {
+    let Some(size) = request.take() else {
+        return;
+    };
+    if size.width == 0 || size.height == 0 {
+        return;
+    }
+    request.mark_applied(size);
+
+    if let Some(surface_host) = surface_host
+        && let Some(host) = surface_host.0.as_ref()
+    {
+        host.prepare_resize(size);
+    }
+    if let Some(gpu) = gpu.as_deref_mut() {
+        gpu.0.apply_resize(size);
+    }
+}
+
 /// Bevy [`QueryFilter`] for the authored object fields that trigger
 /// a mesh rebuild on change.
 ///
@@ -201,6 +224,10 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
         update_color_space_uniform_system
             .after(mirror_pod_state_via_bridge)
             .after(crate::state::frame_time::advance_frame_time_system),
+        apply_resize_surface_system
+            .after(crate::events::auth::handle_resize_surface)
+            .before(present_render_frame_system)
+            .in_set(RenderSet::Present),
         present_render_frame_system.in_set(RenderSet::Present),
     ));
 }
@@ -239,7 +266,7 @@ mod tests {
     };
     use bevy_ecs::world::World;
     use eg_render::RenderFrameInput;
-    use eg_types::{AppPhase, EditorMode, LevelMetadata};
+    use eg_types::{AppPhase, EditorMode, LevelMetadata, PhysicalSize};
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {
@@ -362,5 +389,29 @@ mod tests {
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(present_render_frame_system);
         schedule.run(&mut world);
+    }
+
+    #[test]
+    fn apply_resize_surface_system_consumes_request_without_gpu() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+        world
+            .resource_mut::<RenderResizeRequest>()
+            .request(PhysicalSize::new(320, 240));
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(apply_resize_surface_system);
+        schedule.run(&mut world);
+
+        assert!(
+            !world.resource::<RenderResizeRequest>().pending,
+            "resize request must be consumed even in bare render test worlds"
+        );
+        let applied = world
+            .resource_mut::<RenderResizeRequest>()
+            .take_applied_size()
+            .expect("scheduled resize must publish the accepted size");
+        assert_eq!(applied.width, 320);
+        assert_eq!(applied.height, 240);
     }
 }

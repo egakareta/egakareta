@@ -909,9 +909,10 @@ impl State {
     /// `sync_app_session_state` is a no-op on the first frame for
     /// unchanged fields.
     ///
-    /// Also seeds `game_paused` (Phase 3.18 `GameResume` carve-out)
-    /// and `practice_mode_enabled` (Phase 3.15 navigation carve-out —
-    /// see `events::navigation::handle_game_set_practice_mode`).
+    /// Also seeds `playtesting_editor`, `game_paused` (Phase 3.18
+    /// `GameResume` carve-out, later shared by Escape pause), and
+    /// `practice_mode_enabled` (Phase 3.15 navigation carve-out — see
+    /// `events::navigation::handle_game_set_practice_mode`).
     /// Without this seed, a user who toggled practice mode on a
     /// previous frame would see the resource reset to `false` on
     /// the first frame, and the change-guarded sync would then
@@ -933,6 +934,7 @@ impl State {
             app_settings: self.session.app_settings.clone(),
             settings_restart_required: self.session.settings_restart_required,
             graphics_backend_locked: self.session.graphics_backend_locked,
+            playtesting_editor: self.session.playtesting_editor,
             game_paused: self.session.game_paused,
             practice_mode_enabled: self.is_practice_mode_enabled(),
             ..Default::default()
@@ -1778,6 +1780,14 @@ impl State {
     /// calls this when that resource changes from paused to resumed.
     pub fn resume_game_from_pause(&mut self) {
         self.resume_game();
+    }
+
+    /// Pause real gameplay through the existing legacy side-effect path.
+    /// The App-world Escape handler only sets
+    /// `SessionStateRes.game_paused`; `Runtime::sync_app_session_state`
+    /// calls this when that resource changes from running to paused.
+    pub fn pause_game_from_playing(&mut self) {
+        self.pause_game();
     }
 
     pub fn toggle_editor_hitbox_visualization(&mut self) {

@@ -863,11 +863,71 @@ mod tests {
     }
 
     #[test]
-    fn carve_out_turn_right_writes_request_resource() {
+    fn carve_out_turn_right_outside_editor_writes_request_resource() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
         assert!(world.resource::<crate::state::TurnRightRequest>().pending);
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_game_over_returns_to_menu_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::GameOver);
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Menu,
+            "GameOver TurnRight must return to menu through AppPhaseRes"
+        );
+        assert!(
+            !world.resource::<crate::state::TurnRightRequest>().pending,
+            "GameOver TurnRight must not request the legacy navigation fallback"
+        );
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_editor_places_block_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::EditorInputRes>()
+            .0
+            .cursor = [2.0, 0.0, 3.0];
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let objects = world.resource::<crate::state::EditorObjectsRes>();
+        assert_eq!(objects.objects.len(), 1);
+        assert_eq!(objects.objects[0].position, [2.0, 0.0, 3.0]);
+        assert!(
+            objects.object_mutation_pending,
+            "Editor TurnRight must mark object sync pending"
+        );
+        assert!(
+            !world.resource::<crate::state::TurnRightRequest>().pending,
+            "Editor TurnRight must not fall back to the Runtime request"
+        );
+        let input = &world.resource::<crate::state::EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, Some(0));
+        assert_eq!(input.selected_block_indices, vec![0]);
+        assert_eq!(input.mode, EditorMode::Scale);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -1704,8 +1764,8 @@ mod tests {
 
     #[test]
     fn mixed_message_types_write_request_and_direct_resource() {
-        // `TurnRight` writes a request resource; `SetSnapToGrid` writes to
-        // `EditorConfigRes` directly. Neither stages a legacy command.
+        // Menu `TurnRight` writes a request resource; `SetSnapToGrid` writes
+        // to `EditorConfigRes` directly. Neither stages a legacy command.
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
@@ -2963,13 +3023,10 @@ mod tests {
         );
     }
 
-    /// `Escape` uses the same request-resource pattern as
-    /// `ResizeSurface` and `CopyLatestPerfFrame`: the handler writes
-    /// `EscapeRequest.pending = true` and the runtime sync consumes
-    /// it by calling `State::apply_editor_escape`. Pin the request
-    /// is set and no legacy command is staged.
+    /// `Escape` still writes a request when no direct App-world branch can
+    /// handle it. Pin the request is set and no legacy command is staged.
     #[test]
-    fn carve_out_escape_writes_request() {
+    fn carve_out_escape_without_editor_selection_writes_request() {
         let mut world = build_event_world();
 
         world.write_message(Escape);
@@ -2978,6 +3035,202 @@ mod tests {
         assert!(
             world.resource::<crate::state::EscapeRequest>().pending,
             "Escape handler must request an App-world escape"
+        );
+    }
+
+    #[test]
+    fn carve_out_escape_in_real_gameplay_toggles_pause_resource_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Playing);
+        {
+            let mut session = world.resource_mut::<crate::state::SessionStateRes>();
+            session.playtesting_editor = false;
+            session.game_paused = false;
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused,
+            "real-gameplay Escape must pause through SessionStateRes"
+        );
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "real-gameplay pause Escape must not request the legacy state machine"
+        );
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused,
+            "real-gameplay Escape must toggle pause back off"
+        );
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "real-gameplay resume Escape must not request the legacy state machine"
+        );
+    }
+
+    #[test]
+    fn carve_out_escape_in_playtest_writes_request_instead_of_pause() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Playing);
+        {
+            let mut session = world.resource_mut::<crate::state::SessionStateRes>();
+            session.playtesting_editor = true;
+            session.game_paused = false;
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused,
+            "playtest Escape must not mutate the real-game pause flag"
+        );
+        assert!(
+            world.resource::<crate::state::EscapeRequest>().pending,
+            "playtest Escape must still request the legacy playtest/editor transition"
+        );
+    }
+
+    /// In editor, Escape first clears block/tap selection directly in
+    /// App-world resources. That branch must not fall back to the Runtime
+    /// escape request.
+    #[test]
+    fn carve_out_escape_with_editor_selection_clears_resources_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0, 2];
+            input.0.hovered_block_index = Some(2);
+        }
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.taps.tap_times = vec![0.5];
+            timeline.0.taps.tap_indicator_positions = vec![[1.0, 0.0, 0.0]];
+            timeline.0.taps.selected_index = Some(0);
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let input = &world.resource::<crate::state::EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, None);
+        assert!(input.selected_block_indices.is_empty());
+        assert_eq!(input.hovered_block_index, None);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .taps
+                .selected_index,
+            None
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorObjectsRes>()
+                .object_mutation_pending,
+            "Escape block-selection clearing must mark selection sync pending"
+        );
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "selection-clearing Escape must not request the legacy state machine"
+        );
+    }
+
+    #[test]
+    fn carve_out_escape_with_editor_playback_stops_resources_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Null;
+        world
+            .resource_mut::<crate::state::EditorRuntimeRes>()
+            .0
+            .interaction
+            .last_mode = Some(eg_types::EditorMode::Timing);
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.playback.playing = true;
+            timeline.0.playback.pending_seek_time_seconds = Some(1.25);
+            timeline.0.playback.seek_resync_cooldown_seconds = 0.12;
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
+        assert!(!timeline.playback.playing);
+        assert!(timeline.playback.runtime.is_none());
+        assert!(timeline.playback.pending_seek_time_seconds.is_none());
+        approx::assert_abs_diff_eq!(
+            timeline.playback.seek_resync_cooldown_seconds,
+            0.0,
+            epsilon = 1e-6
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            eg_types::EditorMode::Timing
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorRuntimeRes>()
+                .0
+                .interaction
+                .last_mode,
+            None
+        );
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "playback-stop Escape must not request the legacy state machine"
+        );
+    }
+
+    #[test]
+    fn carve_out_escape_with_editor_timeline_time_resets_resource_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.clock.time_seconds = 2.5;
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        approx::assert_abs_diff_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            0.0,
+            epsilon = 1e-6
+        );
+        assert!(
+            !world.resource::<crate::state::EscapeRequest>().pending,
+            "timeline-reset Escape must not request the legacy state machine"
         );
     }
 

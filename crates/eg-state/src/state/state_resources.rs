@@ -22,9 +22,12 @@
 //! Phase 2b alongside their resource registration helpers.
 
 use bevy_ecs::prelude::*;
+use eg_platform::services::AuthServiceMessage;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, LevelObject, LevelPreviewCameraMetadata, MenuState,
+    AppPhase, AppSettings, AuthSession, BasicLevelMetadata, LevelObject,
+    LevelPreviewCameraMetadata, MenuState,
 };
+use std::sync::mpsc;
 
 use crate::state::editor_camera::EditorCameraState;
 use crate::state::editor_config_state::EditorConfigState;
@@ -257,9 +260,9 @@ pub struct PerfRes(pub PerfState);
 
 /// App-world request to copy the latest profiler frame.
 ///
-/// The latest frame data is still produced by the legacy `State.editor.perf`
-/// path, so Runtime consumes this request through the legacy formatter until
-/// perf frame ownership moves fully into App-world resources.
+/// `state::perf::process_perf_frame_copy_request_system` consumes this in
+/// `StateSchedule` and writes the formatted latest profiler frame to the
+/// system clipboard when frame data is available.
 #[derive(Resource, Default)]
 pub struct PerfFrameCopyRequest {
     pub pending: bool,
@@ -277,17 +280,15 @@ impl PerfFrameCopyRequest {
     }
 }
 
-/// App-world request to run the editor `Escape` state machine.
+/// App-world request to run the remaining legacy `Escape` state machine.
 ///
 /// The Escape keypress is a multi-step context-sensitive state machine
 /// (toggle game pause → back to menu → clear selection → toggle timeline
-/// playback → reset timeline time → back to menu). Phase 3.46 routes
-/// the message through this request resource instead of staging
-/// `EditorCommand::Escape` through the legacy command bridge, so the App world owns
-/// the "user pressed Escape" intent while the legacy `State` still owns
-/// the multi-step state machine. Runtime consumes the request via
-/// `State::apply_editor_escape` (which wraps
-/// `handle_editor_escape`).
+/// playback → reset timeline time → back to menu). The editor
+/// real-gameplay pause, editor selection-clearing, playback-stop, and
+/// timeline-reset branches are App-world direct; back-to-menu/phase
+/// fallback branches still route through this request resource so Runtime
+/// can call `State::apply_editor_escape` during the compatibility window.
 #[derive(Resource, Default)]
 pub struct EscapeRequest {
     pub pending: bool,
@@ -305,13 +306,39 @@ impl EscapeRequest {
     }
 }
 
+/// App-world auth state and service sender. Phase 6e moves auth request
+/// consumption and auth result application into `StateSchedule`; Runtime mirrors
+/// this resource back to legacy `State` while UI still reads the compatibility
+/// shell.
+#[derive(Resource, Clone)]
+pub struct AuthStateRes {
+    pub session: Option<AuthSession>,
+    pub pending: bool,
+    pub message: Option<String>,
+    pub refresh_started: bool,
+    pub external_navigation_enabled: bool,
+    pub sender: mpsc::Sender<AuthServiceMessage>,
+}
+
+impl Default for AuthStateRes {
+    fn default() -> Self {
+        let (sender, _receiver) = mpsc::channel();
+        Self {
+            session: None,
+            pending: false,
+            message: None,
+            refresh_started: false,
+            external_navigation_enabled: false,
+            sender,
+        }
+    }
+}
+
 /// App-world request to start the browser sign-in flow.
 ///
 /// The sign-in side effect touches network IO (it calls
-/// `trigger_auth_sign_in` which sends a message on the auth channel),
-/// so it stays legacy-owned for the carve-out. Phase 3.47 routes
-/// the message through this request resource instead of staging
-/// `AppCommand::AuthSubmitSignIn` through the legacy command bridge.
+/// `trigger_auth_sign_in` which sends a message on the auth channel).
+/// Phase 6e consumes this request in `StateSchedule` via `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSubmitSignInRequest {
     pub pending: bool,
@@ -333,9 +360,8 @@ impl AuthSubmitSignInRequest {
 ///
 /// The sign-out side effect touches network IO (it calls
 /// `trigger_auth_sign_out` which sends a message on the auth
-/// channel), so it stays legacy-owned for the carve-out. Phase 3.47
-/// routes the message through this request resource instead of
-/// staging `AppCommand::AuthSignOut` through the legacy command bridge.
+/// channel). Phase 6e consumes this request in `StateSchedule` via
+/// `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSignOutRequest {
     pub pending: bool,
@@ -356,10 +382,8 @@ impl AuthSignOutRequest {
 /// App-world request to open the web signup page.
 ///
 /// The signup-page open side effect touches platform code
-/// (`eg_platform::auth::open_signup_page`), so it stays
-/// legacy-owned for the carve-out. Phase 3.47 routes the message
-/// through this request resource instead of staging
-/// `AppCommand::AuthOpenSignup` through the legacy command bridge.
+/// (`eg_platform::auth::open_signup_page`). Phase 6e consumes this request in
+/// `StateSchedule` via `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthOpenSignupRequest {
     pub pending: bool,
@@ -589,7 +613,9 @@ impl TriggerAudioImportRequest {
     }
 }
 
-/// App-world request for the primary turn/place/start action.
+/// App-world request for non-editor primary start/turn behavior.
+///
+/// Editor placement is handled directly through App-world editor resources.
 #[derive(Resource, Default)]
 pub struct TurnRightRequest {
     pub pending: bool,

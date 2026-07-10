@@ -20,7 +20,7 @@ impl State {
         }
     }
 
-    fn pause_game(&mut self) {
+    pub(super) fn pause_game(&mut self) {
         if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
             return;
         }

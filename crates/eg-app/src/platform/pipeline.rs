@@ -28,7 +28,7 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 ///
 /// This struct holds the egui context, renderer, and menu textures.
 /// It runs each frame by updating the UI, tessellating shapes, updating textures,
-/// running game logic, and rendering everything to the surface.
+/// letting Runtime run frame logic, and rendering everything to the surface.
 pub struct FramePipeline {
     egui_ctx: egui::Context,
     egui_renderer: EguiRenderer,
@@ -58,7 +58,7 @@ impl FramePipeline {
     /// 2. Tessellates the UI shapes for rendering
     /// 3. Updates egui textures on the GPU
     /// 4. Lets the Runtime drive the App/State schedules
-    /// 5. Updates the game state
+    /// 5. Lets Runtime run the pre-render frame update
     /// 6. Renders the UI to the surface
     /// 7. Handles surface errors if they occur
     /// 8. Frees unused textures
@@ -69,6 +69,7 @@ impl FramePipeline {
         state: &mut State,
         raw_input: egui::RawInput,
         mut after_ui: impl FnMut(&mut State, Vec<AppCommand>),
+        mut before_render: impl FnMut(&mut State),
     ) -> egui::FullOutput {
         puffin::profile_scope!("PipelineFrame");
         // Use physical dimensions for responsive scaling calculation to avoid feedback loops.
@@ -153,8 +154,8 @@ impl FramePipeline {
         }
 
         {
-            puffin::profile_scope!("StateUpdate");
-            state.update();
+            puffin::profile_scope!("RuntimeBeforeRender");
+            before_render(state);
         }
 
         let render_result = {
@@ -240,7 +241,7 @@ mod tests {
         let renderer = state.create_egui_renderer();
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {}, |_| {});
 
         assert!(output.pixels_per_point > 0.0);
         let _ctx = pipeline.ctx();
@@ -263,7 +264,7 @@ mod tests {
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {}, |_| {});
 
         assert!(output.pixels_per_point > 0.0);
     }
@@ -291,8 +292,29 @@ mod tests {
         };
         let mut pipeline = FramePipeline::new(egui_ctx, renderer, menu_textures);
 
-        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {});
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {}, |_| {});
 
         assert!(output.pixels_per_point > 0.0);
+    }
+
+    #[tokio::test]
+    async fn run_frame_delegates_state_update_to_before_render_callback() {
+        let mut state = State::new_test().await;
+        let mut frame_time = state.frame_time_resource();
+        frame_time.accumulator = 0.2;
+        state.apply_frame_time_resource(&frame_time);
+        let egui_ctx = egui::Context::default();
+        configure_test_fonts(&egui_ctx);
+        let renderer = state.create_egui_renderer();
+        let mut pipeline = FramePipeline::new(egui_ctx, renderer, MenuTextures::default());
+
+        let output = pipeline.run_frame(&mut state, egui::RawInput::default(), |_, _| {}, |_| {});
+
+        assert!(output.pixels_per_point > 0.0);
+        assert_eq!(
+            state.frame_time_resource().accumulator,
+            0.2,
+            "FramePipeline must not call State::update directly"
+        );
     }
 }

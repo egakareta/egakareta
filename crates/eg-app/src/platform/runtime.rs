@@ -10,9 +10,7 @@ use crate::platform::pipeline::FramePipeline;
 use bevy_app::App;
 use bevy_ecs::world::World;
 use eg_state::state::AppPhaseRes;
-use eg_state::state::AuthOpenSignupRequest;
-use eg_state::state::AuthSignOutRequest;
-use eg_state::state::AuthSubmitSignInRequest;
+use eg_state::state::AuthStateRes;
 use eg_state::state::CompleteImportRequest;
 use eg_state::state::EditorConfigRes;
 use eg_state::state::EditorRuntimeRes;
@@ -27,7 +25,6 @@ use eg_state::state::GameRestartLevelRequest;
 use eg_state::state::GameSetPracticeCheckpointRequest;
 use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
-use eg_state::state::PerfFrameCopyRequest;
 use eg_state::state::PlaytestRequest;
 use eg_state::state::RenderResizeRequest;
 use eg_state::state::RenderUniformsRes;
@@ -131,6 +128,7 @@ impl Runtime {
         // App-world phase to match on the first frame.
         app.world_mut().insert_resource(state.app_phase_resource());
         app.world_mut().insert_resource(state.menu_state_resource());
+        app.world_mut().insert_resource(state.auth_state_resource());
 
         // Seed `EditorConfigRes` from the legacy `State` so the
         // resource starts in sync with user-loaded `app_settings`
@@ -247,42 +245,45 @@ impl Runtime {
         } = self;
         sync_egui_context(app.world_mut(), pipeline.ctx());
 
-        let output = pipeline.run_frame(state, raw_input, |state, ui_commands| {
-            enqueue_ui_commands(app.world_mut(), ui_commands);
-            drain_ui_command_queue(app.world_mut());
-            app.update();
-            state.prepare_app_world_for_state_schedule(app.world_mut());
-            run_state_schedule_in_world(app.world_mut());
-            Self::sync_app_frame_time_state(state, app.world());
-            Self::sync_app_render_uniforms_state(state, app.world());
-            Self::sync_app_editor_history_state(state, app.world());
-            Self::sync_app_editor_input_state(state, app.world());
-            Self::sync_app_editor_config_state(state, app.world());
-            Self::sync_app_editor_timeline_state(state, app.world_mut());
-            Self::sync_app_editor_runtime_state(state, app.world());
-            Self::sync_app_editor_timing_state(state, app.world());
-            Self::sync_app_editor_spawn_state(state, app.world());
-            Self::sync_app_editor_camera_state(state, app.world());
-            Self::sync_app_editor_trigger_state(state, app.world());
-            Self::sync_app_editor_objects_state(state, app.world_mut());
-            Self::sync_app_menu_state(state, app.world());
-            Self::sync_app_session_state(state, app.world());
-            Self::sync_app_perf_state(state, app.world());
-            Self::sync_app_perf_frame_copy_request(state, app.world_mut());
-            Self::sync_app_render_resize_request(state, app.world_mut());
-            Self::sync_app_escape_request(state, app.world_mut());
-            Self::sync_app_auth_submit_sign_in_request(state, app.world_mut());
-            Self::sync_app_auth_sign_out_request(state, app.world_mut());
-            Self::sync_app_auth_open_signup_request(state, app.world_mut());
-            Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
-            Self::sync_app_game_restart_level_request(state, app.world_mut());
-            Self::sync_app_game_set_practice_checkpoint_request(state, app.world_mut());
-            Self::sync_app_game_remove_practice_checkpoint_request(state, app.world_mut());
-            Self::sync_app_playtest_request(state, app.world_mut());
-            Self::sync_app_navigation_requests(state, app.world_mut());
-            Self::sync_app_session_side_effect_requests(state, app.world_mut());
-            state.drain_pending_async_results();
-        });
+        let output = pipeline.run_frame(
+            state,
+            raw_input,
+            |state, ui_commands| {
+                enqueue_ui_commands(app.world_mut(), ui_commands);
+                drain_ui_command_queue(app.world_mut());
+                app.update();
+                state.prepare_app_world_for_state_schedule(app.world_mut());
+                run_state_schedule_in_world(app.world_mut());
+                Self::sync_app_frame_time_state(state, app.world());
+                Self::sync_app_render_uniforms_state(state, app.world());
+                Self::sync_app_render_resize_state(state, app.world_mut());
+                Self::sync_app_editor_history_state(state, app.world());
+                Self::sync_app_editor_input_state(state, app.world());
+                Self::sync_app_editor_config_state(state, app.world());
+                Self::sync_app_editor_timeline_state(state, app.world_mut());
+                Self::sync_app_editor_runtime_state(state, app.world());
+                Self::sync_app_editor_timing_state(state, app.world());
+                Self::sync_app_editor_spawn_state(state, app.world());
+                Self::sync_app_editor_camera_state(state, app.world());
+                Self::sync_app_editor_trigger_state(state, app.world());
+                Self::sync_app_editor_objects_state(state, app.world_mut());
+                Self::sync_app_menu_state(state, app.world());
+                Self::sync_app_phase_state(state, app.world());
+                Self::sync_app_session_state(state, app.world());
+                Self::sync_app_perf_state(state, app.world());
+                Self::sync_app_escape_request(state, app.world_mut());
+                Self::sync_app_auth_state(state, app.world());
+                Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
+                Self::sync_app_game_restart_level_request(state, app.world_mut());
+                Self::sync_app_game_set_practice_checkpoint_request(state, app.world_mut());
+                Self::sync_app_game_remove_practice_checkpoint_request(state, app.world_mut());
+                Self::sync_app_playtest_request(state, app.world_mut());
+                Self::sync_app_navigation_requests(state, app.world_mut());
+                Self::sync_app_session_side_effect_requests(state, app.world_mut());
+                state.drain_pending_async_results();
+            },
+            |state| state.update(),
+        );
         Self::refresh_editor_playback_mirrors_from_legacy(state, app.world_mut());
         output
     }
@@ -303,6 +304,19 @@ impl Runtime {
 
     fn sync_app_render_uniforms_state(state: &mut State, world: &World) {
         state.apply_render_uniforms_resource(world.resource::<RenderUniformsRes>());
+    }
+
+    fn sync_app_render_resize_state(state: &mut State, world: &mut World) {
+        let Some(size) = world
+            .resource_mut::<RenderResizeRequest>()
+            .take_applied_size()
+        else {
+            return;
+        };
+        let current = state.current_render_size();
+        if current.width != size.width || current.height != size.height {
+            state.resize_surface(size);
+        }
     }
 
     fn sync_app_editor_runtime_state(state: &mut State, world: &World) {
@@ -679,6 +693,15 @@ impl Runtime {
         }
     }
 
+    fn sync_app_phase_state(state: &mut State, world: &World) {
+        let app_phase = world.resource::<AppPhaseRes>().current;
+        if state.app_phase_value() == eg_types::AppPhase::GameOver
+            && app_phase == eg_types::AppPhase::Menu
+        {
+            state.set_phase_from_app(app_phase);
+        }
+    }
+
     /// Sync the legacy `State.session` simple UI-window fields from
     /// the App-world `SessionStateRes`. The carved-out fields
     /// (`editor_level_name`, `editor_music_metadata`,
@@ -764,13 +787,14 @@ impl Runtime {
         if state.app_settings().keybinds != session.app_settings.keybinds {
             state.set_app_settings_keybinds(session.app_settings.keybinds.clone());
         }
-        // Phase 3.18: `GameResume` mutates
-        // `SessionStateRes.game_paused` directly. Only the resume
-        // direction is carved out for now: pausing still routes through
-        // legacy Escape/toggle paths, and
-        // `State::prepare_app_world_for_state_schedule` mirrors that
-        // legacy pause flag before the schedule runs.
-        if state.game_paused_value() && !session.game_paused {
+        // Phase 3.18 / 3.52: `GameResume` and the real-gameplay
+        // Escape pause branch mutate `SessionStateRes.game_paused`
+        // directly. Keep the audio + pending-input side effects in
+        // legacy compatibility setters until those subsystems move
+        // into scheduled App-world systems.
+        if !state.game_paused_value() && session.game_paused {
+            state.pause_game_from_playing();
+        } else if state.game_paused_value() && !session.game_paused {
             state.resume_game_from_pause();
         }
         // Phase 3.19: `SetUiScaleMultiplier` mutates
@@ -818,6 +842,15 @@ impl Runtime {
         }
     }
 
+    fn refresh_app_loaded_session_metadata(state: &State, world: &mut World) {
+        let mut session = world.resource_mut::<SessionStateRes>();
+        session.editor_level_name = state.editor_level_name();
+        session.editor_music_metadata = state.editor_music_metadata().clone();
+        session.editor_creator_metadata = state.editor_creator_metadata().clone();
+        session.editor_sky_color = state.editor_sky_color();
+        session.editor_menu_preview_camera = state.editor_menu_preview_camera().cloned();
+    }
+
     /// Sync the legacy `State.editor.perf.overlay_enabled` from the
     /// App-world `PerfRes`. The carved-out field is
     /// `overlay_enabled` (`events::misc::handle_toggle_perf_overlay`):
@@ -838,111 +871,27 @@ impl Runtime {
         }
     }
 
-    /// Consume App-world profiler frame copy requests.
-    ///
-    /// The copy intent is now App-world authoritative, but the latest
-    /// `puffin` frame view is still produced by legacy `State.editor.perf`.
-    /// Keep the formatter/clipboard side effect here until perf-frame
-    /// ownership moves into scheduled systems.
-    fn sync_app_perf_frame_copy_request(state: &State, world: &mut World) {
-        if !world.resource_mut::<PerfFrameCopyRequest>().take() {
-            return;
-        }
-
-        state.copy_latest_perf_frame_to_clipboard();
+    fn sync_app_auth_state(state: &mut State, world: &World) {
+        state.apply_auth_state_resource(world.resource::<AuthStateRes>());
     }
 
-    /// Apply the App-world render resize request through the legacy
-    /// `State::resize_surface` compatibility method until presenting
-    /// moves fully into `RenderSet::Present`.
-    fn sync_app_render_resize_request(state: &mut State, world: &mut World) {
-        let Some(size) = world.resource_mut::<RenderResizeRequest>().take() else {
-            return;
-        };
-        state.resize_surface(size);
-    }
-
-    /// Consume the App-world `EscapeRequest` and apply the multi-step
+    /// Consume the App-world `EscapeRequest` and apply the remaining
     /// context-sensitive escape state machine through the legacy
     /// `State::apply_editor_escape` compatibility method.
     ///
-    /// Phase 3.46: `events::misc::handle_escape` writes
-    /// `EscapeRequest.pending = true` instead of staging
-    /// `EditorCommand::Escape` through the legacy command bridge, so the App
-    /// world owns the "user pressed Escape" intent while the legacy
-    /// state still owns the state machine. The sync runs after
-    /// `sync_app_perf_frame_copy_request` / `sync_app_render_resize_request`
-    /// and before async-result draining so the request is consumed in the
-    /// same frame and any state changes (phase, timeline, session)
+    /// `events::misc::handle_escape` toggles real-gameplay pause, clears
+    /// editor selection, stops editor timeline playback, and resets editor
+    /// timeline time in App-world resources directly. Back-to-menu/phase
+    /// fallback branches write `EscapeRequest.pending = true` so the legacy
+    /// state machine remains reachable without the deleted command bridge.
+    /// The sync runs before async-result draining so the request is consumed
+    /// in the same frame and any state changes (phase, timeline, session)
     /// propagate through the downstream sync helpers.
     fn sync_app_escape_request(state: &mut State, world: &mut World) {
         if !world.resource_mut::<EscapeRequest>().take() {
             return;
         }
         state.apply_editor_escape();
-    }
-
-    /// Consume the App-world `AuthSubmitSignInRequest` and apply the
-    /// legacy `State::submit_auth_sign_in` compatibility method.
-    ///
-    /// Phase 3.47: `events::auth::handle_auth_submit_sign_in` writes
-    /// `AuthSubmitSignInRequest.pending = true` instead of staging
-    /// `AppCommand::AuthSubmitSignIn` through the legacy command bridge. The
-    /// sign-in side effect (network IO via `trigger_auth_sign_in`
-    /// on the auth channel) stays legacy-owned because the auth
-    /// channel `Sender` lives on the legacy `State`. The sync runs
-    /// before async-result draining so the request is consumed in the
-    /// same frame and any auth state changes (pending flag, message)
-    /// propagate to legacy readers via the existing
-    /// `State::update_auth_results` polling path.
-    fn sync_app_auth_submit_sign_in_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<AuthSubmitSignInRequest>().take() {
-            return;
-        }
-        state.submit_auth_sign_in();
-    }
-
-    /// Consume the App-world `AuthSignOutRequest` and apply the
-    /// legacy `State::sign_out_auth_session` compatibility method.
-    ///
-    /// Phase 3.47: same request pattern as
-    /// `sync_app_auth_submit_sign_in_request`. The sign-out side
-    /// effect (network IO via `trigger_auth_sign_out` on the auth
-    /// channel) stays legacy-owned because the auth channel
-    /// `Sender` lives on the legacy `State`.
-    fn sync_app_auth_sign_out_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<AuthSignOutRequest>().take() {
-            return;
-        }
-        state.sign_out_auth_session();
-    }
-
-    /// Consume the App-world `AuthOpenSignupRequest` and apply the
-    /// legacy `State::open_auth_signup_page` compatibility method.
-    ///
-    /// Phase 3.47: same request pattern as
-    /// `sync_app_auth_submit_sign_in_request`. The signup-page-open
-    /// side effect (platform code via
-    /// `eg_platform::auth::open_signup_page`) stays legacy-owned
-    /// because the platform API is only available in non-wasm
-    /// targets.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn sync_app_auth_open_signup_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<AuthOpenSignupRequest>().take() {
-            return;
-        }
-        state.open_auth_signup_page();
-    }
-
-    /// WASM stub: `open_auth_signup_page` is not callable in wasm
-    /// targets (it would invoke `window.open` in a non-async
-    /// browser context). Phase 3.47 still keeps the request
-    /// resource so the App world owns the "user requested signup
-    /// page" intent in the unified schedule; runtime drops it on
-    /// wasm where the platform API is unavailable.
-    #[cfg(target_arch = "wasm32")]
-    fn sync_app_auth_open_signup_request(_state: &mut State, world: &mut World) {
-        let _ = world.resource_mut::<AuthOpenSignupRequest>().take();
     }
 
     /// Consume the App-world `GameQuitToMenuRequest` and apply the
@@ -1035,6 +984,7 @@ impl Runtime {
     fn sync_app_session_side_effect_requests(state: &mut State, world: &mut World) {
         if let Some(level_name) = world.resource_mut::<LoadLevelRequest>().take() {
             state.load_builtin_level_into_editor(&level_name);
+            Self::refresh_app_loaded_session_metadata(state, world);
         }
         if world.resource_mut::<ExportLevelRequest>().take() {
             state.trigger_level_export();
@@ -1050,8 +1000,12 @@ impl Runtime {
         }
     }
 
-    /// Consume App-world navigation requests and apply the existing
-    /// legacy compatibility methods.
+    /// Consume remaining App-world navigation requests and apply the
+    /// existing legacy compatibility methods.
+    ///
+    /// Editor `TurnRight` placement and game-over return-to-menu mutate
+    /// App-world resources directly; this sync only covers `TurnRight`
+    /// and `ToggleEditor` fallbacks whose side effects still live on `State`.
     fn sync_app_navigation_requests(state: &mut State, world: &mut World) {
         if world.resource_mut::<TurnRightRequest>().take() {
             state.turn_right();
@@ -1072,12 +1026,13 @@ mod tests {
     use super::*;
     use eg_state::state::State;
     use eg_state::state::{
-        AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest,
-        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
-        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest,
-        FrameTimeRes, GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest,
-        GameRestartLevelRequest, GameSetPracticeCheckpointRequest, MenuStateRes,
-        PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
+        AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+        AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+        EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
+        EditorTriggerRes, EscapeRequest, FrameTimeRes, GameQuitToMenuRequest,
+        GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
+        GameSetPracticeCheckpointRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes,
+        PlatformInputQueue, RenderResizeRequest, SessionStateRes, TurnRightRequest,
     };
     use eg_ui::EguiContextRes;
 
@@ -1375,7 +1330,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_resize_surface_applies_render_resize_request() {
+    async fn runtime_resize_surface_request_is_consumed_by_state_schedule() {
         use eg_state::events::auth::ResizeSurface;
 
         let state = State::new_test().await;
@@ -1395,21 +1350,21 @@ mod tests {
         let applied_size = runtime.state.current_render_size();
         assert_eq!(
             applied_size.width, new_size.width,
-            "sync_app_render_resize_request must apply App-world resize width"
+            "StateSchedule resize system must apply App-world resize width"
         );
         assert_eq!(
             applied_size.height, new_size.height,
-            "sync_app_render_resize_request must apply App-world resize height"
+            "StateSchedule resize system must apply App-world resize height"
         );
         let resize = runtime.app.world().resource::<RenderResizeRequest>();
         assert!(
             !resize.pending,
-            "runtime must consume RenderResizeRequest after applying it"
+            "StateSchedule must consume RenderResizeRequest during run_app_frame"
         );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_copy_latest_perf_frame_consumes_copy_request() {
+    async fn runtime_copy_latest_perf_frame_request_is_consumed_by_state_schedule() {
         use eg_state::events::auth::CopyLatestPerfFrame;
 
         let state = State::new_test().await;
@@ -1421,17 +1376,15 @@ mod tests {
         let request = runtime.app.world().resource::<PerfFrameCopyRequest>();
         assert!(
             !request.pending,
-            "runtime must consume PerfFrameCopyRequest after handling it"
+            "StateSchedule must consume PerfFrameCopyRequest during run_app_frame"
         );
     }
 
-    /// `AuthSubmitSignIn` is a Phase 3.47 carve-out: the App-world
-    /// handler writes `AuthSubmitSignInRequest.pending = true`, the
-    /// runtime sync consumes the request and calls the legacy
-    /// `State::submit_auth_sign_in` compatibility method, and no
-    /// legacy `AppCommand::AuthSubmitSignIn` is staged through the
-    /// legacy command bridge. The legacy `auth.pending` flag is also
-    /// set by the legacy side effect.
+    /// `AuthSubmitSignIn` is App-world owned: the handler writes
+    /// `AuthSubmitSignInRequest.pending = true`, `StateSchedule`
+    /// consumes the request into `AuthStateRes`, and Runtime mirrors
+    /// that resource back to legacy `State` without a dedicated auth
+    /// request sync.
     #[tokio::test]
     async fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
         use eg_state::events::auth::AuthSubmitSignIn;
@@ -1445,12 +1398,12 @@ mod tests {
         let request = runtime.app.world().resource::<AuthSubmitSignInRequest>();
         assert!(
             !request.pending,
-            "runtime must consume AuthSubmitSignInRequest after applying it"
+            "StateSchedule must consume AuthSubmitSignInRequest during run_app_frame"
         );
     }
 
-    /// `AuthSignOut` is a Phase 3.47 carve-out: same request pattern
-    /// as `AuthSubmitSignIn`.
+    /// `AuthSignOut` follows the same App-world auth request path as
+    /// `AuthSubmitSignIn`.
     #[tokio::test]
     async fn runtime_carve_out_auth_sign_out_consumes_request() {
         use eg_state::events::auth::AuthSignOut;
@@ -1464,15 +1417,14 @@ mod tests {
         let request = runtime.app.world().resource::<AuthSignOutRequest>();
         assert!(
             !request.pending,
-            "runtime must consume AuthSignOutRequest after applying it"
+            "StateSchedule must consume AuthSignOutRequest during run_app_frame"
         );
     }
 
-    /// `AuthOpenSignup` is a Phase 3.47 carve-out: same request
-    /// pattern as `AuthSubmitSignIn`. The legacy
-    /// `State::open_auth_signup_page` is platform-only and may
-    /// no-op in test builds; the carve-out assertion pins the
-    /// request was consumed and no legacy command was staged.
+    /// `AuthOpenSignup` follows the same App-world auth request path
+    /// as `AuthSubmitSignIn`. The platform open may no-op in test
+    /// builds; the assertion pins that the scheduled auth system
+    /// consumed the request.
     #[tokio::test]
     async fn runtime_carve_out_auth_open_signup_consumes_request() {
         use eg_state::events::auth::AuthOpenSignup;
@@ -1486,8 +1438,37 @@ mod tests {
         let request = runtime.app.world().resource::<AuthOpenSignupRequest>();
         assert!(
             !request.pending,
-            "runtime must consume AuthOpenSignupRequest after applying it"
+            "StateSchedule must consume AuthOpenSignupRequest during run_app_frame"
         );
+    }
+
+    /// Auth state is now App-world authoritative after `Runtime::new`
+    /// seeds `AuthStateRes`. A stale compatibility `State` value must
+    /// not be mirrored back into the resource before the schedule runs;
+    /// Runtime only mirrors `AuthStateRes` back to legacy `State` after
+    /// scheduled auth systems have had their chance to run.
+    #[tokio::test]
+    async fn runtime_auth_state_resource_is_not_clobbered_by_legacy_state() {
+        let mut state = State::new_test().await;
+        state.set_auth_state_for_test(None, false, Some("legacy".to_string()));
+        let mut runtime = Runtime::new(state);
+
+        {
+            let mut auth = runtime.app.world_mut().resource_mut::<AuthStateRes>();
+            auth.pending = true;
+            auth.message = Some("app".to_string());
+        }
+        runtime
+            .state
+            .set_auth_state_for_test(None, false, Some("legacy-stale".to_string()));
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let auth = runtime.app.world().resource::<AuthStateRes>();
+        assert!(auth.pending);
+        assert_eq!(auth.message.as_deref(), Some("app"));
+        assert!(runtime.state.auth_pending());
+        assert_eq!(runtime.state.auth_message(), Some("app"));
     }
 
     // --- Phase 3.48 / Navigation request carve-out tests ---
@@ -2504,10 +2485,10 @@ mod tests {
     // before any dispatch.
 
     use eg_state::events::session::{
-        CaptureMenuPreviewCamera, ClearKeybindSlot, RenameLevel, ResetKeybind, ResetKeybinds,
-        SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection, SetShowMetadata,
-        SetShowSettings, SetUiScaleMultiplier, ToggleSettings, UpdateCreatorMetadata, UpdateMusic,
-        UpdateSkyColor, UseAutoMenuPreviewCamera,
+        CaptureMenuPreviewCamera, ClearKeybindSlot, LoadLevel, RenameLevel, ResetKeybind,
+        ResetKeybinds, SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection,
+        SetShowMetadata, SetShowSettings, SetUiScaleMultiplier, ToggleSettings,
+        UpdateCreatorMetadata, UpdateMusic, UpdateSkyColor, UseAutoMenuPreviewCamera,
     };
     use eg_types::{
         BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
@@ -2576,7 +2557,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_name_and_music_survive_next_frame_without_message() {
+    async fn runtime_load_level_refreshes_session_resource_from_legacy_side_effect() {
+        let state = State::new_test().await;
+        let level_name = state
+            .available_levels()
+            .first()
+            .expect("test state should include at least one built-in level")
+            .clone();
+        let mut runtime = Runtime::new(state);
+
+        {
+            let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
+            session.editor_level_name = Some("StaleBeforeLoad".to_string());
+            session.editor_music_metadata = MusicMetadata::default();
+            session.editor_sky_color = [0.0, 0.0, 0.0];
+            session.editor_menu_preview_camera = None;
+        }
+
+        runtime
+            .app
+            .world_mut()
+            .write_message(LoadLevel(level_name.clone()));
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let session = runtime.app.world().resource::<SessionStateRes>();
+        assert_eq!(
+            runtime.state.editor_level_name().as_deref(),
+            Some(level_name.as_str())
+        );
+        assert_eq!(
+            session.editor_level_name.as_deref(),
+            Some(level_name.as_str())
+        );
+        assert_eq!(
+            &session.editor_music_metadata,
+            runtime.state.editor_music_metadata(),
+            "legacy load must refresh App-world music metadata in the same frame"
+        );
+        assert_eq!(
+            &session.editor_creator_metadata,
+            runtime.state.editor_creator_metadata(),
+            "legacy load must refresh App-world creator metadata in the same frame"
+        );
+        assert_eq!(
+            session.editor_sky_color,
+            runtime.state.editor_sky_color(),
+            "legacy load must refresh App-world sky color in the same frame"
+        );
+        assert_eq!(
+            session.editor_menu_preview_camera.as_ref(),
+            runtime.state.editor_menu_preview_camera(),
+            "legacy load must refresh App-world preview camera metadata in the same frame"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_name_and_music_resource_is_not_clobbered_by_legacy_state() {
         let mut state = State::new_test().await;
         state.set_editor_level_name("LegacyName".to_string());
         let metadata = MusicMetadata {
@@ -2596,14 +2632,18 @@ mod tests {
 
         assert_eq!(
             runtime.state.editor_level_name().as_deref(),
-            Some("LegacyName")
+            Some("StaleName")
         );
-        assert_eq!(runtime.state.editor_music_metadata(), &metadata);
-        let session = runtime.app.world().resource::<SessionStateRes>();
-        assert_eq!(session.editor_level_name.as_deref(), Some("LegacyName"));
         assert_eq!(
-            &session.editor_music_metadata, &metadata,
-            "legacy name/music mirror must protect against stale resource clobber"
+            runtime.state.editor_music_metadata(),
+            &MusicMetadata::default()
+        );
+        let session = runtime.app.world().resource::<SessionStateRes>();
+        assert_eq!(session.editor_level_name.as_deref(), Some("StaleName"));
+        assert_eq!(
+            &session.editor_music_metadata,
+            &MusicMetadata::default(),
+            "stale legacy name/music must not clobber SessionStateRes"
         );
     }
 
@@ -3136,7 +3176,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_creator_metadata_survives_next_frame_without_message() {
+    async fn runtime_creator_metadata_resource_is_not_clobbered_by_legacy_state() {
         let mut state = State::new_test().await;
         let metadata = BasicLevelMetadata {
             name: "Legacy Metadata".to_string(),
@@ -3156,15 +3196,18 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(runtime.state.editor_creator_metadata(), &metadata);
+        assert_eq!(
+            runtime.state.editor_creator_metadata(),
+            &BasicLevelMetadata::default()
+        );
         assert_eq!(
             &runtime
                 .app
                 .world()
                 .resource::<SessionStateRes>()
                 .editor_creator_metadata,
-            &metadata,
-            "legacy creator metadata mirror must protect against stale resource clobber"
+            &BasicLevelMetadata::default(),
+            "stale legacy creator metadata must not clobber SessionStateRes"
         );
     }
 
@@ -3197,7 +3240,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_sky_color_survives_next_frame_without_message() {
+    async fn runtime_sky_color_resource_is_not_clobbered_by_legacy_state() {
         let mut state = State::new_test().await;
         state.set_editor_sky_color([0.25, 0.5, 0.75]);
         let mut runtime = Runtime::new(state);
@@ -3210,15 +3253,15 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(runtime.state.editor_sky_color(), [0.25, 0.5, 0.75]);
+        assert_eq!(runtime.state.editor_sky_color(), [0.0, 0.0, 0.0]);
         assert_eq!(
             runtime
                 .app
                 .world()
                 .resource::<SessionStateRes>()
                 .editor_sky_color,
-            [0.25, 0.5, 0.75],
-            "legacy sky color mirror must protect against stale resource clobber"
+            [0.0, 0.0, 0.0],
+            "stale legacy sky color must not clobber SessionStateRes"
         );
     }
 
@@ -3301,7 +3344,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_menu_preview_camera_survives_next_frame_without_message() {
+    async fn runtime_menu_preview_camera_resource_is_not_clobbered_by_legacy_state() {
         let mut state = State::new_test().await;
         let manual = LevelPreviewCameraMetadata {
             position: [9.0, 8.0, 7.0],
@@ -3318,15 +3361,15 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(runtime.state.editor_menu_preview_camera(), Some(&manual));
+        assert_eq!(runtime.state.editor_menu_preview_camera(), None);
         assert_eq!(
             runtime
                 .app
                 .world()
                 .resource::<SessionStateRes>()
                 .editor_menu_preview_camera,
-            Some(manual),
-            "legacy menu preview camera mirror must protect against stale resource clobber"
+            None,
+            "stale legacy menu preview camera must not clobber SessionStateRes"
         );
     }
 
@@ -4804,11 +4847,10 @@ mod tests {
 
     // --- Phase 3.12 / Misc carve-out tests ---
     //
-    // The `misc` event handlers for `ToggleHitboxVisualization`,
-    // `TogglePerfOverlay`, `TogglePlaceWindow`, and `Escape` write
-    // directly to App-world resources. The end-to-end tests below
-    // exercise the full message → App-world resource → legacy
-    // State field propagation.
+    // The `misc` event handlers write directly to App-world resources where
+    // ownership has moved; Escape is split between direct editor-local
+    // branches and the remaining legacy request. The end-to-end tests below
+    // exercise message → App-world resource → legacy State propagation.
 
     use eg_state::events::misc::{ToggleHitboxVisualization, TogglePlaceWindow};
 
@@ -4993,7 +5035,67 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_menu_selection_survives_next_frame_without_message() {
+    async fn runtime_turn_right_in_editor_places_block_without_request_sync() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Editor);
+        state.set_editor_mode(eg_types::EditorMode::Place);
+        state.set_editor_cursor_position([2.0, 0.0, 3.0]);
+        let mut runtime = Runtime::new(state);
+
+        eg_ui::enqueue_ui_command(
+            runtime.app.world_mut(),
+            eg_state::commands::AppCommand::TurnRight,
+        );
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let objects = runtime.app.world().resource::<EditorObjectsRes>();
+        assert_eq!(objects.objects.len(), 1);
+        assert_eq!(objects.objects[0].position, [2.0, 0.0, 3.0]);
+        assert!(
+            !objects.object_mutation_pending,
+            "Runtime object sync must consume the App-world object mutation flag"
+        );
+        assert!(
+            !runtime.app.world().resource::<TurnRightRequest>().pending,
+            "Editor TurnRight must not leave a Runtime request to consume"
+        );
+        assert_eq!(runtime.state.editor_objects().len(), 1);
+        assert_eq!(
+            runtime.state.editor_mode(),
+            eg_types::EditorMode::Scale,
+            "Editor placement should keep the legacy select-placed mode transition"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_in_game_over_returns_to_menu_without_request_sync() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::GameOver);
+        let mut runtime = Runtime::new(state);
+
+        eg_ui::enqueue_ui_command(
+            runtime.app.world_mut(),
+            eg_state::commands::AppCommand::TurnRight,
+        );
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Menu,
+            "GameOver TurnRight must mutate AppPhaseRes directly"
+        );
+        assert!(
+            runtime.state.is_menu(),
+            "sync_app_phase_state must mirror the direct game-over phase carve-out"
+        );
+        assert!(
+            !runtime.app.world().resource::<TurnRightRequest>().pending,
+            "GameOver TurnRight must not leave a Runtime request to consume"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_menu_state_resource_is_not_clobbered_by_legacy_state() {
         let mut state = State::new_test().await;
         state.set_phase_for_test(eg_types::AppPhase::Menu);
         state
@@ -5012,8 +5114,8 @@ mod tests {
 
         assert_eq!(
             runtime.state.menu_selected_level_index(),
-            1,
-            "legacy menu selection must not be clobbered without a navigation message"
+            0,
+            "sync_app_menu_state must mirror App-world menu selection to legacy State"
         );
         assert_eq!(
             runtime
@@ -5022,8 +5124,8 @@ mod tests {
                 .resource::<MenuStateRes>()
                 .0
                 .selected_level,
-            1,
-            "prepare_app_world_for_state_schedule must mirror legacy menu selection"
+            0,
+            "stale legacy menu selection must not clobber MenuStateRes"
         );
     }
 
@@ -5359,11 +5461,10 @@ mod tests {
         );
     }
 
-    /// `Escape` is a Phase 3.46 carve-out: the App-world handler
-    /// writes `EscapeRequest.pending = true`, the runtime sync
-    /// consumes the request and calls the legacy
-    /// `State::apply_editor_escape` compatibility method, and no
-    /// legacy `EditorCommand::Escape` is staged through the legacy command bridge.
+    /// `Escape` is still request-backed when no direct App-world branch can
+    /// handle it: the handler writes `EscapeRequest.pending = true`, the
+    /// runtime sync consumes the request and calls the legacy
+    /// `State::apply_editor_escape` compatibility method.
     #[tokio::test]
     async fn runtime_carve_out_escape_consumes_request_without_legacy_command_bridge() {
         use eg_state::events::misc::Escape;
@@ -5378,6 +5479,189 @@ mod tests {
         assert!(
             !request.pending,
             "runtime must consume EscapeRequest after applying it"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_in_real_gameplay_pauses_without_request_sync() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .game_paused,
+            "real-gameplay Escape must pause through SessionStateRes"
+        );
+        assert!(
+            runtime.state.game_paused_value(),
+            "sync_app_session_state must apply the legacy pause side effects"
+        );
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "real-gameplay pause Escape must not leave a Runtime request"
+        );
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .game_paused,
+            "real-gameplay Escape must toggle pause back off"
+        );
+        assert!(
+            !runtime.state.game_paused_value(),
+            "sync_app_session_state must apply the legacy resume side effects"
+        );
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "real-gameplay resume Escape must not leave a Runtime request"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_in_playtest_still_uses_request_without_pause() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(true);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playtesting_editor,
+            "SessionStateRes must be seeded with the playtest flag"
+        );
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            !runtime.state.game_paused_value(),
+            "playtest Escape must not toggle the real-game pause flag"
+        );
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "playtest Escape request must be consumed in the same frame"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_with_editor_selection_clears_without_request_sync() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Editor);
+        state.set_editor_objects_from_app(vec![eg_types::LevelObject::default()]);
+        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let input = &runtime.app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, None);
+        assert!(input.selected_block_indices.is_empty());
+        assert_eq!(input.hovered_block_index, None);
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<EditorObjectsRes>()
+                .object_mutation_pending,
+            "Runtime object sync must consume Escape selection mutation"
+        );
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "selection-clearing Escape must not leave a Runtime request"
+        );
+        assert!(
+            runtime.state.editor_selected_block().is_none(),
+            "Escape selection clearing must sync back to legacy selection during compatibility"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_with_editor_playback_stops_without_request_sync() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("EscapePlayback");
+        state.set_editor_mode(eg_types::EditorMode::Timing);
+        state.set_editor_timeline_playback_active(true, Some(eg_types::EditorMode::Timing));
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
+        assert!(!timeline.playback.playing);
+        assert!(
+            !runtime.state.editor_is_playing(),
+            "Escape playback stop must sync back to legacy playback state"
+        );
+        assert_eq!(
+            runtime.app.world().resource::<EditorInputRes>().0.mode,
+            eg_types::EditorMode::Timing
+        );
+        assert_eq!(runtime.state.editor_mode(), eg_types::EditorMode::Timing);
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "playback-stop Escape must not leave a Runtime request"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_with_editor_timeline_time_resets_without_request_sync() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("EscapeTimelineReset");
+        state.set_editor_timeline_duration_seconds(4.0);
+        state.set_editor_timeline_time_seconds(2.5);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        approx::assert_abs_diff_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            0.0,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_timeline_time_seconds(),
+            0.0,
+            epsilon = 1e-6
+        );
+        assert!(
+            !runtime.app.world().resource::<EscapeRequest>().pending,
+            "timeline-reset Escape must not leave a Runtime request"
         );
     }
 

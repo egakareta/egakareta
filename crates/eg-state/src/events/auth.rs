@@ -52,16 +52,10 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `AuthSubmitSignIn` writes a typed request resource (same pattern as
-// `events::misc::handle_escape` and
-// `events::auth::handle_resize_surface`): the handler writes
-// `AuthSubmitSignInRequest.pending = true` and
-// `Runtime::sync_app_auth_submit_sign_in_request` consumes the
-// request during the typed request sync pass and calls
-// the existing legacy `State::submit_auth_sign_in` compatibility
-// method. The sign-in side effect (network IO via
-// `trigger_auth_sign_in` on the auth channel) stays legacy-owned
-// because the auth channel `Sender` lives on the legacy `State`.
+// `AuthSubmitSignIn` writes a typed request resource. The
+// `state::auth_state::process_auth_requests_system` consumes the request in
+// `StateSchedule` and mutates `AuthStateRes`; Runtime only mirrors that
+// resource back to legacy `State` during the compatibility window.
 pub fn handle_auth_submit_sign_in(
     mut events: MessageReader<AuthSubmitSignIn>,
     mut sign_in_request: ResMut<AuthSubmitSignInRequest>,
@@ -71,14 +65,8 @@ pub fn handle_auth_submit_sign_in(
     }
 }
 
-// `AuthSignOut` writes a typed request resource (same pattern as
-// `AuthSubmitSignIn`): the handler writes
-// `AuthSignOutRequest.pending = true` and
-// `Runtime::sync_app_auth_sign_out_request` consumes the request
-// and calls the existing legacy `State::sign_out_auth_session`
-// compatibility method. The sign-out side effect (network IO via
-// `trigger_auth_sign_out` on the auth channel) stays legacy-owned
-// because the auth channel `Sender` lives on the legacy `State`.
+// `AuthSignOut` writes a typed request resource. The request is consumed by
+// `state::auth_state::process_auth_requests_system`, not by Runtime.
 pub fn handle_auth_sign_out(
     mut events: MessageReader<AuthSignOut>,
     mut sign_out_request: ResMut<AuthSignOutRequest>,
@@ -88,15 +76,8 @@ pub fn handle_auth_sign_out(
     }
 }
 
-// `AuthOpenSignup` writes a typed request resource (same pattern as
-// `AuthSubmitSignIn`): the handler writes
-// `AuthOpenSignupRequest.pending = true` and
-// `Runtime::sync_app_auth_open_signup_request` consumes the
-// request and calls the existing legacy
-// `State::open_auth_signup_page` compatibility method. The
-// signup-page-open side effect (platform code via
-// `eg_platform::auth::open_signup_page`) stays legacy-owned
-// because the platform API is only available in non-wasm targets.
+// `AuthOpenSignup` writes a typed request resource. The request is consumed by
+// `state::auth_state::process_auth_requests_system`, not by Runtime.
 pub fn handle_auth_open_signup(
     mut events: MessageReader<AuthOpenSignup>,
     mut open_signup_request: ResMut<AuthOpenSignupRequest>,
@@ -106,6 +87,9 @@ pub fn handle_auth_open_signup(
     }
 }
 
+// `CopyLatestPerfFrame` writes a typed request resource. The request is
+// consumed by `state::perf::process_perf_frame_copy_request_system` in
+// `StateSchedule`, not by Runtime.
 pub fn handle_copy_latest_perf_frame(
     mut events: MessageReader<CopyLatestPerfFrame>,
     mut copy_request: ResMut<PerfFrameCopyRequest>,

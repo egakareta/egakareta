@@ -6,13 +6,23 @@
 
 */
 use bevy_ecs::prelude::*;
+use eg_types::AppPhase;
 
-use crate::state::{FrameTimeRes, PerfRes, State};
+use crate::state::{AppPhaseRes, FrameTimeRes, PerfRes, State};
 
 pub fn advance_frame_time_system(mut frame_time: ResMut<FrameTimeRes>, mut perf: ResMut<PerfRes>) {
     puffin::GlobalProfiler::lock().new_frame();
     frame_time.advance();
     perf.0.fps_smoothed = frame_time.fps_smoothed;
+}
+
+pub fn reset_menu_editor_frame_accumulator_system(
+    phase: Res<AppPhaseRes>,
+    mut frame_time: ResMut<FrameTimeRes>,
+) {
+    if matches!(phase.get(), AppPhase::Menu | AppPhase::Editor) {
+        frame_time.accumulator = 0.0;
+    }
 }
 
 impl State {
