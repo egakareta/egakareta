@@ -37,9 +37,9 @@
 
 use std::cell::RefCell;
 
-use crate::state::render::resources::{RenderFrameInputRes, RenderUniformsRes};
+use crate::state::render::resources::RenderUniformsRes;
 
-pub(crate) type MirrorFn = Box<dyn FnMut(&mut RenderUniformsRes, &mut RenderFrameInputRes)>;
+pub(crate) type MirrorFn = Box<dyn FnMut(&mut RenderUniformsRes)>;
 
 thread_local! {
     static MIRROR_SLOT: RefCell<Option<MirrorFn>> = const { RefCell::new(None) };
@@ -53,7 +53,7 @@ thread_local! {
 /// before invoking it.
 pub fn install_mirror<F>(mirror: F)
 where
-    F: FnMut(&mut RenderUniformsRes, &mut RenderFrameInputRes) + 'static,
+    F: FnMut(&mut RenderUniformsRes) + 'static,
 {
     MIRROR_SLOT.with(|slot| {
         *slot.borrow_mut() = Some(Box::new(mirror));
@@ -70,13 +70,10 @@ pub fn take_pending_mirror() -> Option<MirrorFn> {
 mod tests {
     use super::*;
     use bevy_ecs::world::World;
-    use eg_render::RenderFrameInput;
-    use eg_types::{AppPhase, EditorMode, LevelMetadata};
 
     fn register_world() -> World {
         let mut world = World::new();
         world.init_resource::<RenderUniformsRes>();
-        world.init_resource::<RenderFrameInputRes>();
         world
     }
 
@@ -89,25 +86,13 @@ mod tests {
     fn install_then_take_runs_closure() {
         let _ = take_pending_mirror();
         let mut world = register_world();
-        install_mirror(|u, f| {
+        install_mirror(|u| {
             u.color_space.time_seconds = 7.0;
-            f.0 = RenderFrameInput {
-                phase: AppPhase::Editor,
-                editor_mode: EditorMode::Timing,
-                game_over: false,
-                sky_color: LevelMetadata::default().sky_color,
-                grid_center: [0.0, 0.0],
-                apply_gamma_correction: false,
-            };
         });
 
-        world.resource_scope(
-            |world, mut uniforms: bevy_ecs::world::Mut<RenderUniformsRes>| {
-                let mut mirror = take_pending_mirror().expect("expected mirror to be installed");
-                let mut frame_input = world.resource_mut::<RenderFrameInputRes>();
-                mirror(&mut uniforms, &mut frame_input);
-            },
-        );
+        let mut uniforms = world.resource_mut::<RenderUniformsRes>();
+        let mut mirror = take_pending_mirror().expect("expected mirror to be installed");
+        mirror(&mut uniforms);
 
         // The closure was invoked (proved by the side effect on the
         // resources).
@@ -118,15 +103,6 @@ mod tests {
                 .time_seconds,
             7.0
         );
-        assert_eq!(
-            world.resource::<RenderFrameInputRes>().0.phase,
-            AppPhase::Editor
-        );
-        assert_eq!(
-            world.resource::<RenderFrameInputRes>().0.editor_mode,
-            EditorMode::Timing
-        );
-
         // The slot is empty after a take — a second take is a no-op.
         assert!(take_pending_mirror().is_none());
     }
@@ -134,8 +110,8 @@ mod tests {
     #[test]
     fn install_replaces_previous_mirror() {
         let _ = take_pending_mirror();
-        install_mirror(|_u, _f| {});
-        install_mirror(|_u, _f| {});
+        install_mirror(|_u| {});
+        install_mirror(|_u| {});
         // Only the second install survives; the first is dropped.
         assert!(take_pending_mirror().is_some());
         assert!(take_pending_mirror().is_none());

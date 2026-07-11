@@ -24,13 +24,19 @@
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{Schedule, SystemSet};
+use bevy_ecs::system::SystemParam;
+use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, LevelMetadata, LineUniform};
+use glam::Vec3;
 
 use super::resources::{
     RenderFrameInputRes, RenderGpuRes, RenderMeshesRes, RenderResizeRequest, RenderSurfaceHostRes,
     RenderUniformsRes,
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
-use crate::state::FrameTimeRes;
+use crate::state::{
+    AppPhaseRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorTimelineRes,
+    FrameTimeRes, MenuStateRes, SessionStateRes, evaluate_camera_track_for_objects,
+};
 
 /// System sets for the rendering extraction plugin.
 ///
@@ -124,6 +130,205 @@ pub fn present_render_frame_system(
     let _ = (&gpu, &meshes, &surface_host, &uniforms, &frame_input);
 }
 
+/// Build the per-frame render input directly from App-world resources.
+///
+/// This replaces the legacy `State::render_to_view` frame-input snapshot.
+/// The compatibility renderer consumes the resulting POD value until its
+/// draw passes are also scheduled in the App world.
+#[derive(SystemParam)]
+pub(crate) struct RenderFrameInputParams<'w, 's> {
+    phase: Res<'w, AppPhaseRes>,
+    input: Res<'w, EditorInputRes>,
+    session: Res<'w, SessionStateRes>,
+    camera: Res<'w, EditorCameraRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+    clock: Option<Res<'w, eg_game::GameClock>>,
+    menu: Option<Res<'w, MenuStateRes>>,
+    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    player: Query<'w, 's, &'static eg_game::PlayerPosition>,
+    frame_input: ResMut<'w, RenderFrameInputRes>,
+}
+
+/// Build the per-frame render input from the grouped App-world parameters.
+pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParams) {
+    let current_phase = params.phase.current;
+    let editor_is_playing = params.timeline.0.playback.playing;
+    let player_position = params
+        .player
+        .iter()
+        .next()
+        .map(|position| position.0)
+        .unwrap_or([0.0, 0.0, 0.0]);
+    let sky_color = match current_phase {
+        AppPhase::Menu => params
+            .menu
+            .as_ref()
+            .map(|menu| menu.0.preview_sky_color)
+            .unwrap_or(LevelMetadata::default().sky_color),
+        AppPhase::Editor => params.session.editor_sky_color,
+        AppPhase::Playing => params.session.playing_sky_color,
+        _ => LevelMetadata::default().sky_color,
+    };
+    let grid_center = match current_phase {
+        AppPhase::Editor if editor_is_playing => [
+            params.timeline.0.preview.position[0],
+            params.timeline.0.preview.position[2],
+        ],
+        AppPhase::Editor => params.camera.0.editor_pan,
+        AppPhase::Playing | AppPhase::GameOver => [player_position[0], player_position[2]],
+        _ => [0.0, 0.0],
+    };
+
+    params.frame_input.0 = eg_render::RenderFrameInput {
+        phase: current_phase,
+        editor_mode: params.input.0.mode,
+        game_over: params.clock.as_ref().is_some_and(|clock| clock.game_over),
+        sky_color,
+        grid_center,
+        apply_gamma_correction: params
+            .gpu
+            .as_ref()
+            .is_some_and(|gpu| gpu.0.apply_gamma_correction),
+    };
+}
+
+#[derive(SystemParam)]
+pub(crate) struct RenderUniformsParams<'w, 's> {
+    phase: Res<'w, AppPhaseRes>,
+    camera: Res<'w, EditorCameraRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+    frame_time: Res<'w, FrameTimeRes>,
+    clock: Option<Res<'w, eg_game::GameClock>>,
+    menu: Option<Res<'w, MenuStateRes>>,
+    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    player: Query<
+        'w,
+        's,
+        (
+            &'static eg_game::PlayerPosition,
+            &'static eg_game::PlayerDirection,
+        ),
+    >,
+    uniforms: ResMut<'w, RenderUniformsRes>,
+}
+
+/// Build camera, line, and color-space POD uniforms from App-world state.
+///
+/// The compatibility `State` receives a copy after extraction so legacy
+/// update code can continue to observe the scheduled line uniform while the
+/// GPU upload itself is owned by this system.
+pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
+    let Some(gpu) = params.gpu.as_ref() else {
+        return;
+    };
+    let (width, height, apply_gamma_correction) = (
+        gpu.0.config.width,
+        gpu.0.config.height,
+        gpu.0.apply_gamma_correction,
+    );
+    let (player_position, player_direction) = params
+        .player
+        .iter()
+        .next()
+        .map(|(position, direction)| (position.0, direction.0))
+        .unwrap_or(([0.0, 0.0, 0.0], Direction::Forward));
+    let (elapsed_seconds, started, game_over) = params
+        .clock
+        .as_ref()
+        .map(|clock| (clock.elapsed_seconds, clock.started, clock.game_over))
+        .unwrap_or((0.0, false, false));
+
+    let (eye, target) = match params.phase.current {
+        AppPhase::Menu => params
+            .menu
+            .as_ref()
+            .map(|menu| {
+                (
+                    Vec3::from_array(menu.0.preview_camera_position),
+                    Vec3::from_array(menu.0.preview_camera_target),
+                )
+            })
+            .unwrap_or((Vec3::ZERO, Vec3::ZERO)),
+        AppPhase::Playing | AppPhase::GameOver => {
+            let target = Vec3::from_array(player_position);
+            let sample = evaluate_camera_track_for_objects(
+                &params.camera.0,
+                &params.objects.objects,
+                elapsed_seconds,
+                target,
+                started && !game_over,
+            );
+            (sample.eye, sample.target)
+        }
+        AppPhase::Editor if params.timeline.0.playback.playing => {
+            let target = Vec3::from_array(params.timeline.0.preview.position);
+            let sample = evaluate_camera_track_for_objects(
+                &params.camera.0,
+                &params.objects.objects,
+                params.timeline.0.clock.time_seconds,
+                target,
+                true,
+            );
+            (sample.eye, sample.target)
+        }
+        AppPhase::Editor => {
+            let target = params.camera.0.editor_camera_target();
+            (target + params.camera.0.editor_camera_offset(), target)
+        }
+    };
+
+    let view = glam::Mat4::look_at_rh(eye, target, Vec3::Y);
+    let aspect = width as f32 / height as f32;
+    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+    let mut line = params.uniforms.line;
+    if matches!(params.phase.current, AppPhase::Playing | AppPhase::GameOver) {
+        line = LineUniform {
+            offset: [
+                (player_position[0] * 100.0).round() / 100.0,
+                (player_position[2] * 100.0).round() / 100.0,
+            ],
+            rotation: match player_direction {
+                Direction::Forward => 0.0,
+                Direction::Right => -std::f32::consts::FRAC_PI_2,
+            },
+            _pad: 0.0,
+        };
+    }
+
+    params.uniforms.camera = CameraUniform {
+        view_proj: (proj * view).to_cols_array_2d(),
+        camera_position: [eye.x, eye.y, eye.z, 0.0],
+    };
+    params.uniforms.line = line;
+    params.uniforms.color_space = ColorSpaceUniform {
+        apply_gamma_correction: if apply_gamma_correction { 1.0 } else { 0.0 },
+        time_seconds: params.frame_time.global_time_seconds,
+        viewport_size: [width.max(1) as f32, height.max(1) as f32],
+    };
+}
+
+/// Upload the extracted camera and line POD values before the compatibility
+/// renderer runs. Color-space upload remains in its dedicated system.
+pub(crate) fn upload_render_uniforms_system(
+    gpu: Option<NonSend<RenderGpuRes>>,
+    uniforms: Res<RenderUniformsRes>,
+) {
+    let Some(gpu) = gpu else {
+        return;
+    };
+    gpu.0.queue.write_buffer(
+        &gpu.0.camera_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.camera),
+    );
+    gpu.0.queue.write_buffer(
+        &gpu.0.line_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.line),
+    );
+}
+
 /// Update the scheduled color-space POD uniform from App-world frame
 /// timing. The compatibility `State::update` path consumes this value
 /// to upload the GPU buffer until render presentation moves fully into
@@ -133,6 +338,24 @@ pub fn update_color_space_uniform_system(
     mut uniforms: ResMut<RenderUniformsRes>,
 ) {
     uniforms.color_space.time_seconds = frame_time.global_time_seconds;
+}
+
+/// Upload the scheduled color-space POD value before presentation. This is
+/// the first GPU side effect removed from `State::update`; the compatibility
+/// shell only records that the scheduled upload already happened so direct
+/// legacy callers still retain their fallback behavior.
+pub fn upload_color_space_uniform_system(
+    gpu: Option<NonSend<RenderGpuRes>>,
+    uniforms: Res<RenderUniformsRes>,
+) {
+    let Some(gpu) = gpu else {
+        return;
+    };
+    gpu.0.queue.write_buffer(
+        &gpu.0.color_space_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.color_space),
+    );
 }
 
 pub fn apply_resize_surface_system(
@@ -221,9 +444,17 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
         // `OnceLock<RenderMirrorState>` shared with `tick_state`.
         // See `state/render/mirror.rs` for the bridge.
         mirror_pod_state_via_bridge,
+        update_render_frame_input_system
+            .after(crate::state::async_bridge::ApplyAsyncResultsSet)
+            .before(present_render_frame_system),
         update_color_space_uniform_system
             .after(mirror_pod_state_via_bridge)
             .after(crate::state::frame_time::advance_frame_time_system),
+        upload_color_space_uniform_system
+            .after(update_color_space_uniform_system)
+            .after(apply_resize_surface_system)
+            .before(present_render_frame_system)
+            .in_set(RenderSet::Present),
         apply_resize_surface_system
             .after(crate::events::auth::handle_resize_surface)
             .before(present_render_frame_system)
@@ -241,21 +472,18 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
 /// without `unsafe` (the closure doesn't escape the system call —
 /// `tick_state` overwrites it each frame and waits for the schedule
 /// to drain before reading back).
-fn mirror_pod_state_via_bridge(
-    mut uniforms: ResMut<RenderUniformsRes>,
-    mut frame_input: ResMut<RenderFrameInputRes>,
-) {
+fn mirror_pod_state_via_bridge(mut uniforms: ResMut<RenderUniformsRes>) {
     use crate::state::render::mirror::take_pending_mirror;
 
     if let Some(mut mirror) = take_pending_mirror() {
-        mirror(&mut uniforms, &mut frame_input);
+        mirror(&mut uniforms);
     }
     // If no mirror was queued, the resources stay at their default
     // values. This is the correct behavior for tests that don't go
     // through the full `State::tick_state` path. The `let _ =` is a
     // deliberate no-op sink that makes the function nominally
     // consume its args so the system stays in the schedule graph.
-    let _ = (&mut uniforms, &mut frame_input);
+    let _ = &mut uniforms;
 }
 
 #[cfg(test)]
@@ -264,6 +492,7 @@ mod tests {
     use crate::state::render::resources::{
         mirror_render_pod_state, render_heavy_resources_present, render_pod_resources_present,
     };
+    use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes, SessionStateRes};
     use bevy_ecs::world::World;
     use eg_render::RenderFrameInput;
     use eg_types::{AppPhase, EditorMode, LevelMetadata, PhysicalSize};
@@ -282,6 +511,31 @@ mod tests {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
         assert!(render_pod_resources_present(&world));
+    }
+
+    #[test]
+    fn render_frame_input_system_reads_app_resources() {
+        let mut world = World::new();
+        world.init_resource::<AppPhaseRes>();
+        world.init_resource::<EditorInputRes>();
+        world.init_resource::<SessionStateRes>();
+        world.init_resource::<EditorCameraRes>();
+        world.init_resource::<EditorTimelineRes>();
+        world.init_resource::<RenderFrameInputRes>();
+        world.resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+        world.resource_mut::<EditorInputRes>().0.mode = EditorMode::Timing;
+        world.resource_mut::<EditorCameraRes>().0.editor_pan = [4.0, -2.0];
+        world.resource_mut::<SessionStateRes>().editor_sky_color = [0.2, 0.4, 0.6];
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(update_render_frame_input_system);
+        schedule.run(&mut world);
+
+        let frame_input = world.resource::<RenderFrameInputRes>().0;
+        assert_eq!(frame_input.phase, AppPhase::Editor);
+        assert_eq!(frame_input.editor_mode, EditorMode::Timing);
+        assert_eq!(frame_input.sky_color, [0.2, 0.4, 0.6]);
+        assert_eq!(frame_input.grid_center, [4.0, -2.0]);
     }
 
     /// `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted (with

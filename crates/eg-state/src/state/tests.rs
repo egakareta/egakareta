@@ -604,6 +604,11 @@ async fn tick_state_mirrors_frame_input_into_render_resource() {
     state.phase = AppPhase::Editor;
     state.editor.input.mode = EditorMode::Place;
     state.session.editor_sky_color = [0.25, 0.5, 0.75];
+    app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+    app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
+    app.world_mut()
+        .resource_mut::<SessionStateRes>()
+        .editor_sky_color = [0.25, 0.5, 0.75];
 
     // Before tick_state runs, the resource is at its default
     // (AppPhase::Menu).
@@ -778,7 +783,7 @@ async fn tick_state_mirror_bridge_consumes_closure() {
     // registered. We assert that the slot is non-empty after
     // `install_mirror`, and that the schedule's bridge system
     // drains it on `tick_state`.
-    install_mirror(|u, _f| {
+    install_mirror(|u| {
         u.color_space.time_seconds = 42.0;
     });
 

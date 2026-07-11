@@ -562,10 +562,6 @@ impl UiStateData {
 }
 
 impl State {
-    pub fn ui_state_resource(&self) -> UiStateRes {
-        UiStateRes(UiStateData::from_snapshot(&self.ui_state_snapshot()))
-    }
-
     pub fn ui_state_snapshot(&self) -> UiStateSnapshot<'_> {
         let (timeline_preview_position, timeline_preview_direction) =
             self.editor_timeline_preview();

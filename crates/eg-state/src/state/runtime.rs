@@ -253,4 +253,7 @@ pub struct FrameRuntimeState {
     pub player_render: PlayerRenderState,
     pub global_time_seconds: f32,
     pub scheduled_color_space_uniform: Option<ColorSpaceUniform>,
+    pub color_space_uniform_uploaded_by_schedule: bool,
+    pub render_uniforms_uploaded_by_schedule: bool,
+    pub scheduled_render_phase: Option<eg_types::AppPhase>,
 }

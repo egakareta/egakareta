@@ -7,15 +7,13 @@
 */
 use crate::load_menu_textures;
 use crate::{
-    show_editor_ui_commands_from_view, show_menu_favicon_ui, show_menu_play_ui,
-    show_menu_topbar_ui, show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
-    show_settings_sidebar,
+    show_editor_ui_from_view, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
 use bevy_app::App;
 use bevy_ecs::world::World;
 use eg_render::RenderSurfaceError;
 use eg_render::block_icon_cache::BlockIconCache;
-use eg_state::commands::AppCommand;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthStateRes;
 use eg_state::state::CompleteImportRequest;
@@ -32,6 +30,7 @@ use eg_state::state::GameplayWorldRes;
 use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PlaytestRequest;
+use eg_state::state::RenderFrameInputRes;
 use eg_state::state::RenderResizeRequest;
 use eg_state::state::RenderUniformsRes;
 use eg_state::state::SessionStateRes;
@@ -46,7 +45,7 @@ use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
 use eg_state::state::{EditorHistoryRes, EditorInputRes, EditorObjectsRes};
 use eg_ui::{
-    MenuTextures, combined_ui_scale_factor, drain_ui_command_queue, enqueue_ui_commands,
+    MenuTextures, WorldUiCommandSink, combined_ui_scale_factor, drain_ui_command_queue,
     register_ui_resources_world, sync_egui_context,
 };
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
@@ -268,11 +267,13 @@ impl Runtime {
         let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
         app.world_mut().insert_resource(ui_state_resource.clone());
         let view = ui_state_resource.view();
-        let mut frame_ui_commands = Vec::<AppCommand>::new();
         let mut ui_input_blocking_rects = Vec::new();
         let mut ui_input_pixels_per_point = 1.0;
+        let mut frame = app
+            .world_mut()
+            .remove_non_send::<EguiFrameResources>()
+            .expect("EguiFrameResources must be installed before running a frame");
         let full_output = {
-            let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
             let physical_size =
                 egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
             let ui_scale_factor = combined_ui_scale_factor(
@@ -280,43 +281,43 @@ impl Runtime {
                 state.app_settings().normalized_ui_scale_multiplier(),
             );
             frame.egui_ctx.set_zoom_factor(ui_scale_factor);
-            let EguiFrameResources {
-                block_icon_cache,
-                egui_renderer,
-                ..
-            } = &mut *frame;
-            block_icon_cache.refresh_icons(state.render_gpu(), egui_renderer);
+            #[cfg(not(test))]
+            frame
+                .block_icon_cache
+                .refresh_icons(state.render_gpu(), &mut frame.egui_renderer);
             let block_icon_texture_ids = frame.block_icon_cache.texture_ids();
+            let mut command_sink = WorldUiCommandSink::new(app.world_mut());
 
             frame.egui_ctx.run_ui(raw_input, |root_ui| {
                 let ctx = root_ui.ctx().clone();
-                let (editor_commands, editor_input_blocking_rects) =
-                    show_editor_ui_commands_from_view(&ctx, &view, &block_icon_texture_ids);
-                frame_ui_commands.extend(editor_commands);
-                ui_input_blocking_rects = editor_input_blocking_rects;
+                ui_input_blocking_rects = show_editor_ui_from_view(
+                    &ctx,
+                    &view,
+                    &block_icon_texture_ids,
+                    &mut command_sink,
+                );
                 ui_input_pixels_per_point = ctx.pixels_per_point();
-                let mut ui_commands = Vec::new();
                 if !view.is_editor {
-                    show_settings_sidebar(&ctx, &view, &mut ui_commands);
+                    show_settings_sidebar(&ctx, &view, &mut command_sink);
                 }
-                show_perf_overlay(&ctx, &view, &mut ui_commands);
-                show_menu_topbar_ui(root_ui, &view, &mut ui_commands);
+                show_perf_overlay(&ctx, &view, &mut command_sink);
+                show_menu_topbar_ui(root_ui, &view, &mut command_sink);
                 show_menu_play_ui(
                     &ctx,
                     &view,
-                    &mut ui_commands,
+                    &mut command_sink,
                     frame.menu_textures.play_button.as_ref(),
                     frame.menu_textures.play_button_filled.as_ref(),
                     frame.menu_textures.edit_button.as_ref(),
                 );
-                show_practice_checkpoint_ui(&ctx, &view, &mut ui_commands);
-                show_pause_menu_ui(&ctx, &view, &mut ui_commands);
+                show_practice_checkpoint_ui(&ctx, &view, &mut command_sink);
+                show_pause_menu_ui(&ctx, &view, &mut command_sink);
                 if let Some(favicon) = &frame.menu_textures.favicon {
                     show_menu_favicon_ui(&ctx, &view, favicon);
                 }
-                frame_ui_commands.extend(ui_commands);
             })
         };
+        app.world_mut().insert_non_send(frame);
 
         {
             let mut input = app
@@ -326,14 +327,17 @@ impl Runtime {
             input.0.ui_input_pixels_per_point = ui_input_pixels_per_point;
         }
 
-        enqueue_ui_commands(app.world_mut(), frame_ui_commands);
+        // Keep the queue as a narrow compatibility ingress for tests and
+        // external callers that enqueue AppCommand values directly. The
+        // production egui path above writes typed messages through
+        // WorldUiCommandSink and does not use this queue.
         drain_ui_command_queue(app.world_mut());
+
+        state.prepare_app_world_for_runtime(app.world_mut());
         app.update();
-        state.prepare_app_world_for_state_schedule(app.world_mut());
         run_state_schedule_in_world(app.world_mut());
         Self::sync_app_gameplay_state(state, app.world_mut());
         Self::sync_app_frame_time_state(state, app.world());
-        Self::sync_app_render_uniforms_state(state, app.world());
         Self::sync_app_render_resize_state(state, app.world_mut());
         Self::sync_app_editor_history_state(state, app.world());
         Self::sync_app_editor_input_state(state, app.world());
@@ -357,6 +361,7 @@ impl Runtime {
         Self::sync_app_editor_objects_state(state, app.world_mut());
         Self::sync_app_menu_state(state, app.world());
         Self::sync_app_phase_state(state, app.world());
+        Self::sync_app_render_uniforms_state(state, app.world());
         Self::sync_app_session_state(state, app.world_mut());
         Self::sync_app_perf_state(state, app.world());
         Self::sync_app_escape_request(state, app.world_mut());
@@ -390,9 +395,15 @@ impl Runtime {
         // that seed after update so the App world starts the next phase from
         // the post-transition compatibility state.
         state.sync_app_gameplay_world_if_needed(app.world_mut());
+        let frame_input = app.world().resource::<RenderFrameInputRes>().0;
         let render_result = {
             let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
-            state.render_egui(&mut frame.egui_renderer, &paint_jobs, &screen_descriptor)
+            state.render_egui_with_frame_input(
+                &mut frame.egui_renderer,
+                &paint_jobs,
+                &screen_descriptor,
+                frame_input,
+            )
         };
         match render_result {
             Ok(_) => {}
@@ -426,9 +437,20 @@ impl Runtime {
     }
 
     fn refresh_editor_playback_mirrors_from_legacy(state: &State, world: &mut World) {
+        world.insert_resource(state.editor_objects_resource());
+        world.insert_resource(state.editor_history_resource());
         world.insert_resource(state.editor_timeline_resource());
         world.insert_resource(state.editor_runtime_resource());
         world.insert_resource(state.editor_input_resource());
+        let session = state.session_state_resource();
+        let mut app_session = world.resource_mut::<SessionStateRes>();
+        app_session.playtesting_editor = session.playtesting_editor;
+        app_session.game_paused = session.game_paused;
+        app_session.app_settings.ui_scale_multiplier = session.app_settings.ui_scale_multiplier;
+        app_session.app_settings.keybinds = session.app_settings.keybinds.clone();
+        app_session.app_settings.graphics_backend = session.app_settings.graphics_backend.clone();
+        app_session.settings_restart_required = session.settings_restart_required;
+        app_session.graphics_backend_locked = session.graphics_backend_locked;
     }
 
     fn sync_app_gameplay_state(state: &mut State, world: &mut World) {
@@ -446,7 +468,10 @@ impl Runtime {
     }
 
     fn sync_app_render_uniforms_state(state: &mut State, world: &World) {
-        state.apply_render_uniforms_resource(world.resource::<RenderUniformsRes>());
+        state.apply_render_uniforms_resource(
+            world.resource::<RenderUniformsRes>(),
+            world.resource::<RenderFrameInputRes>(),
+        );
     }
 
     fn sync_app_render_resize_state(state: &mut State, world: &mut World) {
@@ -1826,6 +1851,28 @@ mod tests {
         // Pin that the State is still in the Menu phase after
         // the App was built (no setup cross-talk).
         assert!(runtime.state.is_menu());
+    }
+
+    #[tokio::test]
+    async fn runtime_prepare_does_not_overwrite_authoritative_editor_objects() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+        let object = eg_types::LevelObject::new("stone");
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![object.clone()];
+        runtime
+            .state
+            .prepare_app_world_for_runtime(runtime.app.world_mut());
+
+        assert_eq!(
+            runtime.app.world().resource::<EditorObjectsRes>().objects,
+            vec![object],
+            "Runtime preparation must not mirror legacy State objects over App-world edits"
+        );
     }
 
     /// The production frame path advances the App-world gameplay entities and

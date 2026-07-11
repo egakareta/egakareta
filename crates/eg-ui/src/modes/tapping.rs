@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::UiCommandSink;
 use crate::modes::shared::{
     EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
 };
@@ -15,7 +16,7 @@ use eg_state::state::editor_command::EditorCommand;
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal_wrapped(|ui| {
         if ui
@@ -44,7 +45,7 @@ pub(crate) fn show_selected_tap_properties_window(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
     bottom_bar_height: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     let Some(selected_tap) = view.selected_tap else {
         return;

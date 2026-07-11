@@ -19,7 +19,7 @@ use wgpu::TextureViewDescriptor;
 use super::super::State;
 use super::MeshSlot;
 use eg_render::RenderSurfaceError;
-use eg_types::{AppPhase, LevelMetadata};
+use eg_types::AppPhase;
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
 
@@ -104,21 +104,6 @@ impl FrustumPlane {
     }
 }
 
-fn grid_center_for_phase(state: &State) -> [f32; 2] {
-    match state.phase {
-        AppPhase::Editor if state.editor_is_playing() => [
-            state.editor.timeline.preview.position[0],
-            state.editor.timeline.preview.position[2],
-        ],
-        AppPhase::Editor => state.editor.camera.editor_pan,
-        AppPhase::Playing | AppPhase::GameOver => [
-            state.gameplay.state.position[0],
-            state.gameplay.state.position[2],
-        ],
-        _ => [0.0, 0.0],
-    }
-}
-
 fn view_projection_for_current_phase(state: &State) -> Mat4 {
     let height = state.render_gpu().config.height.max(1);
     let aspect = state.render_gpu().config.width.max(1) as f32 / height as f32;
@@ -187,8 +172,24 @@ impl State {
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
     ) -> Result<(), RenderSurfaceError> {
+        self.render_egui_with_frame_input(
+            renderer,
+            paint_jobs,
+            screen_descriptor,
+            self.compute_frame_input_snapshot(),
+        )
+    }
+
+    /// Render egui using the App-owned frame-input resource.
+    pub fn render_egui_with_frame_input(
+        &mut self,
+        renderer: &mut EguiRenderer,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &ScreenDescriptor,
+        frame_input: RenderFrameInput,
+    ) -> Result<(), RenderSurfaceError> {
         puffin::profile_scope!("RenderEgui");
-        self.render_with_overlay(|device, queue, view, encoder| {
+        self.render_with_overlay_and_frame_input(frame_input, |device, queue, view, encoder| {
             {
                 puffin::profile_scope!("EguiUpdateBuffers");
                 renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
@@ -245,6 +246,17 @@ impl State {
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        self.render_with_overlay_and_frame_input(self.compute_frame_input_snapshot(), overlay)
+    }
+
+    fn render_with_overlay_and_frame_input<F>(
+        &mut self,
+        frame_input: RenderFrameInput,
+        overlay: F,
+    ) -> Result<(), RenderSurfaceError>
+    where
+        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
+    {
         puffin::profile_scope!("RenderWithOverlay");
         let surface = match &self.render_gpu().surface {
             Some(s) => s,
@@ -269,7 +281,7 @@ impl State {
 
         {
             puffin::profile_scope!("RenderToView");
-            self.render_to_view(&view, &mut encoder, overlay);
+            self.render_to_view_with_frame_input(&view, &mut encoder, frame_input, overlay);
         }
 
         {
@@ -291,22 +303,24 @@ impl State {
     ) where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
+        self.render_to_view_with_frame_input(
+            view,
+            encoder,
+            self.compute_frame_input_snapshot(),
+            overlay,
+        );
+    }
+
+    fn render_to_view_with_frame_input<F>(
+        &mut self,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        frame_input: RenderFrameInput,
+        overlay: F,
+    ) where
+        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
+    {
         puffin::profile_scope!("RenderWorld");
-        let editor_mode = self.editor.input.mode;
-        let sky_color = match self.phase {
-            AppPhase::Menu => self.menu.state.preview_sky_color,
-            AppPhase::Editor => self.session.editor_sky_color,
-            AppPhase::Playing => self.session.playing_sky_color,
-            _ => LevelMetadata::default().sky_color,
-        };
-        let frame_input = RenderFrameInput {
-            phase: self.phase,
-            editor_mode,
-            game_over: self.gameplay.state.game_over,
-            sky_color,
-            grid_center: grid_center_for_phase(self),
-            apply_gamma_correction: self.render_gpu().apply_gamma_correction,
-        };
         let skip_world = frame_input.should_skip_world();
         let draw_editor_overlays = frame_input.should_draw_editor_overlays();
         let clear_color = frame_input.clear_color();

@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::UiCommandSink;
 use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateSnapshot;
@@ -14,7 +15,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
     _duration_seconds: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
         // Playback speed control

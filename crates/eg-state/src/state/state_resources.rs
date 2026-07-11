@@ -111,7 +111,11 @@ pub struct FrameTimeRes {
 impl FrameTimeRes {
     pub fn advance(&mut self) {
         let now = web_time::Instant::now();
-        let frame_dt = (now - self.last_frame).as_secs_f32();
+        // Treat a stalled/background frame like the accumulator clamp below
+        // does: one frame may advance at most 250ms of simulation/presentation
+        // time. This keeps camera transitions and fixed-step consumers from
+        // completing an entire transition after a long compile/debug pause.
+        let frame_dt = (now - self.last_frame).as_secs_f32().clamp(0.0, 0.25);
         self.last_frame = now;
         self.delta_seconds = frame_dt;
 

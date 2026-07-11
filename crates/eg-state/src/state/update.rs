@@ -583,9 +583,16 @@ impl State {
 
         let using_scheduled_frame_time = self.frame_runtime.editor.scheduled_delta_available;
         let frame_dt = self.frame_delta_for_legacy_update();
+        let scheduled_render_uniforms = self.frame_runtime.render_uniforms_uploaded_by_schedule
+            && self.frame_runtime.scheduled_render_phase == Some(self.phase);
+        self.frame_runtime.render_uniforms_uploaded_by_schedule = false;
+        self.frame_runtime.scheduled_render_phase = None;
 
         let color_space_uniform = self.color_space_uniform_for_legacy_update();
-        self.upload_color_space_uniform(color_space_uniform);
+        if !self.frame_runtime.color_space_uniform_uploaded_by_schedule {
+            self.upload_color_space_uniform(color_space_uniform);
+        }
+        self.frame_runtime.color_space_uniform_uploaded_by_schedule = false;
 
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
@@ -595,7 +602,9 @@ impl State {
             self.frame_runtime.player_render.gem_shatter_effects.clear();
             self.render_meshes_mut().gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
-            self.update_menu_camera();
+            if !scheduled_render_uniforms {
+                self.update_menu_camera();
+            }
             return;
         }
 
@@ -820,7 +829,9 @@ impl State {
             }
             {
                 puffin::profile_scope!("EditorCameraUniform");
-                self.update_editor_camera();
+                if !scheduled_render_uniforms {
+                    self.update_editor_camera();
+                }
             }
             self.editor_camera_pan_scheduled = false;
             self.editor_camera_transition_scheduled = false;
@@ -830,7 +841,9 @@ impl State {
         puffin::profile_scope!("PlayingUpdate");
         if self.is_game_paused() {
             self.frame_runtime.editor.accumulator = 0.0;
-            self.update_playing_render_uniforms();
+            if !scheduled_render_uniforms {
+                self.update_playing_render_uniforms();
+            }
             return;
         }
 
@@ -963,7 +976,9 @@ impl State {
                 .write_streaming_vertices(queue, &trail_vertices);
         });
 
-        self.update_playing_render_uniforms();
+        if !scheduled_render_uniforms {
+            self.update_playing_render_uniforms();
+        }
     }
 
     fn update_playing_render_uniforms(&mut self) {

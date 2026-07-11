@@ -637,6 +637,9 @@ impl State {
                 },
                 global_time_seconds: 0.0,
                 scheduled_color_space_uniform: None,
+                color_space_uniform_uploaded_by_schedule: false,
+                render_uniforms_uploaded_by_schedule: false,
+                scheduled_render_phase: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
@@ -1555,6 +1558,9 @@ impl State {
                 },
                 global_time_seconds: 0.0,
                 scheduled_color_space_uniform: None,
+                color_space_uniform_uploaded_by_schedule: false,
+                render_uniforms_uploaded_by_schedule: false,
+                scheduled_render_phase: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {

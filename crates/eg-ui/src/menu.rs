@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::UiCommandSink;
 use crate::components::show_shadowed_label;
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateSnapshot;
@@ -180,7 +181,7 @@ pub fn show_menu_favicon_ui(
 pub fn show_menu_play_ui(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     play_button: Option<&egui::TextureHandle>,
     play_button_filled: Option<&egui::TextureHandle>,
     edit_button: Option<&egui::TextureHandle>,
@@ -319,7 +320,7 @@ fn show_menu_image_button_at_rect(
 pub fn show_pause_menu_ui(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if !view.is_game_paused {
         return;
@@ -425,7 +426,7 @@ pub fn show_pause_menu_ui(
 pub fn show_practice_checkpoint_ui(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if !view.is_practice_mode_enabled || view.is_game_paused {
         return;
@@ -650,7 +651,7 @@ fn paint_menu_gem_icon(painter: &egui::Painter, rect: egui::Rect, shadow: bool) 
 pub fn show_menu_topbar_ui(
     root_ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if !view.is_menu {
         return;

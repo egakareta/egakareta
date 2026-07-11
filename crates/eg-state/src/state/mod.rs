@@ -79,7 +79,7 @@ pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
     register_state_command_pipeline, run_state_schedule_in_world, setup_state_app,
 };
-pub use render::resources::{RenderResizeRequest, RenderUniformsRes};
+pub use render::resources::{RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes};
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
@@ -190,6 +190,11 @@ pub struct MenuSubsystem {
 #[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSchedule;
 
+/// Schedule label for the render extraction pass that runs after the
+/// App-world gameplay tick and refreshes render POD resources for present.
+#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RenderExtractSchedule;
+
 /// The central state structure that manages all subsystems of the game engine.
 /// It contains subsystems for rendering, gameplay, editor, audio, session, and menu,
 /// and handles the overall application phase and frame runtime.
@@ -290,36 +295,56 @@ impl State {
     /// Install per-frame bridge data into the Runtime-owned App world before
     /// [`StateSchedule`] runs.
     pub fn prepare_app_world_for_state_schedule(&mut self, world: &mut bevy_ecs::world::World) {
+        self.prepare_app_world_for_state_schedule_inner(world, true);
+    }
+
+    /// Install App-world bridge data for the production Runtime frame.
+    ///
+    /// Production render POD values are rebuilt by `RenderExtractSchedule`,
+    /// so this path does not install the legacy thread-local render mirror.
+    /// The mirror-enabled method above remains for the legacy `State` test
+    /// harness while its snapshot assertions are migrated.
+    pub fn prepare_app_world_for_runtime(&mut self, world: &mut bevy_ecs::world::World) {
+        self.prepare_app_world_for_state_schedule_inner(world, false);
+    }
+
+    fn prepare_app_world_for_state_schedule_inner(
+        &mut self,
+        world: &mut bevy_ecs::world::World,
+        install_legacy_render_mirror: bool,
+    ) {
         puffin::profile_scope!("StateSchedule");
         // Phase 3.17: `SetSelectedTap` is an App-world carve-out, but
         // tap insertion/removal/time-edit history still lives on the
         // legacy `State`. Mirror the tap arrays into
         // `EditorTimelineRes` before the schedule runs so the handler
         // can validate and select against the current legacy-owned data.
-        {
+        if install_legacy_render_mirror {
             let mut objects = world.resource_mut::<EditorObjectsRes>();
             objects.objects = self.editor.objects.clone();
             objects.history_restore_pending = false;
             objects.object_mutation_pending = false;
         }
-        world.resource_mut::<EditorHistoryRes>().0 = self.editor.runtime.history.clone();
-        {
-            let mut timeline = world.resource_mut::<EditorTimelineRes>();
-            timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
-            timeline.0.taps.tap_indicator_positions =
-                self.editor.timeline.taps.tap_indicator_positions.clone();
-            timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
-            timeline.0.playback.playing = self.editor.timeline.playback.playing;
-            timeline.0.playback.runtime = None;
-            timeline.0.playback.pending_seek_time_seconds =
-                self.editor.timeline.playback.pending_seek_time_seconds;
-            timeline.0.playback.seek_resync_cooldown_seconds =
-                self.editor.timeline.playback.seek_resync_cooldown_seconds;
-        }
-        {
-            let mut runtime = world.resource_mut::<EditorRuntimeRes>();
-            runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
-            runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
+        if install_legacy_render_mirror {
+            world.resource_mut::<EditorHistoryRes>().0 = self.editor.runtime.history.clone();
+            {
+                let mut timeline = world.resource_mut::<EditorTimelineRes>();
+                timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
+                timeline.0.taps.tap_indicator_positions =
+                    self.editor.timeline.taps.tap_indicator_positions.clone();
+                timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
+                timeline.0.playback.playing = self.editor.timeline.playback.playing;
+                timeline.0.playback.runtime = None;
+                timeline.0.playback.pending_seek_time_seconds =
+                    self.editor.timeline.playback.pending_seek_time_seconds;
+                timeline.0.playback.seek_resync_cooldown_seconds =
+                    self.editor.timeline.playback.seek_resync_cooldown_seconds;
+            }
+            {
+                let mut runtime = world.resource_mut::<EditorRuntimeRes>();
+                runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
+                runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
+            }
         }
         // Phase 3.18 / 3.52: pause/resume intent is App-world
         // authoritative, but playtest/real-gameplay classification and
@@ -358,20 +383,19 @@ impl State {
             session.graphics_backend_locked = self.session.graphics_backend_locked;
         }
         // Phase 4a/4b: install the per-frame mirror closure. The
-        // closure captures only the `Copy` values it needs (uniforms,
-        // phase, editor mode, sky color, gamma toggle) — `State`
+        // closure captures only the `Copy` uniform values it needs — `State`
         // itself is `!Send` because it owns a `mpsc::Receiver` for
         // auth results, so the closure cannot borrow `&self`. The
         // captured values are refreshed every frame. The closure
         // runs once and is consumed (taken) by the schedule's
         // `mirror_pod_state_via_bridge` system. See
         // `state::render::mirror` for the bridge protocol.
-        let frame_input_snapshot = self.compute_frame_input_snapshot();
-        let uniforms_snapshot = self.compute_render_uniforms_snapshot();
-        render::mirror::install_mirror(move |uniforms, frame_input| {
-            *uniforms = uniforms_snapshot;
-            frame_input.0 = frame_input_snapshot;
-        });
+        if install_legacy_render_mirror {
+            let uniforms_snapshot = self.compute_render_uniforms_snapshot();
+            render::mirror::install_mirror(move |uniforms| {
+                *uniforms = uniforms_snapshot;
+            });
+        }
         // The channel wrappers are auto-installed from the
         // `Arc<Mutex<Receiver<T>>>` fields on the legacy `State`.
         // Both the State and the World hold an `Arc` clone of the
@@ -408,8 +432,13 @@ impl State {
     pub fn apply_render_uniforms_resource(
         &mut self,
         uniforms: &render::resources::RenderUniformsRes,
+        frame_input: &render::resources::RenderFrameInputRes,
     ) {
         self.frame_runtime.scheduled_color_space_uniform = Some(uniforms.color_space);
+        self.frame_runtime.color_space_uniform_uploaded_by_schedule = true;
+        self.frame_runtime.player_render.line_uniform = uniforms.line;
+        self.frame_runtime.render_uniforms_uploaded_by_schedule = true;
+        self.frame_runtime.scheduled_render_phase = Some(frame_input.0.phase);
     }
 
     /// Compute the current per-frame `RenderFrameInput` snapshot

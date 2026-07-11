@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
@@ -94,7 +95,7 @@ fn timeline_bar_push_tap_click_commands(
     rect: egui::Rect,
     view_start: f32,
     visible_duration: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) -> bool {
     let Some(index) = timeline_bar_nearest_tap_index(
         view.tap_times,
@@ -157,7 +158,7 @@ pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
     duration_seconds: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     puffin::profile_scope!("UiTimelineBar");
     let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
@@ -499,7 +500,7 @@ pub(crate) fn show_timeline_bar(
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     puffin::profile_scope!("UiWaveformPanel");
     let duration_seconds = view

@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
@@ -86,7 +87,7 @@ pub(crate) fn show_mode_selector_popup(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
     top_bar_height: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     let popup = EditorPropertyPopup::top_left("mode_selector_popup", top_bar_height);
     show_editor_property_popup(ctx, popup, |ui| {
@@ -175,7 +176,7 @@ pub(crate) fn show_mode_selector_popup(
 fn show_grid_snap_controls(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
         let mut snap = view.snap_to_grid;
@@ -209,7 +210,7 @@ fn show_grid_snap_controls(
 fn show_rotation_snap_controls(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
         let mut snap_rotation = view.snap_rotation;

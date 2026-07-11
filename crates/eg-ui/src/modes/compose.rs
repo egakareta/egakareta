@@ -7,6 +7,7 @@
 */
 use std::collections::HashMap;
 
+use crate::UiCommandSink;
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
 use eg_state::commands::AppCommand;
@@ -37,7 +38,7 @@ pub(crate) fn show_recent_block_quick_strip(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) -> bool {
     let blocks: Vec<_> = view
         .recent_block_ids
@@ -73,7 +74,7 @@ pub(crate) fn show_selected_block_properties_window(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
     bottom_bar_height: f32,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     let mode = view.mode;
     if !matches!(
@@ -129,7 +130,7 @@ pub(crate) fn show_selected_block_properties_window(
     );
 }
 
-fn push_selected_block_update(commands: &mut Vec<AppCommand>, selected: &LevelObject) {
+fn push_selected_block_update(commands: &mut impl UiCommandSink, selected: &LevelObject) {
     commands.push(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
         selected.clone(),
     )));

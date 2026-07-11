@@ -27,9 +27,9 @@ use crate::modes::compose::{
 use crate::modes::shared::show_mode_selector_popup;
 use crate::modes::tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel};
 use crate::modes::timing::show_timing_mode_bottom_panel;
+use bevy_ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
-use eg_state::state::State;
 use eg_state::state::UiStateSnapshot;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
@@ -44,6 +44,40 @@ pub use plugin::{
     enqueue_ui_commands, register_ui_resources_world, sync_egui_context, write_ui_command,
     write_ui_commands,
 };
+
+/// Destination for semantic UI commands emitted while egui is running.
+///
+/// Production uses [`WorldUiCommandSink`] so commands become Bevy messages
+/// immediately. `Vec<AppCommand>` remains an adapter for focused UI tests and
+/// the compatibility helper that still exposes the old return shape.
+pub trait UiCommandSink {
+    /// Emit one semantic UI command.
+    fn push(&mut self, command: AppCommand);
+}
+
+impl UiCommandSink for Vec<AppCommand> {
+    fn push(&mut self, command: AppCommand) {
+        Vec::push(self, command);
+    }
+}
+
+/// Writes UI commands directly into the App world's typed message buffers.
+pub struct WorldUiCommandSink<'w> {
+    world: &'w mut World,
+}
+
+impl<'w> WorldUiCommandSink<'w> {
+    /// Create a sink that writes into the given App world.
+    pub fn new(world: &'w mut World) -> Self {
+        Self { world }
+    }
+}
+
+impl UiCommandSink for WorldUiCommandSink<'_> {
+    fn push(&mut self, command: AppCommand) {
+        plugin::write_ui_command(self.world, command);
+    }
+}
 
 #[derive(Clone, Copy)]
 struct ViewCubeFace {
@@ -267,11 +301,43 @@ fn pointer_over_ui_rects(point: egui::Pos2, rects: &[[f32; 4]]) -> bool {
 
 fn context_menu_button(
     ui: &mut egui::Ui,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     enabled: bool,
     icon: &str,
     label: &str,
     command: AppCommand,
+    hotkey: Option<&str>,
+) -> bool {
+    context_menu_button_impl(ui, commands, enabled, icon, label, (None, command), hotkey)
+}
+
+fn context_menu_button_with_before(
+    ui: &mut egui::Ui,
+    commands: &mut impl UiCommandSink,
+    enabled: bool,
+    icon: &str,
+    label: &str,
+    command_pair: (AppCommand, AppCommand),
+    hotkey: Option<&str>,
+) -> bool {
+    context_menu_button_impl(
+        ui,
+        commands,
+        enabled,
+        icon,
+        label,
+        (Some(command_pair.0), command_pair.1),
+        hotkey,
+    )
+}
+
+fn context_menu_button_impl(
+    ui: &mut egui::Ui,
+    commands: &mut impl UiCommandSink,
+    enabled: bool,
+    icon: &str,
+    label: &str,
+    command_pair: (Option<AppCommand>, AppCommand),
     hotkey: Option<&str>,
 ) -> bool {
     let mut clicked = false;
@@ -291,34 +357,21 @@ fn context_menu_button(
         }
     });
     if clicked {
-        commands.push(command);
+        if let Some(before_command) = command_pair.0 {
+            commands.push(before_command);
+        }
+        commands.push(command_pair.1);
         true
     } else {
         false
     }
 }
 
-fn push_context_cursor_command(
-    commands: &mut Vec<AppCommand>,
-    menu_position: egui::Pos2,
-    pixels_per_point: f32,
-) {
-    let scale = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
-        pixels_per_point
-    } else {
-        1.0
-    };
-    commands.push(AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
-        x: (menu_position.x * scale) as f64,
-        y: (menu_position.y * scale) as f64,
-    }));
-}
-
 fn show_editor_context_menu(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     let menu_id = egui::Id::new("editor_canvas_context_menu_position");
     let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
@@ -427,22 +480,21 @@ fn show_editor_context_menu(
                     AppCommand::Editor(EditorCommand::CopyBlock),
                     hint("copy").as_deref(),
                 );
-                close_menu |= context_menu_button(
+                close_menu |= context_menu_button_with_before(
                     ui,
                     commands,
                     has_clipboard,
                     egui_phosphor::regular::CLIPBOARD_TEXT,
                     "Paste",
-                    AppCommand::Editor(EditorCommand::PasteBlock),
+                    (
+                        AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
+                            x: (menu_position.x * ctx.pixels_per_point()) as f64,
+                            y: (menu_position.y * ctx.pixels_per_point()) as f64,
+                        }),
+                        AppCommand::Editor(EditorCommand::PasteBlock),
+                    ),
                     hint("paste").as_deref(),
                 );
-                if close_menu
-                    && commands.last() == Some(&AppCommand::Editor(EditorCommand::PasteBlock))
-                {
-                    let paste_command = commands.pop().expect("paste command was just pushed");
-                    push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
-                    commands.push(paste_command);
-                }
                 close_menu |= context_menu_button(
                     ui,
                     commands,
@@ -525,22 +577,21 @@ fn show_editor_context_menu(
                     AppCommand::Editor(EditorCommand::TogglePlaceWindow),
                     hint("toggle_place_window").as_deref(),
                 );
-                close_menu |= context_menu_button(
+                close_menu |= context_menu_button_with_before(
                     ui,
                     commands,
                     true,
                     egui_phosphor::regular::MAP_PIN,
                     "Set Spawn Here",
-                    AppCommand::Editor(EditorCommand::SetSpawnHere),
+                    (
+                        AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
+                            x: (menu_position.x * ctx.pixels_per_point()) as f64,
+                            y: (menu_position.y * ctx.pixels_per_point()) as f64,
+                        }),
+                        AppCommand::Editor(EditorCommand::SetSpawnHere),
+                    ),
                     hint("spawn_set").as_deref(),
                 );
-                if close_menu
-                    && commands.last() == Some(&AppCommand::Editor(EditorCommand::SetSpawnHere))
-                {
-                    let spawn_command = commands.pop().expect("spawn command was just pushed");
-                    push_context_cursor_command(commands, menu_position, ctx.pixels_per_point());
-                    commands.push(spawn_command);
-                }
                 close_menu |= context_menu_button(
                     ui,
                     commands,
@@ -593,7 +644,7 @@ fn show_editor_context_menu(
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
     let viewport_height = ctx.content_rect().height();
@@ -612,7 +663,7 @@ fn show_settings_sidebar_area(
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     sidebar_width: f32,
     viewport_height: f32,
 ) {
@@ -630,7 +681,7 @@ fn show_settings_sidebar_panel(
     }
 }
 
-fn show_settings_sidebar_header(ui: &mut egui::Ui, commands: &mut Vec<AppCommand>) {
+fn show_settings_sidebar_header(ui: &mut egui::Ui, commands: &mut impl UiCommandSink) {
     ui.horizontal(|ui| {
         ui.heading(format!("{} Settings", egui_phosphor::regular::GEAR));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -653,7 +704,7 @@ fn show_settings_sidebar_header(ui: &mut egui::Ui, commands: &mut Vec<AppCommand
 fn show_settings_section_tabs(
     ui: &mut egui::Ui,
     settings_section: SettingsSection,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
         show_settings_section_tab(
@@ -678,7 +729,7 @@ fn show_settings_section_tab(
     current_section: SettingsSection,
     tab_section: SettingsSection,
     label: String,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if ui
         .selectable_label(current_section == tab_section, label)
@@ -693,7 +744,7 @@ fn show_settings_section_tab(
 fn show_backend_settings(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     show_backend_selector(
         ui,
@@ -746,7 +797,7 @@ struct BackendSelector<'a> {
 
 fn show_backend_selector(
     ui: &mut egui::Ui,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     selector: BackendSelector<'_>,
     command: impl FnOnce(String) -> EditorCommand,
 ) {
@@ -776,7 +827,7 @@ fn show_backend_selector(
 fn show_ui_scale_setting(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
     let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
@@ -798,7 +849,7 @@ fn show_ui_scale_setting(
 fn show_keybind_settings(
     ui: &mut egui::Ui,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
         BTreeMap::new();
@@ -855,7 +906,7 @@ fn show_keybind_settings(
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if !view.show_settings {
         return;
@@ -868,36 +919,19 @@ pub fn show_settings_sidebar(
     show_settings_sidebar_area(ctx, view, commands);
 }
 
-/// Shows the editor UI using egui.
-/// Handles the top bar, bottom panels, and other editor interface elements.
-// egui 0.34 deprecates top-level Panel::show in favor of show_inside;
-// this function still renders top-level panels directly from Context.
+/// Render the editor UI from an App-owned view and write semantic commands to
+/// the supplied sink. Returns the rectangles used by platform input routing.
 #[allow(deprecated)]
-pub fn show_editor_ui_commands(
-    ctx: &egui::Context,
-    state: &mut State,
-    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-) -> Vec<AppCommand> {
-    let view = state.ui_state_snapshot();
-    let (commands, ui_input_blocking_rects) =
-        show_editor_ui_commands_from_view(ctx, &view, block_icon_texture_ids);
-    state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
-    commands
-}
-
-/// Render the editor UI from an App-owned view and return both semantic
-/// commands and the rectangles used by platform input routing.
-#[allow(deprecated)]
-pub fn show_editor_ui_commands_from_view(
+pub fn show_editor_ui_from_view(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
+    commands: &mut impl UiCommandSink,
+) -> Vec<[f32; 4]> {
     if !view.is_editor {
-        return (Vec::new(), Vec::new());
+        return Vec::new();
     }
 
-    let mut commands = Vec::<AppCommand>::new();
     let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
     let mode = view.mode;
@@ -912,7 +946,7 @@ pub fn show_editor_ui_commands_from_view(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        let settings_response = show_settings_sidebar_area(ctx, view, &mut commands);
+        let settings_response = show_settings_sidebar_area(ctx, view, commands);
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
@@ -1151,7 +1185,7 @@ pub fn show_editor_ui_commands_from_view(
                     ));
                     ui.horizontal_wrapped(|ui| {
                         push_command_when_clicked(
-                            &mut commands,
+                            commands,
                             ui.button(format!(
                                 "{} Capture Current Camera",
                                 egui_phosphor::regular::CAMERA
@@ -1160,7 +1194,7 @@ pub fn show_editor_ui_commands_from_view(
                             AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera),
                         );
                         push_command_when_clicked(
-                            &mut commands,
+                            commands,
                             ui.button("Use Auto from Spawn").clicked(),
                             AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera),
                         );
@@ -1274,12 +1308,12 @@ pub fn show_editor_ui_commands_from_view(
                 let duration_seconds = timeline_metrics(view.timeline_duration_seconds);
 
                 if is_timing {
-                    show_timing_mode_bottom_panel(ui, view, duration_seconds, &mut commands);
+                    show_timing_mode_bottom_panel(ui, view, duration_seconds, commands);
                 } else if is_tapping {
-                    show_tapping_mode_bottom_panel(ui, view, &mut commands);
+                    show_tapping_mode_bottom_panel(ui, view, commands);
                 }
 
-                show_timeline_bar(ui, view, duration_seconds, &mut commands);
+                show_timeline_bar(ui, view, duration_seconds, commands);
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1296,12 +1330,7 @@ pub fn show_editor_ui_commands_from_view(
             .show(ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
                     let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
-                    if show_recent_block_quick_strip(
-                        ui,
-                        view,
-                        block_icon_texture_ids,
-                        &mut commands,
-                    ) {
+                    if show_recent_block_quick_strip(ui, view, block_icon_texture_ids, commands) {
                         ui.add_space(6.0);
                     }
 
@@ -1320,16 +1349,16 @@ pub fn show_editor_ui_commands_from_view(
                 });
             });
 
-        show_selected_block_properties_window(ctx, view, bottom_bar_height, &mut commands);
+        show_selected_block_properties_window(ctx, view, bottom_bar_height, commands);
         show_place_block_properties_window(ctx, view, bottom_bar_height);
         let top_bar_height = top_bar_response.response.rect.height();
-        show_mode_selector_popup(ctx, view, top_bar_height, &mut commands);
+        show_mode_selector_popup(ctx, view, top_bar_height, commands);
     }
 
     // Selected tap properties floating window
     if is_tapping {
         let bottom_bar_height = bottom_bar_response.response.rect.height();
-        show_selected_tap_properties_window(ctx, view, bottom_bar_height, &mut commands);
+        show_selected_tap_properties_window(ctx, view, bottom_bar_height, commands);
     }
 
     // Waveform visualization central panel (Timing mode only)
@@ -1340,7 +1369,7 @@ pub fn show_editor_ui_commands_from_view(
                     .fill(egui::Color32::from_rgb(15, 20, 28)),
             )
             .show(ctx, |ui| {
-                show_waveform_panel(ui, view, &mut commands);
+                show_waveform_panel(ui, view, commands);
             });
     }
 
@@ -1351,7 +1380,7 @@ pub fn show_editor_ui_commands_from_view(
             view.camera_rotation,
             view.camera_pitch,
             view.camera_position,
-            &mut commands,
+            commands,
         )
     {
         ui_input_blocking_rects.push(rect_to_input_bounds(rect));
@@ -1380,26 +1409,29 @@ pub fn show_editor_ui_commands_from_view(
         );
     }
 
-    show_editor_context_menu(ctx, view, &mut ui_input_blocking_rects, &mut commands);
+    show_editor_context_menu(ctx, view, &mut ui_input_blocking_rects, commands);
 
-    (commands, ui_input_blocking_rects)
+    ui_input_blocking_rects
 }
 
-/// Shows the editor UI using egui and discards emitted commands.
+/// Compatibility adapter returning the old command vector shape.
 #[allow(deprecated)]
-pub fn show_editor_ui(
+pub fn show_editor_ui_commands_from_view(
     ctx: &egui::Context,
-    state: &mut State,
+    view: &UiStateSnapshot<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-) {
-    let _ = show_editor_ui_commands(ctx, state, block_icon_texture_ids);
+) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
+    let mut commands = Vec::new();
+    let ui_input_blocking_rects =
+        show_editor_ui_from_view(ctx, view, block_icon_texture_ids, &mut commands);
+    (commands, ui_input_blocking_rects)
 }
 
 /// Shows the app-wide profiler window when the performance overlay is enabled.
 pub fn show_perf_overlay(
     ctx: &egui::Context,
     view: &UiStateSnapshot<'_>,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) {
     if !view.perf_overlay_enabled {
         return;
@@ -1446,7 +1478,11 @@ fn perf_overlay_window_order() -> egui::Order {
     egui::Order::Foreground
 }
 
-fn push_command_when_clicked(commands: &mut Vec<AppCommand>, clicked: bool, command: AppCommand) {
+fn push_command_when_clicked(
+    commands: &mut impl UiCommandSink,
+    clicked: bool,
+    command: AppCommand,
+) {
     if clicked {
         commands.push(command);
     }
@@ -1454,7 +1490,7 @@ fn push_command_when_clicked(commands: &mut Vec<AppCommand>, clicked: bool, comm
 
 fn show_keybind_action_row(
     ui: &mut egui::Ui,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     metadata: &eg_types::KeybindActionMetadata,
     current_chords: &[&eg_types::KeyChord],
     default_chords: &[&eg_types::KeyChord],
@@ -1488,7 +1524,7 @@ fn show_keybind_action_row(
 
 fn show_keybind_controls(
     ui: &mut egui::Ui,
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
     action: &str,
     capacity: usize,
     current_chords: &[&eg_types::KeyChord],
@@ -1563,7 +1599,7 @@ fn show_view_selector_cube(
     camera_rotation: f32,
     camera_pitch: f32,
     camera_position: [f32; 3],
-    commands: &mut Vec<AppCommand>,
+    commands: &mut impl UiCommandSink,
 ) -> Option<egui::Rect> {
     const ROTATE_SPEED: f32 = 0.004;
     const PITCH_SPEED: f32 = 0.006;
@@ -1944,10 +1980,11 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        VIEW_CUBE_FACES, block_matches_catalog_category, combined_ui_scale_factor,
-        is_compact_editor_ui, marquee_screen_pos_to_egui_pos, perf_overlay_window_order,
-        push_command_when_clicked, responsive_ui_scale_multiplier, settings_sidebar_default_width,
-        show_editor_ui, show_perf_overlay, sort_quad_by_angle,
+        UiCommandQueue, UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink,
+        block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
+        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
+        responsive_ui_scale_multiplier, settings_sidebar_default_width,
+        show_editor_ui_commands_from_view, show_perf_overlay, sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
@@ -1987,7 +2024,13 @@ mod tests {
         let block_icon_texture_ids = std::collections::HashMap::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            show_editor_ui(ctx, state, &block_icon_texture_ids);
+            let view = state.ui_state_snapshot();
+            let (_, ui_input_blocking_rects) =
+                show_editor_ui_commands_from_view(ctx, &view, &block_icon_texture_ids);
+            state.set_editor_ui_input_blocking_rects(
+                ui_input_blocking_rects,
+                ctx.pixels_per_point(),
+            );
         });
     }
 
@@ -2011,6 +2054,23 @@ mod tests {
             commands,
             vec![AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera)]
         );
+    }
+
+    #[test]
+    fn world_command_sink_writes_messages_without_queueing() {
+        let mut app = bevy_app::App::new();
+        app.add_plugins(crate::plugin::UiPlugin);
+
+        let mut sink = WorldUiCommandSink::new(app.world_mut());
+        sink.push(AppCommand::TurnRight);
+        drop(sink);
+
+        let messages = app
+            .world()
+            .resource::<bevy_ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
+        let mut reader = messages.get_cursor();
+        assert_eq!(reader.read(messages).count(), 1);
+        assert!(app.world().resource::<UiCommandQueue>().is_empty());
     }
 
     #[test]

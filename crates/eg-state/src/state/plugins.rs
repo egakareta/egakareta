@@ -181,6 +181,7 @@ pub fn run_state_schedule_in_world(world: &mut World) {
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
     super::gameplay_world::run_app_gameplay_schedule(world);
+    let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
@@ -321,4 +322,17 @@ pub fn register_state_command_pipeline(world: &mut World) {
     crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);
     crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
     world.add_schedule(schedule);
+
+    let mut render_extract_schedule =
+        bevy_ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
+    render_extract_schedule.add_systems(
+        (
+            crate::state::render::plugin::update_render_frame_input_system,
+            crate::state::render::plugin::update_render_uniforms_system,
+            crate::state::render::plugin::upload_render_uniforms_system
+                .after(crate::state::render::plugin::update_render_uniforms_system),
+        )
+            .chain(),
+    );
+    world.add_schedule(render_extract_schedule);
 }
