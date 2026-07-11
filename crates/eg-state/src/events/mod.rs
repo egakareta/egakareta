@@ -868,6 +868,16 @@ mod tests {
         world.init_resource::<crate::state::EditorRuntimeRes>();
         world.init_resource::<crate::state::EditorHistoryRes>();
         world.init_resource::<crate::state::SessionStateRes>();
+        world.init_resource::<eg_game::GameClock>();
+        world.init_resource::<eg_game::PendingTurnInputs>();
+        world.init_resource::<eg_game::PlayerProgress>();
+        world.init_resource::<eg_game::FrameDelta>();
+        world.init_resource::<eg_game::FixedStepConfig>();
+        world.init_resource::<eg_game::DeathSfxFlag>();
+        world.init_resource::<eg_game::SpatialIndex>();
+        world.init_resource::<eg_game::GameRuntimeTuning>();
+        world.init_resource::<eg_game::LevelMeta>();
+        world.init_resource::<crate::state::GameplayWorldRes>();
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.init_resource::<crate::state::AppPhaseRes>();
@@ -879,8 +889,7 @@ mod tests {
         world.init_resource::<crate::state::AuthOpenSignupRequest>();
         world.init_resource::<crate::state::GameQuitToMenuRequest>();
         world.init_resource::<crate::state::GameRestartLevelRequest>();
-        world.init_resource::<crate::state::GameSetPracticeCheckpointRequest>();
-        world.init_resource::<crate::state::GameRemovePracticeCheckpointRequest>();
+        world.init_resource::<crate::state::GameplayResetRes>();
         world.init_resource::<crate::state::PlaytestRequest>();
         world.init_resource::<crate::state::LoadLevelRequest>();
         world.init_resource::<crate::state::ExportLevelRequest>();
@@ -904,6 +913,10 @@ mod tests {
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         add_command_systems(&mut schedule);
+        schedule.add_systems(
+            crate::state::gameplay_world::apply_pending_gameplay_reset_system
+                .after(crate::events::navigation::handle_game_restart_level),
+        );
         world.add_schedule(schedule);
         world
     }
@@ -935,6 +948,67 @@ mod tests {
             !world.resource::<crate::state::TurnRightRequest>().pending,
             "GameOver TurnRight must not request the legacy navigation fallback"
         );
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_paused_gameplay_is_a_direct_noop() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .game_paused = true;
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Playing,
+            "paused gameplay TurnRight must not change the App phase"
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused,
+            "paused gameplay TurnRight must preserve the App-world pause flag"
+        );
+        assert!(
+            !world.resource::<crate::state::TurnRightRequest>().pending,
+            "paused gameplay TurnRight must not request the legacy navigation fallback"
+        );
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_active_gameplay_queues_app_turn() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.resource_mut::<eg_game::GameClock>().elapsed_seconds = 1.25;
+        world.spawn(eg_game::PlayerBundle {
+            player: eg_game::Player,
+            position: eg_game::PlayerPosition([0.0, 0.0, 0.0]),
+            direction: eg_game::PlayerDirection(eg_types::Direction::Forward),
+            speed: eg_game::PlayerSpeed(1.0),
+            vertical_velocity: eg_game::VerticalVelocity(0.0),
+            grounded: eg_game::Grounded(true),
+            trail: eg_game::Trail {
+                segments: vec![vec![[0.0, 0.0, 0.0]]],
+            },
+            spawn_position: eg_game::SpawnPosition([0.0, 0.0, 0.0]),
+            spawn_direction: eg_game::SpawnDirection(eg_types::Direction::Forward),
+        });
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let pending = world.resource::<eg_game::PendingTurnInputs>();
+        assert_eq!(pending.taps.len(), 1);
+        assert_eq!(pending.taps[0].at_seconds, 1.25);
+        assert!(!world.resource::<crate::state::TurnRightRequest>().pending);
     }
 
     #[test]
@@ -983,6 +1057,31 @@ mod tests {
         world.run_schedule(crate::state::StateSchedule);
         assert!(
             world
+                .resource::<crate::state::ToggleEditorRequest>()
+                .pending
+        );
+    }
+
+    #[test]
+    fn carve_out_toggle_editor_from_editor_returns_to_menu_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world.write_message(navigation::ToggleEditor);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Menu
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .audio_stop_pending
+        );
+        assert!(
+            !world
                 .resource::<crate::state::ToggleEditorRequest>()
                 .pending
         );
@@ -1067,14 +1166,10 @@ mod tests {
 
     // --- Phase 3.48 / Navigation request carve-out tests ---
     //
-    // The `GameQuitToMenu`, `GameRestartLevel`,
-    // `GameSetPracticeCheckpoint`, and `GameRemovePracticeCheckpoint`
-    // handlers in `events::navigation` write to dedicated request
-    // resources instead of staging `AppCommand`s through the legacy command bridge.
-    // The runtime sync consumes each request and calls the existing
-    // legacy `State::apply_game_*` compatibility methods. The
-    // schedule-level tests below pin the request is set and no
-    // legacy command is staged.
+    // The navigation handlers mutate App resources directly where the
+    // lifecycle side effects have moved; remaining menu/playtest branches
+    // still write dedicated request resources instead of staging
+    // `AppCommand`s through the legacy command bridge.
 
     use crate::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
@@ -1097,9 +1192,39 @@ mod tests {
         );
     }
 
-    /// `GameRestartLevel` is a carve-out: the handler writes
-    /// `GameRestartLevelRequest.pending = true`. Pin the request is
-    /// set and no legacy command is staged.
+    /// Real gameplay quit-to-menu mutates App phase/session/menu resources
+    /// directly and leaves only the one-shot external-audio intent.
+    #[test]
+    fn carve_out_game_quit_to_menu_mutates_app_resources() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .playtesting_editor = false;
+
+        world.write_message(GameQuitToMenu);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Menu
+        );
+        let session = world.resource::<crate::state::SessionStateRes>();
+        assert!(!session.game_paused);
+        assert!(!session.practice_mode_enabled);
+        assert!(session.practice_checkpoints.is_empty());
+        assert!(session.audio_stop_pending);
+        assert!(
+            !world
+                .resource::<crate::state::GameQuitToMenuRequest>()
+                .pending
+        );
+    }
+
+    /// Menu-phase restart remains a compatibility request because it has no
+    /// active gameplay world to reset.
     #[test]
     fn carve_out_game_restart_level_writes_request() {
         let mut world = build_event_world();
@@ -1114,37 +1239,148 @@ mod tests {
         );
     }
 
-    /// `GameSetPracticeCheckpoint` is a carve-out: the handler
-    /// writes `GameSetPracticeCheckpointRequest.pending = true`.
-    /// Pin the request is set and no legacy command is staged.
+    /// Real gameplay restart is applied by the App-world reset system and
+    /// does not leave a Runtime request behind.
     #[test]
-    fn carve_out_game_set_practice_checkpoint_writes_request() {
+    fn carve_out_game_restart_level_resets_app_gameplay_world() {
         let mut world = build_event_world();
-        world.write_message(GameSetPracticeCheckpoint);
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        {
+            let mut session = world.resource_mut::<crate::state::SessionStateRes>();
+            session.game_paused = true;
+            session.practice_mode_enabled = true;
+            session.practice_checkpoints_dirty = false;
+        }
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.init_resource::<eg_game::LevelMeta>();
+        {
+            let mut meta = world.resource_mut::<eg_game::LevelMeta>();
+            meta.objects = vec![LevelObject::new("core/stone")];
+            meta.spawn_position = [2.0, 0.0, 3.0];
+            meta.spawn_direction = eg_types::Direction::Right;
+            meta.level_duration_seconds = 9.0;
+        }
+        world.spawn(eg_game::PlayerBundle {
+            player: eg_game::Player,
+            position: eg_game::PlayerPosition([99.0, 0.0, 99.0]),
+            direction: eg_game::PlayerDirection(eg_types::Direction::Forward),
+            speed: eg_game::PlayerSpeed(4.0),
+            vertical_velocity: eg_game::VerticalVelocity(-2.0),
+            grounded: eg_game::Grounded(false),
+            trail: eg_game::Trail {
+                segments: vec![vec![[99.0, 0.0, 99.0]]],
+            },
+            spawn_position: eg_game::SpawnPosition([99.0, 0.0, 99.0]),
+            spawn_direction: eg_game::SpawnDirection(eg_types::Direction::Forward),
+        });
+
+        world.write_message(GameRestartLevel);
         world.run_schedule(crate::state::StateSchedule);
 
+        let player = {
+            let mut query = world.query::<(
+                &eg_game::PlayerPosition,
+                &eg_game::PlayerDirection,
+                &eg_game::Grounded,
+            )>();
+            query
+                .iter(&world)
+                .next()
+                .map(|(position, direction, grounded)| (position.0, direction.0, grounded.0))
+                .expect("restart must respawn the App-world player")
+        };
+        assert_eq!(player.0, [2.0, 0.0, 3.0]);
+        assert_eq!(player.1, eg_types::Direction::Right);
+        assert!(player.2);
+        assert!(!world.resource::<eg_game::GameClock>().started);
         assert!(
-            world
-                .resource::<crate::state::GameSetPracticeCheckpointRequest>()
-                .pending,
-            "GameSetPracticeCheckpoint handler must request an App-world checkpoint"
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .game_paused
+        );
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_mode_enabled
+        );
+        assert!(
+            !world
+                .resource::<crate::state::GameRestartLevelRequest>()
+                .pending
         );
     }
 
-    /// `GameRemovePracticeCheckpoint` is a carve-out: the handler
-    /// writes `GameRemovePracticeCheckpointRequest.pending = true`.
-    /// Pin the request is set and no legacy command is staged.
+    /// `GameSetPracticeCheckpoint` captures the App-world gameplay state
+    /// directly into `SessionStateRes` without a request bridge.
     #[test]
-    fn carve_out_game_remove_practice_checkpoint_writes_request() {
+    fn carve_out_game_set_practice_checkpoint_captures_app_world_state() {
         let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .practice_mode_enabled = true;
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.spawn(eg_game::PlayerBundle {
+            player: eg_game::Player,
+            position: eg_game::PlayerPosition([1.0, 0.0, 2.0]),
+            direction: eg_game::PlayerDirection(eg_types::Direction::Forward),
+            speed: eg_game::PlayerSpeed(4.0),
+            vertical_velocity: eg_game::VerticalVelocity(0.0),
+            grounded: eg_game::Grounded(true),
+            trail: eg_game::Trail {
+                segments: vec![vec![[1.0, 0.0, 2.0]]],
+            },
+            spawn_position: eg_game::SpawnPosition([1.0, 0.0, 2.0]),
+            spawn_direction: eg_game::SpawnDirection(eg_types::Direction::Forward),
+        });
+        world.write_message(GameSetPracticeCheckpoint);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let checkpoints = &world
+            .resource::<crate::state::SessionStateRes>()
+            .practice_checkpoints;
+        assert_eq!(checkpoints.len(), 1);
+        assert_eq!(checkpoints[0].gameplay.position, [1.0, 0.0, 2.0]);
+    }
+
+    /// `GameRemovePracticeCheckpoint` directly removes the newest App-world
+    /// checkpoint and marks the temporary presentation sync dirty.
+    #[test]
+    fn carve_out_game_remove_practice_checkpoint_mutates_session_resource() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        {
+            let mut session = world.resource_mut::<crate::state::SessionStateRes>();
+            session.practice_mode_enabled = true;
+            session
+                .practice_checkpoints
+                .push(crate::state::PracticeCheckpoint {
+                    gameplay: eg_game::GameState::new().checkpoint_state(),
+                    trigger_base_objects: None,
+                });
+        }
+
         world.write_message(GameRemovePracticeCheckpoint);
         world.run_schedule(crate::state::StateSchedule);
 
         assert!(
             world
-                .resource::<crate::state::GameRemovePracticeCheckpointRequest>()
-                .pending,
-            "GameRemovePracticeCheckpoint handler must request an App-world checkpoint removal"
+                .resource::<crate::state::SessionStateRes>()
+                .practice_checkpoints
+                .is_empty(),
+            "GameRemovePracticeCheckpoint must remove the newest App-world checkpoint"
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_checkpoints_dirty,
+            "GameRemovePracticeCheckpoint must mark the compatibility mesh sync dirty"
         );
     }
 
@@ -3278,6 +3514,29 @@ mod tests {
             !world.resource::<crate::state::EscapeRequest>().pending,
             "timeline-reset Escape must not request the legacy state machine"
         );
+    }
+
+    /// Editor Escape at the timeline origin transitions directly to the
+    /// App-owned menu phase instead of requesting the legacy state machine.
+    #[test]
+    fn carve_out_escape_at_editor_origin_returns_to_menu_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .audio_stop_pending
+        );
+        assert!(!world.resource::<crate::state::EscapeRequest>().pending);
     }
 
     /// `Escape` is consumed by the runtime sync. After the first

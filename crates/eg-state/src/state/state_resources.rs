@@ -29,6 +29,7 @@ use eg_types::{
 };
 use std::sync::mpsc;
 
+use crate::state::PracticeCheckpoint;
 use crate::state::editor_camera::EditorCameraState;
 use crate::state::editor_config_state::EditorConfigState;
 use crate::state::editor_timeline::EditorTimelineState;
@@ -169,7 +170,67 @@ pub struct SessionStateRes {
     pub game_paused: bool,
     pub playtest_audio_start_seconds: Option<f32>,
     pub playing_sky_color: [f32; 3],
+    pub playing_trigger_base_objects: Option<Vec<LevelObject>>,
     pub practice_mode_enabled: bool,
+    pub practice_checkpoints: Vec<PracticeCheckpoint>,
+    /// One-shot compatibility marker for rebuilding the legacy checkpoint mesh
+    /// until presentation reads the App-world checkpoint list directly.
+    pub practice_checkpoints_dirty: bool,
+    /// One-shot audio compatibility intent for an App-owned quit-to-menu
+    /// transition. The audio service remains external until its resource
+    /// migration, so Runtime consumes this marker once to stop playback.
+    pub audio_stop_pending: bool,
+}
+
+impl SessionStateRes {
+    /// Clear App-owned gameplay/session fields for a transition to menu.
+    /// External audio remains a one-shot compatibility intent until the audio
+    /// backend itself is an App resource.
+    pub fn transition_to_menu(&mut self) {
+        self.game_paused = false;
+        self.playtesting_editor = false;
+        self.playtest_audio_start_seconds = None;
+        self.playing_level_name = None;
+        self.playing_trigger_base_objects = None;
+        self.practice_mode_enabled = false;
+        self.practice_checkpoints.clear();
+        self.practice_checkpoints_dirty = true;
+        self.audio_stop_pending = true;
+    }
+}
+
+/// Tracks the temporary ownership handoff for the active gameplay world.
+///
+/// When `app_authoritative` is true, `eg_game::GameplaySchedule` advances
+/// player/object ECS state and the legacy `GameState` receives only a render
+/// compatibility copy. Lifecycle methods that still run on `State` set
+/// `needs_legacy_seed` so the next frame can reinitialize the App world at the
+/// transition boundary.
+#[derive(Resource, Default)]
+pub struct GameplayWorldRes {
+    pub app_authoritative: bool,
+    pub needs_legacy_seed: bool,
+}
+
+/// App-world marker for a real gameplay restart. The navigation message
+/// records intent here and the gameplay-world system applies the entity and
+/// resource reset before the next gameplay tick; it is not a Runtime/State
+/// request bridge.
+#[derive(Resource, Default)]
+pub struct GameplayResetRes {
+    pub pending: bool,
+}
+
+impl GameplayResetRes {
+    pub fn request(&mut self) {
+        self.pending = true;
+    }
+
+    pub fn take(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
 }
 
 /// `MenuState` mirrored as a resource so UI systems (Phase 5) can read
@@ -208,6 +269,14 @@ pub struct EditorConfigRes(pub EditorConfigState);
 /// `EditorCameraState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorCameraRes(pub EditorCameraState);
+
+/// Per-frame ownership markers for editor update work that has moved into
+/// `StateSchedule`.
+#[derive(Resource, Default)]
+pub struct EditorFrameRes {
+    pub camera_pan_applied: bool,
+    pub camera_transition_applied: bool,
+}
 
 /// `EditorTriggerState` mirrored as a resource.
 #[derive(Resource, Default)]
@@ -441,58 +510,6 @@ pub struct GameRestartLevelRequest {
 }
 
 impl GameRestartLevelRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
-/// App-world request to record the current gameplay position as a
-/// practice-mode checkpoint.
-///
-/// The checkpoint side effect calls
-/// `State::set_practice_checkpoint`, which appends a checkpoint to
-/// `session.practice_checkpoints` and rebuilds the checkpoint
-/// vertex meshes. The side effect stays legacy-owned for the
-/// carve-out. Phase 3.48 routes the message through this request
-/// resource instead of staging `AppCommand::GameSetPracticeCheckpoint`
-/// through the legacy command bridge.
-#[derive(Resource, Default)]
-pub struct GameSetPracticeCheckpointRequest {
-    pub pending: bool,
-}
-
-impl GameSetPracticeCheckpointRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
-/// App-world request to remove the latest practice-mode checkpoint.
-///
-/// The removal side effect calls
-/// `State::remove_practice_checkpoint`, which pops the latest
-/// checkpoint and rebuilds the checkpoint vertex meshes. The side
-/// effect stays legacy-owned for the carve-out. Phase 3.48 routes
-/// the message through this request resource instead of staging
-/// `AppCommand::GameRemovePracticeCheckpoint` through the legacy command bridge.
-#[derive(Resource, Default)]
-pub struct GameRemovePracticeCheckpointRequest {
-    pub pending: bool,
-}
-
-impl GameRemovePracticeCheckpointRequest {
     pub fn request(&mut self) {
         self.pending = true;
     }

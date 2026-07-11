@@ -686,6 +686,10 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
+            gameplay_app_authoritative: false,
+            gameplay_world_needs_seed: false,
+            editor_camera_pan_scheduled: false,
+            editor_camera_transition_scheduled: false,
         }
     }
 
@@ -1600,6 +1604,10 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
+            gameplay_app_authoritative: false,
+            gameplay_world_needs_seed: false,
+            editor_camera_pan_scheduled: false,
+            editor_camera_transition_scheduled: false,
         })
     }
 }

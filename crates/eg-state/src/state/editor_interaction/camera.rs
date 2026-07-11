@@ -161,23 +161,7 @@ impl EditorSubsystem {
     }
 
     pub fn update_camera_transition(&mut self, frame_dt: f32) -> bool {
-        let Some(mut transition) = self.camera.transition.take() else {
-            return false;
-        };
-
-        transition.elapsed += frame_dt;
-        let alpha = (transition.elapsed / transition.duration).clamp(0.0, 1.0);
-
-        self.camera.editor_yaw =
-            transition.start_yaw + (transition.target_yaw - transition.start_yaw) * alpha;
-        self.camera.editor_pitch =
-            transition.start_pitch + (transition.target_pitch - transition.start_pitch) * alpha;
-
-        if alpha < 1.0 {
-            self.camera.transition = Some(transition);
-        }
-
-        true
+        self.camera.update_camera_transition(frame_dt)
     }
 }
 

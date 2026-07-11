@@ -5,6 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(any(test, feature = "test-support"))]
+use super::PracticeCheckpoint;
 use super::{AppPhaseRes, EditorSubsystem, State};
 use eg_game::GameState;
 use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
@@ -242,6 +244,7 @@ impl State {
         level_name: Option<String>,
         playtesting_editor: bool,
     ) {
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.phase = AppPhase::Playing;
         self.session.playtesting_editor = playtesting_editor;
         self.session.game_paused = false;
@@ -259,6 +262,7 @@ impl State {
     }
 
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
         self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
@@ -342,6 +346,19 @@ impl State {
         self.session.practice_mode_enabled = enabled;
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn add_practice_checkpoint_for_test(&mut self) {
+        self.session.practice_checkpoints.push(PracticeCheckpoint {
+            gameplay: self.gameplay.state.checkpoint_state(),
+            trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
+        });
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn gameplay_position_for_test(&self) -> [f32; 3] {
+        self.gameplay.state.position
+    }
+
     /// Test-only setter for the editor tap arrays and selected tap.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_editor_tap_state_for_test(
@@ -370,6 +387,7 @@ impl State {
     }
 
     pub(super) fn enter_menu_phase(&mut self) {
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;

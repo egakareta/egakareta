@@ -21,6 +21,7 @@ mod editor_triggers;
 mod escape_compat;
 mod frame_time;
 mod gameplay_compat;
+pub(crate) mod gameplay_world;
 mod history;
 mod input_bridge;
 mod level_management;
@@ -83,15 +84,15 @@ pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
-    GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
+    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorFrameRes, EditorHistoryRes,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes,
+    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes,
     LoadLevelRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes, PlaytestRequest,
     SessionStateRes, SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest,
     TurnRightRequest,
 };
-pub use ui_snapshot::UiStateSnapshot;
+pub use ui_snapshot::{UiStateData, UiStateRes, UiStateSnapshot};
 
 use eg_game::{GameCheckpointState, GameState};
 use eg_mesh::MeshGeometry;
@@ -211,6 +212,10 @@ pub struct State {
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
     render_resources: StateRenderResources,
+    gameplay_app_authoritative: bool,
+    gameplay_world_needs_seed: bool,
+    editor_camera_pan_scheduled: bool,
+    editor_camera_transition_scheduled: bool,
 }
 
 pub struct StateRenderResources {
@@ -378,6 +383,16 @@ impl State {
         self.install_async_channel_resources(world);
     }
 
+    /// Tell the compatibility update path that editor camera panning was
+    /// already applied by the App-world schedule for this frame.
+    pub fn set_editor_camera_pan_scheduled(&mut self, applied: bool) {
+        self.editor_camera_pan_scheduled = applied;
+    }
+
+    pub fn set_editor_camera_transition_scheduled(&mut self, applied: bool) {
+        self.editor_camera_transition_scheduled = applied;
+    }
+
     /// Apply async-result closures emitted by App-world handler systems.
     pub fn drain_pending_async_results(&mut self) {
         // Phase 6b: drain the pending async-result closures
@@ -534,6 +549,7 @@ impl State {
             return;
         }
 
+        self.mark_app_gameplay_world_for_legacy_seed();
         let time_seconds = time_seconds.max(0.0);
         let insert_at = self
             .gameplay
@@ -592,6 +608,7 @@ impl State {
             return false;
         }
 
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.gameplay.state.started = true;
         if self.session.playtesting_editor {
             let level_name = self
@@ -657,6 +674,7 @@ impl State {
             AppPhase::Menu => self.start_editor(self.menu.state.selected_level),
             AppPhase::Editor => self.back_to_menu(),
             AppPhase::Playing if self.session.playtesting_editor => {
+                self.mark_app_gameplay_world_for_legacy_seed();
                 self.phase = AppPhase::Editor;
                 self.stop_audio();
                 self.sync_editor_objects();

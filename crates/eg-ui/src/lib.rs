@@ -878,12 +878,25 @@ pub fn show_editor_ui_commands(
     state: &mut State,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) -> Vec<AppCommand> {
-    if !state.is_editor() {
-        state.clear_editor_ui_input_blocking_rects();
-        return Vec::new();
+    let view = state.ui_state_snapshot();
+    let (commands, ui_input_blocking_rects) =
+        show_editor_ui_commands_from_view(ctx, &view, block_icon_texture_ids);
+    state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
+    commands
+}
+
+/// Render the editor UI from an App-owned view and return both semantic
+/// commands and the rectangles used by platform input routing.
+#[allow(deprecated)]
+pub fn show_editor_ui_commands_from_view(
+    ctx: &egui::Context,
+    view: &UiStateSnapshot<'_>,
+    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
+    if !view.is_editor {
+        return (Vec::new(), Vec::new());
     }
 
-    let view = state.ui_state_snapshot();
     let mut commands = Vec::<AppCommand>::new();
     let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
@@ -899,7 +912,7 @@ pub fn show_editor_ui_commands(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if view.show_settings {
-        let settings_response = show_settings_sidebar_area(ctx, &view, &mut commands);
+        let settings_response = show_settings_sidebar_area(ctx, view, &mut commands);
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
@@ -1261,12 +1274,12 @@ pub fn show_editor_ui_commands(
                 let duration_seconds = timeline_metrics(view.timeline_duration_seconds);
 
                 if is_timing {
-                    show_timing_mode_bottom_panel(ui, &view, duration_seconds, &mut commands);
+                    show_timing_mode_bottom_panel(ui, view, duration_seconds, &mut commands);
                 } else if is_tapping {
-                    show_tapping_mode_bottom_panel(ui, &view, &mut commands);
+                    show_tapping_mode_bottom_panel(ui, view, &mut commands);
                 }
 
-                show_timeline_bar(ui, &view, duration_seconds, &mut commands);
+                show_timeline_bar(ui, view, duration_seconds, &mut commands);
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1285,7 +1298,7 @@ pub fn show_editor_ui_commands(
                     let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
                     if show_recent_block_quick_strip(
                         ui,
-                        &view,
+                        view,
                         block_icon_texture_ids,
                         &mut commands,
                     ) {
@@ -1307,16 +1320,16 @@ pub fn show_editor_ui_commands(
                 });
             });
 
-        show_selected_block_properties_window(ctx, &view, bottom_bar_height, &mut commands);
-        show_place_block_properties_window(ctx, &view, bottom_bar_height);
+        show_selected_block_properties_window(ctx, view, bottom_bar_height, &mut commands);
+        show_place_block_properties_window(ctx, view, bottom_bar_height);
         let top_bar_height = top_bar_response.response.rect.height();
-        show_mode_selector_popup(ctx, &view, top_bar_height, &mut commands);
+        show_mode_selector_popup(ctx, view, top_bar_height, &mut commands);
     }
 
     // Selected tap properties floating window
     if is_tapping {
         let bottom_bar_height = bottom_bar_response.response.rect.height();
-        show_selected_tap_properties_window(ctx, &view, bottom_bar_height, &mut commands);
+        show_selected_tap_properties_window(ctx, view, bottom_bar_height, &mut commands);
     }
 
     // Waveform visualization central panel (Timing mode only)
@@ -1327,7 +1340,7 @@ pub fn show_editor_ui_commands(
                     .fill(egui::Color32::from_rgb(15, 20, 28)),
             )
             .show(ctx, |ui| {
-                show_waveform_panel(ui, &view, &mut commands);
+                show_waveform_panel(ui, view, &mut commands);
             });
     }
 
@@ -1367,11 +1380,9 @@ pub fn show_editor_ui_commands(
         );
     }
 
-    show_editor_context_menu(ctx, &view, &mut ui_input_blocking_rects, &mut commands);
+    show_editor_context_menu(ctx, view, &mut ui_input_blocking_rects, &mut commands);
 
-    drop(view);
-    state.set_editor_ui_input_blocking_rects(ui_input_blocking_rects, ctx.pixels_per_point());
-    commands
+    (commands, ui_input_blocking_rects)
 }
 
 /// Shows the editor UI using egui and discards emitted commands.
@@ -2213,17 +2224,10 @@ mod tests {
         state.enter_editor_phase_for_test("MarqueeUiTest");
         state.set_editor_mode(eg_types::EditorMode::Select);
 
-        // Inject a marquee drag large enough to be considered active.
-        state.process_input_event(eg_state::commands::InputEvent::MouseButton {
-            button: 1, // Left click
-            pressed: true,
-        });
-        state
-            .process_input_event(eg_state::commands::InputEvent::PointerMoved { x: 10.0, y: 10.0 });
-        state.process_input_event(eg_state::commands::InputEvent::PointerMoved {
-            x: 100.0,
-            y: 100.0,
-        });
+        // Inject a marquee drag through the direct editor interaction API;
+        // the old State::process_input_event bridge no longer exists.
+        assert!(state.begin_editor_marquee_selection(10.0, 10.0));
+        assert!(state.update_editor_marquee_selection(100.0, 100.0));
 
         run_editor_ui_once(&mut state);
 

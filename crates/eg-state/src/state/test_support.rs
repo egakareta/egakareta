@@ -164,9 +164,9 @@ mod tests {
     use crate::state::{
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        FrameTimeRes, PerfRes, SessionStateRes,
+        FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes, UiStateRes,
     };
-    use eg_types::AppPhase;
+    use eg_types::{AppPhase, MenuState};
 
     #[test]
     fn test_app_minimal_seeds_state_plugin_resources() {
@@ -185,6 +185,45 @@ mod tests {
         app.assert_resource_exists::<EditorHistoryRes>();
         app.assert_resource_exists::<FrameTimeRes>();
         app.assert_resource_exists::<PerfRes>();
+    }
+
+    #[test]
+    fn ui_state_resource_reads_authoritative_app_world_resources() {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(MenuStateRes::new(MenuState {
+                selected_level: 1,
+                levels: vec!["First".to_string(), "Second".to_string()],
+                preview_level_index: None,
+                preview_sky_color: [0.1, 0.2, 0.3],
+                preview_camera_position: [1.0, 2.0, 3.0],
+                preview_camera_target: [0.0, 0.0, 0.0],
+            }));
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        app.world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_level_name = Some("World-owned level".to_string());
+        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [4.0, 5.0, 6.0];
+        app.world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 2.5;
+
+        let resource = UiStateRes::from_world(app.world());
+        let view = resource.view();
+
+        assert!(view.is_editor);
+        assert_eq!(
+            view.available_levels,
+            ["First".to_string(), "Second".to_string()]
+        );
+        assert_eq!(view.menu_level_name, Some("Second"));
+        assert_eq!(view.level_name, Some("World-owned level"));
+        assert_eq!(view.place_preview_position, [4.0, 5.0, 6.0]);
+        assert_eq!(view.timeline_time_seconds, 2.5);
     }
 
     #[test]

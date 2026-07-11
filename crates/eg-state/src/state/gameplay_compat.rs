@@ -59,6 +59,7 @@ impl State {
             return;
         }
 
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.session.practice_mode_enabled = enabled;
         self.session.practice_checkpoints.clear();
 
@@ -70,38 +71,6 @@ impl State {
         self.rebuild_practice_checkpoint_vertices();
         self.restart_level();
         self.resume_game();
-    }
-
-    pub(super) fn set_practice_checkpoint(&mut self) {
-        if self.phase != eg_types::AppPhase::Playing
-            || self.session.playtesting_editor
-            || !self.session.practice_mode_enabled
-            || self.session.game_paused
-            || !self.gameplay.state.started
-            || self.gameplay.state.game_over
-            || self.gameplay.state.level_complete
-        {
-            return;
-        }
-
-        self.session.practice_checkpoints.push(PracticeCheckpoint {
-            gameplay: self.gameplay.state.checkpoint_state(),
-            trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
-        });
-        self.rebuild_practice_checkpoint_vertices();
-    }
-
-    pub(super) fn remove_practice_checkpoint(&mut self) {
-        if self.phase != eg_types::AppPhase::Playing
-            || self.session.playtesting_editor
-            || !self.session.practice_mode_enabled
-            || self.session.game_paused
-        {
-            return;
-        }
-
-        let _ = self.session.practice_checkpoints.pop();
-        self.rebuild_practice_checkpoint_vertices();
     }
 
     pub(super) fn quit_game_from_pause(&mut self) {
@@ -121,11 +90,15 @@ impl State {
         self.restart_game_from_pause();
     }
 
-    pub fn apply_game_set_practice_checkpoint(&mut self) {
-        self.set_practice_checkpoint();
+    pub fn practice_checkpoints(&self) -> Vec<PracticeCheckpoint> {
+        self.session.practice_checkpoints.clone()
     }
 
-    pub fn apply_game_remove_practice_checkpoint(&mut self) {
-        self.remove_practice_checkpoint();
+    /// Temporary compatibility setter for the App-world checkpoint list.
+    /// The mesh rebuild remains here until presentation consumes
+    /// `SessionStateRes.practice_checkpoints` directly.
+    pub fn set_practice_checkpoints_from_app(&mut self, checkpoints: Vec<PracticeCheckpoint>) {
+        self.session.practice_checkpoints = checkpoints;
+        self.rebuild_practice_checkpoint_vertices();
     }
 }

@@ -6,9 +6,16 @@
 
 */
 use crate::load_menu_textures;
-use crate::platform::pipeline::FramePipeline;
+use crate::{
+    show_editor_ui_commands_from_view, show_menu_favicon_ui, show_menu_play_ui,
+    show_menu_topbar_ui, show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
+    show_settings_sidebar,
+};
 use bevy_app::App;
 use bevy_ecs::world::World;
+use eg_render::RenderSurfaceError;
+use eg_render::block_icon_cache::BlockIconCache;
+use eg_state::commands::AppCommand;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthStateRes;
 use eg_state::state::CompleteImportRequest;
@@ -20,9 +27,8 @@ use eg_state::state::EscapeRequest;
 use eg_state::state::ExportLevelRequest;
 use eg_state::state::FrameTimeRes;
 use eg_state::state::GameQuitToMenuRequest;
-use eg_state::state::GameRemovePracticeCheckpointRequest;
 use eg_state::state::GameRestartLevelRequest;
-use eg_state::state::GameSetPracticeCheckpointRequest;
+use eg_state::state::GameplayWorldRes;
 use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PlaytestRequest;
@@ -40,39 +46,46 @@ use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
 use eg_state::state::{EditorHistoryRes, EditorInputRes, EditorObjectsRes};
 use eg_ui::{
-    drain_ui_command_queue, enqueue_ui_commands, register_ui_resources_world, sync_egui_context,
+    MenuTextures, combined_ui_scale_factor, drain_ui_command_queue, enqueue_ui_commands,
+    register_ui_resources_world, sync_egui_context,
 };
+use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
 const SORA_TTF: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/Sora.ttf"
 ));
 
+/// App-owned presentation resources retained by the custom winit/wgpu shell.
+struct EguiFrameResources {
+    egui_ctx: egui::Context,
+    egui_renderer: EguiRenderer,
+    menu_textures: MenuTextures,
+    block_icon_cache: BlockIconCache,
+}
+
 /// Runtime owns the winit-facing frame loop.
 ///
-/// Phase 7: alongside the legacy `state: State` and
-/// `pipeline: FramePipeline` fields, the runtime owns a
+/// Phase 7: alongside the legacy `state: State` field, the runtime owns a
 /// `bevy_app::App` wired with the eg-state plugin graph (see
 /// [`setup_state_app`]). The winit redraw path now calls
 /// [`Runtime::run_app_frame`], which owns the App update and command
 /// drain before handing the frame back to the compatibility renderer.
 ///
 /// The App world is the production command/schedule driver during the
-/// compatibility window. Legacy `State` fields still own render/input data
-/// until those resources move fully into the App.
+/// compatibility window. The egui context, renderer, menu textures, and
+/// block-icon cache are also App-owned non-send resources; legacy `State`
+/// remains only for presentation and lifecycle paths not yet migrated.
 ///
-/// REFACTOR POINT(full-bevy): when full Bevy lands, the `state`
-/// and `pipeline` fields disappear; the `App` owns the egui
-/// context + render resources and the winit loop calls
-/// `runtime.app.update()` directly.
+/// REFACTOR POINT(full-bevy): when full Bevy lands, the `state` field
+/// disappears and the winit loop calls `runtime.app.update()` directly.
 pub struct Runtime {
     pub state: State,
-    pub pipeline: FramePipeline,
     pub app: App,
 }
 
 impl Runtime {
-    pub fn new(state: State) -> Self {
+    pub fn new(mut state: State) -> Self {
         let egui_ctx = egui::Context::default();
 
         let mut fonts = egui::FontDefinitions::default();
@@ -110,15 +123,21 @@ impl Runtime {
 
         let egui_renderer = state.create_egui_renderer();
         let menu_textures = load_menu_textures(&egui_ctx);
-        let pipeline = FramePipeline::new(egui_ctx, egui_renderer, menu_textures);
 
         // Build the Bevy `App` with the eg-state plugin graph. The
-        // App owns the single ECS `World`; legacy `State` fields are
-        // bridged into it each frame during the compatibility window.
+        // App owns the single ECS `World`; presentation resources are
+        // inserted as non-send resources because they retain local GPU
+        // handles.
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
         register_ui_resources_world(app.world_mut());
+        app.insert_non_send(EguiFrameResources {
+            egui_ctx,
+            egui_renderer,
+            menu_textures,
+            block_icon_cache: BlockIconCache::new(),
+        });
 
         // Seed `AppPhaseRes` from the legacy `State.phase`.
         // `StatePlugins` default this resource to Menu, but tests and
@@ -227,71 +246,195 @@ impl Runtime {
         // frame a no-op for unchanged fields.
         app.world_mut().insert_resource(state.perf_resource());
         app.world_mut().insert_resource(state.frame_time_resource());
+        let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
+        app.world_mut().insert_resource(ui_state_resource);
+        state.seed_app_gameplay_world(app.world_mut());
 
-        Self {
-            state,
-            pipeline,
-            app,
-        }
+        Self { state, app }
     }
 
-    /// Drive one frame through the compatibility `FramePipeline` while
+    /// Drive one frame through the App-owned presentation resources while
     /// routing UI-originated messages through Bevy's `App` world.
     pub fn run_app_frame(&mut self, raw_input: egui::RawInput) -> egui::FullOutput {
-        let Runtime {
-            state,
-            pipeline,
-            app,
-        } = self;
-        sync_egui_context(app.world_mut(), pipeline.ctx());
+        let Runtime { state, app } = self;
 
-        let output = pipeline.run_frame(
-            state,
-            raw_input,
-            |state, ui_commands| {
-                enqueue_ui_commands(app.world_mut(), ui_commands);
-                drain_ui_command_queue(app.world_mut());
-                app.update();
-                state.prepare_app_world_for_state_schedule(app.world_mut());
-                run_state_schedule_in_world(app.world_mut());
-                Self::sync_app_frame_time_state(state, app.world());
-                Self::sync_app_render_uniforms_state(state, app.world());
-                Self::sync_app_render_resize_state(state, app.world_mut());
-                Self::sync_app_editor_history_state(state, app.world());
-                Self::sync_app_editor_input_state(state, app.world());
-                Self::sync_app_editor_config_state(state, app.world());
-                Self::sync_app_editor_timeline_state(state, app.world_mut());
-                Self::sync_app_editor_runtime_state(state, app.world());
-                Self::sync_app_editor_timing_state(state, app.world());
-                Self::sync_app_editor_spawn_state(state, app.world());
-                Self::sync_app_editor_camera_state(state, app.world());
-                Self::sync_app_editor_trigger_state(state, app.world());
-                Self::sync_app_editor_objects_state(state, app.world_mut());
-                Self::sync_app_menu_state(state, app.world());
-                Self::sync_app_phase_state(state, app.world());
-                Self::sync_app_session_state(state, app.world());
-                Self::sync_app_perf_state(state, app.world());
-                Self::sync_app_escape_request(state, app.world_mut());
-                Self::sync_app_auth_state(state, app.world());
-                Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
-                Self::sync_app_game_restart_level_request(state, app.world_mut());
-                Self::sync_app_game_set_practice_checkpoint_request(state, app.world_mut());
-                Self::sync_app_game_remove_practice_checkpoint_request(state, app.world_mut());
-                Self::sync_app_playtest_request(state, app.world_mut());
-                Self::sync_app_navigation_requests(state, app.world_mut());
-                Self::sync_app_session_side_effect_requests(state, app.world_mut());
-                state.drain_pending_async_results();
-            },
-            |state| state.update(),
+        let egui_ctx = app
+            .world()
+            .non_send::<EguiFrameResources>()
+            .egui_ctx
+            .clone();
+        sync_egui_context(app.world_mut(), &egui_ctx);
+
+        let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
+        app.world_mut().insert_resource(ui_state_resource.clone());
+        let view = ui_state_resource.view();
+        let mut frame_ui_commands = Vec::<AppCommand>::new();
+        let mut ui_input_blocking_rects = Vec::new();
+        let mut ui_input_pixels_per_point = 1.0;
+        let full_output = {
+            let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
+            let physical_size =
+                egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
+            let ui_scale_factor = combined_ui_scale_factor(
+                physical_size,
+                state.app_settings().normalized_ui_scale_multiplier(),
+            );
+            frame.egui_ctx.set_zoom_factor(ui_scale_factor);
+            let EguiFrameResources {
+                block_icon_cache,
+                egui_renderer,
+                ..
+            } = &mut *frame;
+            block_icon_cache.refresh_icons(state.render_gpu(), egui_renderer);
+            let block_icon_texture_ids = frame.block_icon_cache.texture_ids();
+
+            frame.egui_ctx.run_ui(raw_input, |root_ui| {
+                let ctx = root_ui.ctx().clone();
+                let (editor_commands, editor_input_blocking_rects) =
+                    show_editor_ui_commands_from_view(&ctx, &view, &block_icon_texture_ids);
+                frame_ui_commands.extend(editor_commands);
+                ui_input_blocking_rects = editor_input_blocking_rects;
+                ui_input_pixels_per_point = ctx.pixels_per_point();
+                let mut ui_commands = Vec::new();
+                if !view.is_editor {
+                    show_settings_sidebar(&ctx, &view, &mut ui_commands);
+                }
+                show_perf_overlay(&ctx, &view, &mut ui_commands);
+                show_menu_topbar_ui(root_ui, &view, &mut ui_commands);
+                show_menu_play_ui(
+                    &ctx,
+                    &view,
+                    &mut ui_commands,
+                    frame.menu_textures.play_button.as_ref(),
+                    frame.menu_textures.play_button_filled.as_ref(),
+                    frame.menu_textures.edit_button.as_ref(),
+                );
+                show_practice_checkpoint_ui(&ctx, &view, &mut ui_commands);
+                show_pause_menu_ui(&ctx, &view, &mut ui_commands);
+                if let Some(favicon) = &frame.menu_textures.favicon {
+                    show_menu_favicon_ui(&ctx, &view, favicon);
+                }
+                frame_ui_commands.extend(ui_commands);
+            })
+        };
+
+        {
+            let mut input = app
+                .world_mut()
+                .resource_mut::<eg_state::state::EditorInputRes>();
+            input.0.ui_input_blocking_rects = ui_input_blocking_rects;
+            input.0.ui_input_pixels_per_point = ui_input_pixels_per_point;
+        }
+
+        enqueue_ui_commands(app.world_mut(), frame_ui_commands);
+        drain_ui_command_queue(app.world_mut());
+        app.update();
+        state.prepare_app_world_for_state_schedule(app.world_mut());
+        run_state_schedule_in_world(app.world_mut());
+        Self::sync_app_gameplay_state(state, app.world_mut());
+        Self::sync_app_frame_time_state(state, app.world());
+        Self::sync_app_render_uniforms_state(state, app.world());
+        Self::sync_app_render_resize_state(state, app.world_mut());
+        Self::sync_app_editor_history_state(state, app.world());
+        Self::sync_app_editor_input_state(state, app.world());
+        Self::sync_app_editor_config_state(state, app.world());
+        Self::sync_app_editor_timeline_state(state, app.world_mut());
+        Self::sync_app_editor_runtime_state(state, app.world());
+        Self::sync_app_editor_timing_state(state, app.world());
+        Self::sync_app_editor_spawn_state(state, app.world());
+        Self::sync_app_editor_camera_state(state, app.world());
+        state.set_editor_camera_pan_scheduled(
+            app.world()
+                .resource::<eg_state::state::EditorFrameRes>()
+                .camera_pan_applied,
         );
+        state.set_editor_camera_transition_scheduled(
+            app.world()
+                .resource::<eg_state::state::EditorFrameRes>()
+                .camera_transition_applied,
+        );
+        Self::sync_app_editor_trigger_state(state, app.world());
+        Self::sync_app_editor_objects_state(state, app.world_mut());
+        Self::sync_app_menu_state(state, app.world());
+        Self::sync_app_phase_state(state, app.world());
+        Self::sync_app_session_state(state, app.world_mut());
+        Self::sync_app_perf_state(state, app.world());
+        Self::sync_app_escape_request(state, app.world_mut());
+        Self::sync_app_auth_state(state, app.world());
+        Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
+        Self::sync_app_game_restart_level_request(state, app.world_mut());
+        Self::sync_app_playtest_request(state, app.world_mut());
+        Self::sync_app_navigation_requests(state, app.world_mut());
+        Self::sync_app_session_side_effect_requests(state, app.world_mut());
+        state.drain_pending_async_results();
+        state.sync_app_gameplay_world_if_needed(app.world_mut());
+
+        let paint_jobs =
+            egui_ctx.tessellate(full_output.shapes.clone(), full_output.pixels_per_point);
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [state.surface_width(), state.surface_height()],
+            pixels_per_point: full_output.pixels_per_point,
+        };
+        {
+            let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
+            for (id, image_delta) in &full_output.textures_delta.set {
+                frame
+                    .egui_renderer
+                    .update_texture(state.device(), state.queue(), *id, image_delta);
+            }
+        }
+
+        state.update();
+        // Lifecycle methods can mark the gameplay handoff while the
+        // compatibility update refreshes menu/editor presentation. Apply
+        // that seed after update so the App world starts the next phase from
+        // the post-transition compatibility state.
+        state.sync_app_gameplay_world_if_needed(app.world_mut());
+        let render_result = {
+            let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
+            state.render_egui(&mut frame.egui_renderer, &paint_jobs, &screen_descriptor)
+        };
+        match render_result {
+            Ok(_) => {}
+            Err(RenderSurfaceError::Lost) | Err(RenderSurfaceError::Outdated) => {
+                state.handle_surface_lost();
+            }
+            Err(err) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                eprintln!("Render error: {:?}", err);
+                #[cfg(target_arch = "wasm32")]
+                gloo_console::error!(format!("Render error: {:?}", err));
+            }
+        }
+        {
+            let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
+            for id in &full_output.textures_delta.free {
+                frame.egui_renderer.free_texture(id);
+            }
+        }
         Self::refresh_editor_playback_mirrors_from_legacy(state, app.world_mut());
-        output
+        full_output
+    }
+
+    /// Clone the App-owned egui context for winit input integration.
+    pub fn egui_context(&self) -> egui::Context {
+        self.app
+            .world()
+            .non_send::<EguiFrameResources>()
+            .egui_ctx
+            .clone()
     }
 
     fn refresh_editor_playback_mirrors_from_legacy(state: &State, world: &mut World) {
         world.insert_resource(state.editor_timeline_resource());
         world.insert_resource(state.editor_runtime_resource());
         world.insert_resource(state.editor_input_resource());
+    }
+
+    fn sync_app_gameplay_state(state: &mut State, world: &mut World) {
+        if world.resource::<GameplayWorldRes>().app_authoritative {
+            state.sync_gameplay_from_app_world(world);
+        }
     }
 
     fn sync_app_editor_history_state(state: &mut State, world: &World) {
@@ -695,9 +838,7 @@ impl Runtime {
 
     fn sync_app_phase_state(state: &mut State, world: &World) {
         let app_phase = world.resource::<AppPhaseRes>().current;
-        if state.app_phase_value() == eg_types::AppPhase::GameOver
-            && app_phase == eg_types::AppPhase::Menu
-        {
+        if state.app_phase_value() != app_phase {
             state.set_phase_from_app(app_phase);
         }
     }
@@ -720,125 +861,147 @@ impl Runtime {
     /// setters. The resource is seeded at `Runtime::new` from the
     /// legacy state, so the first frame after construction is a no-op
     /// for unchanged fields.
-    fn sync_app_session_state(state: &mut State, world: &World) {
-        let session = &world.resource::<SessionStateRes>();
-        // Phase 3.22: `RenameLevel` mutates
-        // `SessionStateRes.editor_level_name` directly. The legacy
-        // setter only stores `Some(name)`, matching the message
-        // payload shape; loading/import paths still own clearing or
-        // replacing the whole editor session.
-        if state.editor_level_name().as_ref() != session.editor_level_name.as_ref()
-            && let Some(level_name) = &session.editor_level_name
-        {
-            state.set_editor_level_name(level_name.clone());
+    fn sync_app_session_state(state: &mut State, world: &mut World) {
+        let (practice_checkpoints, stop_audio) = {
+            let session = world.resource::<SessionStateRes>();
+            // Phase 3.22: `RenameLevel` mutates
+            // `SessionStateRes.editor_level_name` directly. The legacy
+            // setter only stores `Some(name)`, matching the message
+            // payload shape; loading/import paths still own clearing or
+            // replacing the whole editor session.
+            if state.editor_level_name().as_ref() != session.editor_level_name.as_ref()
+                && let Some(level_name) = &session.editor_level_name
+            {
+                state.set_editor_level_name(level_name.clone());
+            }
+            // Phase 3.22: `UpdateMusic` mutates
+            // `SessionStateRes.editor_music_metadata` directly. The
+            // legacy setter is a pure session-field write; audio import
+            // and waveform side effects stay on their existing legacy
+            // commands for now.
+            if state.editor_music_metadata() != &session.editor_music_metadata {
+                state.set_editor_music_metadata(session.editor_music_metadata.clone());
+            }
+            // Phase 3.25: menu-preview camera messages mutate
+            // `SessionStateRes.editor_menu_preview_camera` directly.
+            // The capture handler computes the camera pose from
+            // `EditorCameraRes`; the legacy side is now a pure metadata
+            // copy for UI/export compatibility.
+            if state.editor_menu_preview_camera() != session.editor_menu_preview_camera.as_ref() {
+                state.set_editor_menu_preview_camera(session.editor_menu_preview_camera.clone());
+            }
+            if state.editor_show_metadata() != session.editor_show_metadata {
+                state.set_editor_show_metadata(session.editor_show_metadata);
+            }
+            if state.editor_show_settings() != session.editor_show_settings {
+                state.set_editor_show_settings(session.editor_show_settings);
+            }
+            if state.editor_settings_section() != session.editor_settings_section {
+                state.set_editor_settings_section(session.editor_settings_section);
+            }
+            if state.editor_keybind_capture_action()
+                != session.editor_keybind_capture_action.as_ref()
+            {
+                state.set_editor_keybind_capture_action(
+                    session.editor_keybind_capture_action.clone(),
+                );
+            }
+            // Phase 3.12: the `TogglePlaceWindow` handler in
+            // `events::misc` mutates
+            // `SessionStateRes.editor_show_place_window` directly. The
+            // legacy setter has no side effects, so this is the simplest
+            // case in the carve-out family — pure field write with a
+            // change guard.
+            if state.editor_show_place_window() != session.editor_show_place_window {
+                state.set_editor_show_place_window(session.editor_show_place_window);
+            }
+            // Phase 3.23: `SetGraphicsBackend` mutates
+            // `SessionStateRes.app_settings.graphics_backend` directly
+            // when backend selection is not locked. Use the legacy setter
+            // as the compatibility point so restart-required bookkeeping
+            // and settings persistence remain unchanged while the setting
+            // is still read from legacy `State.session` by UI snapshots.
+            if state.app_settings().graphics_backend != session.app_settings.graphics_backend {
+                state.set_preferred_graphics_backend(session.app_settings.graphics_backend.clone());
+            }
+            // Phase 3.24: keybind messages mutate
+            // `SessionStateRes.app_settings.keybinds` directly using the
+            // shared `AppSettings` helpers. The runtime no longer sees the
+            // original semantic operation after the schedule, so sync the
+            // final vector through a compatibility setter that preserves
+            // settings persistence while legacy UI/settings reads remain.
+            if state.app_settings().keybinds != session.app_settings.keybinds {
+                state.set_app_settings_keybinds(session.app_settings.keybinds.clone());
+            }
+            // Phase 3.18 / 3.52: `GameResume` and the real-gameplay
+            // Escape pause branch mutate `SessionStateRes.game_paused`
+            // directly. Keep the audio + pending-input side effects in
+            // legacy compatibility setters until those subsystems move
+            // into scheduled App-world systems.
+            if !state.game_paused_value() && session.game_paused {
+                state.pause_game_from_playing();
+            } else if state.game_paused_value() && !session.game_paused {
+                state.resume_game_from_pause();
+            }
+            // Phase 3.19: `SetUiScaleMultiplier` mutates
+            // `SessionStateRes.app_settings.ui_scale_multiplier`
+            // directly. Keep the legacy setter as the compatibility point
+            // so clamping + persistence continue to use the established
+            // path, and only sync this one AppSettings field until the
+            // broader settings/keybind ownership pass moves the rest.
+            if (state.app_settings().ui_scale_multiplier - session.app_settings.ui_scale_multiplier)
+                .abs()
+                > 1e-6
+            {
+                state.set_ui_scale_multiplier(session.app_settings.ui_scale_multiplier);
+            }
+            // Phase 3.21: `UpdateCreatorMetadata` mutates
+            // `SessionStateRes.editor_creator_metadata` directly. The
+            // legacy setter is a pure session-field write, so the sync is
+            // a simple change-guarded compatibility copy until export/UI
+            // metadata reads move fully into the App world.
+            if state.editor_creator_metadata() != &session.editor_creator_metadata {
+                state.set_editor_creator_metadata(session.editor_creator_metadata.clone());
+            }
+            // Phase 3.20: `UpdateSkyColor` mutates
+            // `SessionStateRes.editor_sky_color` directly. Use the
+            // legacy setter as the compatibility point so clamping stays
+            // identical while legacy render/UI paths still read
+            // `State.session.editor_sky_color`.
+            if state.editor_sky_color() != session.editor_sky_color {
+                state.set_editor_sky_color(session.editor_sky_color);
+            }
+            // Phase 3.15: the `GameSetPracticeMode` handler in
+            // `events::navigation` mutates
+            // `SessionStateRes.practice_mode_enabled` directly. The
+            // legacy setter
+            // (`set_practice_mode_enabled` → `set_practice_mode_enabled_internal`)
+            // has heavy side effects (clears `practice_checkpoints`,
+            // calls `rebuild_practice_checkpoint_vertices`,
+            // `restart_level`, and `resume_game`); the change guard here
+            // invokes the legacy setter only on real user-driven changes.
+            // The resource is seeded at `Runtime::new` from the legacy
+            // state, so the first frame after construction is a no-op
+            // for unchanged fields.
+            if state.practice_mode_enabled_value() != session.practice_mode_enabled {
+                state.set_practice_mode_enabled(session.practice_mode_enabled);
+            }
+            (
+                session
+                    .practice_checkpoints_dirty
+                    .then(|| session.practice_checkpoints.clone()),
+                session.audio_stop_pending,
+            )
+        };
+        if stop_audio {
+            state.stop_audio();
+            world.resource_mut::<SessionStateRes>().audio_stop_pending = false;
         }
-        // Phase 3.22: `UpdateMusic` mutates
-        // `SessionStateRes.editor_music_metadata` directly. The
-        // legacy setter is a pure session-field write; audio import
-        // and waveform side effects stay on their existing legacy
-        // commands for now.
-        if state.editor_music_metadata() != &session.editor_music_metadata {
-            state.set_editor_music_metadata(session.editor_music_metadata.clone());
-        }
-        // Phase 3.25: menu-preview camera messages mutate
-        // `SessionStateRes.editor_menu_preview_camera` directly.
-        // The capture handler computes the camera pose from
-        // `EditorCameraRes`; the legacy side is now a pure metadata
-        // copy for UI/export compatibility.
-        if state.editor_menu_preview_camera() != session.editor_menu_preview_camera.as_ref() {
-            state.set_editor_menu_preview_camera(session.editor_menu_preview_camera.clone());
-        }
-        if state.editor_show_metadata() != session.editor_show_metadata {
-            state.set_editor_show_metadata(session.editor_show_metadata);
-        }
-        if state.editor_show_settings() != session.editor_show_settings {
-            state.set_editor_show_settings(session.editor_show_settings);
-        }
-        if state.editor_settings_section() != session.editor_settings_section {
-            state.set_editor_settings_section(session.editor_settings_section);
-        }
-        if state.editor_keybind_capture_action() != session.editor_keybind_capture_action.as_ref() {
-            state.set_editor_keybind_capture_action(session.editor_keybind_capture_action.clone());
-        }
-        // Phase 3.12: the `TogglePlaceWindow` handler in
-        // `events::misc` mutates
-        // `SessionStateRes.editor_show_place_window` directly. The
-        // legacy setter has no side effects, so this is the simplest
-        // case in the carve-out family — pure field write with a
-        // change guard.
-        if state.editor_show_place_window() != session.editor_show_place_window {
-            state.set_editor_show_place_window(session.editor_show_place_window);
-        }
-        // Phase 3.23: `SetGraphicsBackend` mutates
-        // `SessionStateRes.app_settings.graphics_backend` directly
-        // when backend selection is not locked. Use the legacy setter
-        // as the compatibility point so restart-required bookkeeping
-        // and settings persistence remain unchanged while the setting
-        // is still read from legacy `State.session` by UI snapshots.
-        if state.app_settings().graphics_backend != session.app_settings.graphics_backend {
-            state.set_preferred_graphics_backend(session.app_settings.graphics_backend.clone());
-        }
-        // Phase 3.24: keybind messages mutate
-        // `SessionStateRes.app_settings.keybinds` directly using the
-        // shared `AppSettings` helpers. The runtime no longer sees the
-        // original semantic operation after the schedule, so sync the
-        // final vector through a compatibility setter that preserves
-        // settings persistence while legacy UI/settings reads remain.
-        if state.app_settings().keybinds != session.app_settings.keybinds {
-            state.set_app_settings_keybinds(session.app_settings.keybinds.clone());
-        }
-        // Phase 3.18 / 3.52: `GameResume` and the real-gameplay
-        // Escape pause branch mutate `SessionStateRes.game_paused`
-        // directly. Keep the audio + pending-input side effects in
-        // legacy compatibility setters until those subsystems move
-        // into scheduled App-world systems.
-        if !state.game_paused_value() && session.game_paused {
-            state.pause_game_from_playing();
-        } else if state.game_paused_value() && !session.game_paused {
-            state.resume_game_from_pause();
-        }
-        // Phase 3.19: `SetUiScaleMultiplier` mutates
-        // `SessionStateRes.app_settings.ui_scale_multiplier`
-        // directly. Keep the legacy setter as the compatibility point
-        // so clamping + persistence continue to use the established
-        // path, and only sync this one AppSettings field until the
-        // broader settings/keybind ownership pass moves the rest.
-        if (state.app_settings().ui_scale_multiplier - session.app_settings.ui_scale_multiplier)
-            .abs()
-            > 1e-6
-        {
-            state.set_ui_scale_multiplier(session.app_settings.ui_scale_multiplier);
-        }
-        // Phase 3.21: `UpdateCreatorMetadata` mutates
-        // `SessionStateRes.editor_creator_metadata` directly. The
-        // legacy setter is a pure session-field write, so the sync is
-        // a simple change-guarded compatibility copy until export/UI
-        // metadata reads move fully into the App world.
-        if state.editor_creator_metadata() != &session.editor_creator_metadata {
-            state.set_editor_creator_metadata(session.editor_creator_metadata.clone());
-        }
-        // Phase 3.20: `UpdateSkyColor` mutates
-        // `SessionStateRes.editor_sky_color` directly. Use the
-        // legacy setter as the compatibility point so clamping stays
-        // identical while legacy render/UI paths still read
-        // `State.session.editor_sky_color`.
-        if state.editor_sky_color() != session.editor_sky_color {
-            state.set_editor_sky_color(session.editor_sky_color);
-        }
-        // Phase 3.15: the `GameSetPracticeMode` handler in
-        // `events::navigation` mutates
-        // `SessionStateRes.practice_mode_enabled` directly. The
-        // legacy setter
-        // (`set_practice_mode_enabled` → `set_practice_mode_enabled_internal`)
-        // has heavy side effects (clears `practice_checkpoints`,
-        // calls `rebuild_practice_checkpoint_vertices`,
-        // `restart_level`, and `resume_game`); the change guard here
-        // invokes the legacy setter only on real user-driven changes.
-        // The resource is seeded at `Runtime::new` from the legacy
-        // state, so the first frame after construction is a no-op
-        // for unchanged fields.
-        if state.practice_mode_enabled_value() != session.practice_mode_enabled {
-            state.set_practice_mode_enabled(session.practice_mode_enabled);
+        if let Some(practice_checkpoints) = practice_checkpoints {
+            state.set_practice_checkpoints_from_app(practice_checkpoints);
+            world
+                .resource_mut::<SessionStateRes>()
+                .practice_checkpoints_dirty = false;
         }
     }
 
@@ -849,6 +1012,8 @@ impl Runtime {
         session.editor_creator_metadata = state.editor_creator_metadata().clone();
         session.editor_sky_color = state.editor_sky_color();
         session.editor_menu_preview_camera = state.editor_menu_preview_camera().cloned();
+        session.playing_trigger_base_objects =
+            state.session_state_resource().playing_trigger_base_objects;
     }
 
     /// Sync the legacy `State.editor.perf.overlay_enabled` from the
@@ -930,42 +1095,6 @@ impl Runtime {
         state.apply_game_restart_level();
     }
 
-    /// Consume the App-world `GameSetPracticeCheckpointRequest` and
-    /// apply the legacy `State::apply_game_set_practice_checkpoint`
-    /// compatibility method.
-    ///
-    /// Phase 3.48: same request pattern as
-    /// `sync_app_game_quit_to_menu_request`. The checkpoint side
-    /// effect (session.practice_checkpoints.push + vertex rebuild)
-    /// stays legacy-owned.
-    fn sync_app_game_set_practice_checkpoint_request(state: &mut State, world: &mut World) {
-        if !world
-            .resource_mut::<GameSetPracticeCheckpointRequest>()
-            .take()
-        {
-            return;
-        }
-        state.apply_game_set_practice_checkpoint();
-    }
-
-    /// Consume the App-world `GameRemovePracticeCheckpointRequest`
-    /// and apply the legacy
-    /// `State::apply_game_remove_practice_checkpoint` compatibility
-    /// method.
-    ///
-    /// Phase 3.48: same request pattern as
-    /// `sync_app_game_quit_to_menu_request`. The pop + vertex
-    /// rebuild side effect stays legacy-owned.
-    fn sync_app_game_remove_practice_checkpoint_request(state: &mut State, world: &mut World) {
-        if !world
-            .resource_mut::<GameRemovePracticeCheckpointRequest>()
-            .take()
-        {
-            return;
-        }
-        state.apply_game_remove_practice_checkpoint();
-    }
-
     /// Consume the App-world `PlaytestRequest` and apply the legacy
     /// `State::editor_playtest` compatibility method.
     ///
@@ -1030,9 +1159,8 @@ mod tests {
         AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
         EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
         EditorTriggerRes, EscapeRequest, FrameTimeRes, GameQuitToMenuRequest,
-        GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
-        GameSetPracticeCheckpointRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes,
-        PlatformInputQueue, RenderResizeRequest, SessionStateRes, TurnRightRequest,
+        GameRestartLevelRequest, GameplayResetRes, MenuStateRes, PerfFrameCopyRequest, PerfRes,
+        PlatformInputQueue, RenderResizeRequest, SessionStateRes, TurnRightRequest, UiStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -1042,7 +1170,7 @@ mod tests {
         let runtime = Runtime::new(state);
 
         // Verify the egui context was initialized
-        let ctx = runtime.pipeline.ctx();
+        let ctx = runtime.egui_context();
         assert!(ctx.pixels_per_point() > 0.0);
 
         // Verify the state was correctly moved into the runtime
@@ -1087,6 +1215,10 @@ mod tests {
         assert!(
             world.contains_resource::<EditorInputRes>(),
             "EditorInputRes registered by EditorPlugin"
+        );
+        assert!(
+            world.contains_resource::<UiStateRes>(),
+            "UiStateRes seeded for App-owned UI presentation"
         );
         assert!(
             world.contains_resource::<EditorObjectsRes>(),
@@ -1482,7 +1614,7 @@ mod tests {
     // `Runtime::run_app_frame`.
 
     use eg_state::events::navigation::{
-        GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
+        GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, TurnRight as GameTurnRight,
     };
 
     /// `GameQuitToMenu` carve-out: the App-world handler writes
@@ -1508,6 +1640,72 @@ mod tests {
         );
     }
 
+    /// Active real gameplay quit-to-menu is applied by App resources; the
+    /// runtime only consumes the one-shot audio compatibility intent.
+    #[tokio::test]
+    async fn runtime_direct_game_quit_to_menu_updates_app_phase() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(GameQuitToMenu);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
+        );
+        assert!(runtime.state.is_menu());
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<GameQuitToMenuRequest>()
+                .pending
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .audio_stop_pending
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_toggle_editor_from_editor_returns_to_menu_without_request() {
+        use eg_state::events::navigation::ToggleEditor;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("ToggleEditorMenu");
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(ToggleEditor);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
+        );
+        assert!(runtime.state.is_menu());
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<ToggleEditorRequest>()
+                .pending
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .audio_stop_pending
+        );
+    }
+
     /// `GameRestartLevel` carve-out: same request pattern as
     /// `GameQuitToMenu`.
     #[tokio::test]
@@ -1525,34 +1723,63 @@ mod tests {
         );
     }
 
-    /// `GameSetPracticeCheckpoint` carve-out: same request pattern
-    /// as `GameQuitToMenu`.
+    /// Real gameplay restart is applied by the App-world gameplay reset
+    /// system and does not fall back to Runtime's legacy request consumer.
     #[tokio::test]
-    async fn runtime_carve_out_game_set_practice_checkpoint_consumes_request() {
-        let state = State::new_test().await;
+    async fn runtime_direct_game_restart_resets_app_gameplay() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
         let mut runtime = Runtime::new(state);
 
-        runtime
-            .app
-            .world_mut()
-            .write_message(GameSetPracticeCheckpoint);
+        {
+            let world = runtime.app.world_mut();
+            world.resource_mut::<eg_game::LevelMeta>().spawn_position = [2.0, 0.0, 3.0];
+            world.resource_mut::<eg_game::LevelMeta>().spawn_direction = eg_types::Direction::Right;
+            world
+                .resource_mut::<eg_game::LevelMeta>()
+                .level_duration_seconds = 9.0;
+            world.resource_mut::<eg_game::GameClock>().started = true;
+            world.write_message(GameRestartLevel);
+        }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let request = runtime
-            .app
-            .world()
-            .resource::<GameSetPracticeCheckpointRequest>();
+        let player = {
+            let mut query = runtime
+                .app
+                .world_mut()
+                .query::<(&eg_game::PlayerPosition, &eg_game::PlayerDirection)>();
+            query
+                .iter(runtime.app.world())
+                .next()
+                .map(|(position, direction)| (position.0, direction.0))
+                .expect("restart must keep an App-world player entity")
+        };
+        assert_eq!(player.0, [2.0, 0.0, 3.0]);
+        assert_eq!(player.1, eg_types::Direction::Right);
+        assert!(!runtime.app.world().resource::<eg_game::GameClock>().started);
+        assert!(!runtime.app.world().resource::<GameplayResetRes>().pending);
         assert!(
-            !request.pending,
-            "runtime must consume GameSetPracticeCheckpointRequest after applying it"
+            !runtime
+                .app
+                .world()
+                .resource::<GameRestartLevelRequest>()
+                .pending
         );
+        assert_eq!(runtime.state.gameplay_position_for_test(), [2.0, 0.0, 3.0]);
     }
 
-    /// `GameRemovePracticeCheckpoint` carve-out: same request
-    /// pattern as `GameQuitToMenu`.
+    /// `GameRemovePracticeCheckpoint` mutates the App-world checkpoint list
+    /// directly, then uses the one-shot compatibility sync only to rebuild
+    /// the legacy presentation mesh.
     #[tokio::test]
-    async fn runtime_carve_out_game_remove_practice_checkpoint_consumes_request() {
-        let state = State::new_test().await;
+    async fn runtime_carve_out_game_remove_practice_checkpoint_syncs_direct_resource() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_session_practice_mode_enabled_for_test(true);
+        state.add_practice_checkpoint_for_test();
         let mut runtime = Runtime::new(state);
 
         runtime
@@ -1561,13 +1788,27 @@ mod tests {
             .write_message(GameRemovePracticeCheckpoint);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let request = runtime
-            .app
-            .world()
-            .resource::<GameRemovePracticeCheckpointRequest>();
         assert!(
-            !request.pending,
-            "runtime must consume GameRemovePracticeCheckpointRequest after applying it"
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_checkpoints
+                .is_empty(),
+            "GameRemovePracticeCheckpoint must remove the App-world checkpoint"
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_checkpoints_dirty,
+            "Runtime must consume the one-shot checkpoint presentation sync marker"
+        );
+        assert_eq!(
+            runtime.state.practice_checkpoint_count(),
+            0,
+            "the compatibility setter must converge the legacy checkpoint list"
         );
     }
 
@@ -1585,6 +1826,99 @@ mod tests {
         // Pin that the State is still in the Menu phase after
         // the App was built (no setup cross-talk).
         assert!(runtime.state.is_menu());
+    }
+
+    /// The production frame path advances the App-world gameplay entities and
+    /// copies their position into the compatibility state for rendering.
+    #[tokio::test]
+    async fn runtime_gameplay_schedule_owns_active_player_motion() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            world
+                .resource_mut::<AppPhaseRes>()
+                .set(eg_types::AppPhase::Playing);
+            world.resource_mut::<SessionStateRes>().playtesting_editor = false;
+            world.resource_mut::<SessionStateRes>().game_paused = false;
+            let mut clock = world.resource_mut::<eg_game::GameClock>();
+            clock.started = true;
+            clock.elapsed_seconds = 0.0;
+            clock.game_over = false;
+            clock.level_complete = false;
+
+            let mut query = world.query::<(
+                &mut eg_game::PlayerSpeed,
+                &mut eg_game::PlayerPosition,
+                &mut eg_game::Grounded,
+            )>();
+            let (mut speed, mut position, mut grounded) = query
+                .iter_mut(world)
+                .next()
+                .expect("Runtime::new must seed an App-world player");
+            speed.0 = 120.0;
+            position.0 = [0.0, 0.0, 0.0];
+            grounded.0 = true;
+        }
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let app_position = {
+            let world = runtime.app.world_mut();
+            let mut query = world.query::<&eg_game::PlayerPosition>();
+            query
+                .iter(world)
+                .next()
+                .expect("App-world player should remain present")
+                .0
+        };
+        assert!(
+            app_position[2] > 0.0,
+            "App gameplay schedule must advance the active player"
+        );
+        assert_eq!(runtime.state.gameplay_position_for_test(), app_position);
+    }
+
+    #[tokio::test]
+    async fn runtime_active_turn_right_is_consumed_by_app_gameplay() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            world
+                .resource_mut::<AppPhaseRes>()
+                .set(eg_types::AppPhase::Playing);
+            world.resource_mut::<SessionStateRes>().playtesting_editor = false;
+            world.resource_mut::<SessionStateRes>().game_paused = false;
+            world.resource_mut::<eg_game::GameClock>().started = true;
+            {
+                let mut query =
+                    world.query::<(&mut eg_game::PlayerDirection, &mut eg_game::Grounded)>();
+                let (mut direction, mut grounded) = query
+                    .iter_mut(world)
+                    .next()
+                    .expect("Runtime::new must seed an App-world player");
+                direction.0 = eg_types::Direction::Forward;
+                grounded.0 = true;
+            }
+        }
+        runtime.app.world_mut().write_message(GameTurnRight);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let direction = {
+            let world = runtime.app.world_mut();
+            let mut query = world.query::<&eg_game::PlayerDirection>();
+            query
+                .iter(world)
+                .next()
+                .expect("App-world player should remain present")
+                .0
+        };
+        assert_eq!(direction, eg_types::Direction::Right);
+        assert!(!runtime.app.world().resource::<TurnRightRequest>().pending);
     }
 
     // --- Phase 7 carve-out sync tests (snap domain) ---
@@ -4786,6 +5120,66 @@ mod tests {
         );
     }
 
+    /// The App-world camera-pan system must be the single source of this
+    /// frame's held-key movement; the legacy compatibility update must not
+    /// apply a second movement after Runtime syncs the camera resource.
+    #[tokio::test]
+    async fn runtime_editor_camera_pan_is_applied_once_by_app_schedule() {
+        use eg_state::state::{EditorCameraRes, EditorInputRes};
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("CameraPanSchedule");
+        let mut runtime = Runtime::new(state);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .pan_right_held = true;
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let app_camera = runtime
+            .app
+            .world()
+            .resource::<EditorCameraRes>()
+            .0
+            .editor_pan;
+        assert_eq!(runtime.state.editor_camera_pan(), app_camera);
+    }
+
+    /// The App-world camera transition must be advanced once per frame; the
+    /// compatibility update must not advance the synchronized transition a
+    /// second time.
+    #[tokio::test]
+    async fn runtime_editor_camera_transition_is_applied_once_by_app_schedule() {
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("CameraTransitionSchedule");
+        let mut runtime = Runtime::new(state);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorCameraRes>()
+            .0
+            .set_transition(0.0, 0.0, 1.0, 0.5, 1.0);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let app_camera = &runtime.app.world().resource::<EditorCameraRes>().0;
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_camera_yaw(),
+            app_camera.editor_yaw,
+            epsilon = 1e-6
+        );
+        approx::assert_abs_diff_eq!(
+            runtime.state.editor_camera_pitch(),
+            app_camera.editor_pitch,
+            epsilon = 1e-6
+        );
+        assert!(app_camera.editor_yaw > 0.0);
+        assert!(app_camera.editor_yaw < 1.0);
+    }
+
     /// Regression: `EditorCameraRes` and `EditorTriggerRes` are
     /// seeded from the legacy `State.editor.camera` and
     /// `State.editor.triggers` at `Runtime::new`. Non-default
@@ -5091,6 +5485,43 @@ mod tests {
         assert!(
             !runtime.app.world().resource::<TurnRightRequest>().pending,
             "GameOver TurnRight must not leave a Runtime request to consume"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_in_paused_gameplay_is_a_request_free_noop() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(true);
+        let mut runtime = Runtime::new(state);
+
+        eg_ui::enqueue_ui_command(
+            runtime.app.world_mut(),
+            eg_state::commands::AppCommand::TurnRight,
+        );
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Playing,
+            "paused gameplay TurnRight must preserve the App phase"
+        );
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .game_paused,
+            "paused gameplay TurnRight must preserve the App-world pause flag"
+        );
+        assert!(
+            runtime.state.game_paused_value(),
+            "paused gameplay TurnRight must preserve the legacy pause state"
+        );
+        assert!(
+            !runtime.app.world().resource::<TurnRightRequest>().pending,
+            "paused gameplay TurnRight must not leave a Runtime request to consume"
         );
     }
 
@@ -5662,6 +6093,33 @@ mod tests {
         assert!(
             !runtime.app.world().resource::<EscapeRequest>().pending,
             "timeline-reset Escape must not leave a Runtime request"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_escape_at_editor_origin_returns_to_menu_without_request() {
+        use eg_state::events::misc::Escape;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("EscapeEditorMenu");
+        state.set_editor_timeline_time_seconds(0.0);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Escape);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
+        );
+        assert!(runtime.state.is_menu());
+        assert!(!runtime.app.world().resource::<EscapeRequest>().pending);
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .audio_stop_pending
         );
     }
 

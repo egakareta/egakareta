@@ -936,7 +936,9 @@ impl State {
             graphics_backend_locked: self.session.graphics_backend_locked,
             playtesting_editor: self.session.playtesting_editor,
             game_paused: self.session.game_paused,
+            playing_trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
             practice_mode_enabled: self.is_practice_mode_enabled(),
+            practice_checkpoints: self.session.practice_checkpoints.clone(),
             ..Default::default()
         }
     }

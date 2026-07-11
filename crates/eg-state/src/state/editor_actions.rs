@@ -1020,6 +1020,7 @@ impl State {
             return;
         }
 
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
         self.session.game_paused = false;
@@ -1094,6 +1095,7 @@ impl State {
     /// This stops any active gameplay audio and restores the editor state if the
     /// session originated from the editor.
     pub fn back_to_menu(&mut self) {
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
         self.stop_audio();

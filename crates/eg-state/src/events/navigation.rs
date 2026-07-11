@@ -26,19 +26,31 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
+use eg_game::{
+    GameCheckpointParts, GameClock, Grounded, ObjectData, ObjectId, PendingTurnInputs, Player,
+    PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, TimedTurnInput, Trail,
+    TurnInputKind, VerticalVelocity,
+};
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
     AppPhaseRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
     EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    GameQuitToMenuRequest, GameRemovePracticeCheckpointRequest, GameRestartLevelRequest,
-    GameSetPracticeCheckpointRequest, MenuStateRes, SessionStateRes, ToggleEditorRequest,
-    TurnRightRequest,
+    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, MenuStateRes,
+    PracticeCheckpoint, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
 };
 
+fn object_order_key(id: &str) -> (u8, usize, &str) {
+    id.strip_prefix("__obj_")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .map(|index| (0, index, id))
+        .unwrap_or((1, 0, id))
+}
+
 /// Primary action: in editor this places a block directly in App-world
-/// resources; in game-over it returns to menu by mutating `AppPhaseRes`.
-/// Other phases still request the legacy start/turn side effect.
+/// resources; in game-over it returns to menu by mutating `AppPhaseRes`;
+/// paused gameplay is a direct no-op. Other phases still request the legacy
+/// start/turn side effect.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct TurnRight;
 
@@ -103,14 +115,34 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
         match resources.phase.current {
             AppPhase::Editor => place_editor_block_from_turn_right(&mut resources),
             AppPhase::GameOver => resources.phase.set(AppPhase::Menu),
+            AppPhase::Playing if resources.session.game_paused => {}
+            AppPhase::Playing
+                if resources.clock.started
+                    && !resources.clock.game_over
+                    && !resources.clock.level_complete
+                    && resources
+                        .players
+                        .iter()
+                        .next()
+                        .is_some_and(|grounded| grounded.0) =>
+            {
+                resources.pending_turns.taps.push_back(TimedTurnInput {
+                    at_seconds: resources.clock.elapsed_seconds,
+                    kind: TurnInputKind::TurnRight,
+                });
+            }
             _ => resources.request.request(),
         }
     }
 }
 
 #[derive(SystemParam)]
-pub struct TurnRightResources<'w> {
+pub struct TurnRightResources<'w, 's> {
     phase: ResMut<'w, AppPhaseRes>,
+    session: Res<'w, SessionStateRes>,
+    clock: Res<'w, GameClock>,
+    players: Query<'w, 's, &'static Grounded, With<Player>>,
+    pending_turns: ResMut<'w, PendingTurnInputs>,
     objects: ResMut<'w, EditorObjectsRes>,
     input: ResMut<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
@@ -122,7 +154,7 @@ pub struct TurnRightResources<'w> {
     request: ResMut<'w, TurnRightRequest>,
 }
 
-fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
+fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     record_editor_history_for_placement(resources);
 
     let default_size = BlockDefinition::get(&resources.config.0.selected_block_id)
@@ -153,7 +185,7 @@ fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
     resources.objects.object_mutation_pending = true;
 }
 
-fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_>) {
+fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_, '_>) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
@@ -239,10 +271,21 @@ fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, di
 
 pub fn handle_toggle_editor(
     mut events: MessageReader<ToggleEditor>,
+    mut phase: ResMut<AppPhaseRes>,
+    mut session: ResMut<SessionStateRes>,
+    mut menu: Option<ResMut<MenuStateRes>>,
     mut request: ResMut<ToggleEditorRequest>,
 ) {
     for _ in events.read() {
-        request.request();
+        if phase.current == AppPhase::Editor
+            && let Some(menu) = menu.as_deref_mut()
+        {
+            phase.set(AppPhase::Menu);
+            session.transition_to_menu();
+            menu.0.preview_level_index = None;
+        } else {
+            request.request();
+        }
     }
 }
 
@@ -267,10 +310,20 @@ pub fn handle_game_resume(
 // restart) stays legacy-owned.
 pub fn handle_game_restart_level(
     mut events: MessageReader<GameRestartLevel>,
+    phase: Res<AppPhaseRes>,
+    session: Res<SessionStateRes>,
+    mut gameplay_reset: Option<ResMut<GameplayResetRes>>,
     mut restart_request: ResMut<GameRestartLevelRequest>,
 ) {
     for _ in events.read() {
-        restart_request.request();
+        if phase.current == AppPhase::Playing
+            && !session.playtesting_editor
+            && let Some(reset) = gameplay_reset.as_deref_mut()
+        {
+            reset.request();
+        } else {
+            restart_request.request();
+        }
     }
 }
 
@@ -288,40 +341,115 @@ pub fn handle_game_set_practice_mode(
     mut session: ResMut<SessionStateRes>,
 ) {
     for event in events.read() {
-        session.practice_mode_enabled = event.enabled;
+        if session.practice_mode_enabled != event.enabled {
+            session.practice_mode_enabled = event.enabled;
+            session.practice_checkpoints.clear();
+            session.practice_checkpoints_dirty = true;
+        }
     }
 }
 
-// `GameSetPracticeCheckpoint` is a Phase 3.48 carve-out: same
-// request-resource pattern as `GameRestartLevel`. The handler
-// writes `GameSetPracticeCheckpointRequest.pending = true` and
-// `Runtime::sync_app_game_set_practice_checkpoint_request` consumes
-// the request and calls the existing legacy
-// `State::apply_game_set_practice_checkpoint` compatibility method.
-// The checkpoint side effect (session.practice_checkpoints.push +
-// vertex rebuild) stays legacy-owned.
+#[derive(SystemParam)]
+pub struct PracticeCheckpointResources<'w, 's> {
+    phase: Res<'w, AppPhaseRes>,
+    clock: Res<'w, GameClock>,
+    progress: Res<'w, PlayerProgress>,
+    players: Query<
+        'w,
+        's,
+        (
+            &'static PlayerPosition,
+            &'static PlayerDirection,
+            &'static PlayerSpeed,
+            &'static VerticalVelocity,
+            &'static Grounded,
+        ),
+        With<Player>,
+    >,
+    trails: Query<'w, 's, &'static Trail, With<Player>>,
+    objects: Query<'w, 's, (&'static ObjectId, &'static ObjectData)>,
+    session: ResMut<'w, SessionStateRes>,
+}
+
+// `GameSetPracticeCheckpoint` is an App-world gameplay carve-out. The
+// handler captures the current player/object ECS state directly; the legacy
+// `GameState` wrapper is only refreshed later for compatibility rendering.
 pub fn handle_game_set_practice_checkpoint(
     mut events: MessageReader<GameSetPracticeCheckpoint>,
-    mut checkpoint_request: ResMut<GameSetPracticeCheckpointRequest>,
+    mut resources: PracticeCheckpointResources,
 ) {
     for _ in events.read() {
-        checkpoint_request.request();
+        if resources.phase.current != AppPhase::Playing
+            || resources.session.playtesting_editor
+            || !resources.session.practice_mode_enabled
+            || resources.session.game_paused
+            || !resources.clock.started
+            || resources.clock.game_over
+            || resources.clock.level_complete
+        {
+            continue;
+        }
+
+        let Some((position, direction, speed, vertical_velocity, grounded)) =
+            resources.players.iter().next()
+        else {
+            continue;
+        };
+        let trail_exists = resources.trails.iter().next().is_some();
+        if !trail_exists {
+            continue;
+        }
+
+        let mut ordered_objects = resources
+            .objects
+            .iter()
+            .map(|(id, data)| (id.0.clone(), data.0.clone()))
+            .collect::<Vec<_>>();
+        ordered_objects
+            .sort_by(|(left, _), (right, _)| object_order_key(left).cmp(&object_order_key(right)));
+        let ordered_objects = ordered_objects
+            .into_iter()
+            .map(|(_, object)| object)
+            .collect();
+        let checkpoint = eg_game::GameState::checkpoint_state_from_parts(GameCheckpointParts {
+            position: position.0,
+            direction: direction.0,
+            elapsed_seconds: resources.clock.elapsed_seconds,
+            speed: speed.0,
+            objects: ordered_objects,
+            vertical_velocity: vertical_velocity.0,
+            is_grounded: grounded.0,
+            progress: resources.progress.sanitized(),
+        });
+        let trigger_base_objects = resources.session.playing_trigger_base_objects.clone();
+        resources
+            .session
+            .practice_checkpoints
+            .push(PracticeCheckpoint {
+                gameplay: checkpoint,
+                trigger_base_objects,
+            });
+        resources.session.practice_checkpoints_dirty = true;
     }
 }
 
-// `GameRemovePracticeCheckpoint` is a Phase 3.48 carve-out: same
-// request-resource pattern as `GameRestartLevel`. The handler
-// writes `GameRemovePracticeCheckpointRequest.pending = true` and
-// `Runtime::sync_app_game_remove_practice_checkpoint_request`
-// consumes the request and calls the existing legacy
-// `State::apply_game_remove_practice_checkpoint` compatibility
-// method. The pop + vertex rebuild side effect stays legacy-owned.
+/// Removes the latest practice checkpoint directly from `SessionStateRes`.
+/// The compatibility sync rebuilds the legacy mesh once while rendering still
+/// reads the old presentation path.
 pub fn handle_game_remove_practice_checkpoint(
     mut events: MessageReader<GameRemovePracticeCheckpoint>,
-    mut remove_request: ResMut<GameRemovePracticeCheckpointRequest>,
+    phase: Res<AppPhaseRes>,
+    mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        remove_request.request();
+        if phase.current == AppPhase::Playing
+            && !session.playtesting_editor
+            && session.practice_mode_enabled
+            && !session.game_paused
+        {
+            let _ = session.practice_checkpoints.pop();
+            session.practice_checkpoints_dirty = true;
+        }
     }
 }
 
@@ -335,9 +463,21 @@ pub fn handle_game_remove_practice_checkpoint(
 // state reset) stays legacy-owned.
 pub fn handle_game_quit_to_menu(
     mut events: MessageReader<GameQuitToMenu>,
+    mut phase: ResMut<AppPhaseRes>,
+    mut session: ResMut<SessionStateRes>,
+    mut menu: Option<ResMut<MenuStateRes>>,
     mut quit_request: ResMut<GameQuitToMenuRequest>,
 ) {
     for _ in events.read() {
-        quit_request.request();
+        if phase.current == AppPhase::Playing
+            && !session.playtesting_editor
+            && let Some(menu) = menu.as_deref_mut()
+        {
+            phase.set(AppPhase::Menu);
+            session.transition_to_menu();
+            menu.0.preview_level_index = None;
+        } else {
+            quit_request.request();
+        }
     }
 }

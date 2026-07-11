@@ -15,7 +15,7 @@ use bevy_ecs::system::SystemParam;
 use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
     AppPhaseRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
-    EscapeRequest, PerfRes, SessionStateRes,
+    EscapeRequest, MenuStateRes, PerfRes, SessionStateRes,
 };
 
 /// Toggle editor hitbox visualization.
@@ -94,9 +94,9 @@ pub fn handle_toggle_place_window(
 
 // `Escape` handles local branches directly in App-world resources:
 // real-gameplay pause, editor selection clearing, editor timeline playback
-// stop, and editor timeline clock reset. Back-to-menu still writes
-// `EscapeRequest.pending = true` for Runtime to consume through the legacy
-// compatibility state machine.
+// stop, editor timeline clock reset, and editor-to-menu transition. Playtest
+// and other fallback branches still write `EscapeRequest.pending` for Runtime
+// to consume through the legacy compatibility state machine.
 pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
     for _ in events.read() {
         match resources.phase.current {
@@ -125,6 +125,13 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
                     resources.timeline.0.clock.time_seconds = 0.0;
                     continue;
                 }
+
+                if let Some(menu) = resources.menu.as_deref_mut() {
+                    resources.phase.set(eg_types::AppPhase::Menu);
+                    resources.session.transition_to_menu();
+                    menu.0.preview_level_index = None;
+                    continue;
+                }
             }
             _ => {}
         }
@@ -134,12 +141,13 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
 
 #[derive(SystemParam)]
 pub struct EscapeResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: ResMut<'w, AppPhaseRes>,
     input: ResMut<'w, EditorInputRes>,
     objects: ResMut<'w, EditorObjectsRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
     session: ResMut<'w, SessionStateRes>,
+    menu: Option<ResMut<'w, MenuStateRes>>,
     escape_request: ResMut<'w, EscapeRequest>,
 }
 

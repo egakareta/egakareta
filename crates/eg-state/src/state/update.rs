@@ -753,8 +753,12 @@ impl State {
 
             {
                 puffin::profile_scope!("EditorCameraInputUpdate");
-                self.update_editor_pan_from_keys(frame_dt);
-                self.update_editor_camera_transition(frame_dt);
+                if !self.editor_camera_pan_scheduled {
+                    self.update_editor_pan_from_keys(frame_dt);
+                }
+                if !self.editor_camera_transition_scheduled {
+                    self.update_editor_camera_transition(frame_dt);
+                }
             }
             if (self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some())
@@ -818,6 +822,8 @@ impl State {
                 puffin::profile_scope!("EditorCameraUniform");
                 self.update_editor_camera();
             }
+            self.editor_camera_pan_scheduled = false;
+            self.editor_camera_transition_scheduled = false;
             return;
         }
 
@@ -828,7 +834,9 @@ impl State {
             return;
         }
 
-        let trigger_render_objects = if self.gameplay.state.level_complete {
+        let trigger_render_objects = if self.gameplay_app_authoritative {
+            None
+        } else if self.gameplay.state.level_complete {
             self.gameplay.state.update(frame_dt);
             None
         } else {

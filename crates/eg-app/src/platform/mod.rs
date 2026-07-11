@@ -8,5 +8,4 @@
 pub(crate) mod application;
 pub(crate) mod input_mapping;
 pub(crate) mod input_routing;
-pub(crate) mod pipeline;
 pub(crate) mod runtime;

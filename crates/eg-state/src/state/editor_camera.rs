@@ -5,12 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use bevy_ecs::prelude::{Res, ResMut};
 use glam::{Mat4, Vec2, Vec3};
 
 use super::editor_triggers::camera_trigger_object_pose;
 use super::{EditorSubsystem, State};
 use eg_blocks::BlockId;
-use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW};
+use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorInputState};
 use eg_types::{
     CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection,
     LevelObject, TimedTrigger, TriggerTarget,
@@ -88,6 +89,60 @@ impl EditorCameraState {
             elapsed: 0.0,
             duration,
         });
+    }
+
+    pub fn update_pan_from_input(&mut self, input_state: &EditorInputState, frame_dt: f32) -> bool {
+        let mut input = Vec2::ZERO;
+        if input_state.pan_left_held {
+            input.x -= 1.0;
+        }
+        if input_state.pan_right_held {
+            input.x += 1.0;
+        }
+        if input_state.pan_up_held {
+            input.y += 1.0;
+        }
+        if input_state.pan_down_held {
+            input.y -= 1.0;
+        }
+
+        if input.length_squared() <= f32::EPSILON {
+            return false;
+        }
+
+        let input = input.normalize();
+        let speed_multiplier = if input_state.shift_held { 0.3 } else { 1.0 };
+        const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
+        let speed = PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier;
+
+        let offset = self.editor_camera_offset();
+        let forward = -offset.normalize();
+        let right_xy = Vec2::new(self.editor_yaw.cos(), -self.editor_yaw.sin());
+        let right = Vec3::new(right_xy.x, 0.0, right_xy.y);
+        let movement = right * (-input.x * speed) + forward * (input.y * speed);
+
+        self.editor_pan[0] += movement.x;
+        self.editor_pan[1] += movement.z;
+        self.editor_target_z += movement.y;
+        true
+    }
+
+    pub fn update_camera_transition(&mut self, frame_dt: f32) -> bool {
+        let Some(mut transition) = self.transition.take() else {
+            return false;
+        };
+
+        transition.elapsed += frame_dt;
+        let alpha = (transition.elapsed / transition.duration).clamp(0.0, 1.0);
+        self.editor_yaw =
+            transition.start_yaw + (transition.target_yaw - transition.start_yaw) * alpha;
+        self.editor_pitch =
+            transition.start_pitch + (transition.target_pitch - transition.start_pitch) * alpha;
+
+        if alpha < 1.0 {
+            self.transition = Some(transition);
+        }
+        true
     }
 }
 
@@ -373,45 +428,25 @@ impl EditorSubsystem {
     }
 
     pub fn update_pan_from_keys(&mut self, frame_dt: f32) {
-        let mut input = Vec2::ZERO;
-        if self.input.pan_left_held {
-            input.x -= 1.0;
-        }
-        if self.input.pan_right_held {
-            input.x += 1.0;
-        }
-        if self.input.pan_up_held {
-            input.y += 1.0;
-        }
-        if self.input.pan_down_held {
-            input.y -= 1.0;
-        }
-
-        if input.length_squared() <= f32::EPSILON {
-            return;
-        }
-
-        let input = input.normalize();
-        let mut speed_multiplier = 1.0;
-        if self.input.shift_held {
-            speed_multiplier = 0.3;
-        }
-
-        const PAN_SPEED_UNITS_PER_SEC: f32 = 40.0;
-        let speed = PAN_SPEED_UNITS_PER_SEC * frame_dt * speed_multiplier;
-
-        let offset = self.camera_offset();
-        let forward = -offset.normalize();
-
-        let (right_xy, _) = self.camera_axes_xy();
-        let right = Vec3::new(right_xy.x, 0.0, right_xy.y);
-
-        let movement = right * (-input.x * speed) + forward * (input.y * speed);
-
-        self.camera.editor_pan[0] += movement.x;
-        self.camera.editor_pan[1] += movement.z;
-        self.camera.editor_target_z += movement.y;
+        self.camera.update_pan_from_input(&self.input, frame_dt);
     }
+}
+
+/// Advance editor camera key panning from App-owned input and camera state.
+pub fn update_editor_camera_pan_system(
+    phase: Res<crate::state::AppPhaseRes>,
+    frame_time: Res<crate::state::FrameTimeRes>,
+    input: Res<crate::state::EditorInputRes>,
+    mut camera: ResMut<crate::state::EditorCameraRes>,
+    mut frame: ResMut<crate::state::EditorFrameRes>,
+) {
+    let in_editor = phase.current == AppPhase::Editor;
+    frame.camera_transition_applied =
+        in_editor && camera.0.update_camera_transition(frame_time.delta_seconds);
+    frame.camera_pan_applied = in_editor
+        && camera
+            .0
+            .update_pan_from_input(&input.0, frame_time.delta_seconds);
 }
 
 impl State {

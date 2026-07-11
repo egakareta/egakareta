@@ -345,7 +345,7 @@ impl ApplicationHandler for App {
             };
 
             let egui_state = EguiWinitState::new(
-                runtime.pipeline.ctx().clone(),
+                runtime.egui_context(),
                 egui::ViewportId::ROOT,
                 window.as_ref(),
                 Some(window.scale_factor() as f32),
@@ -385,7 +385,7 @@ impl ApplicationHandler for App {
                 .expect("Missing prebuilt runtime for web window");
 
             let egui_state = EguiWinitState::new(
-                runtime.pipeline.ctx().clone(),
+                runtime.egui_context(),
                 egui::ViewportId::ROOT,
                 &window,
                 Some(window.scale_factor() as f32),
@@ -432,7 +432,7 @@ impl ApplicationHandler for App {
             };
             egui_state.on_window_event(window, &event).consumed
         };
-        let pointer_over_egui = runtime.pipeline.ctx().is_pointer_over_egui();
+        let pointer_over_egui = runtime.egui_context().is_pointer_over_egui();
         let pointer_over_editor_ui = self.last_cursor_pos.is_some_and(|position| {
             runtime
                 .state
@@ -491,7 +491,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 if !should_route_keyboard_input(
                     egui_consumed,
-                    runtime.pipeline.ctx().egui_wants_keyboard_input(),
+                    runtime.egui_context().egui_wants_keyboard_input(),
                 ) {
                     return;
                 }
@@ -525,7 +525,7 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window.as_ref());
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
-                    let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
+                    let over_ui = runtime.egui_context().is_pointer_over_egui();
                     let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
                     window.as_ref().set_cursor_visible(visible);
                 }
@@ -540,7 +540,7 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window);
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
-                    let over_ui = runtime.pipeline.ctx().is_pointer_over_egui();
+                    let over_ui = runtime.egui_context().is_pointer_over_egui();
                     let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
                     window.set_cursor_visible(visible);
                     window.request_redraw();

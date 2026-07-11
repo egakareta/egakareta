@@ -40,10 +40,10 @@ use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
-    GameRemovePracticeCheckpointRequest, GameRestartLevelRequest, GameSetPracticeCheckpointRequest,
+    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorFrameRes, EditorHistoryRes,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes,
+    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes,
     LoadLevelRequest, PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes,
     SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
 };
@@ -56,7 +56,8 @@ pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(eg_game::GamePlugin);
+        app.add_plugins(eg_game::GamePlugin)
+            .init_resource::<GameplayWorldRes>();
     }
 }
 
@@ -72,6 +73,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorObjectsRes>()
             .init_resource::<EditorConfigRes>()
             .init_resource::<EditorCameraRes>()
+            .init_resource::<EditorFrameRes>()
             .init_resource::<EditorSpawnRes>()
             .init_resource::<EditorTriggerRes>()
             .init_resource::<EditorTimelineRes>()
@@ -88,8 +90,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<AuthOpenSignupRequest>()
             .init_resource::<GameQuitToMenuRequest>()
             .init_resource::<GameRestartLevelRequest>()
-            .init_resource::<GameSetPracticeCheckpointRequest>()
-            .init_resource::<GameRemovePracticeCheckpointRequest>()
+            .init_resource::<GameplayResetRes>()
             .init_resource::<PlaytestRequest>()
             .init_resource::<LoadLevelRequest>()
             .init_resource::<ExportLevelRequest>()
@@ -179,6 +180,7 @@ pub fn setup_state_app(app: &mut App) {
 pub fn run_state_schedule_in_world(world: &mut World) {
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
+    super::gameplay_world::run_app_gameplay_schedule(world);
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
@@ -196,6 +198,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorObjectsRes>();
     world.init_resource::<EditorConfigRes>();
     world.init_resource::<EditorCameraRes>();
+    world.init_resource::<EditorFrameRes>();
     world.init_resource::<EditorSpawnRes>();
     world.init_resource::<EditorTriggerRes>();
     world.init_resource::<EditorTimelineRes>();
@@ -212,8 +215,8 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AuthOpenSignupRequest>();
     world.init_resource::<GameQuitToMenuRequest>();
     world.init_resource::<GameRestartLevelRequest>();
-    world.init_resource::<GameSetPracticeCheckpointRequest>();
-    world.init_resource::<GameRemovePracticeCheckpointRequest>();
+    world.init_resource::<GameplayResetRes>();
+    world.init_resource::<GameplayWorldRes>();
     world.init_resource::<PlaytestRequest>();
     world.init_resource::<LoadLevelRequest>();
     world.init_resource::<ExportLevelRequest>();
@@ -295,11 +298,19 @@ pub fn register_state_command_pipeline(world: &mut World) {
     );
     crate::events::add_command_systems(&mut schedule);
     schedule.add_systems(
+        super::gameplay_world::apply_pending_gameplay_reset_system
+            .after(crate::events::navigation::handle_game_restart_level),
+    );
+    schedule.add_systems(
         crate::state::auth_state::process_auth_requests_system
             .after(crate::events::auth::handle_auth_submit_sign_in)
             .after(crate::events::auth::handle_auth_sign_out)
             .after(crate::events::auth::handle_auth_open_signup)
             .before(crate::state::async_bridge::PollChannelsSet),
+    );
+    schedule.add_systems(
+        crate::state::editor_camera::update_editor_camera_pan_system
+            .after(crate::events::CommandHandlerSet),
     );
     schedule.add_systems(
         crate::state::perf::process_perf_frame_copy_request_system

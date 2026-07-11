@@ -51,6 +51,19 @@ pub struct GameCheckpointState {
     progress: PlayerLevelProgress,
 }
 
+/// Values captured from an authoritative App-world gameplay state when a
+/// practice checkpoint is created.
+pub struct GameCheckpointParts {
+    pub position: [f32; 3],
+    pub direction: Direction,
+    pub elapsed_seconds: f32,
+    pub speed: f32,
+    pub objects: Vec<LevelObject>,
+    pub vertical_velocity: f32,
+    pub is_grounded: bool,
+    pub progress: PlayerLevelProgress,
+}
+
 /// The core gameplay state. Backed by a [`World`] + [`Schedule`] under the
 /// hood; the `pub` fields are kept in sync via [`Self::sync_from_world`].
 ///
@@ -93,6 +106,13 @@ pub fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
         position[1],
         position[2].floor() + 0.5,
     ]
+}
+
+fn object_order_key(id: &str) -> (u8, usize, &str) {
+    id.strip_prefix("__obj_")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .map(|index| (0, index, id))
+        .unwrap_or((1, 0, id))
 }
 
 impl Default for GameState {
@@ -382,6 +402,25 @@ impl GameState {
         }
     }
 
+    /// Build a checkpoint from the authoritative App-world gameplay values.
+    ///
+    /// `eg-state` uses this constructor from a normal Bevy system so practice
+    /// checkpoints do not need to pass through the compatibility `GameState`
+    /// wrapper. Object ordering is supplied by the caller because authored
+    /// order is an editor concern rather than an ECS query guarantee.
+    pub fn checkpoint_state_from_parts(parts: GameCheckpointParts) -> GameCheckpointState {
+        GameCheckpointState {
+            position: parts.position,
+            direction: parts.direction,
+            elapsed_seconds: parts.elapsed_seconds,
+            speed: parts.speed,
+            objects: parts.objects,
+            vertical_velocity: parts.vertical_velocity,
+            is_grounded: parts.is_grounded,
+            progress: parts.progress,
+        }
+    }
+
     pub fn restore_checkpoint_state(&mut self, checkpoint: &GameCheckpointState) {
         self.position = checkpoint.position;
         self.direction = checkpoint.direction;
@@ -572,6 +611,75 @@ impl GameState {
                 self.consumed_object_events.push(event);
             }
         }
+    }
+
+    /// Copy gameplay values from an external App world into the legacy field
+    /// surface used by the remaining renderer and compatibility helpers.
+    ///
+    /// The external world is authoritative; this method deliberately does
+    /// not rebuild the wrapper's private ECS world. It is a presentation
+    /// compatibility adapter while `eg-state` finishes moving render and
+    /// lifecycle consumers onto the App world.
+    pub fn sync_from_external_world(&mut self, world: &mut World) {
+        if let Some(clock) = world.get_resource::<GameClock>() {
+            self.elapsed_seconds = clock.elapsed_seconds;
+            self.level_duration_seconds = clock.level_duration_seconds;
+            self.game_over = clock.game_over;
+            self.level_complete = clock.level_complete;
+            self.completion_hold_seconds = clock.completion_hold_seconds;
+            self.started = clock.started;
+        }
+
+        let player = {
+            let mut query = world.query::<(
+                &PlayerPosition,
+                &PlayerDirection,
+                &PlayerSpeed,
+                &VerticalVelocity,
+                &Grounded,
+                &Trail,
+            )>();
+            query.iter(world).next().map(
+                |(position, direction, speed, vertical_velocity, grounded, trail)| {
+                    (
+                        position.0,
+                        direction.0,
+                        speed.0,
+                        vertical_velocity.0,
+                        grounded.0,
+                        trail.segments.clone(),
+                    )
+                },
+            )
+        };
+        if let Some((position, direction, speed, vertical_velocity, grounded, trail)) = player {
+            self.position = position;
+            self.direction = direction;
+            self.speed = speed;
+            self.vertical_velocity = vertical_velocity;
+            self.is_grounded = grounded;
+            self.trail_segments = trail;
+        }
+
+        if let Some(progress) = world.get_resource::<PlayerProgress>() {
+            self.progress = PlayerLevelProgress {
+                progress_percent: progress.progress_percent,
+                completed: progress.completed,
+                gems_collected: progress.gems_collected,
+                gems_max: progress.gems_max,
+            };
+        }
+
+        let mut objects = {
+            let mut query = world.query::<(&ObjectId, &ObjectData)>();
+            query
+                .iter(world)
+                .map(|(id, data)| (id.0.clone(), data.0.clone()))
+                .collect::<Vec<_>>()
+        };
+        objects
+            .sort_by(|(left, _), (right, _)| object_order_key(left).cmp(&object_order_key(right)));
+        self.objects = objects.into_iter().map(|(_, object)| object).collect();
     }
 
     fn sync_objects_from_world(&mut self) {

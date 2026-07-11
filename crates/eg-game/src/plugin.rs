@@ -13,8 +13,8 @@ use bevy_ecs::schedule::ScheduleLabel;
 
 use crate::events::ConsumedEventsBuffer;
 use crate::resources::{
-    DeathSfxFlag, FixedStepConfig, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs,
-    PlayerProgress, SpatialIndex,
+    DeathSfxFlag, FixedStepConfig, FrameDelta, GameClock, GameRuntimeTuning, LevelMeta,
+    PendingTurnInputs, PlayerProgress, SpatialIndex,
 };
 use crate::systems::{self, CollisionOutcome, GameplaySet};
 
@@ -36,6 +36,7 @@ impl Plugin for GamePlugin {
         app.init_resource::<GameClock>()
             .init_resource::<PlayerProgress>()
             .init_resource::<SpatialIndex>()
+            .init_resource::<LevelMeta>()
             .init_resource::<PendingTurnInputs>()
             .init_resource::<FixedStepConfig>()
             .init_resource::<FrameDelta>()

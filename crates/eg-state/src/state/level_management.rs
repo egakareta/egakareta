@@ -70,6 +70,7 @@ impl State {
     }
 
     pub(super) fn restart_level(&mut self) {
+        self.mark_app_gameplay_world_for_legacy_seed();
         self.session.game_paused = false;
         self.session.practice_mode_enabled = false;
         self.session.practice_checkpoints.clear();
@@ -139,6 +140,7 @@ impl State {
             return false;
         }
 
+        self.mark_app_gameplay_world_for_legacy_seed();
         let Some(checkpoint) = self.session.practice_checkpoints.last().cloned() else {
             self.restart_level();
             self.session.practice_mode_enabled = true;
@@ -1259,16 +1261,19 @@ mod tests {
 
         state.gameplay.state.position = [2.0, 2.0, 2.0];
         state.gameplay.state.elapsed_seconds = 2.0;
-        state.apply_game_set_practice_checkpoint();
+        state.add_practice_checkpoint_for_test();
+        state.rebuild_practice_checkpoint_vertices();
 
         state.gameplay.state.position = [5.0, 2.0, 5.0];
         state.gameplay.state.elapsed_seconds = 5.0;
-        state.apply_game_set_practice_checkpoint();
+        state.add_practice_checkpoint_for_test();
+        state.rebuild_practice_checkpoint_vertices();
 
         assert_eq!(state.practice_checkpoint_count(), 2);
         assert_eq!(state.practice_checkpoint_time_seconds(), Some(5.0));
 
-        state.apply_game_remove_practice_checkpoint();
+        let _ = state.session.practice_checkpoints.pop();
+        state.rebuild_practice_checkpoint_vertices();
 
         assert_eq!(state.practice_checkpoint_count(), 1);
         assert_eq!(state.practice_checkpoint_time_seconds(), Some(2.0));
@@ -1291,7 +1296,8 @@ mod tests {
         state.gameplay.state.started = true;
 
         state.gameplay.state.position = [2.0, 1.0, 2.0];
-        state.apply_game_set_practice_checkpoint();
+        state.add_practice_checkpoint_for_test();
+        state.rebuild_practice_checkpoint_vertices();
         assert!(
             state
                 .render_meshes()
@@ -1300,7 +1306,8 @@ mod tests {
                 .is_some()
         );
 
-        state.apply_game_remove_practice_checkpoint();
+        let _ = state.session.practice_checkpoints.pop();
+        state.rebuild_practice_checkpoint_vertices();
         assert!(
             state
                 .render_meshes()
