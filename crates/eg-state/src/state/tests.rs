@@ -8,8 +8,8 @@
 use super::EditorDirtyFlags;
 use super::State;
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorRuntimeRes, FrameTimeRes, PerfRes, SessionStateRes,
-    TurnRightRequest,
+    AppPhaseRes, EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes,
+    SessionStateRes, TurnRightRequest,
 };
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
@@ -589,36 +589,22 @@ fn test_app_tick_state_practice_mode_mutates_session_resource() {
     );
 }
 
-#[tokio::test]
-async fn tick_state_mirrors_frame_input_into_render_resource() {
-    use crate::state::render::mirror::take_pending_mirror;
+#[test]
+fn test_app_tick_state_builds_frame_input_from_world() {
     use crate::state::render::resources::RenderFrameInputRes;
 
-    // Drain any mirror left over from a previous test (the mirror
-    // slot is a process-global resource; tests that don't go
-    // through `tick_state` can leave stale closures behind).
-    let _ = take_pending_mirror();
-
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    state.phase = AppPhase::Editor;
-    state.editor.input.mode = EditorMode::Place;
-    state.session.editor_sky_color = [0.25, 0.5, 0.75];
     app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
     app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
     app.world_mut()
         .resource_mut::<SessionStateRes>()
         .editor_sky_color = [0.25, 0.5, 0.75];
 
-    // Before tick_state runs, the resource is at its default
-    // (AppPhase::Menu).
     let pre = app.world().resource::<RenderFrameInputRes>().0.phase;
     assert_eq!(pre, AppPhase::Menu);
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
-    // After tick_state runs, the mirror has populated the resource
-    // with the current phase + editor mode + sky color.
     let frame_input = app.world().resource::<RenderFrameInputRes>().0;
     assert_eq!(frame_input.phase, AppPhase::Editor);
     assert_eq!(frame_input.editor_mode, EditorMode::Place);
@@ -774,397 +760,144 @@ async fn tick_state_inserts_heavy_render_resources_phase4c() {
     assert!(matches!(meshes.blocks, eg_render::MeshSlot::Empty));
 }
 
-#[tokio::test]
-async fn tick_state_mirror_bridge_consumes_closure() {
-    use crate::state::render::mirror::{install_mirror, take_pending_mirror};
+#[test]
+fn test_app_render_extract_builds_menu_and_editor_uniforms() {
+    use crate::state::EditorCameraRes;
+    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
+    use approx::assert_abs_diff_eq;
 
-    // Install a sentinel mirror; the bridge system in the schedule
-    // would consume it during `tick_state` if the schedule is
-    // registered. We assert that the slot is non-empty after
-    // `install_mirror`, and that the schedule's bridge system
-    // drains it on `tick_state`.
-    install_mirror(|u| {
-        u.color_space.time_seconds = 42.0;
+    let mut app = crate::state::test_support::TestApp::minimal();
+    app.world_mut().insert_resource(RenderConfigRes {
+        width: 800,
+        height: 600,
+        apply_gamma_correction: false,
     });
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    tick_state_with_app(&mut state, &mut app);
-
-    // After tick_state, the slot should be empty (the bridge system
-    // consumed the closure). If the schedule is not registered,
-    // the slot stays full — this assertion is the contract that
-    // ties the schedule graph to the mirror bridge.
-    assert!(
-        take_pending_mirror().is_none(),
-        "the mirror bridge system should drain the installed closure during tick_state"
-    );
-}
-
-#[tokio::test]
-async fn tick_state_mirrors_render_uniforms() {
-    use crate::state::render::resources::RenderUniformsRes;
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    let expected_camera_position = state.menu.state.preview_camera_position;
-    let expected_viewport = [
-        state.render_gpu().config.width.max(1) as f32,
-        state.render_gpu().config.height.max(1) as f32,
-    ];
-
-    tick_state_with_app(&mut state, &mut app);
-
-    let uniforms = app.world().resource::<RenderUniformsRes>();
+    app.world_mut()
+        .insert_resource(MenuStateRes::new(eg_types::MenuState {
+            selected_level: 0,
+            levels: Vec::new(),
+            preview_level_index: None,
+            preview_sky_color: eg_types::LevelMetadata::default().sky_color,
+            preview_camera_position: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        }));
+    let menu_eye = app
+        .world()
+        .resource::<MenuStateRes>()
+        .0
+        .preview_camera_position;
+    app.tick_state();
     assert_eq!(
-        uniforms.camera.camera_position,
-        [
-            expected_camera_position[0],
-            expected_camera_position[1],
-            expected_camera_position[2],
-            0.0
-        ]
+        app.world()
+            .resource::<RenderUniformsRes>()
+            .camera
+            .camera_position,
+        [menu_eye[0], menu_eye[1], menu_eye[2], 0.0]
     );
-    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
-}
 
-/// Phase 4b-2: the Editor non-playtest path in
-/// `State::compute_render_uniforms_snapshot` builds the camera pose
-/// from `editor_pan` + `editor_target_z` + `editor_camera_offset()`.
-/// The mirror must propagate the same math into
-/// `RenderUniformsRes`. This test pins the Editor path the same way
-/// `tick_state_mirrors_render_uniforms` pins the Menu path.
-#[tokio::test]
-async fn tick_state_mirrors_render_uniforms_in_editor() {
-    use crate::state::render::resources::RenderUniformsRes;
-    use approx::assert_abs_diff_eq;
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    state.enter_editor_phase("Mirror Test".to_string());
-
-    // Set non-default pan + target so we exercise the actual
-    // pan-driven math (the default pan is `[0, 0]` which trivially
-    // matches anything).
-    state.editor.camera.editor_pan = [4.0, 8.0];
-    state.editor.camera.editor_target_z = 6.0;
-
-    // Recompute the expected eye = target + editor_camera_offset().
-    // We call the same helper that `compute_render_uniforms_snapshot`
-    // calls so the assertion stays in lockstep with the production
-    // code (no duplicated math in the test).
-    let target = glam::Vec3::new(
-        state.editor.camera.editor_pan[0],
-        state.editor.camera.editor_target_z,
-        state.editor.camera.editor_pan[1],
-    );
-    let expected_eye = target + state.editor_camera_offset();
-    let expected_viewport = [
-        state.render_gpu().config.width.max(1) as f32,
-        state.render_gpu().config.height.max(1) as f32,
-    ];
-
-    tick_state_with_app(&mut state, &mut app);
-
-    let uniforms = app.world().resource::<RenderUniformsRes>();
-
-    // camera_position stores [x, y, z, 0.0].
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[0],
-        expected_eye.x,
-        epsilon = 1e-6
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[1],
-        expected_eye.y,
-        epsilon = 1e-6
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[2],
-        expected_eye.z,
-        epsilon = 1e-6
-    );
-    assert_eq!(uniforms.camera.camera_position[3], 0.0);
-
-    // view_proj must be non-identity (the eye != target), and must
-    // match the per-axis magnitude of what the production code
-    // computes for the same pan.
-    let view = glam::Mat4::look_at_rh(expected_eye, target, glam::Vec3::Y);
-    let aspect = state.render_gpu().config.width as f32 / state.render_gpu().config.height as f32;
-    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-    let expected_view_proj = proj * view;
-    let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
-    for col in 0..4 {
-        for row in 0..4 {
-            assert_abs_diff_eq!(
-                actual_view_proj.col(col)[row],
-                expected_view_proj.col(col)[row],
-                epsilon = 1e-5
-            );
-        }
+    app.world_mut()
+        .insert_resource(AppPhaseRes::new(AppPhase::Editor));
+    {
+        let mut camera = app.world_mut().resource_mut::<EditorCameraRes>();
+        camera.0.editor_pan = [4.0, 8.0];
+        camera.0.editor_target_z = 6.0;
     }
-
-    // The line uniform is *not* driven by the Editor phase; it
-    // reflects the global `frame_runtime.player_render.line_uniform`
-    // (i.e. the default unless the playtest path has run). We only
-    // assert the viewport to keep the test focused on the camera
-    // mirror.
-    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
+    let target = app
+        .world()
+        .resource::<EditorCameraRes>()
+        .0
+        .editor_camera_target();
+    let expected_eye = target
+        + app
+            .world()
+            .resource::<EditorCameraRes>()
+            .0
+            .editor_camera_offset();
+    app.tick_state();
+    let camera_position = app
+        .world()
+        .resource::<RenderUniformsRes>()
+        .camera
+        .camera_position;
+    assert_abs_diff_eq!(camera_position[0], expected_eye.x, epsilon = 1e-6);
+    assert_abs_diff_eq!(camera_position[1], expected_eye.y, epsilon = 1e-6);
+    assert_abs_diff_eq!(camera_position[2], expected_eye.z, epsilon = 1e-6);
+    assert_eq!(camera_position[3], 0.0);
 }
 
-/// Phase 4b-3: the Playing path in
-/// `State::compute_render_uniforms_snapshot` builds the camera pose
-/// from `playing_camera_view()` (the camera track evaluated at the
-/// current `elapsed_seconds` for the player position). The mirror
-/// must propagate the same math into `RenderUniformsRes`.
-#[tokio::test]
-async fn tick_state_mirrors_render_uniforms_in_playing() {
-    use crate::state::render::resources::RenderUniformsRes;
+#[test]
+fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
+    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
     use approx::assert_abs_diff_eq;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    state.enter_playing_phase(Some("Mirror Playing".to_string()), false);
+    app.world_mut()
+        .insert_resource(AppPhaseRes::new(AppPhase::Playing));
+    app.world_mut().insert_resource(RenderConfigRes {
+        width: 1280,
+        height: 720,
+        apply_gamma_correction: false,
+    });
+    let position = [12.0, 3.0, 7.0];
+    app.world_mut().spawn((
+        eg_game::PlayerPosition(position),
+        eg_game::PlayerDirection(Direction::Right),
+    ));
+    {
+        let mut clock = app.world_mut().resource_mut::<eg_game::GameClock>();
+        clock.elapsed_seconds = 0.5;
+        clock.started = false;
+    }
+    let expected_eye = crate::state::evaluate_camera_track_for_objects(
+        &app.world().resource::<crate::state::EditorCameraRes>().0,
+        &[],
+        0.5,
+        glam::Vec3::from_array(position),
+        false,
+    )
+    .eye;
 
-    // The camera track uses `elapsed_seconds` for the sample time
-    // and the player position as the target. We seed both with
-    // non-default values so the test exercises the actual path
-    // (defaults at zero would trivially match).
-    state.gameplay.state.elapsed_seconds = 0.5;
-    state.gameplay.state.position = [12.0, 3.0, 7.0];
-    state.gameplay.state.direction = Direction::Right;
-
-    let (expected_eye, expected_target) = state.playing_camera_view();
-    let expected_viewport = [
-        state.render_gpu().config.width.max(1) as f32,
-        state.render_gpu().config.height.max(1) as f32,
-    ];
-
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     let uniforms = app.world().resource::<RenderUniformsRes>();
-
-    // camera_position stores [x, y, z, 0.0].
     assert_abs_diff_eq!(
         uniforms.camera.camera_position[0],
         expected_eye.x,
         epsilon = 1e-5
     );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[1],
-        expected_eye.y,
-        epsilon = 1e-5
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[2],
-        expected_eye.z,
-        epsilon = 1e-5
-    );
-    assert_eq!(uniforms.camera.camera_position[3], 0.0);
-
-    // view_proj must match the production code's view_proj for the
-    // same eye + target. We assert the full matrix (per-element) so
-    // any future drift in `look_at_rh` / `perspective_rh_gl`
-    // ordering is caught.
-    let view = glam::Mat4::look_at_rh(expected_eye, expected_target, glam::Vec3::Y);
-    let aspect = state.render_gpu().config.width as f32 / state.render_gpu().config.height as f32;
-    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-    let expected_view_proj = proj * view;
-    let actual_view_proj = glam::Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
-    for col in 0..4 {
-        for row in 0..4 {
-            assert_abs_diff_eq!(
-                actual_view_proj.col(col)[row],
-                expected_view_proj.col(col)[row],
-                epsilon = 1e-5
-            );
-        }
-    }
-
-    // The Playing path also drives the line uniform from the player
-    // position + direction. We assert the offset values to 1e-2
-    // (the production code rounds to 2 decimal places).
-    assert_abs_diff_eq!(
-        uniforms.line.offset[0],
-        (state.gameplay.state.position[0] * 100.0).round() / 100.0,
-        epsilon = 1e-2
-    );
-    assert_abs_diff_eq!(
-        uniforms.line.offset[1],
-        (state.gameplay.state.position[2] * 100.0).round() / 100.0,
-        epsilon = 1e-2
-    );
-    // Right = -π/2.
+    assert_abs_diff_eq!(uniforms.line.offset[0], 12.0, epsilon = 1e-6);
+    assert_abs_diff_eq!(uniforms.line.offset[1], 7.0, epsilon = 1e-6);
     assert_abs_diff_eq!(
         uniforms.line.rotation,
         -std::f32::consts::FRAC_PI_2,
         epsilon = 1e-6
     );
-
-    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
 }
 
-/// Phase 4b-3: the GameOver path shares the Playing camera-track
-/// math (the production code matches both with `| Playing |
-/// GameOver`). This test pins the GameOver code path so any future
-/// refactor that splits the two paths is caught.
-#[tokio::test]
-async fn tick_state_mirrors_render_uniforms_in_game_over() {
-    use crate::state::render::resources::RenderUniformsRes;
+#[test]
+fn test_app_render_extract_uses_app_time_viewport_and_gamma() {
+    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
     use approx::assert_abs_diff_eq;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
-    // `enter_playing_phase` is the only entry to set `phase =
-    // GameOver`; the production code doesn't have a dedicated
-    // `enter_game_over_phase`. We follow the same pattern as the
-    // legacy command dispatch: enter playing, then flip the
-    // `game_over` flag.
-    state.enter_playing_phase(Some("Mirror GameOver".to_string()), false);
-    state.phase = AppPhase::GameOver;
-    state.gameplay.state.game_over = true;
-    state.gameplay.state.elapsed_seconds = 1.25;
-    state.gameplay.state.position = [-4.0, 0.0, 9.0];
-
-    let (expected_eye, _expected_target) = state.playing_camera_view();
-
-    tick_state_with_app(&mut state, &mut app);
-
-    let uniforms = app.world().resource::<RenderUniformsRes>();
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[0],
-        expected_eye.x,
-        epsilon = 1e-5
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[1],
-        expected_eye.y,
-        epsilon = 1e-5
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[2],
-        expected_eye.z,
-        epsilon = 1e-5
-    );
-}
-
-/// Phase 4b-3: the Editor **playtest** path is the only Editor
-/// code path in `compute_render_uniforms_snapshot` that does NOT
-/// use `editor_pan` + `editor_target_z`. It uses
-/// `editor_preview_camera_view()` (the camera track evaluated at
-/// `editor.timeline.clock.time_seconds` for the timeline preview
-/// position). This test pins that path.
-#[tokio::test]
-async fn tick_state_mirrors_render_uniforms_in_editor_playtest() {
-    use crate::state::render::resources::RenderUniformsRes;
-    use approx::assert_abs_diff_eq;
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    state.enter_editor_phase("Mirror Playtest".to_string());
-
-    // Flip the editor timeline into "playing" mode (this is what
-    // `editor_is_playing()` checks). The state stores a separate
-    // `is_playing` flag on the editor runtime.
-    state.editor.timeline.clock.time_seconds = 0.75;
-    state.editor.timeline.preview.position = [2.0, 4.0, 6.0];
-
-    // Enter the editor playtest path (sets `playtesting_editor` +
-    // starts the editor timeline). The `editor.timeline.playback.playing`
-    // flag is what `editor_is_playing()` reads (it delegates to
-    // `EditorSubsystem::is_playing`).
-    state.editor.timeline.playback.playing = true;
-    state.session.playtesting_editor = true;
-
-    // Sanity check: the production path requires
-    // `editor_is_playing()` to return true.
-    assert!(state.editor_is_playing());
-
-    let (expected_eye_arr, expected_target_arr) = state.editor_preview_camera_view();
-    let expected_eye = glam::Vec3::from_array(expected_eye_arr);
-    let _expected_target = glam::Vec3::from_array(expected_target_arr);
-
-    tick_state_with_app(&mut state, &mut app);
-
-    let uniforms = app.world().resource::<RenderUniformsRes>();
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[0],
-        expected_eye.x,
-        epsilon = 1e-5
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[1],
-        expected_eye.y,
-        epsilon = 1e-5
-    );
-    assert_abs_diff_eq!(
-        uniforms.camera.camera_position[2],
-        expected_eye.z,
-        epsilon = 1e-5
-    );
-}
-
-/// Phase 6d: `ColorSpaceUniform.time_seconds` is driven from
-/// `FrameTimeRes` in the App-world schedule, while the remaining
-/// gamma/viewport fields still come from the compatibility render POD
-/// mirror.
-#[tokio::test]
-async fn tick_state_mirrors_color_space_time_and_gamma() {
-    use crate::state::render::resources::RenderUniformsRes;
-    use approx::assert_abs_diff_eq;
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    state.frame_runtime.global_time_seconds = 99.0;
-    state.render_gpu_mut().apply_gamma_correction = true;
+    app.world_mut().insert_resource(RenderConfigRes {
+        width: 640,
+        height: 360,
+        apply_gamma_correction: true,
+    });
     {
         let mut frame_time = app.world_mut().resource_mut::<FrameTimeRes>();
         frame_time.global_time_seconds = 12.5;
         frame_time.last_frame = web_time::Instant::now();
     }
 
-    let expected_viewport = [
-        state.render_gpu().config.width.max(1) as f32,
-        state.render_gpu().config.height.max(1) as f32,
-    ];
+    app.tick_state();
 
-    tick_state_with_app(&mut state, &mut app);
-
-    let expected_time = app.world().resource::<FrameTimeRes>().global_time_seconds;
-    let uniforms = app.world().resource::<RenderUniformsRes>();
-    assert_abs_diff_eq!(
-        uniforms.color_space.time_seconds,
-        expected_time,
-        epsilon = 1e-6
-    );
-    assert!(
-        (uniforms.color_space.time_seconds - 99.0).abs() > 1.0,
-        "color-space time should no longer be sourced from legacy frame_runtime.global_time_seconds"
-    );
-    assert_abs_diff_eq!(
-        uniforms.color_space.apply_gamma_correction,
-        1.0,
-        epsilon = 1e-6
-    );
-    assert_eq!(uniforms.color_space.viewport_size, expected_viewport);
-}
-
-/// Phase 4b-4: when the gamma toggle is **off** the mirror must
-/// produce `0.0` (not 0.5 or a float that round-trips). This is a
-/// focused regression for the bit-vs-float conversion in
-/// `compute_render_uniforms_snapshot`.
-#[tokio::test]
-async fn tick_state_mirrors_gamma_off_as_zero() {
-    use crate::state::render::resources::RenderUniformsRes;
-
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    state.render_gpu_mut().apply_gamma_correction = false;
-
-    tick_state_with_app(&mut state, &mut app);
-
-    let uniforms = app.world().resource::<RenderUniformsRes>();
-    assert_eq!(uniforms.color_space.apply_gamma_correction, 0.0);
+    let frame_time = app.world().resource::<FrameTimeRes>().global_time_seconds;
+    let color_space = app.world().resource::<RenderUniformsRes>().color_space;
+    assert_abs_diff_eq!(color_space.time_seconds, frame_time, epsilon = 1e-6);
+    assert_eq!(color_space.apply_gamma_correction, 1.0);
+    assert_eq!(color_space.viewport_size, [640.0, 360.0]);
 }
 
 #[tokio::test]

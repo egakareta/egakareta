@@ -48,6 +48,58 @@ use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
 #[allow(dead_code)]
 pub struct RenderGpuRes(pub eg_render::GpuContext);
 
+/// App-owned render configuration needed by extraction without borrowing the
+/// full surface/GPU context.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderConfigRes {
+    pub width: u32,
+    pub height: u32,
+    pub apply_gamma_correction: bool,
+}
+
+impl RenderConfigRes {
+    pub fn from_gpu(gpu: &eg_render::GpuContext) -> Self {
+        Self {
+            width: gpu.config.width.max(1),
+            height: gpu.config.height.max(1),
+            apply_gamma_correction: gpu.apply_gamma_correction,
+        }
+    }
+}
+
+impl Default for RenderConfigRes {
+    fn default() -> Self {
+        Self {
+            width: 1,
+            height: 1,
+            apply_gamma_correction: false,
+        }
+    }
+}
+
+/// Queue and uniform-buffer handles used by scheduled App-world uploads.
+///
+/// These handles are cheap clones of the compatibility GPU context and point
+/// at the same underlying wgpu objects. Keeping only the upload surface here
+/// avoids duplicating ownership of the platform surface.
+pub struct RenderUniformUploadRes {
+    pub queue: wgpu::Queue,
+    pub camera_uniform_buffer: wgpu::Buffer,
+    pub line_uniform_buffer: wgpu::Buffer,
+    pub color_space_uniform_buffer: wgpu::Buffer,
+}
+
+impl RenderUniformUploadRes {
+    pub fn from_gpu(gpu: &eg_render::GpuContext) -> Self {
+        Self {
+            queue: gpu.queue.clone(),
+            camera_uniform_buffer: gpu.camera_uniform_buffer.clone(),
+            line_uniform_buffer: gpu.line_uniform_buffer.clone(),
+            color_space_uniform_buffer: gpu.color_space_uniform_buffer.clone(),
+        }
+    }
+}
+
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
 ///
 /// Phase 4c moved the former `State::render.meshes` field into this
@@ -217,6 +269,7 @@ impl RenderResizeRequest {
 pub fn render_pod_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderUniformsRes>()
         && world.contains_resource::<RenderFrameInputRes>()
+        && world.contains_resource::<RenderConfigRes>()
         && world.contains_resource::<RenderResizeRequest>()
 }
 
@@ -237,26 +290,6 @@ pub fn render_heavy_resources_present(world: &World) -> bool {
 pub fn render_phase4c_resources_present(world: &World) -> bool {
     world.contains_non_send::<RenderMeshesRes>()
         && world.contains_non_send::<RenderSurfaceHostRes>()
-}
-
-/// Render POD mirror helper.
-///
-/// Reads the current uniform values + frame input exposed by the
-/// closure and writes them into
-/// [`RenderUniformsRes`] / [`RenderFrameInputRes`].
-///
-/// The closure lets us reach legacy frame-computed values without
-/// making `State` a system arg. The closure must be cheap
-/// (it runs once per frame) and must not retain references past the
-/// call.
-#[allow(dead_code)]
-pub fn mirror_render_pod_state(
-    uniforms: &mut RenderUniformsRes,
-    frame_input: &mut RenderFrameInputRes,
-    accessor: impl FnMut(&mut RenderUniformsRes, &mut RenderFrameInputRes),
-) {
-    let mut accessor = accessor;
-    accessor(uniforms, frame_input);
 }
 
 #[cfg(test)]

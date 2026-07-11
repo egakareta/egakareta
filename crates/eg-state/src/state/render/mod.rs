@@ -7,7 +7,6 @@
 */
 pub mod block_icon;
 pub mod draw;
-pub mod mirror;
 pub mod plugin;
 pub mod resources;
 

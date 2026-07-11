@@ -45,9 +45,9 @@
 //!
 //! The handler systems can't take `&mut State` directly because
 //! `State` owns `Arc<Mutex<Receiver<T>>>` (and previously
-//! `mpsc::Receiver<T>`) which makes it `!Send`. We use the same
-//! thread-local bridge pattern as Phase 4a (`state::render::mirror`):
-//! each handler system installs a `FnOnce(&mut State)` closure
+//! `mpsc::Receiver<T>`) which makes it `!Send`. The remaining compatibility
+//! path uses a thread-local bridge: each handler system installs a
+//! `FnOnce(&mut State)` closure
 //! into a thread-local slot; the runtime drains the slot and applies
 //! each closure after the schedule finishes.
 //!
@@ -64,7 +64,6 @@
 //!     waveform_handler_system          // WaveformResultEvent
 //!     audio_preload_handler_system     // AudioPreloadResultEvent
 //!     level_import_handler_system      // LevelImportResultEvent
-//!   render::mirror_pod_state_via_bridge
 //!   Runtime/compatibility test harness drains pending async-result closures
 //! ```
 //!

@@ -118,12 +118,10 @@ impl TestApp {
 
     /// Run a single frame of the eg-state pipeline.
     ///
-    /// Bevy-native equivalent of `State::tick_state()`. Runs the
-    /// per-frame [`StateSchedule`], which owns phase transition
-    /// detection, command handlers, render mirror bridging, channel
-    /// polling, and async result handlers.
+    /// Run the same state, gameplay, and render-extraction schedules as the
+    /// production Runtime frame driver.
     pub fn tick_state(&mut self) {
-        let _ = self.world_mut().try_run_schedule(StateSchedule);
+        super::plugins::run_state_schedule_in_world(self.world_mut());
     }
 
     /// Run the [`StateSchedule`] once on the World.

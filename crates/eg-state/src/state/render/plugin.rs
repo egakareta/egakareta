@@ -29,8 +29,8 @@ use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, LevelMetad
 use glam::Vec3;
 
 use super::resources::{
-    RenderFrameInputRes, RenderGpuRes, RenderMeshesRes, RenderResizeRequest, RenderSurfaceHostRes,
-    RenderUniformsRes,
+    RenderConfigRes, RenderFrameInputRes, RenderGpuRes, RenderMeshesRes, RenderResizeRequest,
+    RenderSurfaceHostRes, RenderUniformUploadRes, RenderUniformsRes,
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
 use crate::state::{
@@ -88,6 +88,7 @@ impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderUniformsRes>()
             .init_resource::<RenderFrameInputRes>()
+            .init_resource::<RenderConfigRes>()
             .init_resource::<RenderResizeRequest>()
             .init_non_send::<RenderMeshesRes>()
             .init_non_send::<RenderSurfaceHostRes>()
@@ -102,6 +103,7 @@ impl Plugin for RenderPlugin {
 pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();
+    world.init_resource::<RenderConfigRes>();
     world.init_resource::<RenderResizeRequest>();
     // Phase 4c: insert default heavy resources so standalone worlds
     // can query them. `State` construction overwrites these defaults
@@ -144,7 +146,7 @@ pub(crate) struct RenderFrameInputParams<'w, 's> {
     timeline: Res<'w, EditorTimelineRes>,
     clock: Option<Res<'w, eg_game::GameClock>>,
     menu: Option<Res<'w, MenuStateRes>>,
-    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    config: Res<'w, RenderConfigRes>,
     player: Query<'w, 's, &'static eg_game::PlayerPosition>,
     frame_input: ResMut<'w, RenderFrameInputRes>,
 }
@@ -185,10 +187,7 @@ pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParam
         game_over: params.clock.as_ref().is_some_and(|clock| clock.game_over),
         sky_color,
         grid_center,
-        apply_gamma_correction: params
-            .gpu
-            .as_ref()
-            .is_some_and(|gpu| gpu.0.apply_gamma_correction),
+        apply_gamma_correction: params.config.apply_gamma_correction,
     };
 }
 
@@ -201,7 +200,7 @@ pub(crate) struct RenderUniformsParams<'w, 's> {
     frame_time: Res<'w, FrameTimeRes>,
     clock: Option<Res<'w, eg_game::GameClock>>,
     menu: Option<Res<'w, MenuStateRes>>,
-    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    config: Res<'w, RenderConfigRes>,
     player: Query<
         'w,
         's,
@@ -219,13 +218,10 @@ pub(crate) struct RenderUniformsParams<'w, 's> {
 /// update code can continue to observe the scheduled line uniform while the
 /// GPU upload itself is owned by this system.
 pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
-    let Some(gpu) = params.gpu.as_ref() else {
-        return;
-    };
     let (width, height, apply_gamma_correction) = (
-        gpu.0.config.width,
-        gpu.0.config.height,
-        gpu.0.apply_gamma_correction,
+        params.config.width.max(1),
+        params.config.height.max(1),
+        params.config.apply_gamma_correction,
     );
     let (player_position, player_direction) = params
         .player
@@ -311,19 +307,19 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
 /// Upload the extracted camera and line POD values before the compatibility
 /// renderer runs. Color-space upload remains in its dedicated system.
 pub(crate) fn upload_render_uniforms_system(
-    gpu: Option<NonSend<RenderGpuRes>>,
+    upload: Option<NonSend<RenderUniformUploadRes>>,
     uniforms: Res<RenderUniformsRes>,
 ) {
-    let Some(gpu) = gpu else {
+    let Some(upload) = upload else {
         return;
     };
-    gpu.0.queue.write_buffer(
-        &gpu.0.camera_uniform_buffer,
+    upload.queue.write_buffer(
+        &upload.camera_uniform_buffer,
         0,
         bytemuck::bytes_of(&uniforms.camera),
     );
-    gpu.0.queue.write_buffer(
-        &gpu.0.line_uniform_buffer,
+    upload.queue.write_buffer(
+        &upload.line_uniform_buffer,
         0,
         bytemuck::bytes_of(&uniforms.line),
     );
@@ -345,14 +341,14 @@ pub fn update_color_space_uniform_system(
 /// shell only records that the scheduled upload already happened so direct
 /// legacy callers still retain their fallback behavior.
 pub fn upload_color_space_uniform_system(
-    gpu: Option<NonSend<RenderGpuRes>>,
+    upload: Option<NonSend<RenderUniformUploadRes>>,
     uniforms: Res<RenderUniformsRes>,
 ) {
-    let Some(gpu) = gpu else {
+    let Some(upload) = upload else {
         return;
     };
-    gpu.0.queue.write_buffer(
-        &gpu.0.color_space_uniform_buffer,
+    upload.queue.write_buffer(
+        &upload.color_space_uniform_buffer,
         0,
         bytemuck::bytes_of(&uniforms.color_space),
     );
@@ -360,6 +356,7 @@ pub fn upload_color_space_uniform_system(
 
 pub fn apply_resize_surface_system(
     mut request: ResMut<RenderResizeRequest>,
+    mut config: ResMut<RenderConfigRes>,
     mut gpu: Option<NonSendMut<RenderGpuRes>>,
     surface_host: Option<NonSend<RenderSurfaceHostRes>>,
 ) {
@@ -369,6 +366,8 @@ pub fn apply_resize_surface_system(
     if size.width == 0 || size.height == 0 {
         return;
     }
+    config.width = size.width;
+    config.height = size.height;
     request.mark_applied(size);
 
     if let Some(surface_host) = surface_host
@@ -418,7 +417,7 @@ pub fn mark_mesh_dirty_system(
     writer.write(RebuildMeshEvent::new(RebuildMeshKind::RebuildBlockMesh));
 }
 
-/// Add the per-frame mirror system to a [`Schedule`].
+/// Add the App-world render bookkeeping systems to a [`Schedule`].
 ///
 /// The schedule itself is added by the
 /// [`super::super::plugins::register_state_command_pipeline`] helper
@@ -428,27 +427,13 @@ pub fn mark_mesh_dirty_system(
 /// Callers are expected to add a `RenderSet::Present` system set
 /// afterwards (e.g. `add_command_systems` chains an `add_systems` for
 /// the present boundary).
-pub fn add_mirror_render_systems(schedule: &mut Schedule) {
+pub fn add_state_render_systems(schedule: &mut Schedule) {
     schedule.add_systems((
         mark_mesh_dirty_system.in_set(RenderSet::RebuildMesh),
-        // The mirror is a closure-driven system (see the docs on
-        // `mirror_render_pod_state_system`). The closure is provided
-        // by `State::tick_state` so the system can reach the legacy
-        // `State::render` fields. We register a small wrapper that
-        // invokes the closure through a thread-local, which the
-        // tick_state path populates just before running the schedule.
-        //
-        // Implementation note: the mirror is a system on its own
-        // because Bevy `IntoSystemConfigs` requires `SystemParam`
-        // args only. The actual data source is a per-frame
-        // `OnceLock<RenderMirrorState>` shared with `tick_state`.
-        // See `state/render/mirror.rs` for the bridge.
-        mirror_pod_state_via_bridge,
         update_render_frame_input_system
             .after(crate::state::async_bridge::ApplyAsyncResultsSet)
             .before(present_render_frame_system),
         update_color_space_uniform_system
-            .after(mirror_pod_state_via_bridge)
             .after(crate::state::frame_time::advance_frame_time_system),
         upload_color_space_uniform_system
             .after(update_color_space_uniform_system)
@@ -463,39 +448,15 @@ pub fn add_mirror_render_systems(schedule: &mut Schedule) {
     ));
 }
 
-/// Bridge system that reads the per-frame mirror closure from a
-/// shared `OnceLock` (populated by `State::tick_state` right before
-/// the schedule runs) and dispatches it to
-/// [`mirror_render_pod_state_system`].
-///
-/// The `OnceLock` pattern lets us call the closure in a system
-/// without `unsafe` (the closure doesn't escape the system call —
-/// `tick_state` overwrites it each frame and waits for the schedule
-/// to drain before reading back).
-fn mirror_pod_state_via_bridge(mut uniforms: ResMut<RenderUniformsRes>) {
-    use crate::state::render::mirror::take_pending_mirror;
-
-    if let Some(mut mirror) = take_pending_mirror() {
-        mirror(&mut uniforms);
-    }
-    // If no mirror was queued, the resources stay at their default
-    // values. This is the correct behavior for tests that don't go
-    // through the full `State::tick_state` path. The `let _ =` is a
-    // deliberate no-op sink that makes the function nominally
-    // consume its args so the system stays in the schedule graph.
-    let _ = &mut uniforms;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::state::render::resources::{
-        mirror_render_pod_state, render_heavy_resources_present, render_pod_resources_present,
+        render_heavy_resources_present, render_pod_resources_present,
     };
     use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes, SessionStateRes};
     use bevy_ecs::world::World;
-    use eg_render::RenderFrameInput;
-    use eg_types::{AppPhase, EditorMode, LevelMetadata, PhysicalSize};
+    use eg_types::{AppPhase, EditorMode, PhysicalSize};
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {
@@ -503,6 +464,7 @@ mod tests {
         register_render_pod_resources(&mut world);
         assert!(world.contains_resource::<RenderUniformsRes>());
         assert!(world.contains_resource::<RenderFrameInputRes>());
+        assert!(world.contains_resource::<RenderConfigRes>());
         assert!(world.contains_resource::<RenderResizeRequest>());
     }
 
@@ -522,6 +484,7 @@ mod tests {
         world.init_resource::<EditorCameraRes>();
         world.init_resource::<EditorTimelineRes>();
         world.init_resource::<RenderFrameInputRes>();
+        world.init_resource::<RenderConfigRes>();
         world.resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
         world.resource_mut::<EditorInputRes>().0.mode = EditorMode::Timing;
         world.resource_mut::<EditorCameraRes>().0.editor_pan = [4.0, -2.0];
@@ -557,41 +520,6 @@ mod tests {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
         assert!(!render_heavy_resources_present(&world));
-    }
-
-    #[test]
-    fn mirror_render_pod_state_writes_via_closure() {
-        let mut world = World::new();
-        register_render_pod_resources(&mut world);
-
-        world.resource_scope(
-            |world, mut uniforms: bevy_ecs::world::Mut<RenderUniformsRes>| {
-                let mut frame_input = world.resource_mut::<RenderFrameInputRes>();
-                mirror_render_pod_state(&mut uniforms, &mut frame_input, |u, f| {
-                    u.color_space.time_seconds = 1.5;
-                    f.0 = RenderFrameInput {
-                        phase: AppPhase::Playing,
-                        editor_mode: EditorMode::Place,
-                        game_over: false,
-                        sky_color: LevelMetadata::default().sky_color,
-                        grid_center: [0.0, 0.0],
-                        apply_gamma_correction: false,
-                    };
-                });
-            },
-        );
-
-        assert_eq!(
-            world
-                .resource::<RenderUniformsRes>()
-                .color_space
-                .time_seconds,
-            1.5
-        );
-        assert_eq!(
-            world.resource::<RenderFrameInputRes>().0.phase,
-            AppPhase::Playing
-        );
     }
 
     /// Phase 4d: changed authored object components emit rebuild events.
@@ -667,5 +595,13 @@ mod tests {
             .expect("scheduled resize must publish the accepted size");
         assert_eq!(applied.width, 320);
         assert_eq!(applied.height, 240);
+        assert_eq!(
+            *world.resource::<RenderConfigRes>(),
+            RenderConfigRes {
+                width: 320,
+                height: 240,
+                apply_gamma_correction: false,
+            }
+        );
     }
 }

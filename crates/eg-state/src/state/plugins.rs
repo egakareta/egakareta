@@ -246,11 +246,6 @@ pub fn register_state_resources(world: &mut World) {
 /// resources for Runtime to consume while legacy side effects still live on
 /// `State`.
 ///
-/// Phase 4a: the schedule also contains the
-/// `mirror_pod_state_via_bridge` system from
-/// `state::render::plugin` that drains the per-frame mirror closure
-/// installed by Runtime into the POD render resources.
-///
 /// Phase 6a: the schedule also contains the
 /// `poll_channels_system` from `state::async_bridge` that drains
 /// the five legacy `mpsc` receivers (auth, audio import,
@@ -276,9 +271,9 @@ pub fn register_state_command_pipeline(world: &mut World) {
 
     // Build the per-frame schedule that handles the per-event
     // message resources, updates App-world resources / typed
-    // request resources, then runs the Phase 4a render mirror
-    // bridge, the Phase 6a channel poll systems, and the Phase 6b
-    // result handler systems. The schedule is added to the world's
+    // request resources, then runs the render bookkeeping systems,
+    // Phase 6a channel poll systems, and Phase 6b result handler systems.
+    // The schedule is added to the world's
     // scheduler so runtime and test harnesses can invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     schedule.configure_sets(
@@ -320,7 +315,7 @@ pub fn register_state_command_pipeline(world: &mut World) {
     );
     crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
     crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);
-    crate::state::render::plugin::add_mirror_render_systems(&mut schedule);
+    crate::state::render::plugin::add_state_render_systems(&mut schedule);
     world.add_schedule(schedule);
 
     let mut render_extract_schedule =

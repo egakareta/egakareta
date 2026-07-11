@@ -79,7 +79,10 @@ pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
     register_state_command_pipeline, run_state_schedule_in_world, setup_state_app,
 };
-pub use render::resources::{RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes};
+pub use render::resources::{
+    RenderConfigRes, RenderFrameInputRes, RenderResizeRequest, RenderUniformUploadRes,
+    RenderUniformsRes,
+};
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
@@ -99,9 +102,9 @@ use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, CameraUniform, ColorSpaceUniform, Direction,
-    EditorInputState, EditorMode, LevelObject, LevelPreviewCameraMetadata, LineUniform, MenuState,
-    MusicMetadata, PhysicalSize, SettingsSection, SpawnMetadata,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorInputState, EditorMode, LevelObject,
+    LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+    SpawnMetadata,
 };
 
 /// Bundles all gameplay-related state into a single subsystem.
@@ -300,10 +303,7 @@ impl State {
 
     /// Install App-world bridge data for the production Runtime frame.
     ///
-    /// Production render POD values are rebuilt by `RenderExtractSchedule`,
-    /// so this path does not install the legacy thread-local render mirror.
-    /// The mirror-enabled method above remains for the legacy `State` test
-    /// harness while its snapshot assertions are migrated.
+    /// Production render POD values are rebuilt by `RenderExtractSchedule`.
     pub fn prepare_app_world_for_runtime(&mut self, world: &mut bevy_ecs::world::World) {
         self.prepare_app_world_for_state_schedule_inner(world, false);
     }
@@ -311,7 +311,7 @@ impl State {
     fn prepare_app_world_for_state_schedule_inner(
         &mut self,
         world: &mut bevy_ecs::world::World,
-        install_legacy_render_mirror: bool,
+        install_legacy_state_mirrors: bool,
     ) {
         puffin::profile_scope!("StateSchedule");
         // Phase 3.17: `SetSelectedTap` is an App-world carve-out, but
@@ -319,13 +319,13 @@ impl State {
         // legacy `State`. Mirror the tap arrays into
         // `EditorTimelineRes` before the schedule runs so the handler
         // can validate and select against the current legacy-owned data.
-        if install_legacy_render_mirror {
+        if install_legacy_state_mirrors {
             let mut objects = world.resource_mut::<EditorObjectsRes>();
             objects.objects = self.editor.objects.clone();
             objects.history_restore_pending = false;
             objects.object_mutation_pending = false;
         }
-        if install_legacy_render_mirror {
+        if install_legacy_state_mirrors {
             world.resource_mut::<EditorHistoryRes>().0 = self.editor.runtime.history.clone();
             {
                 let mut timeline = world.resource_mut::<EditorTimelineRes>();
@@ -381,20 +381,6 @@ impl State {
                 self.session.app_settings.graphics_backend.clone();
             session.settings_restart_required = self.session.settings_restart_required;
             session.graphics_backend_locked = self.session.graphics_backend_locked;
-        }
-        // Phase 4a/4b: install the per-frame mirror closure. The
-        // closure captures only the `Copy` uniform values it needs — `State`
-        // itself is `!Send` because it owns a `mpsc::Receiver` for
-        // auth results, so the closure cannot borrow `&self`. The
-        // captured values are refreshed every frame. The closure
-        // runs once and is consumed (taken) by the schedule's
-        // `mirror_pod_state_via_bridge` system. See
-        // `state::render::mirror` for the bridge protocol.
-        if install_legacy_render_mirror {
-            let uniforms_snapshot = self.compute_render_uniforms_snapshot();
-            render::mirror::install_mirror(move |uniforms| {
-                *uniforms = uniforms_snapshot;
-            });
         }
         // The channel wrappers are auto-installed from the
         // `Arc<Mutex<Receiver<T>>>` fields on the legacy `State`.
@@ -459,67 +445,6 @@ impl State {
             },
             grid_center: [0.0, 0.0],
             apply_gamma_correction: self.render_gpu().apply_gamma_correction,
-        }
-    }
-
-    /// Compute the current POD render uniforms for the ECS mirror.
-    /// This mirrors the same values uploaded by `State::update` while
-    /// the update path is still being migrated into Bevy systems.
-    fn compute_render_uniforms_snapshot(&self) -> render::resources::RenderUniformsRes {
-        let gpu = self.render_gpu();
-        let aspect = gpu.config.width as f32 / gpu.config.height as f32;
-        let (eye, target) = match self.phase {
-            AppPhase::Menu => (
-                glam::Vec3::from_array(self.menu.state.preview_camera_position),
-                glam::Vec3::from_array(self.menu.state.preview_camera_target),
-            ),
-            AppPhase::Playing | AppPhase::GameOver => self.playing_camera_view(),
-            AppPhase::Editor => {
-                if self.editor_is_playing() {
-                    let (eye, target) = self.editor_preview_camera_view();
-                    (glam::Vec3::from_array(eye), glam::Vec3::from_array(target))
-                } else {
-                    let target = glam::Vec3::new(
-                        self.editor.camera.editor_pan[0],
-                        self.editor.camera.editor_target_z,
-                        self.editor.camera.editor_pan[1],
-                    );
-                    (target + self.editor_camera_offset(), target)
-                }
-            }
-        };
-        let view = glam::Mat4::look_at_rh(eye, target, glam::Vec3::Y);
-        let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-
-        let mut line = self.frame_runtime.player_render.line_uniform;
-        if matches!(self.phase, AppPhase::Playing | AppPhase::GameOver) {
-            line = LineUniform {
-                offset: [
-                    (self.gameplay.state.position[0] * 100.0).round() / 100.0,
-                    (self.gameplay.state.position[2] * 100.0).round() / 100.0,
-                ],
-                rotation: match self.gameplay.state.direction {
-                    Direction::Forward => 0.0,
-                    Direction::Right => -std::f32::consts::FRAC_PI_2,
-                },
-                _pad: 0.0,
-            };
-        }
-
-        render::resources::RenderUniformsRes {
-            camera: CameraUniform {
-                view_proj: (proj * view).to_cols_array_2d(),
-                camera_position: [eye.x, eye.y, eye.z, 0.0],
-            },
-            line,
-            color_space: ColorSpaceUniform {
-                apply_gamma_correction: if gpu.apply_gamma_correction { 1.0 } else { 0.0 },
-                time_seconds: self.frame_runtime.global_time_seconds,
-                viewport_size: [
-                    gpu.config.width.max(1) as f32,
-                    gpu.config.height.max(1) as f32,
-                ],
-            },
         }
     }
 

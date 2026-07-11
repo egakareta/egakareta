@@ -40,8 +40,7 @@ pub use menu::{
     show_pause_menu_ui, show_practice_checkpoint_ui,
 };
 pub use plugin::{
-    EguiContextRes, UiCommandQueue, UiPlugin, drain_ui_command_queue, enqueue_ui_command,
-    enqueue_ui_commands, register_ui_resources_world, sync_egui_context, write_ui_command,
+    EguiContextRes, UiPlugin, register_ui_resources_world, sync_egui_context, write_ui_command,
     write_ui_commands,
 };
 
@@ -1980,11 +1979,11 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        UiCommandQueue, UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink,
-        block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
-        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
-        responsive_ui_scale_multiplier, settings_sidebar_default_width,
-        show_editor_ui_commands_from_view, show_perf_overlay, sort_quad_by_angle,
+        UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink, block_matches_catalog_category,
+        combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
+        perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
+        settings_sidebar_default_width, show_editor_ui_commands_from_view, show_perf_overlay,
+        sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
@@ -2057,7 +2056,7 @@ mod tests {
     }
 
     #[test]
-    fn world_command_sink_writes_messages_without_queueing() {
+    fn world_command_sink_writes_messages_immediately() {
         let mut app = bevy_app::App::new();
         app.add_plugins(crate::plugin::UiPlugin);
 
@@ -2070,7 +2069,6 @@ mod tests {
             .resource::<bevy_ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
         let mut reader = messages.get_cursor();
         assert_eq!(reader.read(messages).count(), 1);
-        assert!(app.world().resource::<UiCommandQueue>().is_empty());
     }
 
     #[test]

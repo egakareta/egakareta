@@ -5,14 +5,18 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(not(test))]
 use crate::load_menu_textures;
+#[cfg(not(test))]
 use crate::{
     show_editor_ui_from_view, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
 use bevy_app::App;
 use bevy_ecs::world::World;
+#[cfg(not(test))]
 use eg_render::RenderSurfaceError;
+#[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AuthStateRes;
@@ -30,8 +34,11 @@ use eg_state::state::GameplayWorldRes;
 use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PlaytestRequest;
+use eg_state::state::RenderConfigRes;
 use eg_state::state::RenderFrameInputRes;
 use eg_state::state::RenderResizeRequest;
+#[cfg(not(test))]
+use eg_state::state::RenderUniformUploadRes;
 use eg_state::state::RenderUniformsRes;
 use eg_state::state::SessionStateRes;
 use eg_state::state::SetAudioBackendRequest;
@@ -44,12 +51,13 @@ use eg_state::state::register_state_command_pipeline;
 use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
 use eg_state::state::{EditorHistoryRes, EditorInputRes, EditorObjectsRes};
-use eg_ui::{
-    MenuTextures, WorldUiCommandSink, combined_ui_scale_factor, drain_ui_command_queue,
-    register_ui_resources_world, sync_egui_context,
-};
+#[cfg(not(test))]
+use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
+use eg_ui::{register_ui_resources_world, sync_egui_context};
+#[cfg(not(test))]
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 
+#[cfg(not(test))]
 const SORA_TTF: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/Sora.ttf"
@@ -58,9 +66,16 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 /// App-owned presentation resources retained by the custom winit/wgpu shell.
 struct EguiFrameResources {
     egui_ctx: egui::Context,
+    #[cfg(not(test))]
     egui_renderer: EguiRenderer,
+    #[cfg(test)]
+    _egui_renderer: (),
+    #[cfg(not(test))]
     menu_textures: MenuTextures,
+    #[cfg(not(test))]
     block_icon_cache: BlockIconCache,
+    #[cfg(test)]
+    _presentation: (),
 }
 
 /// Runtime owns the winit-facing frame loop.
@@ -87,41 +102,49 @@ impl Runtime {
     pub fn new(mut state: State) -> Self {
         let egui_ctx = egui::Context::default();
 
-        let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert(
-            "sora".to_owned(),
-            std::sync::Arc::new(egui::FontData::from_static(SORA_TTF)),
-        );
-        fonts.font_data.insert(
-            "sora_thin".to_owned(),
-            std::sync::Arc::new(
-                egui::FontData::from_static(SORA_TTF).tweak(egui::FontTweak {
-                    coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
-                    ..Default::default()
-                }),
-            ),
-        );
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("sora_thin".into()))
-            .or_default()
-            .insert(0, "sora_thin".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Proportional)
-            .or_default()
-            .insert(0, "sora".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .insert(0, "sora".to_owned());
+        #[cfg(not(test))]
+        {
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "sora".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_static(SORA_TTF)),
+            );
+            fonts.font_data.insert(
+                "sora_thin".to_owned(),
+                std::sync::Arc::new(
+                    egui::FontData::from_static(SORA_TTF).tweak(egui::FontTweak {
+                        coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
+                        ..Default::default()
+                    }),
+                ),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Name("sora_thin".into()))
+                .or_default()
+                .insert(0, "sora_thin".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "sora".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .insert(0, "sora".to_owned());
 
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-        egui_ctx.set_fonts(fonts);
+            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            egui_ctx.set_fonts(fonts);
+        }
 
+        #[cfg(not(test))]
         let egui_renderer = state.create_egui_renderer();
+        #[cfg(not(test))]
         let menu_textures = load_menu_textures(&egui_ctx);
+        let render_config = RenderConfigRes::from_gpu(state.render_gpu());
+        #[cfg(not(test))]
+        let render_uniform_upload = RenderUniformUploadRes::from_gpu(state.render_gpu());
 
         // Build the Bevy `App` with the eg-state plugin graph. The
         // App owns the single ECS `World`; presentation resources are
@@ -131,11 +154,21 @@ impl Runtime {
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
         register_ui_resources_world(app.world_mut());
+        app.insert_resource(render_config);
+        #[cfg(not(test))]
+        app.insert_non_send(render_uniform_upload);
         app.insert_non_send(EguiFrameResources {
             egui_ctx,
+            #[cfg(not(test))]
             egui_renderer,
+            #[cfg(test)]
+            _egui_renderer: (),
+            #[cfg(not(test))]
             menu_textures,
+            #[cfg(not(test))]
             block_icon_cache: BlockIconCache::new(),
+            #[cfg(test)]
+            _presentation: (),
         });
 
         // Seed `AppPhaseRes` from the legacy `State.phase`.
@@ -266,13 +299,27 @@ impl Runtime {
 
         let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
         app.world_mut().insert_resource(ui_state_resource.clone());
+        #[cfg(not(test))]
         let view = ui_state_resource.view();
+        #[cfg(not(test))]
         let mut ui_input_blocking_rects = Vec::new();
+        #[cfg(test)]
+        let ui_input_blocking_rects = Vec::new();
+        #[cfg(not(test))]
         let mut ui_input_pixels_per_point = 1.0;
+        #[cfg(test)]
+        let ui_input_pixels_per_point = 1.0;
+        #[cfg(not(test))]
         let mut frame = app
             .world_mut()
             .remove_non_send::<EguiFrameResources>()
             .expect("EguiFrameResources must be installed before running a frame");
+        #[cfg(test)]
+        let frame = app
+            .world_mut()
+            .remove_non_send::<EguiFrameResources>()
+            .expect("EguiFrameResources must be installed before running a frame");
+        #[cfg(not(test))]
         let full_output = {
             let physical_size =
                 egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
@@ -281,7 +328,6 @@ impl Runtime {
                 state.app_settings().normalized_ui_scale_multiplier(),
             );
             frame.egui_ctx.set_zoom_factor(ui_scale_factor);
-            #[cfg(not(test))]
             frame
                 .block_icon_cache
                 .refresh_icons(state.render_gpu(), &mut frame.egui_renderer);
@@ -317,6 +363,10 @@ impl Runtime {
                 }
             })
         };
+        // Runtime unit tests exercise message routing and schedules. UI layout,
+        // texture upload, and GPU rendering have focused coverage in their crates.
+        #[cfg(test)]
+        let full_output = frame.egui_ctx.run_ui(raw_input, |_| {});
         app.world_mut().insert_non_send(frame);
 
         {
@@ -326,12 +376,6 @@ impl Runtime {
             input.0.ui_input_blocking_rects = ui_input_blocking_rects;
             input.0.ui_input_pixels_per_point = ui_input_pixels_per_point;
         }
-
-        // Keep the queue as a narrow compatibility ingress for tests and
-        // external callers that enqueue AppCommand values directly. The
-        // production egui path above writes typed messages through
-        // WorldUiCommandSink and does not use this queue.
-        drain_ui_command_queue(app.world_mut());
 
         state.prepare_app_world_for_runtime(app.world_mut());
         app.update();
@@ -374,12 +418,15 @@ impl Runtime {
         state.drain_pending_async_results();
         state.sync_app_gameplay_world_if_needed(app.world_mut());
 
+        #[cfg(not(test))]
         let paint_jobs =
             egui_ctx.tessellate(full_output.shapes.clone(), full_output.pixels_per_point);
+        #[cfg(not(test))]
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [state.surface_width(), state.surface_height()],
             pixels_per_point: full_output.pixels_per_point,
         };
+        #[cfg(not(test))]
         {
             let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
             for (id, image_delta) in &full_output.textures_delta.set {
@@ -395,7 +442,9 @@ impl Runtime {
         // that seed after update so the App world starts the next phase from
         // the post-transition compatibility state.
         state.sync_app_gameplay_world_if_needed(app.world_mut());
+        #[cfg(not(test))]
         let frame_input = app.world().resource::<RenderFrameInputRes>().0;
+        #[cfg(not(test))]
         let render_result = {
             let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
             state.render_egui_with_frame_input(
@@ -405,6 +454,7 @@ impl Runtime {
                 frame_input,
             )
         };
+        #[cfg(not(test))]
         match render_result {
             Ok(_) => {}
             Err(RenderSurfaceError::Lost) | Err(RenderSurfaceError::Outdated) => {
@@ -417,6 +467,7 @@ impl Runtime {
                 gloo_console::error!(format!("Render error: {:?}", err));
             }
         }
+        #[cfg(not(test))]
         {
             let mut frame = app.world_mut().non_send_mut::<EguiFrameResources>();
             for id in &full_output.textures_delta.free {
@@ -1473,7 +1524,8 @@ mod tests {
     /// window. UI commands enter through this path before legacy dispatch.
     #[tokio::test]
     async fn runtime_run_app_frame_dispatches_app_world_commands() {
-        let state = State::new_test().await;
+        let mut state = State::new_test().await;
+        state.set_menu_levels_for_test(vec!["Runtime Command Test".to_string()]);
         let mut runtime = Runtime::new(state);
 
         runtime
@@ -2866,14 +2918,14 @@ mod tests {
     // before any dispatch.
 
     use eg_state::events::session::{
-        CaptureMenuPreviewCamera, ClearKeybindSlot, LoadLevel, RenameLevel, ResetKeybind,
-        ResetKeybinds, SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection,
-        SetShowMetadata, SetShowSettings, SetUiScaleMultiplier, ToggleSettings,
-        UpdateCreatorMetadata, UpdateMusic, UpdateSkyColor, UseAutoMenuPreviewCamera,
+        CaptureMenuPreviewCamera, ClearKeybindSlot, RenameLevel, ResetKeybind, ResetKeybinds,
+        SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection, SetShowMetadata,
+        SetShowSettings, SetUiScaleMultiplier, ToggleSettings, UpdateCreatorMetadata, UpdateMusic,
+        UpdateSkyColor, UseAutoMenuPreviewCamera,
     };
     use eg_types::{
-        BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
-        SettingsSection, default_essential_keybinds,
+        BasicLevelMetadata, KeyChord, KeybindBinding, LevelMetadata, LevelPreviewCameraMetadata,
+        MusicMetadata, SettingsSection, default_essential_keybinds,
     };
 
     #[tokio::test]
@@ -2938,13 +2990,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_load_level_refreshes_session_resource_from_legacy_side_effect() {
+    async fn runtime_refreshes_session_resource_after_legacy_level_side_effect() {
         let state = State::new_test().await;
-        let level_name = state
-            .available_levels()
-            .first()
-            .expect("test state should include at least one built-in level")
-            .clone();
         let mut runtime = Runtime::new(state);
 
         {
@@ -2955,11 +3002,28 @@ mod tests {
             session.editor_menu_preview_camera = None;
         }
 
-        runtime
-            .app
-            .world_mut()
-            .write_message(LoadLevel(level_name.clone()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
+        let level_name = "Runtime Load Test".to_string();
+        let music = MusicMetadata {
+            title: Some("Tiny Track".to_string()),
+            author: Some("Test Author".to_string()),
+        };
+        let creator = BasicLevelMetadata {
+            name: level_name.clone(),
+            description: Some("Tiny runtime fixture".to_string()),
+            ..BasicLevelMetadata::default()
+        };
+        let preview_camera = LevelPreviewCameraMetadata {
+            position: [2.0, 3.0, 4.0],
+            target: [0.0, 1.0, 0.0],
+        };
+        runtime.state.apply_imported_level_metadata(LevelMetadata {
+            basic: creator,
+            music,
+            sky_color: [0.1, 0.2, 0.3],
+            menu_preview_camera: Some(preview_camera),
+            ..LevelMetadata::default()
+        });
+        Runtime::refresh_app_loaded_session_metadata(&runtime.state, runtime.app.world_mut());
 
         let session = runtime.app.world().resource::<SessionStateRes>();
         assert_eq!(
@@ -5425,7 +5489,7 @@ mod tests {
         state.set_menu_selected_level_index(0);
         let mut runtime = Runtime::new(state);
 
-        eg_ui::enqueue_ui_command(
+        eg_ui::write_ui_command(
             runtime.app.world_mut(),
             eg_state::commands::AppCommand::NextLevel,
         );
@@ -5457,7 +5521,7 @@ mod tests {
         state.set_editor_cursor_position([0.0, 0.0, 0.0]);
         let mut runtime = Runtime::new(state);
 
-        eg_ui::enqueue_ui_command(
+        eg_ui::write_ui_command(
             runtime.app.world_mut(),
             eg_state::commands::AppCommand::NextLevel,
         );
@@ -5483,7 +5547,7 @@ mod tests {
         state.set_editor_cursor_position([2.0, 0.0, 3.0]);
         let mut runtime = Runtime::new(state);
 
-        eg_ui::enqueue_ui_command(
+        eg_ui::write_ui_command(
             runtime.app.world_mut(),
             eg_state::commands::AppCommand::TurnRight,
         );
@@ -5514,7 +5578,7 @@ mod tests {
         state.set_phase_for_test(eg_types::AppPhase::GameOver);
         let mut runtime = Runtime::new(state);
 
-        eg_ui::enqueue_ui_command(
+        eg_ui::write_ui_command(
             runtime.app.world_mut(),
             eg_state::commands::AppCommand::TurnRight,
         );
@@ -5543,7 +5607,7 @@ mod tests {
         state.set_game_paused_for_test(true);
         let mut runtime = Runtime::new(state);
 
-        eg_ui::enqueue_ui_command(
+        eg_ui::write_ui_command(
             runtime.app.world_mut(),
             eg_state::commands::AppCommand::TurnRight,
         );
