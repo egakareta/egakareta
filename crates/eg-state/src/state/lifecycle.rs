@@ -632,14 +632,9 @@ impl State {
                     scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
-                    line_uniform,
                     gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
-                scheduled_color_space_uniform: None,
-                color_space_uniform_uploaded_by_schedule: false,
-                render_uniforms_uploaded_by_schedule: false,
-                scheduled_render_phase: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
@@ -691,8 +686,6 @@ impl State {
             },
             gameplay_app_authoritative: false,
             gameplay_world_needs_seed: false,
-            editor_camera_pan_scheduled: false,
-            editor_camera_transition_scheduled: false,
         }
     }
 
@@ -1553,14 +1546,9 @@ impl State {
                     scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
-                    line_uniform,
                     gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
-                scheduled_color_space_uniform: None,
-                color_space_uniform_uploaded_by_schedule: false,
-                render_uniforms_uploaded_by_schedule: false,
-                scheduled_render_phase: None,
             },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
@@ -1612,8 +1600,6 @@ impl State {
             },
             gameplay_app_authoritative: false,
             gameplay_world_needs_seed: false,
-            editor_camera_pan_scheduled: false,
-            editor_camera_transition_scheduled: false,
         })
     }
 }

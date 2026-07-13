@@ -190,13 +190,6 @@ impl State {
                 .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
         }
     }
-
-    pub fn update_editor_camera_transition(&mut self, frame_dt: f32) {
-        if self.phase == AppPhase::Editor && self.editor.update_camera_transition(frame_dt) {
-            self.editor
-                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-        }
-    }
 }
 
 #[cfg(test)]

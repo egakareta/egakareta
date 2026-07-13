@@ -438,15 +438,13 @@ pub fn update_editor_camera_pan_system(
     frame_time: Res<crate::state::FrameTimeRes>,
     input: Res<crate::state::EditorInputRes>,
     mut camera: ResMut<crate::state::EditorCameraRes>,
-    mut frame: ResMut<crate::state::EditorFrameRes>,
 ) {
-    let in_editor = phase.current == AppPhase::Editor;
-    frame.camera_transition_applied =
-        in_editor && camera.0.update_camera_transition(frame_time.delta_seconds);
-    frame.camera_pan_applied = in_editor
-        && camera
+    if phase.current == AppPhase::Editor {
+        camera.0.update_camera_transition(frame_time.delta_seconds);
+        camera
             .0
             .update_pan_from_input(&input.0, frame_time.delta_seconds);
+    }
 }
 
 impl State {
@@ -503,20 +501,6 @@ impl State {
             self.editor.pan_by_input(screen_x, screen_y);
             self.editor
                 .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-        }
-    }
-
-    pub(super) fn update_editor_pan_from_keys(&mut self, frame_dt: f32) {
-        if self.phase == AppPhase::Editor {
-            let previous_pan = self.editor.camera.editor_pan;
-            let previous_target_z = self.editor.camera.editor_target_z;
-            self.editor.update_pan_from_keys(frame_dt);
-            if previous_pan != self.editor.camera.editor_pan
-                || previous_target_z != self.editor.camera.editor_target_z
-            {
-                self.editor
-                    .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-            }
         }
     }
 

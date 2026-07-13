@@ -87,13 +87,12 @@ pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorFrameRes, EditorHistoryRes,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes,
-    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes,
-    LoadLevelRequest, MenuStateRes, PerfFrameCopyRequest, PerfRes, PlaytestRequest,
-    SessionStateRes, SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest,
-    TurnRightRequest,
+    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
+    GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes, LoadLevelRequest, MenuStateRes,
+    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, SetAudioBackendRequest,
+    ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
 };
 pub use ui_snapshot::{UiStateData, UiStateRes, UiStateSnapshot};
 
@@ -222,8 +221,6 @@ pub struct State {
     render_resources: StateRenderResources,
     gameplay_app_authoritative: bool,
     gameplay_world_needs_seed: bool,
-    editor_camera_pan_scheduled: bool,
-    editor_camera_transition_scheduled: bool,
 }
 
 pub struct StateRenderResources {
@@ -393,16 +390,6 @@ impl State {
         self.install_async_channel_resources(world);
     }
 
-    /// Tell the compatibility update path that editor camera panning was
-    /// already applied by the App-world schedule for this frame.
-    pub fn set_editor_camera_pan_scheduled(&mut self, applied: bool) {
-        self.editor_camera_pan_scheduled = applied;
-    }
-
-    pub fn set_editor_camera_transition_scheduled(&mut self, applied: bool) {
-        self.editor_camera_transition_scheduled = applied;
-    }
-
     /// Apply async-result closures emitted by App-world handler systems.
     pub fn drain_pending_async_results(&mut self) {
         // Phase 6b: drain the pending async-result closures
@@ -411,20 +398,6 @@ impl State {
         // to the matching `complete_*` methods / per-channel
         // mutation logic.
         async_bridge::drain_pending_async_result_fns(self);
-    }
-
-    /// Copy scheduled render POD values into the compatibility shell
-    /// before the remaining legacy update/render path runs.
-    pub fn apply_render_uniforms_resource(
-        &mut self,
-        uniforms: &render::resources::RenderUniformsRes,
-        frame_input: &render::resources::RenderFrameInputRes,
-    ) {
-        self.frame_runtime.scheduled_color_space_uniform = Some(uniforms.color_space);
-        self.frame_runtime.color_space_uniform_uploaded_by_schedule = true;
-        self.frame_runtime.player_render.line_uniform = uniforms.line;
-        self.frame_runtime.render_uniforms_uploaded_by_schedule = true;
-        self.frame_runtime.scheduled_render_phase = Some(frame_input.0.phase);
     }
 
     /// Compute the current per-frame `RenderFrameInput` snapshot

@@ -8,7 +8,7 @@
 use super::editor_interaction::EditorInteractionState;
 use super::history::EditorHistoryState;
 use eg_blocks::BlockEffect;
-use eg_types::{ColorSpaceUniform, LevelObject, LineUniform};
+use eg_types::LevelObject;
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EditorDirtyFlags {
@@ -244,7 +244,6 @@ impl BlockVisualEffect {
 }
 
 pub struct PlayerRenderState {
-    pub line_uniform: LineUniform,
     pub gem_shatter_effects: Vec<BlockVisualEffect>,
 }
 
@@ -252,8 +251,4 @@ pub struct FrameRuntimeState {
     pub editor: EditorFrameState,
     pub player_render: PlayerRenderState,
     pub global_time_seconds: f32,
-    pub scheduled_color_space_uniform: Option<ColorSpaceUniform>,
-    pub color_space_uniform_uploaded_by_schedule: bool,
-    pub render_uniforms_uploaded_by_schedule: bool,
-    pub scheduled_render_phase: Option<eg_types::AppPhase>,
 }

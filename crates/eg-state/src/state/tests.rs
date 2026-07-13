@@ -453,7 +453,7 @@ fn test_app_tick_state_writes_input_state_directly() {
 #[test]
 fn test_app_camera_pan_system_owns_key_motion() {
     use crate::state::editor_camera::update_editor_camera_pan_system;
-    use crate::state::{AppPhaseRes, EditorCameraRes, EditorFrameRes, EditorInputRes};
+    use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes};
 
     let mut world = bevy_ecs::world::World::new();
     world.insert_resource(AppPhaseRes::new(AppPhase::Editor));
@@ -466,7 +466,6 @@ fn test_app_camera_pan_system_owns_key_motion() {
         ..Default::default()
     }));
     world.insert_resource(EditorCameraRes::default());
-    world.insert_resource(EditorFrameRes::default());
 
     let mut schedule = bevy_ecs::schedule::Schedule::default();
     schedule.add_systems(update_editor_camera_pan_system);
@@ -474,7 +473,6 @@ fn test_app_camera_pan_system_owns_key_motion() {
 
     let camera = &world.resource::<EditorCameraRes>().0;
     assert_ne!(camera.editor_pan, [0.0, 0.0]);
-    assert!(world.resource::<EditorFrameRes>().camera_pan_applied);
 }
 
 #[test]

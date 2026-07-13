@@ -274,14 +274,6 @@ pub struct EditorConfigRes(pub EditorConfigState);
 #[derive(Resource, Default)]
 pub struct EditorCameraRes(pub EditorCameraState);
 
-/// Per-frame ownership markers for editor update work that has moved into
-/// `StateSchedule`.
-#[derive(Resource, Default)]
-pub struct EditorFrameRes {
-    pub camera_pan_applied: bool,
-    pub camera_transition_applied: bool,
-}
-
 /// `EditorTriggerState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorTriggerRes(pub EditorTriggerState);

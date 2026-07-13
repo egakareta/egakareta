@@ -40,12 +40,12 @@ use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorFrameRes, EditorHistoryRes,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes,
-    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes,
-    LoadLevelRequest, PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes,
-    SetAudioBackendRequest, ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
+    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
+    GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes, LoadLevelRequest,
+    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, SetAudioBackendRequest,
+    ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
 };
 
 /// Registers the headless gameplay systems. Currently a thin shim around
@@ -73,7 +73,6 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorObjectsRes>()
             .init_resource::<EditorConfigRes>()
             .init_resource::<EditorCameraRes>()
-            .init_resource::<EditorFrameRes>()
             .init_resource::<EditorSpawnRes>()
             .init_resource::<EditorTriggerRes>()
             .init_resource::<EditorTimelineRes>()
@@ -199,7 +198,6 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorObjectsRes>();
     world.init_resource::<EditorConfigRes>();
     world.init_resource::<EditorCameraRes>();
-    world.init_resource::<EditorFrameRes>();
     world.init_resource::<EditorSpawnRes>();
     world.init_resource::<EditorTriggerRes>();
     world.init_resource::<EditorTimelineRes>();

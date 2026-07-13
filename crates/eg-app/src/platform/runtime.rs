@@ -39,7 +39,6 @@ use eg_state::state::RenderFrameInputRes;
 use eg_state::state::RenderResizeRequest;
 #[cfg(not(test))]
 use eg_state::state::RenderUniformUploadRes;
-use eg_state::state::RenderUniformsRes;
 use eg_state::state::SessionStateRes;
 use eg_state::state::SetAudioBackendRequest;
 use eg_state::state::State;
@@ -391,21 +390,10 @@ impl Runtime {
         Self::sync_app_editor_timing_state(state, app.world());
         Self::sync_app_editor_spawn_state(state, app.world());
         Self::sync_app_editor_camera_state(state, app.world());
-        state.set_editor_camera_pan_scheduled(
-            app.world()
-                .resource::<eg_state::state::EditorFrameRes>()
-                .camera_pan_applied,
-        );
-        state.set_editor_camera_transition_scheduled(
-            app.world()
-                .resource::<eg_state::state::EditorFrameRes>()
-                .camera_transition_applied,
-        );
         Self::sync_app_editor_trigger_state(state, app.world());
         Self::sync_app_editor_objects_state(state, app.world_mut());
         Self::sync_app_menu_state(state, app.world());
         Self::sync_app_phase_state(state, app.world());
-        Self::sync_app_render_uniforms_state(state, app.world());
         Self::sync_app_session_state(state, app.world_mut());
         Self::sync_app_perf_state(state, app.world());
         Self::sync_app_escape_request(state, app.world_mut());
@@ -516,13 +504,6 @@ impl Runtime {
 
     fn sync_app_frame_time_state(state: &mut State, world: &World) {
         state.apply_frame_time_resource(world.resource::<FrameTimeRes>());
-    }
-
-    fn sync_app_render_uniforms_state(state: &mut State, world: &World) {
-        state.apply_render_uniforms_resource(
-            world.resource::<RenderUniformsRes>(),
-            world.resource::<RenderFrameInputRes>(),
-        );
     }
 
     fn sync_app_render_resize_state(state: &mut State, world: &mut World) {

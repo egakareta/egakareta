@@ -5,8 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{Mat4, Vec3};
-
 use super::State;
 use super::runtime::BlockVisualEffect;
 use eg_blocks::BlockEffectColorMode;
@@ -19,7 +17,7 @@ use eg_mesh::{
     build_block_instance_batches_from_refs_at_time, build_trail_vertices,
     build_trail_vertices_with_alpha,
 };
-use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelObject};
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
@@ -539,61 +537,18 @@ impl State {
         segments
     }
 
-    fn current_color_space_uniform(&self) -> ColorSpaceUniform {
-        ColorSpaceUniform {
-            apply_gamma_correction: if self.render_gpu().apply_gamma_correction {
-                1.0
-            } else {
-                0.0
-            },
-            time_seconds: self.frame_runtime.global_time_seconds,
-            viewport_size: [
-                self.render_gpu().config.width.max(1) as f32,
-                self.render_gpu().config.height.max(1) as f32,
-            ],
-        }
-    }
-
-    fn color_space_uniform_for_legacy_update(&mut self) -> ColorSpaceUniform {
-        self.frame_runtime
-            .scheduled_color_space_uniform
-            .take()
-            .unwrap_or_else(|| self.current_color_space_uniform())
-    }
-
-    fn upload_color_space_uniform(&self, color_space_uniform: ColorSpaceUniform) {
-        puffin::profile_scope!("ColorSpaceUniformUpload");
-        self.render_gpu().queue.write_buffer(
-            &self.render_gpu().color_space_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&color_space_uniform),
-        );
-    }
-
     /// Advances the application state by one frame.
     ///
     /// This method handles:
     /// - Starting auth refreshes for existing sessions.
     /// - Consuming the scheduled frame delta for the fixed-step simulation.
     /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
-    /// - Managing input-driven camera movements.
     pub fn update(&mut self) {
         puffin::profile_scope!("FrameTotal");
         const FIXED_DT: f32 = 1.0 / 120.0;
 
         let using_scheduled_frame_time = self.frame_runtime.editor.scheduled_delta_available;
         let frame_dt = self.frame_delta_for_legacy_update();
-        let scheduled_render_uniforms = self.frame_runtime.render_uniforms_uploaded_by_schedule
-            && self.frame_runtime.scheduled_render_phase == Some(self.phase);
-        self.frame_runtime.render_uniforms_uploaded_by_schedule = false;
-        self.frame_runtime.scheduled_render_phase = None;
-
-        let color_space_uniform = self.color_space_uniform_for_legacy_update();
-        if !self.frame_runtime.color_space_uniform_uploaded_by_schedule {
-            self.upload_color_space_uniform(color_space_uniform);
-        }
-        self.frame_runtime.color_space_uniform_uploaded_by_schedule = false;
-
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
             if !using_scheduled_frame_time {
@@ -602,9 +557,6 @@ impl State {
             self.frame_runtime.player_render.gem_shatter_effects.clear();
             self.render_meshes_mut().gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
-            if !scheduled_render_uniforms {
-                self.update_menu_camera();
-            }
             return;
         }
 
@@ -760,15 +712,6 @@ impl State {
                 self.render_meshes_mut().gem_shatter_effects.clear();
             }
 
-            {
-                puffin::profile_scope!("EditorCameraInputUpdate");
-                if !self.editor_camera_pan_scheduled {
-                    self.update_editor_pan_from_keys(frame_dt);
-                }
-                if !self.editor_camera_transition_scheduled {
-                    self.update_editor_camera_transition(frame_dt);
-                }
-            }
             if (self.editor.runtime.interaction.gizmo_drag.is_some()
                 || self.editor.runtime.interaction.block_drag.is_some())
                 && let Some(pointer) = self.editor.input.pointer_screen
@@ -827,23 +770,12 @@ impl State {
                 puffin::profile_scope!("CameraArrowRebuild");
                 self.rebuild_camera_arrow_vertices();
             }
-            {
-                puffin::profile_scope!("EditorCameraUniform");
-                if !scheduled_render_uniforms {
-                    self.update_editor_camera();
-                }
-            }
-            self.editor_camera_pan_scheduled = false;
-            self.editor_camera_transition_scheduled = false;
             return;
         }
 
         puffin::profile_scope!("PlayingUpdate");
         if self.is_game_paused() {
             self.frame_runtime.editor.accumulator = 0.0;
-            if !scheduled_render_uniforms {
-                self.update_playing_render_uniforms();
-            }
             return;
         }
 
@@ -975,103 +907,6 @@ impl State {
                 .trail
                 .write_streaming_vertices(queue, &trail_vertices);
         });
-
-        if !scheduled_render_uniforms {
-            self.update_playing_render_uniforms();
-        }
-    }
-
-    fn update_playing_render_uniforms(&mut self) {
-        self.frame_runtime.player_render.line_uniform.offset = [
-            (self.gameplay.state.position[0] * 100.0).round() / 100.0,
-            (self.gameplay.state.position[2] * 100.0).round() / 100.0,
-        ];
-        self.frame_runtime.player_render.line_uniform.rotation = match self.gameplay.state.direction
-        {
-            Direction::Forward => 0.0,
-            Direction::Right => -std::f32::consts::FRAC_PI_2,
-        };
-
-        {
-            puffin::profile_scope!("PlayingLineUniformUpload");
-            self.render_gpu().queue.write_buffer(
-                &self.render_gpu().line_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&self.frame_runtime.player_render.line_uniform),
-            );
-        }
-
-        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
-        let (eye, target) = self.playing_camera_view();
-        let up = Vec3::new(0.0, 1.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-        let view_proj = proj * view;
-        let camera_uniform = CameraUniform {
-            view_proj: view_proj.to_cols_array_2d(),
-            camera_position: [eye.x, eye.y, eye.z, 0.0],
-        };
-
-        {
-            puffin::profile_scope!("PlayingCameraUniformUpload");
-            self.render_gpu().queue.write_buffer(
-                &self.render_gpu().camera_uniform_buffer,
-                0,
-                bytemuck::bytes_of(&camera_uniform),
-            );
-        }
-    }
-
-    fn update_menu_camera(&mut self) {
-        puffin::profile_scope!("MenuCameraUniform");
-        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
-        let eye = Vec3::from_array(self.menu.state.preview_camera_position);
-        let target = Vec3::from_array(self.menu.state.preview_camera_target);
-        let up = Vec3::new(0.0, 1.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-        let view_proj = proj * view;
-        let camera_uniform = CameraUniform {
-            view_proj: view_proj.to_cols_array_2d(),
-            camera_position: [eye.x, eye.y, eye.z, 0.0],
-        };
-
-        self.render_gpu().queue.write_buffer(
-            &self.render_gpu().camera_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&camera_uniform),
-        );
-    }
-
-    fn update_editor_camera(&mut self) {
-        puffin::profile_scope!("EditorCameraUniformBuild");
-        let aspect = self.render_gpu().config.width as f32 / self.render_gpu().config.height as f32;
-        let (eye, target) = if self.editor_is_playing() {
-            let (e, t) = self.editor_preview_camera_view();
-            (Vec3::from_array(e), Vec3::from_array(t))
-        } else {
-            let target = Vec3::new(
-                self.editor.camera.editor_pan[0],
-                self.editor.camera.editor_target_z,
-                self.editor.camera.editor_pan[1],
-            );
-            let offset = self.editor_camera_offset();
-            (target + offset, target)
-        };
-        let up = Vec3::new(0.0, 1.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
-        let view_proj = proj * view;
-        let camera_uniform = CameraUniform {
-            view_proj: view_proj.to_cols_array_2d(),
-            camera_position: [eye.x, eye.y, eye.z, 0.0],
-        };
-
-        self.render_gpu().queue.write_buffer(
-            &self.render_gpu().camera_uniform_buffer,
-            0,
-            bytemuck::bytes_of(&camera_uniform),
-        );
     }
 }
 
@@ -1643,7 +1478,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_playing_phase_builds_trail_and_line_uniform_for_right_direction() {
+    async fn update_playing_phase_builds_trail_for_airborne_player() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Playing;
         state.gameplay.state.started = false;
@@ -1655,10 +1490,6 @@ mod tests {
 
         state.update();
 
-        assert_eq!(
-            state.frame_runtime.player_render.line_uniform.rotation,
-            -std::f32::consts::FRAC_PI_2
-        );
         assert!(state.render_meshes().trail.draw_data().is_some());
     }
 
