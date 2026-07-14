@@ -19,31 +19,24 @@ use eg_render::RenderSurfaceError;
 #[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::AppPhaseRes;
-use eg_state::state::AuthStateRes;
-use eg_state::state::CompleteImportRequest;
+use eg_state::state::AudioBackendRes;
 use eg_state::state::EditorConfigRes;
 use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
 use eg_state::state::EscapeRequest;
-use eg_state::state::ExportLevelRequest;
 use eg_state::state::FrameTimeRes;
-use eg_state::state::GameQuitToMenuRequest;
-use eg_state::state::GameRestartLevelRequest;
-use eg_state::state::GameplayWorldRes;
-use eg_state::state::LoadLevelRequest;
 use eg_state::state::MenuStateRes;
 use eg_state::state::PlaytestRequest;
 use eg_state::state::RenderConfigRes;
+#[cfg(not(test))]
 use eg_state::state::RenderFrameInputRes;
 use eg_state::state::RenderResizeRequest;
 #[cfg(not(test))]
 use eg_state::state::RenderUniformUploadRes;
 use eg_state::state::SessionStateRes;
-use eg_state::state::SetAudioBackendRequest;
 use eg_state::state::State;
 use eg_state::state::ToggleEditorRequest;
-use eg_state::state::TriggerAudioImportRequest;
 use eg_state::state::TurnRightRequest;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
@@ -178,7 +171,8 @@ impl Runtime {
         // App-world phase to match on the first frame.
         app.world_mut().insert_resource(state.app_phase_resource());
         app.world_mut().insert_resource(state.menu_state_resource());
-        app.world_mut().insert_resource(state.auth_state_resource());
+        let auth_state = state.take_auth_state_resource();
+        app.world_mut().insert_resource(auth_state);
 
         // Seed `EditorConfigRes` from the legacy `State` so the
         // resource starts in sync with user-loaded `app_settings`
@@ -267,21 +261,20 @@ impl Runtime {
         app.world_mut()
             .insert_resource(state.editor_trigger_resource());
 
-        // Seed `PerfRes` from the legacy `State.editor.perf` for the
-        // perf-overlay carve-out (see `events::misc`). Without
-        // seeding, the change-guarded `sync_app_perf_state` would
-        // see a default-vs-legacy diff on the first frame and
-        // re-invoke the legacy `set_perf_overlay_enabled` setter
-        // (which calls `puffin::set_scopes_on(...)` — a global side
-        // effect). Seeding once at construction makes the first
-        // frame a no-op for unchanged fields.
-        app.world_mut().insert_resource(state.perf_resource());
         app.world_mut().insert_resource(state.frame_time_resource());
         let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
         app.world_mut().insert_resource(ui_state_resource);
         state.seed_app_gameplay_world(app.world_mut());
+        state.install_async_channel_resources(app.world_mut());
 
         Self { state, app }
+    }
+
+    pub fn ensure_audio_device(&self) {
+        self.app
+            .world()
+            .resource::<AudioBackendRes>()
+            .ensure_device();
     }
 
     /// Drive one frame through the App-owned presentation resources while
@@ -324,7 +317,10 @@ impl Runtime {
                 egui::vec2(state.surface_width() as f32, state.surface_height() as f32);
             let ui_scale_factor = combined_ui_scale_factor(
                 physical_size,
-                state.app_settings().normalized_ui_scale_multiplier(),
+                app.world()
+                    .resource::<SessionStateRes>()
+                    .app_settings
+                    .normalized_ui_scale_multiplier(),
             );
             frame.egui_ctx.set_zoom_factor(ui_scale_factor);
             frame
@@ -376,7 +372,6 @@ impl Runtime {
             input.0.ui_input_pixels_per_point = ui_input_pixels_per_point;
         }
 
-        state.prepare_app_world_for_runtime(app.world_mut());
         app.update();
         run_state_schedule_in_world(app.world_mut());
         Self::sync_app_gameplay_state(state, app.world_mut());
@@ -395,15 +390,9 @@ impl Runtime {
         Self::sync_app_menu_state(state, app.world());
         Self::sync_app_phase_state(state, app.world());
         Self::sync_app_session_state(state, app.world_mut());
-        Self::sync_app_perf_state(state, app.world());
         Self::sync_app_escape_request(state, app.world_mut());
-        Self::sync_app_auth_state(state, app.world());
-        Self::sync_app_game_quit_to_menu_request(state, app.world_mut());
-        Self::sync_app_game_restart_level_request(state, app.world_mut());
         Self::sync_app_playtest_request(state, app.world_mut());
         Self::sync_app_navigation_requests(state, app.world_mut());
-        Self::sync_app_session_side_effect_requests(state, app.world_mut());
-        state.drain_pending_async_results();
         state.sync_app_gameplay_world_if_needed(app.world_mut());
 
         #[cfg(not(test))]
@@ -485,17 +474,10 @@ impl Runtime {
         let mut app_session = world.resource_mut::<SessionStateRes>();
         app_session.playtesting_editor = session.playtesting_editor;
         app_session.game_paused = session.game_paused;
-        app_session.app_settings.ui_scale_multiplier = session.app_settings.ui_scale_multiplier;
-        app_session.app_settings.keybinds = session.app_settings.keybinds.clone();
-        app_session.app_settings.graphics_backend = session.app_settings.graphics_backend.clone();
-        app_session.settings_restart_required = session.settings_restart_required;
-        app_session.graphics_backend_locked = session.graphics_backend_locked;
     }
 
     fn sync_app_gameplay_state(state: &mut State, world: &mut World) {
-        if world.resource::<GameplayWorldRes>().app_authoritative {
-            state.sync_gameplay_from_app_world(world);
-        }
+        state.sync_gameplay_from_app_world(world);
     }
 
     fn sync_app_editor_history_state(state: &mut State, world: &World) {
@@ -907,9 +889,6 @@ impl Runtime {
     /// `editor_show_metadata`, `editor_show_settings`,
     /// `editor_settings_section`, `editor_keybind_capture_action`,
     /// `editor_show_place_window`, `game_paused`,
-    /// `app_settings.graphics_backend`,
-    /// `app_settings.keybinds`,
-    /// `app_settings.ui_scale_multiplier`,
     /// `editor_creator_metadata`, `editor_sky_color`) are written to
     /// the resource directly by their Bevy handlers in
     /// `events::session` (and by `events::misc` /
@@ -972,23 +951,8 @@ impl Runtime {
             if state.editor_show_place_window() != session.editor_show_place_window {
                 state.set_editor_show_place_window(session.editor_show_place_window);
             }
-            // Phase 3.23: `SetGraphicsBackend` mutates
-            // `SessionStateRes.app_settings.graphics_backend` directly
-            // when backend selection is not locked. Use the legacy setter
-            // as the compatibility point so restart-required bookkeeping
-            // and settings persistence remain unchanged while the setting
-            // is still read from legacy `State.session` by UI snapshots.
-            if state.app_settings().graphics_backend != session.app_settings.graphics_backend {
-                state.set_preferred_graphics_backend(session.app_settings.graphics_backend.clone());
-            }
-            // Phase 3.24: keybind messages mutate
-            // `SessionStateRes.app_settings.keybinds` directly using the
-            // shared `AppSettings` helpers. The runtime no longer sees the
-            // original semantic operation after the schedule, so sync the
-            // final vector through a compatibility setter that preserves
-            // settings persistence while legacy UI/settings reads remain.
-            if state.app_settings().keybinds != session.app_settings.keybinds {
-                state.set_app_settings_keybinds(session.app_settings.keybinds.clone());
+            if state.session_state_resource().playtesting_editor != session.playtesting_editor {
+                state.set_playtesting_editor_from_app(session.playtesting_editor);
             }
             // Phase 3.18 / 3.52: `GameResume` and the real-gameplay
             // Escape pause branch mutate `SessionStateRes.game_paused`
@@ -999,18 +963,6 @@ impl Runtime {
                 state.pause_game_from_playing();
             } else if state.game_paused_value() && !session.game_paused {
                 state.resume_game_from_pause();
-            }
-            // Phase 3.19: `SetUiScaleMultiplier` mutates
-            // `SessionStateRes.app_settings.ui_scale_multiplier`
-            // directly. Keep the legacy setter as the compatibility point
-            // so clamping + persistence continue to use the established
-            // path, and only sync this one AppSettings field until the
-            // broader settings/keybind ownership pass moves the rest.
-            if (state.app_settings().ui_scale_multiplier - session.app_settings.ui_scale_multiplier)
-                .abs()
-                > 1e-6
-            {
-                state.set_ui_scale_multiplier(session.app_settings.ui_scale_multiplier);
             }
             // Phase 3.21: `UpdateCreatorMetadata` mutates
             // `SessionStateRes.editor_creator_metadata` directly. The
@@ -1062,41 +1014,6 @@ impl Runtime {
         }
     }
 
-    fn refresh_app_loaded_session_metadata(state: &State, world: &mut World) {
-        let mut session = world.resource_mut::<SessionStateRes>();
-        session.editor_level_name = state.editor_level_name();
-        session.editor_music_metadata = state.editor_music_metadata().clone();
-        session.editor_creator_metadata = state.editor_creator_metadata().clone();
-        session.editor_sky_color = state.editor_sky_color();
-        session.editor_menu_preview_camera = state.editor_menu_preview_camera().cloned();
-        session.playing_trigger_base_objects =
-            state.session_state_resource().playing_trigger_base_objects;
-    }
-
-    /// Sync the legacy `State.editor.perf.overlay_enabled` from the
-    /// App-world `PerfRes`. The carved-out field is
-    /// `overlay_enabled` (`events::misc::handle_toggle_perf_overlay`):
-    /// the handler toggles the resource directly.
-    ///
-    /// The sync is change-guarded so a no-op frame does not
-    /// re-invoke the legacy setter (which calls
-    /// `puffin::set_scopes_on(...)` — a global side effect that
-    /// does not need to fire every frame). The resource is seeded
-    /// at `Runtime::new` from the legacy state via
-    /// `State::perf_resource()`, so the first frame after
-    /// construction is a no-op for unchanged fields.
-    fn sync_app_perf_state(state: &mut State, world: &World) {
-        use eg_state::state::PerfRes;
-        let overlay_enabled = world.resource::<PerfRes>().0.overlay_enabled;
-        if state.perf_overlay_enabled() != overlay_enabled {
-            state.set_perf_overlay_enabled(overlay_enabled);
-        }
-    }
-
-    fn sync_app_auth_state(state: &mut State, world: &World) {
-        state.apply_auth_state_resource(world.resource::<AuthStateRes>());
-    }
-
     /// Consume the App-world `EscapeRequest` and apply the remaining
     /// context-sensitive escape state machine through the legacy
     /// `State::apply_editor_escape` compatibility method.
@@ -1116,42 +1033,6 @@ impl Runtime {
         state.apply_editor_escape();
     }
 
-    /// Consume the App-world `GameQuitToMenuRequest` and apply the
-    /// legacy `State::apply_game_quit_to_menu` compatibility
-    /// method.
-    ///
-    /// Phase 3.48: `events::navigation::handle_game_quit_to_menu`
-    /// writes `GameQuitToMenuRequest.pending = true` instead of
-    /// staging `AppCommand::GameQuitToMenu` through the legacy command bridge.
-    /// The `back_to_menu` side effect (phase change + audio stop +
-    /// gameplay state reset) stays legacy-owned because the audio
-    /// backend + gameplay state live on the legacy `State`. The
-    /// sync runs before async-result draining so the request is
-    /// consumed in the same frame and any state changes (phase,
-    /// session.game_paused, gameplay.state) propagate to the App world
-    /// via the mirror refresh in
-    /// `refresh_editor_playback_mirrors_from_legacy`.
-    fn sync_app_game_quit_to_menu_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<GameQuitToMenuRequest>().take() {
-            return;
-        }
-        state.apply_game_quit_to_menu();
-    }
-
-    /// Consume the App-world `GameRestartLevelRequest` and apply the
-    /// legacy `State::apply_game_restart_level` compatibility
-    /// method.
-    ///
-    /// Phase 3.48: same request pattern as
-    /// `sync_app_game_quit_to_menu_request`. The restart side effect
-    /// (gameplay clock reset, audio restart) stays legacy-owned.
-    fn sync_app_game_restart_level_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<GameRestartLevelRequest>().take() {
-            return;
-        }
-        state.apply_game_restart_level();
-    }
-
     /// Consume the App-world `PlaytestRequest` and apply the legacy
     /// `State::editor_playtest` compatibility method.
     ///
@@ -1163,27 +1044,6 @@ impl Runtime {
             return;
         }
         state.editor_playtest();
-    }
-
-    /// Consume App-world session side-effect requests and apply the
-    /// existing legacy compatibility methods.
-    fn sync_app_session_side_effect_requests(state: &mut State, world: &mut World) {
-        if let Some(level_name) = world.resource_mut::<LoadLevelRequest>().take() {
-            state.load_builtin_level_into_editor(&level_name);
-            Self::refresh_app_loaded_session_metadata(state, world);
-        }
-        if world.resource_mut::<ExportLevelRequest>().take() {
-            state.trigger_level_export();
-        }
-        if let Some(backend_name) = world.resource_mut::<SetAudioBackendRequest>().take() {
-            state.set_preferred_audio_backend(backend_name);
-        }
-        if world.resource_mut::<CompleteImportRequest>().take() {
-            state.complete_import();
-        }
-        if world.resource_mut::<TriggerAudioImportRequest>().take() {
-            state.trigger_audio_import();
-        }
     }
 
     /// Consume remaining App-world navigation requests and apply the
@@ -1215,9 +1075,9 @@ mod tests {
         AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
         AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
         EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
-        EditorTriggerRes, EscapeRequest, FrameTimeRes, GameQuitToMenuRequest,
-        GameRestartLevelRequest, GameplayResetRes, MenuStateRes, PerfFrameCopyRequest, PerfRes,
-        PlatformInputQueue, RenderResizeRequest, SessionStateRes, TurnRightRequest, UiStateRes,
+        EditorTriggerRes, EscapeRequest, FrameTimeRes, GameplayResetRes, MenuStateRes,
+        PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
+        TurnRightRequest, UiStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -1632,13 +1492,11 @@ mod tests {
         );
     }
 
-    /// Auth state is now App-world authoritative after `Runtime::new`
-    /// seeds `AuthStateRes`. A stale compatibility `State` value must
-    /// not be mirrored back into the resource before the schedule runs;
-    /// Runtime only mirrors `AuthStateRes` back to legacy `State` after
-    /// scheduled auth systems have had their chance to run.
+    /// Auth state is App-world authoritative after `Runtime::new` seeds
+    /// `AuthStateRes`. A stale compatibility `State` value must not affect
+    /// the resource after construction.
     #[tokio::test]
-    async fn runtime_auth_state_resource_is_not_clobbered_by_legacy_state() {
+    async fn runtime_auth_state_resource_remains_authoritative() {
         let mut state = State::new_test().await;
         state.set_auth_state_for_test(None, false, Some("legacy".to_string()));
         let mut runtime = Runtime::new(state);
@@ -1657,8 +1515,6 @@ mod tests {
         let auth = runtime.app.world().resource::<AuthStateRes>();
         assert!(auth.pending);
         assert_eq!(auth.message.as_deref(), Some("app"));
-        assert!(runtime.state.auth_pending());
-        assert_eq!(runtime.state.auth_message(), Some("app"));
     }
 
     // --- Phase 3.48 / Navigation request carve-out tests ---
@@ -1674,29 +1530,6 @@ mod tests {
     use eg_state::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, TurnRight as GameTurnRight,
     };
-
-    /// `GameQuitToMenu` carve-out: the App-world handler writes
-    /// `GameQuitToMenuRequest.pending = true`; the runtime sync
-    /// consumes it and calls the legacy
-    /// `State::apply_game_quit_to_menu` method. The legacy
-    /// `quit_game_from_pause` has a phase-guard that early-returns
-    /// outside the `Playing` phase, so the test pins the request
-    /// was consumed and no legacy command was staged (the legacy
-    /// `back_to_menu` side effect is also a no-op outside `Playing`).
-    #[tokio::test]
-    async fn runtime_carve_out_game_quit_to_menu_consumes_request() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(GameQuitToMenu);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let request = runtime.app.world().resource::<GameQuitToMenuRequest>();
-        assert!(
-            !request.pending,
-            "runtime must consume GameQuitToMenuRequest after applying it"
-        );
-    }
 
     /// Active real gameplay quit-to-menu is applied by App resources; the
     /// runtime only consumes the one-shot audio compatibility intent.
@@ -1716,13 +1549,6 @@ mod tests {
             eg_types::AppPhase::Menu
         );
         assert!(runtime.state.is_menu());
-        assert!(
-            !runtime
-                .app
-                .world()
-                .resource::<GameQuitToMenuRequest>()
-                .pending
-        );
         assert!(
             !runtime
                 .app
@@ -1764,23 +1590,6 @@ mod tests {
         );
     }
 
-    /// `GameRestartLevel` carve-out: same request pattern as
-    /// `GameQuitToMenu`.
-    #[tokio::test]
-    async fn runtime_carve_out_game_restart_level_consumes_request() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(GameRestartLevel);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let request = runtime.app.world().resource::<GameRestartLevelRequest>();
-        assert!(
-            !request.pending,
-            "runtime must consume GameRestartLevelRequest after applying it"
-        );
-    }
-
     /// Real gameplay restart is applied by the App-world gameplay reset
     /// system and does not fall back to Runtime's legacy request consumer.
     #[tokio::test]
@@ -1818,13 +1627,6 @@ mod tests {
         assert_eq!(player.1, eg_types::Direction::Right);
         assert!(!runtime.app.world().resource::<eg_game::GameClock>().started);
         assert!(!runtime.app.world().resource::<GameplayResetRes>().pending);
-        assert!(
-            !runtime
-                .app
-                .world()
-                .resource::<GameRestartLevelRequest>()
-                .pending
-        );
         assert_eq!(runtime.state.gameplay_position_for_test(), [2.0, 0.0, 3.0]);
     }
 
@@ -1884,28 +1686,6 @@ mod tests {
         // Pin that the State is still in the Menu phase after
         // the App was built (no setup cross-talk).
         assert!(runtime.state.is_menu());
-    }
-
-    #[tokio::test]
-    async fn runtime_prepare_does_not_overwrite_authoritative_editor_objects() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-        let object = eg_types::LevelObject::new("stone");
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![object.clone()];
-        runtime
-            .state
-            .prepare_app_world_for_runtime(runtime.app.world_mut());
-
-        assert_eq!(
-            runtime.app.world().resource::<EditorObjectsRes>().objects,
-            vec![object],
-            "Runtime preparation must not mirror legacy State objects over App-world edits"
-        );
     }
 
     /// The production frame path advances the App-world gameplay entities and
@@ -2905,8 +2685,8 @@ mod tests {
         UpdateSkyColor, UseAutoMenuPreviewCamera,
     };
     use eg_types::{
-        BasicLevelMetadata, KeyChord, KeybindBinding, LevelMetadata, LevelPreviewCameraMetadata,
-        MusicMetadata, SettingsSection, default_essential_keybinds,
+        BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
+        SettingsSection, default_essential_keybinds,
     };
 
     #[tokio::test]
@@ -2967,73 +2747,6 @@ mod tests {
             runtime.state.editor_music_metadata(),
             &metadata,
             "sync_app_session_state must propagate editor_music_metadata to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_refreshes_session_resource_after_legacy_level_side_effect() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        {
-            let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
-            session.editor_level_name = Some("StaleBeforeLoad".to_string());
-            session.editor_music_metadata = MusicMetadata::default();
-            session.editor_sky_color = [0.0, 0.0, 0.0];
-            session.editor_menu_preview_camera = None;
-        }
-
-        let level_name = "Runtime Load Test".to_string();
-        let music = MusicMetadata {
-            title: Some("Tiny Track".to_string()),
-            author: Some("Test Author".to_string()),
-        };
-        let creator = BasicLevelMetadata {
-            name: level_name.clone(),
-            description: Some("Tiny runtime fixture".to_string()),
-            ..BasicLevelMetadata::default()
-        };
-        let preview_camera = LevelPreviewCameraMetadata {
-            position: [2.0, 3.0, 4.0],
-            target: [0.0, 1.0, 0.0],
-        };
-        runtime.state.apply_imported_level_metadata(LevelMetadata {
-            basic: creator,
-            music,
-            sky_color: [0.1, 0.2, 0.3],
-            menu_preview_camera: Some(preview_camera),
-            ..LevelMetadata::default()
-        });
-        Runtime::refresh_app_loaded_session_metadata(&runtime.state, runtime.app.world_mut());
-
-        let session = runtime.app.world().resource::<SessionStateRes>();
-        assert_eq!(
-            runtime.state.editor_level_name().as_deref(),
-            Some(level_name.as_str())
-        );
-        assert_eq!(
-            session.editor_level_name.as_deref(),
-            Some(level_name.as_str())
-        );
-        assert_eq!(
-            &session.editor_music_metadata,
-            runtime.state.editor_music_metadata(),
-            "legacy load must refresh App-world music metadata in the same frame"
-        );
-        assert_eq!(
-            &session.editor_creator_metadata,
-            runtime.state.editor_creator_metadata(),
-            "legacy load must refresh App-world creator metadata in the same frame"
-        );
-        assert_eq!(
-            session.editor_sky_color,
-            runtime.state.editor_sky_color(),
-            "legacy load must refresh App-world sky color in the same frame"
-        );
-        assert_eq!(
-            session.editor_menu_preview_camera.as_ref(),
-            runtime.state.editor_menu_preview_camera(),
-            "legacy load must refresh App-world preview camera metadata in the same frame"
         );
     }
 
@@ -3238,7 +2951,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_set_ui_scale_multiplier_propagates_to_legacy_state() {
+    async fn runtime_set_ui_scale_multiplier_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_ui_scale_multiplier(1.0);
         let mut runtime = Runtime::new(state);
@@ -3259,15 +2972,10 @@ mod tests {
             3.0,
             epsilon = 1e-6
         );
-        approx::assert_abs_diff_eq!(
-            runtime.state.app_settings().ui_scale_multiplier,
-            3.0,
-            epsilon = 1e-6
-        );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_set_graphics_backend_propagates_to_legacy_state() {
+    async fn runtime_set_graphics_backend_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_preferred_graphics_backend("Auto".to_string());
         let mut runtime = Runtime::new(state);
@@ -3284,16 +2992,10 @@ mod tests {
             session.settings_restart_required,
             "SetGraphicsBackend handler must mark restart required in SessionStateRes"
         );
-        assert_eq!(
-            runtime.state.app_settings().graphics_backend,
-            "ManualBackend",
-            "sync_app_session_state must propagate graphics backend to legacy state"
-        );
-        assert!(runtime.state.settings_restart_required());
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_set_graphics_backend_respects_legacy_lock() {
+    async fn runtime_set_graphics_backend_respects_app_lock() {
         let mut state = State::new_test().await;
         state.set_preferred_graphics_backend("LockedBackend".to_string());
         state.set_graphics_backend_locked_for_test(true);
@@ -3307,15 +3009,10 @@ mod tests {
 
         let session = runtime.app.world().resource::<SessionStateRes>();
         assert_eq!(session.app_settings.graphics_backend, "LockedBackend");
-        assert_eq!(
-            runtime.state.app_settings().graphics_backend,
-            "LockedBackend",
-            "locked graphics backend must ignore App-world SetGraphicsBackend"
-        );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_set_keybind_propagates_to_legacy_state() {
+    async fn runtime_set_keybind_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_keybind_for_action(
             "copy".to_string(),
@@ -3341,19 +3038,10 @@ mod tests {
                 .any(|candidate| **candidate == chord),
             "SetKeybind handler must mutate SessionStateRes.app_settings.keybinds"
         );
-        assert!(
-            runtime
-                .state
-                .app_settings()
-                .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == chord),
-            "sync_app_session_state must propagate keybinds to legacy state"
-        );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_clear_keybind_slot_propagates_to_legacy_state() {
+    async fn runtime_clear_keybind_slot_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_keybind_for_action(
             "copy".to_string(),
@@ -3378,18 +3066,10 @@ mod tests {
                 .is_empty(),
             "ClearKeybindSlot handler must mutate SessionStateRes.app_settings.keybinds"
         );
-        assert!(
-            runtime
-                .state
-                .app_settings()
-                .keybinds_for_action("copy")
-                .is_empty(),
-            "sync_app_session_state must propagate cleared keybinds to legacy state"
-        );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_reset_keybind_propagates_to_legacy_state() {
+    async fn runtime_reset_keybind_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_keybind_for_action(
             "copy".to_string(),
@@ -3418,20 +3098,11 @@ mod tests {
             .filter(|binding| binding.action == "copy")
             .cloned()
             .collect();
-        let legacy_actual: Vec<_> = runtime
-            .state
-            .app_settings()
-            .keybinds
-            .iter()
-            .filter(|binding| binding.action == "copy")
-            .cloned()
-            .collect();
-        assert_eq!(resource_actual, expected_defaults.clone());
-        assert_eq!(legacy_actual, expected_defaults);
+        assert_eq!(resource_actual, expected_defaults);
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_reset_keybinds_propagates_to_legacy_state() {
+    async fn runtime_reset_keybinds_updates_app_resource() {
         let mut state = State::new_test().await;
         state.set_keybind_for_action(
             "copy".to_string(),
@@ -3452,21 +3123,13 @@ mod tests {
 
         let session = runtime.app.world().resource::<SessionStateRes>();
         assert!(session.app_settings.keybinds.contains(&custom));
-        assert!(runtime.state.app_settings().keybinds.contains(&custom));
         for default_binding in default_essential_keybinds() {
             assert!(session.app_settings.keybinds.contains(&default_binding));
-            assert!(
-                runtime
-                    .state
-                    .app_settings()
-                    .keybinds
-                    .contains(&default_binding)
-            );
         }
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_keybinds_survive_next_frame_without_message() {
+    async fn runtime_app_keybinds_remain_authoritative_without_legacy_sync() {
         let mut state = State::new_test().await;
         let chord = KeyChord::new("k", true, false, false);
         state.set_keybind_for_action("copy".to_string(), 0, chord.clone());
@@ -3488,7 +3151,8 @@ mod tests {
                 .app_settings()
                 .keybinds_for_action("copy")
                 .iter()
-                .any(|candidate| **candidate == chord)
+                .any(|candidate| **candidate == chord),
+            "legacy bootstrap settings must remain untouched after construction"
         );
         assert!(
             runtime
@@ -3497,14 +3161,12 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .app_settings
                 .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == chord),
-            "legacy keybind mirror must protect against stale resource clobber"
+                .is_empty()
         );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_graphics_backend_survives_next_frame_without_message() {
+    async fn runtime_app_graphics_backend_remains_authoritative_without_legacy_sync() {
         let mut state = State::new_test().await;
         state.set_preferred_graphics_backend("LegacyBackend".to_string());
         let mut runtime = Runtime::new(state);
@@ -3514,13 +3176,14 @@ mod tests {
             .world_mut()
             .resource_mut::<SessionStateRes>()
             .app_settings
-            .graphics_backend = "StaleBackend".to_string();
+            .graphics_backend = "AppBackend".to_string();
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
             runtime.state.app_settings().graphics_backend,
-            "LegacyBackend"
+            "LegacyBackend",
+            "legacy bootstrap settings must remain untouched after construction"
         );
         assert_eq!(
             runtime
@@ -3529,13 +3192,13 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .app_settings
                 .graphics_backend,
-            "LegacyBackend",
-            "legacy graphics backend mirror must protect against stale resource clobber"
+            "AppBackend",
+            "App-owned graphics backend must not be overwritten by legacy State"
         );
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_ui_scale_survives_next_frame_without_message() {
+    async fn runtime_app_ui_scale_remains_authoritative_without_legacy_sync() {
         let mut state = State::new_test().await;
         state.set_ui_scale_multiplier(1.75);
         let mut runtime = Runtime::new(state);
@@ -3561,7 +3224,7 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .app_settings
                 .ui_scale_multiplier,
-            1.75,
+            1.0,
             epsilon = 1e-6
         );
     }
@@ -5653,7 +5316,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_carve_out_legacy_pause_survives_next_frame_without_resume_message() {
+    async fn runtime_app_resume_state_overrides_stale_legacy_pause() {
         let mut state = State::new_test().await;
         state.set_phase_for_test(eg_types::AppPhase::Playing);
         state.set_playtesting_editor_for_test(false);
@@ -5668,17 +5331,14 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
+        assert!(!runtime.state.game_paused_value());
         assert!(
-            runtime.state.game_paused_value(),
-            "legacy pause must not be undone without a GameResume message"
-        );
-        assert!(
-            runtime
+            !runtime
                 .app
                 .world()
                 .resource::<SessionStateRes>()
                 .game_paused,
-            "prepare_app_world_for_state_schedule must mirror the legacy pause flag"
+            "App-owned pause state must not be overwritten before the schedule"
         );
     }
 
@@ -5807,82 +5467,6 @@ mod tests {
         );
     }
 
-    /// Writing a `TogglePerfOverlay` message reaches the App
-    /// world, mutates `PerfRes.0.overlay_enabled`, and the
-    /// per-frame sync propagates the value to the legacy
-    /// `State.editor.perf.overlay_enabled` (which calls
-    /// `puffin::set_scopes_on(...)`).
-    #[tokio::test]
-    async fn runtime_carve_out_toggle_perf_overlay_propagates_to_legacy_state() {
-        use eg_state::events::misc::TogglePerfOverlay;
-
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        // Reset both sides to a known value.
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<eg_state::state::PerfRes>()
-            .0
-            .overlay_enabled = false;
-        runtime.state.set_perf_overlay_enabled(false);
-
-        runtime.app.world_mut().write_message(TogglePerfOverlay);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<eg_state::state::PerfRes>()
-                .0
-                .overlay_enabled,
-            "TogglePerfOverlay handler must mutate PerfRes"
-        );
-        assert!(
-            runtime.state.perf_overlay_enabled(),
-            "sync_app_perf_state must propagate overlay_enabled to legacy state"
-        );
-
-        // Toggle back.
-        runtime.app.world_mut().write_message(TogglePerfOverlay);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-        assert!(!runtime.state.perf_overlay_enabled());
-    }
-
-    /// No-op frame: when the perf overlay resource matches the
-    /// legacy state, the sync must not re-invoke the legacy
-    /// setter (which has the `puffin::set_scopes_on` global side
-    /// effect).
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_perf_overlay() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<eg_state::state::PerfRes>()
-            .0
-            .overlay_enabled = true;
-        runtime.state.set_perf_overlay_enabled(true);
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        // No message -> handler does not run -> resource unchanged.
-        // Sync sees no diff -> setter not invoked.
-        assert!(runtime.state.perf_overlay_enabled());
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<eg_state::state::PerfRes>()
-                .0
-                .overlay_enabled
-        );
-    }
-
     /// Writing a `TogglePlaceWindow` message reaches the App
     /// world, mutates `SessionStateRes.editor_show_place_window`,
     /// and the per-frame sync propagates the value to the legacy
@@ -5943,44 +5527,6 @@ mod tests {
                 .world()
                 .resource::<SessionStateRes>()
                 .editor_show_place_window
-        );
-    }
-
-    /// Regression: `PerfRes` must be seeded from the legacy
-    /// `State` at `Runtime::new` so the change-guarded perf sync
-    /// does not clobber the user overlay setting on the first
-    /// frame. The legacy setter calls `puffin::set_scopes_on`,
-    /// so without seeding, the first frame would re-invoke the
-    /// side effect with the default value.
-    #[tokio::test]
-    async fn runtime_seeds_perf_res_from_legacy_state_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
-        // User-loaded settings: perf overlay enabled. The
-        // resource default is `overlay_enabled = false`, so this
-        // differs from the default and would be clobbered
-        // without the seeding fix.
-        state.set_perf_overlay_enabled(true);
-        let mut runtime = Runtime::new(state);
-
-        // Seeding: the resource must reflect the legacy user value.
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<eg_state::state::PerfRes>()
-                .0
-                .overlay_enabled,
-            "PerfRes must be seeded from legacy State at Runtime::new"
-        );
-
-        // Run a frame with no perf message. The change-guarded
-        // sync must see no diff and must NOT invoke the legacy
-        // setter, so the user value survives the first frame.
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(
-            runtime.state.perf_overlay_enabled(),
-            "first-frame sync must not clobber user perf overlay setting"
         );
     }
 
@@ -6057,7 +5603,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runtime_escape_in_playtest_still_uses_request_without_pause() {
+    async fn runtime_escape_in_playtest_returns_to_editor_without_request() {
         use eg_state::events::misc::Escape;
 
         let mut state = State::new_test().await;
@@ -6082,9 +5628,21 @@ mod tests {
             !runtime.state.game_paused_value(),
             "playtest Escape must not toggle the real-game pause flag"
         );
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Editor
+        );
+        assert!(runtime.state.is_editor());
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playtesting_editor
+        );
         assert!(
             !runtime.app.world().resource::<EscapeRequest>().pending,
-            "playtest Escape request must be consumed in the same frame"
+            "playtest Escape must not leave a Runtime request"
         );
     }
 

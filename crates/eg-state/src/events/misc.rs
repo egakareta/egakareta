@@ -60,19 +60,16 @@ pub fn handle_toggle_hitbox_visualization(
     }
 }
 
-// `TogglePerfOverlay` is a carve-out: the handler mutates
-// `PerfRes.0.overlay_enabled` directly. The legacy
-// `State.editor.perf.overlay_enabled` is synced from the resource by
-// `Runtime::sync_app_perf_state` before any dispatch in the same
-// frame. The legacy setter also calls `puffin::set_scopes_on(...)` —
-// the change-guarded sync invokes the legacy setter (which performs
-// the global `puffin` side effect) when the value differs.
+// `TogglePerfOverlay` owns both the App-world value and puffin's global
+// collection switch. Legacy `State` perf fields are not synchronized back
+// from this handler.
 pub fn handle_toggle_perf_overlay(
     mut events: MessageReader<TogglePerfOverlay>,
     mut perf: ResMut<PerfRes>,
 ) {
     for _ in events.read() {
         perf.0.overlay_enabled = !perf.0.overlay_enabled;
+        puffin::set_scopes_on(perf.0.overlay_enabled);
     }
 }
 
@@ -93,15 +90,24 @@ pub fn handle_toggle_place_window(
 }
 
 // `Escape` handles local branches directly in App-world resources:
-// real-gameplay pause, editor selection clearing, editor timeline playback
-// stop, editor timeline clock reset, and editor-to-menu transition. Playtest
-// and other fallback branches still write `EscapeRequest.pending` for Runtime
-// to consume through the legacy compatibility state machine.
+// real-gameplay pause, playtest exit, editor selection clearing, editor
+// timeline playback stop, editor timeline clock reset, and editor-to-menu
+// transition. Other fallback branches still write `EscapeRequest.pending` for
+// Runtime to consume through the legacy compatibility state machine.
 pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
     for _ in events.read() {
         match resources.phase.current {
-            eg_types::AppPhase::Playing if !resources.session.playtesting_editor => {
-                resources.session.game_paused = !resources.session.game_paused;
+            eg_types::AppPhase::Playing => {
+                if resources.session.playtesting_editor {
+                    resources.phase.set(eg_types::AppPhase::Editor);
+                    resources.session.playtesting_editor = false;
+                    resources.session.game_paused = false;
+                    resources.session.audio_stop_pending = true;
+                    resources.timeline.0.playback.playing = false;
+                    resources.timeline.0.playback.runtime = None;
+                } else {
+                    resources.session.game_paused = !resources.session.game_paused;
+                }
                 continue;
             }
             eg_types::AppPhase::Editor => {

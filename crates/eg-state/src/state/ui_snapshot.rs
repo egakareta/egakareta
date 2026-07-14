@@ -8,7 +8,7 @@
 use super::{
     AppPhaseRes, AuthStateRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    MenuStateRes, PerfRes, SessionStateRes, State, evaluate_camera_track_for_objects,
+    MenuStateRes, PerfRes, SessionStateRes, evaluate_camera_track_for_objects,
 };
 use bevy_ecs::prelude::Resource;
 use bevy_ecs::world::World;
@@ -371,17 +371,7 @@ impl UiStateData {
             true,
         );
 
-        let auth_display_name = auth
-            .session
-            .as_ref()
-            .and_then(|session| session.profile.as_ref())
-            .and_then(|profile| profile.username.as_deref())
-            .or_else(|| {
-                auth.session
-                    .as_ref()
-                    .and_then(|session| session.user.email.as_deref())
-            })
-            .map(ToOwned::to_owned);
+        let auth_display_name = auth.display_name().map(ToOwned::to_owned);
 
         let marquee_selection_rect_screen = input.marquee_start_screen.map(|start| {
             let current = input.marquee_current_screen.unwrap_or(start);
@@ -557,114 +547,6 @@ impl UiStateData {
             fps: view.fps,
             marquee_selection_rect_screen: view.marquee_selection_rect_screen,
             object_count: view.object_count,
-        }
-    }
-}
-
-impl State {
-    pub fn ui_state_snapshot(&self) -> UiStateSnapshot<'_> {
-        let (timeline_preview_position, timeline_preview_direction) =
-            self.editor_timeline_preview();
-        let selected_block_indices = self.editor.selected_indices_normalized();
-        let selected_tap = self
-            .editor
-            .selected_tap()
-            .map(|(index, time_seconds, position)| SelectedTapViewModel {
-                index,
-                time_seconds,
-                position,
-            });
-
-        let camera_target = glam::Vec3::new(
-            self.editor.camera.editor_pan[0],
-            self.editor.camera.editor_target_z,
-            self.editor.camera.editor_pan[1],
-        );
-        let camera_position = (camera_target + self.editor.camera_offset()).to_array();
-        let (camera_preview_position, camera_preview_target) = self.editor_preview_camera_view();
-
-        UiStateSnapshot {
-            is_editor: self.is_editor(),
-            is_menu: self.is_menu(),
-            is_game_paused: self.is_game_paused(),
-            is_practice_mode_enabled: self.is_practice_mode_enabled(),
-            mode: self.editor_mode(),
-            last_mode: self.editor.runtime.interaction.last_mode,
-            available_levels: self.available_levels(),
-            level_name: self.session.editor_level_name.as_deref(),
-            menu_level_name: self.menu_level_name(),
-            menu_selected_level_progress: self.menu_selected_level_progress(),
-            show_metadata: self.editor_show_metadata(),
-            show_place_window: self.editor_show_place_window(),
-            show_settings: self.editor_show_settings(),
-            settings_section: self.editor_settings_section(),
-            keybind_capture_action: self.editor_keybind_capture_action(),
-            music_metadata: self.editor_music_metadata(),
-            creator_metadata: self.editor_creator_metadata().clone(),
-            sky_color: self.editor_sky_color(),
-            app_settings: self.app_settings(),
-            configured_graphics_backend: self.app_settings().graphics_backend.as_str(),
-            configured_audio_backend: self.app_settings().audio_backend.as_str(),
-            graphics_backend_locked: self.graphics_backend_locked(),
-            audio_backend_locked: self.audio_backend_locked(),
-            graphics_backend_options: self.available_graphics_backends(),
-            audio_backend_options: self.available_audio_backends(),
-            settings_restart_required: self.settings_restart_required(),
-            auth_display_name: self.auth_display_name(),
-            auth_pending: self.auth_pending(),
-            auth_message: self.auth_message(),
-            perf_overlay_enabled: self.perf_overlay_enabled(),
-            perf_graphics_backend: self.perf_graphics_backend(),
-            perf_audio_backend: self.perf_audio_backend(),
-            perf_has_latest_frame: self.perf_has_latest_frame(),
-            snap_to_grid: self.editor_snap_to_grid(),
-            snap_step: self.editor_snap_step(),
-            snap_rotation: self.editor_snap_rotation(),
-            snap_rotation_step_degrees: self.editor_snap_rotation_step_degrees(),
-            selected_block_id: self.editor_selected_block_id(),
-            place_preview_position: self.editor.input.cursor,
-            place_preview_size: self.editor.selected_block_default_size(),
-            recent_block_ids: &self.editor.config.recent_block_ids,
-            selected_block: self.editor_selected_block(),
-            selected_block_count: selected_block_indices.len(),
-            clipboard_block_count: self
-                .editor
-                .runtime
-                .interaction
-                .clipboard
-                .as_ref()
-                .map(|clipboard| clipboard.objects.len())
-                .unwrap_or(0),
-            can_undo: !self.editor.runtime.history.undo.is_empty(),
-            can_redo: !self.editor.runtime.history.redo.is_empty(),
-            playing: self.editor_is_playing(),
-            timeline_time_seconds: self.editor_timeline_time_seconds(),
-            timeline_duration_seconds: self.editor_timeline_duration_seconds(),
-            tap_times: self.editor_tap_times(),
-            selected_tap,
-            timeline_preview_position,
-            timeline_preview_direction,
-            timing_points: self.editor_timing_points(),
-            playback_speed: self.editor_playback_speed(),
-            timing_selected_index: self.editor_timing_selected_index(),
-            waveform_zoom: self.editor_waveform_zoom(),
-            waveform_scroll: self.editor_waveform_scroll(),
-            waveform_samples: self.editor_waveform_samples(),
-            waveform_sample_rate: self.editor_waveform_sample_rate(),
-            waveform_window_size: self.editor_waveform_window_size(),
-            waveform_loading: self.editor_waveform_loading(),
-            waveform_complete: self.editor_waveform_complete(),
-            bpm_tap_result: self.editor_bpm_tap_result(),
-            trigger_objects: self.editor_triggers(),
-            trigger_selected_index: self.editor_selected_trigger_index(),
-            camera_position,
-            camera_preview_position,
-            camera_preview_target,
-            camera_rotation: self.editor.camera.editor_yaw,
-            camera_pitch: self.editor.camera.editor_pitch,
-            fps: self.editor_fps(),
-            marquee_selection_rect_screen: self.editor_marquee_selection_rect_screen(),
-            object_count: self.editor.objects.len(),
         }
     }
 }

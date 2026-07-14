@@ -761,7 +761,7 @@ pub fn add_command_systems(schedule: &mut Schedule) {
         // Session
         .add_systems(
             (
-                session::handle_load_level,
+                session::handle_load_level.before(session::handle_export_level),
                 session::handle_rename_level,
                 session::handle_export_level,
                 session::handle_set_show_metadata,
@@ -877,7 +877,6 @@ mod tests {
         world.init_resource::<eg_game::SpatialIndex>();
         world.init_resource::<eg_game::GameRuntimeTuning>();
         world.init_resource::<eg_game::LevelMeta>();
-        world.init_resource::<crate::state::GameplayWorldRes>();
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.init_resource::<crate::state::AppPhaseRes>();
@@ -887,15 +886,16 @@ mod tests {
         world.init_resource::<crate::state::AuthSubmitSignInRequest>();
         world.init_resource::<crate::state::AuthSignOutRequest>();
         world.init_resource::<crate::state::AuthOpenSignupRequest>();
-        world.init_resource::<crate::state::GameQuitToMenuRequest>();
-        world.init_resource::<crate::state::GameRestartLevelRequest>();
         world.init_resource::<crate::state::GameplayResetRes>();
         world.init_resource::<crate::state::PlaytestRequest>();
-        world.init_resource::<crate::state::LoadLevelRequest>();
-        world.init_resource::<crate::state::ExportLevelRequest>();
-        world.init_resource::<crate::state::SetAudioBackendRequest>();
-        world.init_resource::<crate::state::CompleteImportRequest>();
-        world.init_resource::<crate::state::TriggerAudioImportRequest>();
+        world.init_resource::<crate::state::BuiltinLevelCatalogRes>();
+        world.init_resource::<crate::state::LevelExportServiceRes>();
+        world.init_resource::<crate::state::LevelImportSenderRes>();
+        world.init_resource::<crate::state::AudioImportSenderRes>();
+        world.init_resource::<crate::state::AudioBackendRes>();
+        world.init_resource::<crate::state::EditorAudioCacheRes>();
+        world.init_resource::<crate::state::RuntimeAudioPreloadRes>();
+        world.init_resource::<crate::state::WaveformLoadSenderRes>();
         world.init_resource::<crate::state::TurnRightRequest>();
         world.init_resource::<crate::state::ToggleEditorRequest>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
@@ -1088,6 +1088,34 @@ mod tests {
     }
 
     #[test]
+    fn toggle_editor_returns_from_playtest_directly() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .playtesting_editor = true;
+
+        world.write_message(navigation::ToggleEditor);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Editor
+        );
+        let session = world.resource::<crate::state::SessionStateRes>();
+        assert!(!session.playtesting_editor);
+        assert!(!session.game_paused);
+        assert!(session.audio_stop_pending);
+        assert!(
+            !world
+                .resource::<crate::state::ToggleEditorRequest>()
+                .pending
+        );
+    }
+
+    #[test]
     fn carve_out_resize_surface_writes_render_resize_request() {
         let mut world = build_event_world();
         world.write_message(ResizeSurface {
@@ -1175,20 +1203,21 @@ mod tests {
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
     };
 
-    /// `GameQuitToMenu` is a carve-out: the handler writes
-    /// `GameQuitToMenuRequest.pending = true`. Pin the request is
-    /// set and no legacy command is staged.
+    /// Quit-to-menu is ignored outside active real gameplay.
     #[test]
-    fn carve_out_game_quit_to_menu_writes_request() {
+    fn game_quit_to_menu_is_noop_outside_playing() {
         let mut world = build_event_world();
         world.write_message(GameQuitToMenu);
         world.run_schedule(crate::state::StateSchedule);
 
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Menu
+        );
         assert!(
-            world
-                .resource::<crate::state::GameQuitToMenuRequest>()
-                .pending,
-            "GameQuitToMenu handler must request an App-world quit-to-menu"
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .audio_stop_pending
         );
     }
 
@@ -1216,26 +1245,18 @@ mod tests {
         assert!(!session.practice_mode_enabled);
         assert!(session.practice_checkpoints.is_empty());
         assert!(session.audio_stop_pending);
-        assert!(
-            !world
-                .resource::<crate::state::GameQuitToMenuRequest>()
-                .pending
-        );
     }
 
-    /// Menu-phase restart remains a compatibility request because it has no
-    /// active gameplay world to reset.
+    /// Restart is ignored outside active real gameplay.
     #[test]
-    fn carve_out_game_restart_level_writes_request() {
+    fn game_restart_level_is_noop_outside_playing() {
         let mut world = build_event_world();
         world.write_message(GameRestartLevel);
         world.run_schedule(crate::state::StateSchedule);
 
         assert!(
-            world
-                .resource::<crate::state::GameRestartLevelRequest>()
-                .pending,
-            "GameRestartLevel handler must request an App-world level restart"
+            !world.resource::<crate::state::GameplayResetRes>().pending,
+            "menu-phase restart must not request an App-world gameplay reset"
         );
     }
 
@@ -1304,11 +1325,6 @@ mod tests {
             !world
                 .resource::<crate::state::SessionStateRes>()
                 .practice_mode_enabled
-        );
-        assert!(
-            !world
-                .resource::<crate::state::GameRestartLevelRequest>()
-                .pending
         );
     }
 
@@ -3362,7 +3378,7 @@ mod tests {
     }
 
     #[test]
-    fn carve_out_escape_in_playtest_writes_request_instead_of_pause() {
+    fn escape_in_playtest_returns_to_editor_directly() {
         let mut world = build_event_world();
         world
             .resource_mut::<crate::state::AppPhaseRes>()
@@ -3382,10 +3398,21 @@ mod tests {
                 .game_paused,
             "playtest Escape must not mutate the real-game pause flag"
         );
-        assert!(
-            world.resource::<crate::state::EscapeRequest>().pending,
-            "playtest Escape must still request the legacy playtest/editor transition"
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            eg_types::AppPhase::Editor
         );
+        assert!(
+            !world
+                .resource::<crate::state::SessionStateRes>()
+                .playtesting_editor
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .audio_stop_pending
+        );
+        assert!(!world.resource::<crate::state::EscapeRequest>().pending);
     }
 
     /// In editor, Escape first clears block/tap selection directly in
@@ -3840,16 +3867,36 @@ mod tests {
         assert!(world.resource::<crate::state::PlaytestRequest>().pending);
     }
 
-    /// Session side-effect messages are request-resource carve-outs:
-    /// Runtime consumes these resources and calls the existing legacy
-    /// compatibility methods for level IO and audio side effects.
+    /// Built-in loading mutates App resources directly. Remaining export/audio
+    /// side effects are Runtime requests, while import pickers use App senders.
     #[test]
-    fn carve_out_session_side_effects_write_request_resources() {
+    fn carve_out_session_side_effects_route_through_app_resources() {
         use crate::events::session::{
             CompleteImport, ExportLevel, LoadLevel, SetAudioBackend, TriggerAudioImport,
         };
 
         let mut world = build_event_world();
+        let mut level = LevelMetadata::default();
+        level.basic.name = "Flowerfield".to_string();
+        level.objects.push(eg_types::LevelObject::default());
+        world.insert_resource(crate::state::BuiltinLevelCatalogRes::from_levels([level]));
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Timing;
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .app_settings
+            .audio_backend = "stale".to_string();
+        let source_key = eg_audio::audio::runtime_asset_source_key("Flowerfield", "audio.mp3");
+        let audio_cache = world.resource::<crate::state::EditorAudioCacheRes>();
+        audio_cache.insert_level_audio("Flowerfield", vec![1, 2, 3, 4]);
+        audio_cache.insert_waveform(
+            source_key,
+            eg_audio::service::WaveformCacheEntry {
+                samples: vec![0.25, 0.75],
+                sample_rate: 44_100,
+                window_size: eg_audio::service::WAVEFORM_WINDOW,
+                complete: true,
+            },
+        );
 
         world.write_message(LoadLevel("Flowerfield".to_string()));
         world.write_message(ExportLevel);
@@ -3858,28 +3905,44 @@ mod tests {
         world.write_message(TriggerAudioImport);
         world.run_schedule(crate::state::StateSchedule);
 
+        let session = world.resource::<crate::state::SessionStateRes>();
+        assert_eq!(session.editor_level_name.as_deref(), Some("Flowerfield"));
+        assert!(session.audio_stop_pending);
+        assert!(
+            !world
+                .resource::<crate::state::EditorObjectsRes>()
+                .objects
+                .is_empty()
+        );
+        let timing = &world.resource::<crate::state::EditorTimingRes>().0;
+        assert_eq!(timing.waveform_samples, vec![0.25, 0.75]);
+        assert!(timing.waveform_complete);
+        let export = world.resource::<crate::state::LevelExportServiceRes>();
+        let (filename, bytes) = export.last_request().expect("export should be launched");
+        assert_eq!(filename, "Flowerfield.egz");
+        let (exported, audio) =
+            eg_level::read_metadata_from_egz(bytes).expect("decode exported level");
+        assert_eq!(exported.basic.name, "Flowerfield");
+        assert_eq!(exported.objects.len(), 1);
+        assert_eq!(audio, Some(vec![1, 2, 3, 4]));
         assert_eq!(
             world
-                .resource::<crate::state::LoadLevelRequest>()
-                .level_name,
-            Some("Flowerfield".to_string())
+                .resource::<crate::state::SessionStateRes>()
+                .app_settings
+                .audio_backend,
+            "Default"
         );
-        assert!(world.resource::<crate::state::ExportLevelRequest>().pending);
         assert_eq!(
             world
-                .resource::<crate::state::SetAudioBackendRequest>()
-                .backend_name,
-            Some("Default".to_string())
+                .resource::<crate::state::LevelImportSenderRes>()
+                .trigger_count(),
+            1
         );
-        assert!(
+        assert_eq!(
             world
-                .resource::<crate::state::CompleteImportRequest>()
-                .pending
-        );
-        assert!(
-            world
-                .resource::<crate::state::TriggerAudioImportRequest>()
-                .pending
+                .resource::<crate::state::AudioImportSenderRes>()
+                .trigger_count(),
+            1
         );
     }
 

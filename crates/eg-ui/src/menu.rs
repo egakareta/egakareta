@@ -754,34 +754,24 @@ mod tests {
         downsample_menu_texture, load_png_color_image, show_menu_topbar_ui,
     };
     use eg_state::commands::AppCommand;
-    use eg_types::{AuthProfile, AuthSession, AuthSessionTokens, AuthUser};
+    use eg_types::{AppSettings, MusicMetadata};
 
-    fn test_auth_session(username: Option<&str>) -> AuthSession {
-        AuthSession {
-            session: AuthSessionTokens {
-                access_token: "access-token".to_string(),
-                refresh_token: "refresh-token".to_string(),
-                expires_at: Some(123),
-                token_type: "bearer".to_string(),
-            },
-            user: AuthUser {
-                id: "user-id".to_string(),
-                email: Some("player@example.com".to_string()),
-            },
-            profile: username.map(|name| AuthProfile {
-                id: "user-id".to_string(),
-                username: Some(name.to_string()),
-                avatar_url: None,
-                country: "UN".to_string(),
-            }),
-        }
-    }
-
-    fn run_menu_auth_ui_once(state: &mut eg_state::state::State) -> Vec<AppCommand> {
+    fn run_menu_auth_ui_once(
+        auth_display_name: Option<&str>,
+        auth_pending: bool,
+        auth_message: Option<&str>,
+    ) -> Vec<AppCommand> {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        view.is_editor = false;
+        view.is_menu = true;
+        view.auth_display_name = auth_display_name;
+        view.auth_pending = auth_pending;
+        view.auth_message = auth_message;
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            let view = state.ui_state_snapshot();
             show_menu_topbar_ui(root_ui, &view, &mut commands);
         });
         commands
@@ -814,36 +804,20 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn menu_topbar_and_auth_ui_render_guest_state() {
-        let mut state = eg_state::state::State::new_test().await;
-
-        let commands = run_menu_auth_ui_once(&mut state);
+    #[test]
+    fn menu_topbar_and_auth_ui_render_guest_state() {
+        let commands = run_menu_auth_ui_once(None, false, None);
 
         assert!(commands.is_empty());
-        assert_eq!(state.auth_display_name(), None);
     }
 
-    #[tokio::test]
-    async fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
-        let mut state = eg_state::state::State::new_test().await;
-
-        state.set_auth_state_for_test(
-            None,
-            true,
-            Some("Complete sign-in in your browser.".to_string()),
-        );
-        let pending_commands = run_menu_auth_ui_once(&mut state);
+    #[test]
+    fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
+        let pending_commands =
+            run_menu_auth_ui_once(None, true, Some("Complete sign-in in your browser."));
         assert!(pending_commands.is_empty());
-        assert!(state.auth_pending());
-        assert_eq!(
-            state.auth_message(),
-            Some("Complete sign-in in your browser.")
-        );
 
-        state.set_auth_state_for_test(Some(test_auth_session(Some("player"))), false, None);
-        let signed_in_commands = run_menu_auth_ui_once(&mut state);
+        let signed_in_commands = run_menu_auth_ui_once(Some("player"), false, None);
         assert!(signed_in_commands.is_empty());
-        assert_eq!(state.auth_display_name(), Some("player"));
     }
 }

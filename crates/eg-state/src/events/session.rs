@@ -28,23 +28,25 @@
 //! - `CaptureMenuPreviewCamera` / `UseAutoMenuPreviewCamera` ->
 //!   `session.editor_menu_preview_camera`
 //!
-//! Session side-effect events now write typed request resources because their legacy setters have out-of-process side effects (level load, file IO, audio backend switch).
+//! Session side-effect events write typed request resources while their legacy
+//! setters still own level load, export IO, and audio backend changes. Level
+//! picker launch is App-owned and uses sender resources directly.
 //!
-//! `Runtime::sync_app_session_state` propagates the carved-out
-//! fields back to the legacy `State.session` each frame so any
-//! code path that still reads the legacy fields sees the new
-//! values.
+//! Settings handlers persist App-owned changes directly. Runtime still mirrors
+//! the remaining compatibility fields until their legacy readers move.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, LevelPreviewCameraMetadata, MusicMetadata,
-    SettingsSection,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorStateParams,
+    LevelPreviewCameraMetadata, MusicMetadata, SettingsSection,
 };
 
 use crate::state::{
-    AppPhaseRes, CompleteImportRequest, EditorCameraRes, ExportLevelRequest, LoadLevelRequest,
-    SessionStateRes, SetAudioBackendRequest, TriggerAudioImportRequest,
+    AppPhaseRes, AudioBackendRes, AudioImportSenderRes, BuiltinLevelCatalogRes,
+    EditorAudioCacheRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
+    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
 };
 
 /// Load a level from a builtin resource name.
@@ -171,13 +173,69 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-pub fn handle_load_level(
-    mut events: MessageReader<LoadLevel>,
-    mut request: ResMut<LoadLevelRequest>,
-) {
-    for event in events.read() {
-        request.request(event.0.clone());
+pub fn handle_load_level(world: &mut World) {
+    use bevy_ecs::message::Messages;
+
+    let events: Vec<LoadLevel> = world
+        .resource_mut::<Messages<LoadLevel>>()
+        .drain()
+        .collect();
+    for event in events {
+        let Some(metadata) = world.resource::<BuiltinLevelCatalogRes>().get(&event.0) else {
+            continue;
+        };
+
+        apply_imported_level_to_world(world, metadata);
+        world.resource_mut::<EditorTimelineRes>().0.playback = Default::default();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.editor_level_name = Some(event.0.clone());
+            session.audio_stop_pending = true;
+        }
+
+        if world.resource::<EditorInputRes>().0.mode == EditorMode::Timing {
+            load_waveform_for_level(world, event.0);
+        }
     }
+}
+
+fn load_waveform_for_level(world: &mut World, level_name: String) {
+    let source_key = eg_audio::audio::runtime_asset_source_key(&level_name, "audio.mp3");
+    let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
+
+    if let Some(entry) = editor_cache.waveform(&source_key) {
+        let mut timing = world.resource_mut::<EditorTimingRes>();
+        timing.0.waveform_samples = entry.samples;
+        timing.0.waveform_sample_rate = entry.sample_rate;
+        timing.0.waveform_window_size = entry.window_size;
+        timing.0.waveform_loading = !entry.complete;
+        timing.0.waveform_complete = entry.complete;
+        if entry.complete {
+            editor_cache.clear_loading_source_if(&source_key);
+        }
+        return;
+    }
+
+    if editor_cache.loading_source().as_deref() == Some(source_key.as_str()) {
+        return;
+    }
+
+    editor_cache.set_loading_source(Some(source_key.clone()));
+    {
+        let mut timing = world.resource_mut::<EditorTimingRes>();
+        timing.0.waveform_samples.clear();
+        timing.0.waveform_sample_rate = 0;
+        timing.0.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
+        timing.0.waveform_loading = true;
+        timing.0.waveform_complete = false;
+    }
+    let cached_bytes = editor_cache.bytes_for_level_audio(&level_name).or_else(|| {
+        world
+            .resource::<RuntimeAudioPreloadRes>()
+            .bytes(&source_key)
+    });
+    let sender = world.resource::<WaveformLoadSenderRes>().0.clone();
+    eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
 }
 
 pub fn handle_rename_level(
@@ -189,12 +247,44 @@ pub fn handle_rename_level(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_export_level(
     mut events: MessageReader<ExportLevel>,
-    mut request: ResMut<ExportLevelRequest>,
+    session: Res<SessionStateRes>,
+    objects: Res<EditorObjectsRes>,
+    spawn: Res<EditorSpawnRes>,
+    timeline: Res<EditorTimelineRes>,
+    timing: Res<EditorTimingRes>,
+    audio_cache: Res<EditorAudioCacheRes>,
+    mut export_service: ResMut<LevelExportServiceRes>,
 ) {
     for _ in events.read() {
-        request.request();
+        let mut basic = session.editor_creator_metadata.clone();
+        if let Some(level_name) = &session.editor_level_name {
+            basic.name = level_name.clone();
+        }
+        let metadata = eg_types::LevelMetadata::from_editor_state(EditorStateParams {
+            basic,
+            music: session.editor_music_metadata.clone(),
+            spawn: spawn.0.clone(),
+            sky_color: session.editor_sky_color,
+            tap_times: timeline.0.taps.tap_times.clone(),
+            timing_points: timing.0.timing_points.clone(),
+            timeline_time_seconds: timeline.0.clock.time_seconds,
+            timeline_duration_seconds: timeline.0.clock.duration_seconds,
+            menu_preview_camera: session.editor_menu_preview_camera.clone(),
+            objects: objects.objects.clone(),
+        });
+        let audio_bytes = audio_cache
+            .bytes_for_level_audio(&metadata.basic.name)
+            .or_else(|| eg_platform::io::read_editor_music_bytes("audio.mp3"));
+
+        match eg_level::build_level_export(&metadata, audio_bytes) {
+            Ok(data) => {
+                export_service.export(format!("{}.egz", metadata.basic.name), data);
+            }
+            Err(error) => log::error!("Export failed: {error}"),
+        }
     }
 }
 
@@ -238,21 +328,38 @@ pub fn handle_set_graphics_backend(
     mut events: MessageReader<SetGraphicsBackend>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
         if session.graphics_backend_locked || session.app_settings.graphics_backend == event.0 {
             continue;
         }
         session.app_settings.graphics_backend = event.0.clone();
         session.settings_restart_required = true;
+        changed = true;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
 pub fn handle_set_audio_backend(
     mut events: MessageReader<SetAudioBackend>,
-    mut request: ResMut<SetAudioBackendRequest>,
+    backend: Res<AudioBackendRes>,
+    mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
-        request.request(event.0.clone());
+        if session.audio_backend_locked
+            || !backend.set_preferred_backend_name(&event.0)
+            || session.app_settings.audio_backend == event.0
+        {
+            continue;
+        }
+        session.app_settings.audio_backend = event.0.clone();
+        changed = true;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
@@ -260,8 +367,17 @@ pub fn handle_set_ui_scale_multiplier(
     mut events: MessageReader<SetUiScaleMultiplier>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
-        session.app_settings.ui_scale_multiplier = AppSettings::clamp_ui_scale_multiplier(event.0);
+        let multiplier = AppSettings::clamp_ui_scale_multiplier(event.0);
+        if (session.app_settings.ui_scale_multiplier - multiplier).abs() <= 1e-6 {
+            continue;
+        }
+        session.app_settings.ui_scale_multiplier = multiplier;
+        changed = true;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
@@ -278,10 +394,16 @@ pub fn handle_set_keybind(
     mut events: MessageReader<SetKeybind>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
+        let previous = session.app_settings.keybinds.clone();
         session
             .app_settings
             .set_keybind_at_slot(&event.action, event.slot, event.chord.clone());
+        changed |= session.app_settings.keybinds != previous;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
@@ -289,10 +411,16 @@ pub fn handle_clear_keybind_slot(
     mut events: MessageReader<ClearKeybindSlot>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
+        let previous = session.app_settings.keybinds.clone();
         session
             .app_settings
             .clear_keybind_slot(&event.action, event.slot);
+        changed |= session.app_settings.keybinds != previous;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
@@ -300,8 +428,14 @@ pub fn handle_reset_keybind(
     mut events: MessageReader<ResetKeybind>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for event in events.read() {
+        let previous = session.app_settings.keybinds.clone();
         session.app_settings.reset_keybind(&event.0);
+        changed |= session.app_settings.keybinds != previous;
+    }
+    if changed {
+        persist_app_settings(&session.app_settings);
     }
 }
 
@@ -309,17 +443,32 @@ pub fn handle_reset_keybinds(
     mut events: MessageReader<ResetKeybinds>,
     mut session: ResMut<SessionStateRes>,
 ) {
+    let mut changed = false;
     for _ in events.read() {
+        let previous = session.app_settings.keybinds.clone();
         session.app_settings.reset_essential_keybinds();
+        changed |= session.app_settings.keybinds != previous;
     }
+    if changed {
+        persist_app_settings(&session.app_settings);
+    }
+}
+
+fn persist_app_settings(settings: &AppSettings) {
+    let settings = settings.clone();
+    eg_platform::task::spawn_background(async move {
+        if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
+            log::error!("Failed to persist app settings: {error}");
+        }
+    });
 }
 
 pub fn handle_complete_import(
     mut events: MessageReader<CompleteImport>,
-    mut request: ResMut<CompleteImportRequest>,
+    mut sender: ResMut<LevelImportSenderRes>,
 ) {
     for _ in events.read() {
-        request.request();
+        sender.trigger_picker();
     }
 }
 
@@ -352,10 +501,10 @@ pub fn handle_update_sky_color(
 
 pub fn handle_trigger_audio_import(
     mut events: MessageReader<TriggerAudioImport>,
-    mut request: ResMut<TriggerAudioImportRequest>,
+    mut sender: ResMut<AudioImportSenderRes>,
 ) {
     for _ in events.read() {
-        request.request();
+        sender.trigger_picker();
     }
 }
 

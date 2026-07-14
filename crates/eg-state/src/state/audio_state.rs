@@ -5,59 +5,274 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use bevy_ecs::prelude::Resource;
 use eg_audio::audio::{AudioBackend, runtime_asset_source_key};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
 
 use super::State;
 use eg_audio::service::{
-    AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformLoadMessage,
-    WaveformResult,
+    AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformResult,
 };
 use eg_platform::io::save_waveform_to_storage;
-use eg_platform::services::trigger_audio_import;
 use eg_platform::task::spawn_background;
 use eg_types::PersistentWaveformCacheEntry;
 
 // REFACTOR POINT(full-bevy): `AudioSubsystem` becomes Bevy audio resources or
 // stays as a custom resource behind Bevy systems; direct `State` polling goes away.
 
+/// Authoritative platform audio backend shared with the App world while the
+/// remaining playback callers are removed from the compatibility `State`.
+#[derive(Resource, Clone)]
+pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
+
+impl Default for AudioBackendRes {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(AudioBackend::new())))
+    }
+}
+
+impl AudioBackendRes {
+    fn with_mut<R>(&self, f: impl FnOnce(&mut AudioBackend) -> R) -> R {
+        f(&mut self.0.lock().expect("audio backend mutex poisoned"))
+    }
+
+    pub fn set_preferred_backend_name(&self, backend_name: &str) -> bool {
+        self.with_mut(|backend| backend.set_preferred_backend_name(backend_name))
+    }
+
+    pub fn stop(&self) {
+        self.with_mut(AudioBackend::stop);
+    }
+
+    pub fn pause(&self) {
+        self.with_mut(AudioBackend::pause);
+    }
+
+    pub fn resume(&self) {
+        self.with_mut(AudioBackend::resume);
+    }
+
+    pub fn ensure_device(&self) {
+        self.with_mut(|backend| {
+            backend.ensure_device();
+        });
+    }
+
+    pub fn playback_time_seconds(&self) -> Option<f32> {
+        self.with_mut(|backend| backend.playback_time_seconds())
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.with_mut(|backend| backend.is_playing())
+    }
+
+    pub fn set_speed(&self, speed: f32) {
+        self.with_mut(|backend| backend.set_speed(speed));
+    }
+
+    pub fn play_sfx(&self, asset_bytes: &'static [u8]) {
+        self.with_mut(|backend| backend.play_sfx(asset_bytes));
+    }
+
+    pub fn start_with_bytes_at(&self, bytes: &[u8], start_seconds: f32) {
+        self.with_mut(|backend| backend.start_with_bytes_at(bytes, start_seconds));
+    }
+
+    pub fn warmup_with_bytes_at(&self, bytes: &[u8], start_seconds: f32) {
+        self.with_mut(|backend| backend.warmup_with_bytes_at(bytes, start_seconds));
+    }
+
+    pub fn start_preloaded_asset_at(&self, level_name: &str, bytes: &[u8], start_seconds: f32) {
+        self.with_mut(|backend| {
+            backend.start_preloaded_asset_at(level_name, bytes, start_seconds);
+        });
+    }
+
+    pub fn warmup_preloaded_asset_at(&self, level_name: &str, bytes: &[u8], start_seconds: f32) {
+        self.with_mut(|backend| {
+            backend.warmup_preloaded_asset_at(level_name, bytes, start_seconds);
+        });
+    }
+
+    pub fn start_at(&self, level_name: &str, start_seconds: f32) {
+        self.with_mut(|backend| backend.start_at(level_name, start_seconds));
+    }
+
+    pub fn warmup_at(&self, level_name: &str, start_seconds: f32) {
+        self.with_mut(|backend| backend.warmup_at(level_name, start_seconds));
+    }
+}
+
 /// Receiver end of the audio-preload channel. Production frames drain
-/// this through `StateSchedule`; the legacy
-/// `update_runtime_audio_preloads` helper remains for focused
-/// compatibility tests. See [`AuthChannelReceiver`] in
-/// `state::auth_state` for the rationale.
+/// this through `StateSchedule`. See [`AuthChannelReceiver`] in
+/// `state::auth_state` for the shared-receiver rationale.
 pub type AudioPreloadChannelReceiver =
     std::sync::Arc<std::sync::Mutex<Receiver<AudioPreloadResult>>>;
 
+#[derive(Default)]
+struct RuntimeAudioPreloadCache {
+    preloaded_audio: AudioByteCache,
+    preloading_source_keys: HashSet<String>,
+}
+
+#[derive(Resource, Clone, Default)]
+pub struct RuntimeAudioPreloadRes(Arc<Mutex<RuntimeAudioPreloadCache>>);
+
+impl RuntimeAudioPreloadRes {
+    pub fn contains_preloaded(&self, source_key: &str) -> bool {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloaded_audio
+            .contains_key(source_key)
+    }
+
+    pub fn contains_preloading(&self, source_key: &str) -> bool {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloading_source_keys
+            .contains(source_key)
+    }
+
+    pub fn mark_preloading(&self, source_key: String) {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloading_source_keys
+            .insert(source_key);
+    }
+
+    pub fn apply_result(&self, source_key: String, bytes: Option<Vec<u8>>) {
+        let mut cache = self
+            .0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned");
+        cache.preloading_source_keys.remove(&source_key);
+        if let Some(bytes) = bytes {
+            cache.preloaded_audio.insert(source_key, bytes);
+        }
+    }
+
+    pub fn insert_preloaded(&self, source_key: String, bytes: Vec<u8>) {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloaded_audio
+            .insert(source_key, bytes);
+    }
+
+    pub fn bytes(&self, source_key: &str) -> Option<Vec<u8>> {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloaded_audio
+            .get(source_key)
+            .cloned()
+    }
+
+    #[cfg(test)]
+    pub fn preloading_len(&self) -> usize {
+        self.0
+            .lock()
+            .expect("runtime audio preload cache mutex poisoned")
+            .preloading_source_keys
+            .len()
+    }
+}
+
 pub struct RuntimeAudioPreloadState {
-    pub preloaded_audio: AudioByteCache,
-    pub preloading_source_keys: HashSet<String>,
+    pub cache: RuntimeAudioPreloadRes,
     pub preload_channel: (Sender<AudioPreloadResult>, AudioPreloadChannelReceiver),
     #[cfg(test)]
     pub last_warmup_request: Option<(String, f32)>,
 }
 
 /// Receiver end of the audio-import channel. Production frames drain this
-/// through `StateSchedule`; the legacy `update_audio_imports` helper
-/// remains for focused compatibility tests.
+/// through `StateSchedule`.
 pub type AudioImportChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<(String, Vec<u8>)>>>;
 
 pub type AudioImportChannel = (Sender<(String, Vec<u8>)>, AudioImportChannelReceiver);
 
 /// Receiver end of the waveform-load channel. Production frames drain this
-/// through `StateSchedule`; the legacy `update_waveform_loading` helper
-/// remains for focused compatibility tests.
+/// through `StateSchedule`.
 pub type WaveformLoadChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<WaveformResult>>>;
 
+#[derive(Resource, Clone)]
+pub struct WaveformLoadSenderRes(pub Sender<WaveformResult>);
+
+impl Default for WaveformLoadSenderRes {
+    fn default() -> Self {
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        Self(sender)
+    }
+}
+
+#[derive(Resource, Clone, Default)]
+pub struct EditorAudioCacheRes(Arc<Mutex<EditorAudioCache>>);
+
+impl EditorAudioCacheRes {
+    pub fn from_local_files(local_file_bytes: HashMap<String, Vec<u8>>) -> Self {
+        Self(Arc::new(Mutex::new(EditorAudioCache::from_local_files(
+            local_file_bytes,
+        ))))
+    }
+
+    pub(crate) fn with_mut<R>(&self, f: impl FnOnce(&mut EditorAudioCache) -> R) -> R {
+        f(&mut self.0.lock().expect("editor audio cache mutex poisoned"))
+    }
+
+    pub fn insert_level_audio(&self, level_name: &str, bytes: Vec<u8>) -> String {
+        self.with_mut(|cache| cache.insert_level_audio(level_name, bytes))
+    }
+
+    pub fn bytes_for_level_audio(&self, level_name: &str) -> Option<Vec<u8>> {
+        self.with_mut(|cache| cache.bytes_for_level_audio(level_name).cloned())
+    }
+
+    pub fn bytes_for_source(&self, source_key: &str) -> Option<Vec<u8>> {
+        self.with_mut(|cache| cache.bytes_for_source(source_key).cloned())
+    }
+
+    pub fn waveform(&self, source_key: &str) -> Option<WaveformCacheEntry> {
+        self.with_mut(|cache| cache.waveform(source_key).cloned())
+    }
+
+    pub fn insert_waveform(&self, source_key: String, entry: WaveformCacheEntry) {
+        self.with_mut(|cache| cache.insert_waveform(source_key, entry));
+    }
+
+    pub fn remove_waveform(&self, source_key: &str) {
+        self.with_mut(|cache| cache.remove_waveform(source_key));
+    }
+
+    pub fn contains_waveform(&self, source_key: &str) -> bool {
+        self.with_mut(|cache| cache.contains_waveform(source_key))
+    }
+
+    pub fn loading_source(&self) -> Option<String> {
+        self.with_mut(|cache| cache.loading_source().map(str::to_owned))
+    }
+
+    pub fn set_loading_source(&self, source_key: Option<String>) {
+        self.with_mut(|cache| cache.set_loading_source(source_key));
+    }
+
+    pub fn clear_loading_source_if(&self, source_key: &str) {
+        self.with_mut(|cache| cache.clear_loading_source_if(source_key));
+    }
+}
+
 pub struct EditorAudioState {
-    pub cache: EditorAudioCache,
+    pub cache: EditorAudioCacheRes,
     pub audio_import_channel: AudioImportChannel,
     pub waveform_load_channel: (Sender<WaveformResult>, WaveformLoadChannelReceiver),
 }
 
 pub struct AudioState {
-    pub runtime: AudioBackend,
+    pub runtime: AudioBackendRes,
     pub runtime_preload: RuntimeAudioPreloadState,
     pub editor: EditorAudioState,
 }
@@ -72,16 +287,15 @@ impl AudioState {
         let (audio_tx, audio_rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
         let (waveform_tx, waveform_rx) = std::sync::mpsc::channel::<WaveformResult>();
         Self {
-            runtime: AudioBackend::new(),
+            runtime: AudioBackendRes::default(),
             runtime_preload: RuntimeAudioPreloadState {
-                preloaded_audio: AudioByteCache::default(),
-                preloading_source_keys: HashSet::new(),
+                cache: RuntimeAudioPreloadRes::default(),
                 preload_channel: (preload_tx, arc_receiver(preload_rx)),
                 #[cfg(test)]
                 last_warmup_request: None,
             },
             editor: EditorAudioState {
-                cache: EditorAudioCache::from_local_files(local_audio_cache),
+                cache: EditorAudioCacheRes::from_local_files(local_audio_cache),
                 audio_import_channel: (audio_tx, arc_receiver(audio_rx)),
                 waveform_load_channel: (waveform_tx, arc_receiver(waveform_rx)),
             },
@@ -90,21 +304,15 @@ impl AudioState {
 
     pub fn preload_runtime_audio(&mut self, level_name: &str, music_source: &str) {
         let source_key = runtime_asset_source_key(level_name, music_source);
-        if self
-            .runtime_preload
-            .preloaded_audio
-            .contains_key(&source_key)
-            || self
-                .runtime_preload
-                .preloading_source_keys
-                .contains(&source_key)
+        if self.runtime_preload.cache.contains_preloaded(&source_key)
+            || self.runtime_preload.cache.contains_preloading(&source_key)
         {
             return;
         }
 
         self.runtime_preload
-            .preloading_source_keys
-            .insert(source_key.clone());
+            .cache
+            .mark_preloading(source_key.clone());
 
         #[cfg(not(test))]
         {
@@ -125,8 +333,7 @@ impl Default for RuntimeAudioPreloadState {
     fn default() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
         Self {
-            preloaded_audio: AudioByteCache::default(),
-            preloading_source_keys: HashSet::new(),
+            cache: RuntimeAudioPreloadRes::default(),
             preload_channel: (tx, arc_receiver(rx)),
             #[cfg(test)]
             last_warmup_request: None,
@@ -139,7 +346,7 @@ impl Default for EditorAudioState {
         let (audio_tx, audio_rx) = std::sync::mpsc::channel();
         let (waveform_tx, waveform_rx) = std::sync::mpsc::channel();
         Self {
-            cache: EditorAudioCache::default(),
+            cache: EditorAudioCacheRes::default(),
             audio_import_channel: (audio_tx, arc_receiver(audio_rx)),
             waveform_load_channel: (waveform_tx, arc_receiver(waveform_rx)),
         }
@@ -149,7 +356,7 @@ impl Default for EditorAudioState {
 impl Default for AudioState {
     fn default() -> Self {
         Self {
-            runtime: AudioBackend::new(),
+            runtime: AudioBackendRes::default(),
             runtime_preload: RuntimeAudioPreloadState::default(),
             editor: EditorAudioState::default(),
         }
@@ -175,13 +382,8 @@ impl State {
         self.audio.state.runtime.resume();
     }
 
-    pub fn ensure_device(&mut self) {
-        self.audio.state.runtime.ensure_device();
-    }
-
     pub(super) fn start_audio_source_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-        self.update_runtime_audio_preloads();
 
         if (self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor)
             && let Some(bytes) = self
@@ -194,21 +396,15 @@ impl State {
             self.audio
                 .state
                 .runtime
-                .start_with_bytes_at(bytes, start_seconds);
+                .start_with_bytes_at(&bytes, start_seconds);
             return;
         }
 
-        if let Some(bytes) = self
-            .audio
-            .state
-            .runtime_preload
-            .preloaded_audio
-            .get(&source_key)
-        {
+        if let Some(bytes) = self.audio.state.runtime_preload.cache.bytes(&source_key) {
             self.audio
                 .state
                 .runtime
-                .start_preloaded_asset_at(level_name, bytes, start_seconds);
+                .start_preloaded_asset_at(level_name, &bytes, start_seconds);
         } else {
             self.audio.state.runtime.start_at(level_name, start_seconds);
         }
@@ -216,8 +412,6 @@ impl State {
 
     pub fn warmup_audio_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
         let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-
-        self.update_runtime_audio_preloads();
 
         #[cfg(test)]
         {
@@ -238,20 +432,14 @@ impl State {
                 self.audio
                     .state
                     .runtime
-                    .warmup_with_bytes_at(bytes, start_seconds);
+                    .warmup_with_bytes_at(&bytes, start_seconds);
                 return;
             }
 
-            if let Some(bytes) = self
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .get(&source_key)
-            {
+            if let Some(bytes) = self.audio.state.runtime_preload.cache.bytes(&source_key) {
                 self.audio.state.runtime.warmup_preloaded_asset_at(
                     level_name,
-                    bytes,
+                    &bytes,
                     start_seconds,
                 );
             } else {
@@ -259,253 +447,6 @@ impl State {
                     .state
                     .runtime
                     .warmup_at(level_name, start_seconds);
-            }
-        }
-    }
-
-    pub fn trigger_audio_import(&self) {
-        trigger_audio_import(self.audio.state.editor.audio_import_channel.0.clone());
-    }
-
-    pub fn update_audio_imports(&mut self) {
-        // Phase 6b: see `update_waveform_loading` for the
-        // receiver-share rationale. The original code processed
-        // exactly one message per call (early return after the
-        // waveform loader runs); we preserve that semantics.
-        let guard = self
-            .audio
-            .state
-            .editor
-            .audio_import_channel
-            .1
-            .lock()
-            .expect("audio import channel mutex poisoned");
-        let first = guard.try_recv().ok();
-        drop(guard);
-        if let Some((_filename, bytes)) = first {
-            let level_name = self
-                .session
-                .editor_level_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string());
-            let source_key = self
-                .audio
-                .state
-                .editor
-                .cache
-                .insert_level_audio(&level_name, bytes);
-
-            self.audio.state.editor.cache.remove_waveform(&source_key);
-            self.audio.state.editor.cache.set_loading_source(None);
-            self.load_waveform_for_current_audio();
-        }
-    }
-
-    pub fn update_runtime_audio_preloads(&mut self) {
-        let guard = self
-            .audio
-            .state
-            .runtime_preload
-            .preload_channel
-            .1
-            .lock()
-            .expect("audio preload channel mutex poisoned");
-        while let Ok((source_key, bytes)) = guard.try_recv() {
-            self.audio
-                .state
-                .runtime_preload
-                .preloading_source_keys
-                .remove(&source_key);
-
-            if let Some(bytes) = bytes {
-                self.audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key, bytes);
-            }
-        }
-    }
-
-    pub fn update_waveform_loading(&mut self) {
-        // Phase 6b: the receiver is shared with the Phase 6b handler
-        // system via `Arc<Mutex<>>`. We hold the lock for the
-        // duration of the loop (the State-method calls in the body
-        // don't need the receiver, so the lock is uncontended in
-        // practice).
-        let guard = self
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .1
-            .lock()
-            .expect("waveform load channel mutex poisoned");
-        while let Ok((source, level_name, message)) = guard.try_recv() {
-            let source_key = runtime_asset_source_key(&level_name, &source);
-            let is_current =
-                self.audio.state.editor.cache.loading_source() == Some(source_key.as_str());
-
-            match message {
-                WaveformLoadMessage::Started { window_size } => {
-                    self.audio.state.editor.cache.insert_waveform(
-                        source_key.clone(),
-                        WaveformCacheEntry {
-                            window_size,
-                            ..WaveformCacheEntry::default()
-                        },
-                    );
-
-                    if is_current {
-                        self.editor.timing.waveform_samples.clear();
-                        self.editor.timing.waveform_sample_rate = 0;
-                        self.editor.timing.waveform_window_size = window_size;
-                        self.editor.timing.waveform_loading = true;
-                        self.editor.timing.waveform_complete = false;
-                    }
-                }
-                WaveformLoadMessage::Chunk {
-                    start_peak,
-                    peaks,
-                    sample_rate,
-                    window_size,
-                } => {
-                    let entry = self
-                        .audio
-                        .state
-                        .editor
-                        .cache
-                        .waveform_mut_or_default(source_key.clone());
-                    entry.sample_rate = sample_rate;
-                    entry.window_size = window_size;
-                    entry.complete = false;
-                    apply_waveform_chunk(&mut entry.samples, start_peak, peaks);
-                    let entry = entry.clone();
-
-                    if is_current {
-                        self.editor.timing.waveform_samples = entry.samples.clone();
-                        self.editor.timing.waveform_sample_rate = sample_rate;
-                        self.editor.timing.waveform_window_size = window_size;
-                        self.editor.timing.waveform_loading = true;
-                        self.editor.timing.waveform_complete = false;
-                    }
-                }
-                WaveformLoadMessage::Cached {
-                    samples,
-                    sample_rate,
-                    window_size,
-                    bytes,
-                } => {
-                    let entry = WaveformCacheEntry {
-                        samples,
-                        sample_rate,
-                        window_size,
-                        complete: true,
-                    };
-                    self.audio
-                        .state
-                        .editor
-                        .cache
-                        .insert_waveform(source_key.clone(), entry.clone());
-
-                    if is_current {
-                        self.editor.timing.waveform_samples = entry.samples.clone();
-                        self.editor.timing.waveform_sample_rate = entry.sample_rate;
-                        self.editor.timing.waveform_window_size = entry.window_size;
-                        self.editor.timing.waveform_loading = false;
-                        self.editor.timing.waveform_complete = true;
-                        self.audio
-                            .state
-                            .editor
-                            .cache
-                            .clear_loading_source_if(&source_key);
-                    }
-
-                    if let Some(bytes) = bytes {
-                        self.audio
-                            .state
-                            .runtime_preload
-                            .preloaded_audio
-                            .insert(source_key.clone(), bytes);
-                    }
-                }
-                WaveformLoadMessage::Finished {
-                    sample_rate,
-                    window_size,
-                    total_peaks,
-                    cache_key,
-                    bytes,
-                } => {
-                    let entry = {
-                        let entry = self
-                            .audio
-                            .state
-                            .editor
-                            .cache
-                            .waveform_mut_or_default(source_key.clone());
-                        entry.sample_rate = sample_rate;
-                        entry.window_size = window_size;
-                        entry.complete = true;
-                        entry.samples.truncate(total_peaks);
-                        entry.clone()
-                    };
-
-                    if let Some(cache_key) = cache_key {
-                        persist_waveform_cache_entry(cache_key, &entry);
-                    }
-
-                    if is_current {
-                        self.editor.timing.waveform_samples = entry.samples.clone();
-                        self.editor.timing.waveform_sample_rate = sample_rate;
-                        self.editor.timing.waveform_window_size = window_size;
-                        self.editor.timing.waveform_loading = false;
-                        self.editor.timing.waveform_complete = true;
-                    }
-
-                    if let Some(bytes) = bytes {
-                        // We cache builtin bytes in runtime_preload instead of local_audio_cache
-                        // to avoid filename collisions (e.g., both Ambition and Golden Haze using "audio.mp3")
-                        self.audio
-                            .state
-                            .runtime_preload
-                            .preloaded_audio
-                            .insert(source_key.clone(), bytes);
-                    }
-
-                    if is_current {
-                        self.audio
-                            .state
-                            .editor
-                            .cache
-                            .clear_loading_source_if(&source_key);
-                    }
-                }
-                WaveformLoadMessage::Failed { bytes } => {
-                    self.audio.state.editor.cache.remove_waveform(&source_key);
-
-                    if is_current {
-                        self.editor.timing.waveform_samples.clear();
-                        self.editor.timing.waveform_sample_rate = 0;
-                        self.editor.timing.waveform_loading = false;
-                        self.editor.timing.waveform_complete = false;
-                    }
-
-                    if let Some(bytes) = bytes {
-                        self.audio
-                            .state
-                            .runtime_preload
-                            .preloaded_audio
-                            .insert(source_key.clone(), bytes);
-                    }
-
-                    if is_current {
-                        self.audio
-                            .state
-                            .editor
-                            .cache
-                            .clear_loading_source_if(&source_key);
-                    }
-                }
             }
         }
     }
@@ -534,7 +475,7 @@ impl State {
             return;
         }
 
-        if self.audio.state.editor.cache.loading_source() == Some(source_key.as_str()) {
+        if self.audio.state.editor.cache.loading_source().as_deref() == Some(source_key.as_str()) {
             return;
         }
 
@@ -555,36 +496,14 @@ impl State {
             .editor
             .cache
             .bytes_for_level_audio(&level_name)
-            .cloned()
-            .or_else(|| {
-                self.audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .get(&source_key)
-                    .cloned()
-            });
+            .or_else(|| self.audio.state.runtime_preload.cache.bytes(&source_key));
         let sender = self.audio.state.editor.waveform_load_channel.0.clone();
 
         eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
     }
 }
 
-fn apply_waveform_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: Vec<f32>) {
-    if samples.len() < start_peak {
-        samples.resize(start_peak, 0.0);
-    }
-
-    let end_peak = start_peak + peaks.len();
-    if samples.len() < end_peak {
-        samples.resize(end_peak, 0.0);
-    }
-
-    samples[start_peak..end_peak].copy_from_slice(&peaks);
-}
-
-/// Phase 6b: made `pub(crate)` so the `waveform_handler_system` in
-/// `state::async_bridge` can call it from a closure.
+/// Persists a waveform completed by the App-world async result handler.
 pub(crate) fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCacheEntry) {
     let cached = PersistentWaveformCacheEntry::new(
         entry.samples.clone(),
@@ -604,7 +523,6 @@ mod tests {
     use super::{AudioState, WaveformCacheEntry};
     use crate::state::State;
     use eg_audio::audio::runtime_asset_source_key;
-    use eg_audio::service::WaveformLoadMessage;
     use std::collections::HashMap;
 
     async fn new_editor_state() -> State {
@@ -621,8 +539,8 @@ mod tests {
         assert!(
             state
                 .runtime_preload
-                .preloading_source_keys
-                .contains(&runtime_asset_source_key("Ambition", "music.mp3"))
+                .cache
+                .contains_preloading(&runtime_asset_source_key("Ambition", "music.mp3"))
         );
     }
 
@@ -633,315 +551,26 @@ mod tests {
         state.preload_runtime_audio("Ambition", "music.mp3");
         state.preload_runtime_audio("Ambition", "music.mp3");
 
-        assert_eq!(state.runtime_preload.preloading_source_keys.len(), 1);
+        assert_eq!(state.runtime_preload.cache.preloading_len(), 1);
         assert!(
             state
                 .runtime_preload
-                .preloading_source_keys
-                .contains(&preload_key)
+                .cache
+                .contains_preloading(&preload_key)
         );
 
         let already_loaded = runtime_asset_source_key("Golden Haze", "audio.mp3");
         state
             .runtime_preload
-            .preloaded_audio
-            .insert(already_loaded.clone(), vec![1, 2, 3]);
+            .cache
+            .insert_preloaded(already_loaded.clone(), vec![1, 2, 3]);
         state.preload_runtime_audio("Golden Haze", "audio.mp3");
         assert!(
             !state
                 .runtime_preload
-                .preloading_source_keys
-                .contains(&already_loaded)
+                .cache
+                .contains_preloading(&already_loaded)
         );
-    }
-
-    #[tokio::test]
-    async fn update_runtime_audio_preloads_moves_channel_results_into_cache() {
-        let mut state = new_editor_state().await;
-        let loaded_key = runtime_asset_source_key("Ambition", "audio.mp3");
-        let missing_key = runtime_asset_source_key("Ambition", "missing.mp3");
-
-        state
-            .audio
-            .state
-            .runtime_preload
-            .preloading_source_keys
-            .insert(loaded_key.clone());
-        state
-            .audio
-            .state
-            .runtime_preload
-            .preloading_source_keys
-            .insert(missing_key.clone());
-
-        state
-            .audio
-            .state
-            .runtime_preload
-            .preload_channel
-            .0
-            .send((loaded_key.clone(), Some(vec![9, 8, 7])))
-            .expect("loaded preload send should succeed");
-        state
-            .audio
-            .state
-            .runtime_preload
-            .preload_channel
-            .0
-            .send((missing_key.clone(), None))
-            .expect("missing preload send should succeed");
-
-        state.update_runtime_audio_preloads();
-
-        assert!(
-            state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .contains_key(&loaded_key)
-        );
-        assert!(
-            !state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .contains_key(&missing_key)
-        );
-        assert!(
-            !state
-                .audio
-                .state
-                .runtime_preload
-                .preloading_source_keys
-                .contains(&loaded_key)
-        );
-        assert!(
-            !state
-                .audio
-                .state
-                .runtime_preload
-                .preloading_source_keys
-                .contains(&missing_key)
-        );
-    }
-
-    #[tokio::test]
-    async fn update_waveform_loading_applies_current_source_and_caches_bytes() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-
-        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some(source_key.clone()));
-
-        state
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .0
-            .send((
-                "audio.mp3".to_string(),
-                "Test Level".to_string(),
-                WaveformLoadMessage::Chunk {
-                    start_peak: 0,
-                    peaks: vec![0.25, 0.75],
-                    sample_rate: 44_100,
-                    window_size: eg_audio::service::WAVEFORM_WINDOW,
-                },
-            ))
-            .expect("waveform send should succeed");
-        state
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .0
-            .send((
-                "audio.mp3".to_string(),
-                "Test Level".to_string(),
-                WaveformLoadMessage::Finished {
-                    sample_rate: 44_100,
-                    window_size: eg_audio::service::WAVEFORM_WINDOW,
-                    total_peaks: 2,
-                    cache_key: None,
-                    bytes: Some(vec![4, 5, 6]),
-                },
-            ))
-            .expect("waveform finish send should succeed");
-
-        state.update_waveform_loading();
-
-        assert_eq!(state.editor.timing.waveform_samples, vec![0.25, 0.75]);
-        assert_eq!(state.editor.timing.waveform_sample_rate, 44_100);
-        assert!(state.editor.timing.waveform_complete);
-        assert_eq!(state.audio.state.editor.cache.loading_source(), None);
-
-        let cached = state
-            .audio
-            .state
-            .editor
-            .cache
-            .waveform(&source_key)
-            .expect("decoded waveform should be cached");
-        assert_eq!(cached.samples, vec![0.25, 0.75]);
-        assert_eq!(cached.sample_rate, 44_100);
-        assert!(cached.complete);
-
-        assert_eq!(
-            state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .get(&source_key),
-            Some(&vec![4, 5, 6])
-        );
-    }
-
-    #[tokio::test]
-    async fn update_waveform_loading_applies_persistent_cache_hit() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-
-        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some(source_key.clone()));
-
-        state
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .0
-            .send((
-                "audio.mp3".to_string(),
-                "Test Level".to_string(),
-                WaveformLoadMessage::Cached {
-                    samples: vec![0.15, 0.45, 0.9],
-                    sample_rate: 44_100,
-                    window_size: eg_audio::service::WAVEFORM_WINDOW,
-                    bytes: Some(vec![7, 8, 9]),
-                },
-            ))
-            .expect("cached waveform send should succeed");
-
-        state.update_waveform_loading();
-
-        assert_eq!(state.editor.timing.waveform_samples, vec![0.15, 0.45, 0.9]);
-        assert_eq!(state.editor.timing.waveform_sample_rate, 44_100);
-        assert!(state.editor.timing.waveform_complete);
-        assert!(!state.editor.timing.waveform_loading);
-        assert_eq!(state.audio.state.editor.cache.loading_source(), None);
-
-        let cached = state
-            .audio
-            .state
-            .editor
-            .cache
-            .waveform(&source_key)
-            .expect("persistent cache hit should be cached in memory");
-        assert!(cached.complete);
-        assert_eq!(cached.samples, vec![0.15, 0.45, 0.9]);
-        assert_eq!(
-            state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .get(&source_key),
-            Some(&vec![7, 8, 9])
-        );
-    }
-
-    #[tokio::test]
-    async fn update_waveform_loading_keeps_timing_for_stale_source_but_still_caches() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-        state.editor.timing.waveform_samples = vec![1.0];
-        state.editor.timing.waveform_sample_rate = 22_050;
-
-        let stale_key = runtime_asset_source_key("Test Level", "audio.mp3");
-        let active_key = runtime_asset_source_key("Other Level", "audio.mp3");
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some(active_key.clone()));
-
-        state
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .0
-            .send((
-                "audio.mp3".to_string(),
-                "Test Level".to_string(),
-                WaveformLoadMessage::Chunk {
-                    start_peak: 0,
-                    peaks: vec![0.1, 0.2],
-                    sample_rate: 48_000,
-                    window_size: eg_audio::service::WAVEFORM_WINDOW,
-                },
-            ))
-            .expect("stale waveform send should succeed");
-
-        state.update_waveform_loading();
-
-        assert_eq!(state.editor.timing.waveform_samples, vec![1.0]);
-        assert_eq!(state.editor.timing.waveform_sample_rate, 22_050);
-        assert!(state.audio.state.editor.cache.contains_waveform(&stale_key));
-        assert_eq!(
-            state.audio.state.editor.cache.loading_source(),
-            Some(active_key.as_str())
-        );
-    }
-
-    #[tokio::test]
-    async fn update_waveform_loading_clears_timing_when_current_decode_fails() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-        state.editor.timing.waveform_samples = vec![0.5, 0.6];
-        state.editor.timing.waveform_sample_rate = 44_100;
-
-        let key = runtime_asset_source_key("Test Level", "audio.mp3");
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some(key.clone()));
-
-        state
-            .audio
-            .state
-            .editor
-            .waveform_load_channel
-            .0
-            .send((
-                "audio.mp3".to_string(),
-                "Test Level".to_string(),
-                WaveformLoadMessage::Failed { bytes: None },
-            ))
-            .expect("failed waveform send should succeed");
-
-        state.update_waveform_loading();
-
-        assert!(state.editor.timing.waveform_samples.is_empty());
-        assert_eq!(state.editor.timing.waveform_sample_rate, 0);
-        assert_eq!(state.audio.state.editor.cache.loading_source(), None);
     }
 
     #[tokio::test]
@@ -970,7 +599,7 @@ mod tests {
         assert_eq!(state.editor.timing.waveform_sample_rate, 32_000);
         assert_eq!(
             state.audio.state.editor.cache.loading_source(),
-            Some("other:key")
+            Some("other:key".to_string())
         );
 
         state.audio.state.editor.cache.remove_waveform(&source_key);
@@ -1003,59 +632,7 @@ mod tests {
         assert_eq!(state.editor.timing.waveform_sample_rate, 0);
         assert_eq!(
             state.audio.state.editor.cache.loading_source(),
-            Some(source_key.as_str())
-        );
-    }
-
-    #[tokio::test]
-    async fn update_audio_imports_updates_source_cache_and_invalidates_waveform_cache() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-
-        let imported_name = "imported.mp3".to_string();
-        let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
-        state.audio.state.editor.cache.insert_waveform(
-            source_key.clone(),
-            WaveformCacheEntry {
-                samples: vec![0.5],
-                sample_rate: 8_000,
-                window_size: eg_audio::service::WAVEFORM_WINDOW,
-                complete: true,
-            },
-        );
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some("some:old:key".to_string()));
-
-        state
-            .audio
-            .state
-            .editor
-            .audio_import_channel
-            .0
-            .send((imported_name.clone(), vec![1, 2, 3, 4]))
-            .expect("audio import send should succeed");
-
-        state.update_audio_imports();
-
-        assert_eq!(
-            state.audio.state.editor.cache.bytes_for_source(&source_key),
-            Some(&vec![1, 2, 3, 4])
-        );
-        assert!(
-            !state
-                .audio
-                .state
-                .editor
-                .cache
-                .contains_waveform(&source_key)
-        );
-        assert_eq!(
-            state.audio.state.editor.cache.loading_source(),
-            Some(source_key.as_str())
+            Some(source_key.clone())
         );
     }
 }

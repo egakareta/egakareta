@@ -1988,8 +1988,9 @@ mod tests {
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
     use eg_state::commands::AppCommand;
+    use eg_state::state::UiStateSnapshot;
     use eg_state::state::editor_command::EditorCommand;
-    use eg_types::{EditorMode, SettingsSection};
+    use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
     use glam::{Mat3, Vec3};
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
@@ -2018,18 +2019,12 @@ mod tests {
         sign != 0.0
     }
 
-    fn run_editor_ui_once(state: &mut eg_state::state::State) {
+    fn run_editor_ui_once(view: &UiStateSnapshot<'_>) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            let view = state.ui_state_snapshot();
-            let (_, ui_input_blocking_rects) =
-                show_editor_ui_commands_from_view(ctx, &view, &block_icon_texture_ids);
-            state.set_editor_ui_input_blocking_rects(
-                ui_input_blocking_rects,
-                ctx.pixels_per_point(),
-            );
+            let _ = show_editor_ui_commands_from_view(ctx, view, &block_icon_texture_ids);
         });
     }
 
@@ -2236,36 +2231,33 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn show_editor_ui_returns_early_when_not_in_editor() {
-        let Some(mut state) = eg_state::state::State::try_new_test().await else {
-            return;
-        };
+    #[test]
+    fn show_editor_ui_returns_early_when_not_in_editor() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        view.is_editor = false;
+        view.is_menu = true;
 
-        assert!(state.is_menu());
-        run_editor_ui_once(&mut state);
-        assert!(state.is_menu());
+        run_editor_ui_once(&view);
     }
 
-    #[tokio::test]
-    async fn show_perf_overlay_renders_outside_editor() {
-        let Some(mut state) = eg_state::state::State::try_new_test().await else {
-            return;
-        };
-
-        assert!(state.is_menu());
-        state.set_perf_overlay_enabled(true);
+    #[test]
+    fn show_perf_overlay_renders_outside_editor() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        view.is_editor = false;
+        view.is_menu = true;
+        view.perf_overlay_enabled = true;
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            let view = state.ui_state_snapshot();
             let mut commands = Vec::new();
             show_perf_overlay(ctx, &view, &mut commands);
             assert!(commands.is_empty());
         });
-
-        assert!(state.perf_overlay_enabled());
     }
 
     #[test]
@@ -2273,59 +2265,35 @@ mod tests {
         assert!(perf_overlay_window_order() < egui::Order::Tooltip);
     }
 
-    #[tokio::test]
-    async fn show_editor_ui_renders_marquee_selection() {
-        let Some(mut state) = eg_state::state::State::try_new_test().await else {
-            return;
-        };
+    #[test]
+    fn show_editor_ui_renders_marquee_selection() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        view.mode = EditorMode::Select;
+        view.marquee_selection_rect_screen = Some(([10.0, 10.0], [100.0, 100.0], false));
 
-        state.enter_editor_phase_for_test("MarqueeUiTest");
-        state.set_editor_mode(eg_types::EditorMode::Select);
-
-        // Inject a marquee drag through the direct editor interaction API;
-        // the old State::process_input_event bridge no longer exists.
-        assert!(state.begin_editor_marquee_selection(10.0, 10.0));
-        assert!(state.update_editor_marquee_selection(100.0, 100.0));
-
-        run_editor_ui_once(&mut state);
-
-        // If we successfully run the UI loop without panicking, the marquee rendering path is covered.
+        run_editor_ui_once(&view);
     }
 
-    #[tokio::test]
-    async fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
-        let Some(mut state) = eg_state::state::State::try_new_test().await else {
-            return;
-        };
+    #[test]
+    fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
+        let app_settings = AppSettings::default();
+        let music_metadata = MusicMetadata::default();
+        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        view.mode = EditorMode::Timing;
+        view.show_settings = true;
+        view.settings_section = SettingsSection::Backends;
+        view.show_metadata = true;
+        view.perf_overlay_enabled = true;
+        run_editor_ui_once(&view);
 
-        state.enter_editor_phase_for_test("EditorUiCompositionTest");
-        assert!(state.is_editor());
+        view.mode = EditorMode::Place;
+        view.settings_section = SettingsSection::Keybinds;
+        run_editor_ui_once(&view);
 
-        state.set_editor_mode(EditorMode::Timing);
-        state.set_editor_show_settings(true);
-        state.set_editor_settings_section(SettingsSection::Backends);
-        state.set_editor_show_metadata(true);
-        state.set_perf_overlay_enabled(true);
-        run_editor_ui_once(&mut state);
-
-        assert_eq!(state.editor_mode(), EditorMode::Timing);
-        assert!(state.editor_show_settings());
-        assert_eq!(state.editor_settings_section(), SettingsSection::Backends);
-        assert!(state.editor_show_metadata());
-        assert!(state.perf_overlay_enabled());
-
-        state.set_editor_mode(EditorMode::Place);
-        state.set_editor_settings_section(SettingsSection::Keybinds);
-        run_editor_ui_once(&mut state);
-
-        assert_eq!(state.editor_mode(), EditorMode::Place);
-        assert_eq!(state.editor_settings_section(), SettingsSection::Keybinds);
-
-        state.set_editor_mode(EditorMode::Tapping);
-        run_editor_ui_once(&mut state);
-
-        assert_eq!(state.editor_mode(), EditorMode::Tapping);
-        assert!(state.is_editor());
+        view.mode = EditorMode::Tapping;
+        run_editor_ui_once(&view);
     }
 }
 

@@ -24,9 +24,7 @@ use eg_game::{
 };
 use eg_types::{Direction, LevelObject};
 
-use super::{
-    AppPhaseRes, FrameTimeRes, GameplayResetRes, GameplayWorldRes, SessionStateRes, State,
-};
+use super::{AppPhaseRes, FrameTimeRes, GameplayResetRes, SessionStateRes, State};
 
 impl State {
     /// Seed the App-world gameplay entities/resources from the legacy state at
@@ -74,10 +72,6 @@ impl State {
                 death_sfx_played,
             },
         );
-        let mut gameplay = world.resource_mut::<GameplayWorldRes>();
-        gameplay.app_authoritative = true;
-        gameplay.needs_legacy_seed = false;
-        self.gameplay_app_authoritative = true;
     }
 
     /// Refresh only the compatibility `GameState` fields from the App-world
@@ -105,8 +99,7 @@ impl State {
 /// captured this frame's intents. The compatibility `State::update` path is
 /// intentionally not involved in this schedule call.
 pub fn run_app_gameplay_schedule(world: &mut World) {
-    let should_run = world.resource::<GameplayWorldRes>().app_authoritative
-        && world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
+    let should_run = world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
         && !world.resource::<SessionStateRes>().game_paused;
     if !should_run {
         return;
@@ -278,7 +271,6 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
     world.resource_mut::<FixedStepConfig>().dt = 1.0 / 120.0;
     world.resource_mut::<DeathSfxFlag>().0 = death_sfx_played;
     rebuild_spatial_index(world);
-    world.resource_mut::<GameplayWorldRes>().app_authoritative = true;
 }
 
 fn rebuild_spatial_index(world: &mut World) {

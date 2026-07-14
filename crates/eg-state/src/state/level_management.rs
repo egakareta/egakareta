@@ -14,7 +14,6 @@ use eg_editor_domain::{
 use eg_game::GameState;
 use eg_level::{build_level_export, load_builtin_level_metadata, read_metadata_from_egz};
 use eg_platform::io::{read_editor_music_bytes, save_level_export};
-use eg_platform::services::trigger_level_import;
 use eg_platform::task::spawn_background;
 use eg_types::{
     AppPhase, AppSettings, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
@@ -219,7 +218,6 @@ impl State {
             .editor
             .cache
             .bytes_for_level_audio(&metadata.basic.name)
-            .cloned()
             .or_else(|| read_editor_music_bytes("audio.mp3"));
 
         build_level_export(&metadata, audio_bytes)
@@ -534,24 +532,6 @@ impl State {
         self.persist_app_settings();
     }
 
-    pub fn set_preferred_audio_backend(&mut self, backend_name: String) {
-        if self.session.audio_backend_locked {
-            return;
-        }
-
-        if !self
-            .audio
-            .state
-            .runtime
-            .set_preferred_backend_name(&backend_name)
-        {
-            return;
-        }
-
-        self.session.app_settings.audio_backend = backend_name;
-        self.persist_app_settings();
-    }
-
     pub fn set_ui_scale_multiplier(&mut self, multiplier: f32) {
         let clamped = AppSettings::clamp_ui_scale_multiplier(multiplier);
         if (self.session.app_settings.ui_scale_multiplier - clamped).abs() <= 1e-6 {
@@ -669,43 +649,6 @@ impl State {
                 log::error!("Export failed: {}", e);
             }
         }
-    }
-
-    pub fn update_level_imports(&mut self) {
-        // Compatibility helper for focused tests. Production frames drain
-        // this receiver through StateSchedule. We drain under the lock,
-        // drop the lock, then process (the `import_*` methods take
-        // `&mut self` which conflicts with the held mutex guard).
-        let drained: Vec<Vec<u8>> = {
-            let guard = self
-                .session
-                .editor_level_import_channel
-                .1
-                .lock()
-                .expect("level import channel mutex poisoned");
-            let mut out: Vec<Vec<u8>> = Vec::new();
-            while let Ok(bytes) = guard.try_recv() {
-                out.push(bytes);
-            }
-            out
-        };
-        for bytes in drained {
-            match self.import_level_egz(&bytes) {
-                Ok(()) => continue,
-                Err(egz_error) => {
-                    if let Err(binary_error) = self.import_level(&bytes) {
-                        log::error!(
-                            "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    /// Triggers the level import file picker and starts async import when a file is selected.
-    pub fn complete_import(&mut self) {
-        trigger_level_import(self.session.editor_level_import_channel.0.clone());
     }
 }
 
@@ -959,7 +902,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn locked_backend_preferences_ignore_mutations() {
+    async fn locked_graphics_backend_preference_ignores_mutation() {
         let mut state = State::new_test().await;
 
         state.session.graphics_backend_locked = true;
@@ -967,12 +910,6 @@ mod tests {
         state.set_preferred_graphics_backend("ManualTestBackend".to_string());
         assert_eq!(state.app_settings().graphics_backend, original_graphics);
         assert!(!state.settings_restart_required());
-
-        state.session.audio_backend_locked = true;
-        state.session.app_settings.audio_backend = "LockedAudio".to_string();
-        let original_audio = state.app_settings().audio_backend.clone();
-        state.set_preferred_audio_backend("Default".to_string());
-        assert_eq!(state.app_settings().audio_backend, original_audio);
     }
 
     #[tokio::test]
@@ -1471,12 +1408,6 @@ mod tests {
         set_graphics_backend(&mut state, "CoverageBackend".to_string());
         assert_eq!(state.app_settings().graphics_backend, "CoverageBackend");
 
-        let set_audio_backend: fn(&mut State, String) = State::set_preferred_audio_backend;
-        set_audio_backend(&mut state, "definitely-invalid-backend".to_string());
-        if let Some(backend) = state.available_audio_backends().first().cloned() {
-            set_audio_backend(&mut state, backend);
-        }
-
         let clear_keybind: fn(&mut State, &str, usize) = State::clear_keybind_slot_for_action;
         let reset_keybind: fn(&mut State, &str) = State::reset_keybind_for_action;
         let reset_essential: fn(&mut State) = State::reset_essential_keybinds;
@@ -1492,30 +1423,5 @@ mod tests {
         // TODO: Make this not prompt a dialog
         // let trigger_export: fn(&State) = State::trigger_level_export;
         // trigger_export(&state);
-    }
-
-    #[tokio::test]
-    async fn update_level_imports_applies_egz_payload_from_channel() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("QueuedImport".to_string());
-        state.set_editor_level_name("QueuedImportSource".to_string());
-
-        let bytes = state
-            .export_level_egz()
-            .expect("egz export should succeed for queued import");
-        state.set_editor_level_name("MutatedAfterQueue".to_string());
-        state
-            .session
-            .editor_level_import_channel
-            .0
-            .send(bytes)
-            .expect("channel send should succeed");
-
-        state.update_level_imports();
-
-        assert_eq!(
-            state.editor_level_name().as_deref(),
-            Some("QueuedImportSource")
-        );
     }
 }

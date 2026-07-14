@@ -27,6 +27,7 @@ use eg_types::{
     AppPhase, AppSettings, AuthSession, BasicLevelMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState,
 };
+use std::collections::HashMap;
 use std::sync::mpsc;
 
 use crate::state::PracticeCheckpoint;
@@ -103,7 +104,6 @@ impl Default for AppPhaseRes {
 pub struct FrameTimeRes {
     pub last_frame: web_time::Instant,
     pub delta_seconds: f32,
-    pub accumulator: f32,
     pub global_time_seconds: f32,
     pub fps_smoothed: f32,
 }
@@ -111,9 +111,8 @@ pub struct FrameTimeRes {
 impl FrameTimeRes {
     pub fn advance(&mut self) {
         let now = web_time::Instant::now();
-        // Treat a stalled/background frame like the accumulator clamp below
-        // does: one frame may advance at most 250ms of simulation/presentation
-        // time. This keeps camera transitions and fixed-step consumers from
+        // Treat a stalled/background frame as at most 250ms of presentation
+        // time. This keeps camera transitions and other frame consumers from
         // completing an entire transition after a long compile/debug pause.
         let frame_dt = (now - self.last_frame).as_secs_f32().clamp(0.0, 0.25);
         self.last_frame = now;
@@ -126,7 +125,6 @@ impl FrameTimeRes {
             self.fps_smoothed = self.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
 
-        self.accumulator = (self.accumulator + frame_dt).min(0.25);
         self.global_time_seconds += frame_dt.max(0.0);
     }
 }
@@ -136,7 +134,6 @@ impl Default for FrameTimeRes {
         Self {
             last_frame: web_time::Instant::now(),
             delta_seconds: 0.0,
-            accumulator: 0.0,
             global_time_seconds: 0.0,
             fps_smoothed: 0.0,
         }
@@ -146,6 +143,37 @@ impl Default for FrameTimeRes {
 // ---------------------------------------------------------------------------
 // Session / menu / editor domain resources (default-constructible only)
 // ---------------------------------------------------------------------------
+
+/// App-owned catalog of built-in level metadata used by scheduled handlers.
+#[derive(Resource, Clone)]
+pub struct BuiltinLevelCatalogRes {
+    levels: HashMap<String, eg_types::LevelMetadata>,
+}
+
+impl BuiltinLevelCatalogRes {
+    pub fn from_levels(levels: impl IntoIterator<Item = eg_types::LevelMetadata>) -> Self {
+        Self {
+            levels: levels
+                .into_iter()
+                .map(|metadata| (metadata.basic.name.clone(), metadata))
+                .collect(),
+        }
+    }
+
+    pub fn get(&self, level_name: &str) -> Option<eg_types::LevelMetadata> {
+        self.levels.get(level_name).cloned()
+    }
+}
+
+impl Default for BuiltinLevelCatalogRes {
+    fn default() -> Self {
+        Self::from_levels(
+            eg_level::builtin_level_names()
+                .into_iter()
+                .filter_map(|name| eg_level::load_builtin_level_metadata(&name)),
+        )
+    }
+}
 
 /// `SessionSubsystem` fields mirrored as a resource. Only the
 /// default-constructible subset is included in Phase 2a; the full
@@ -201,19 +229,6 @@ impl SessionStateRes {
         self.practice_checkpoints_dirty = true;
         self.audio_stop_pending = true;
     }
-}
-
-/// Tracks the temporary ownership handoff for the active gameplay world.
-///
-/// When `app_authoritative` is true, `eg_game::GameplaySchedule` advances
-/// player/object ECS state and the legacy `GameState` receives only a render
-/// compatibility copy. Lifecycle methods that still run on `State` set
-/// `needs_legacy_seed` so the next frame can reinitialize the App world at the
-/// transition boundary.
-#[derive(Resource, Default)]
-pub struct GameplayWorldRes {
-    pub app_authoritative: bool,
-    pub needs_legacy_seed: bool,
 }
 
 /// App-world marker for a real gameplay restart. The navigation message
@@ -371,10 +386,8 @@ impl EscapeRequest {
     }
 }
 
-/// App-world auth state and service sender. Phase 6e moves auth request
-/// consumption and auth result application into `StateSchedule`; Runtime mirrors
-/// this resource back to legacy `State` while UI still reads the compatibility
-/// shell.
+/// App-world auth state and service sender. Auth request consumption, async
+/// result application, and UI reads all use this resource directly.
 #[derive(Resource, Clone)]
 pub struct AuthStateRes {
     pub session: Option<AuthSession>,
@@ -466,57 +479,6 @@ impl AuthOpenSignupRequest {
     }
 }
 
-/// App-world request to quit the current real gameplay level from the
-/// pause menu and return to the menu phase.
-///
-/// The quit side effect calls `State::back_to_menu`, which stops
-/// audio, resets the gameplay state, and transitions to the menu
-/// phase. The side effect stays legacy-owned for the carve-out.
-/// Phase 3.48 routes the message through this request resource
-/// instead of staging `AppCommand::GameQuitToMenu` in
-/// legacy command bridge.
-#[derive(Resource, Default)]
-pub struct GameQuitToMenuRequest {
-    pub pending: bool,
-}
-
-impl GameQuitToMenuRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
-/// App-world request to restart the current real gameplay level from
-/// the pause menu.
-///
-/// The restart side effect calls `State::restart_level`, which
-/// resets the gameplay clock, replayed objects, and audio. The
-/// side effect stays legacy-owned for the carve-out. Phase 3.48
-/// routes the message through this request resource instead of
-/// staging `AppCommand::GameRestartLevel` through the legacy command bridge.
-#[derive(Resource, Default)]
-pub struct GameRestartLevelRequest {
-    pub pending: bool,
-}
-
-impl GameRestartLevelRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
 /// App-world request to start editor playtest mode.
 ///
 /// The playtest transition still builds gameplay state, primes audio,
@@ -540,89 +502,115 @@ impl PlaytestRequest {
     }
 }
 
-/// App-world request to load a built-in level into the editor.
+/// App-owned platform service for saving encoded editor levels.
 #[derive(Resource, Default)]
-pub struct LoadLevelRequest {
-    pub level_name: Option<String>,
+pub struct LevelExportServiceRes {
+    #[cfg(test)]
+    last_request: Option<(String, Vec<u8>)>,
 }
 
-impl LoadLevelRequest {
-    pub fn request(&mut self, level_name: String) {
-        self.level_name = Some(level_name);
+impl LevelExportServiceRes {
+    pub fn export(&mut self, filename: String, data: Vec<u8>) {
+        #[cfg(test)]
+        {
+            self.last_request = Some((filename, data));
+        }
+
+        #[cfg(not(test))]
+        eg_platform::task::spawn_background(async move {
+            if let Err(error) = eg_platform::io::save_level_export(&filename, &data).await {
+                log::error!("Export failed: {error}");
+            }
+        });
     }
 
-    pub fn take(&mut self) -> Option<String> {
-        self.level_name.take()
-    }
-}
-
-/// App-world request to export the current editor level.
-#[derive(Resource, Default)]
-pub struct ExportLevelRequest {
-    pub pending: bool,
-}
-
-impl ExportLevelRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
+    #[cfg(test)]
+    pub fn last_request(&self) -> Option<(&str, &[u8])> {
+        self.last_request
+            .as_ref()
+            .map(|(filename, data)| (filename.as_str(), data.as_slice()))
     }
 }
 
-/// App-world request to switch the preferred audio backend.
-#[derive(Resource, Default)]
-pub struct SetAudioBackendRequest {
-    pub backend_name: Option<String>,
+/// App-owned sender used to launch the platform level picker directly from
+/// `StateSchedule`. The matching receiver is drained by `LevelImportChannelRes`.
+#[derive(Resource)]
+pub struct LevelImportSenderRes {
+    sender: mpsc::Sender<Vec<u8>>,
+    #[cfg(test)]
+    trigger_count: usize,
 }
 
-impl SetAudioBackendRequest {
-    pub fn request(&mut self, backend_name: String) {
-        self.backend_name = Some(backend_name);
+impl LevelImportSenderRes {
+    pub fn new(sender: mpsc::Sender<Vec<u8>>) -> Self {
+        Self {
+            sender,
+            #[cfg(test)]
+            trigger_count: 0,
+        }
     }
 
-    pub fn take(&mut self) -> Option<String> {
-        self.backend_name.take()
-    }
-}
-
-/// App-world request to complete a pending level import.
-#[derive(Resource, Default)]
-pub struct CompleteImportRequest {
-    pub pending: bool,
-}
-
-impl CompleteImportRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
+    pub fn trigger_picker(&mut self) {
+        #[cfg(not(test))]
+        eg_platform::services::trigger_level_import(self.sender.clone());
+        #[cfg(test)]
+        {
+            let _sender = self.sender.clone();
+            self.trigger_count += 1;
+        }
     }
 
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
+    #[cfg(test)]
+    pub fn trigger_count(&self) -> usize {
+        self.trigger_count
     }
 }
 
-/// App-world request to open the platform audio-import picker.
-#[derive(Resource, Default)]
-pub struct TriggerAudioImportRequest {
-    pub pending: bool,
+impl Default for LevelImportSenderRes {
+    fn default() -> Self {
+        let (sender, _receiver) = mpsc::channel();
+        Self::new(sender)
+    }
 }
 
-impl TriggerAudioImportRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
+/// App-owned sender used to launch the platform audio picker directly from
+/// `StateSchedule`. The matching receiver is drained by `AudioImportChannelRes`.
+#[derive(Resource)]
+pub struct AudioImportSenderRes {
+    sender: mpsc::Sender<(String, Vec<u8>)>,
+    #[cfg(test)]
+    trigger_count: usize,
+}
+
+impl AudioImportSenderRes {
+    pub fn new(sender: mpsc::Sender<(String, Vec<u8>)>) -> Self {
+        Self {
+            sender,
+            #[cfg(test)]
+            trigger_count: 0,
+        }
     }
 
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
+    pub fn trigger_picker(&mut self) {
+        #[cfg(not(test))]
+        eg_platform::services::trigger_audio_import(self.sender.clone());
+        #[cfg(test)]
+        {
+            let _sender = self.sender.clone();
+            self.trigger_count += 1;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn trigger_count(&self) -> usize {
+        self.trigger_count
+    }
+}
+
+impl Default for AudioImportSenderRes {
+    fn default() -> Self {
+        let (sender, _receiver) = mpsc::channel();
+        Self::new(sender)
     }
 }
 

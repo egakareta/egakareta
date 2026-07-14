@@ -54,7 +54,11 @@ use std::collections::VecDeque;
 
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
-pub use audio_state::{AudioState, AudioSubsystem};
+pub(crate) use async_bridge::apply_imported_level_to_world;
+pub use audio_state::{
+    AudioBackendRes, AudioState, AudioSubsystem, EditorAudioCacheRes, RuntimeAudioPreloadRes,
+    WaveformLoadSenderRes,
+};
 pub use auth_state::AuthSubsystem;
 pub use editor_camera::EditorCameraState;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
@@ -86,13 +90,13 @@ pub use render::resources::{
 pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
-    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
-    GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes, LoadLevelRequest, MenuStateRes,
-    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, SetAudioBackendRequest,
-    ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
+    AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+    AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
+    EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest, FrameTimeRes,
+    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, MenuStateRes,
+    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, ToggleEditorRequest,
+    TurnRightRequest,
 };
 pub use ui_snapshot::{UiStateData, UiStateRes, UiStateSnapshot};
 
@@ -174,7 +178,6 @@ pub struct EditorSubsystem {
     pub triggers: EditorTriggerState,
     pub timeline: EditorTimelineState,
     pub runtime: EditorRuntimeState,
-    pub perf: PerfState,
     pub timing: EditorTimingState,
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
@@ -219,7 +222,6 @@ pub struct State {
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
     render_resources: StateRenderResources,
-    gameplay_app_authoritative: bool,
     gameplay_world_needs_seed: bool,
 }
 
@@ -292,114 +294,6 @@ impl State {
         }
     }
 
-    /// Install per-frame bridge data into the Runtime-owned App world before
-    /// [`StateSchedule`] runs.
-    pub fn prepare_app_world_for_state_schedule(&mut self, world: &mut bevy_ecs::world::World) {
-        self.prepare_app_world_for_state_schedule_inner(world, true);
-    }
-
-    /// Install App-world bridge data for the production Runtime frame.
-    ///
-    /// Production render POD values are rebuilt by `RenderExtractSchedule`.
-    pub fn prepare_app_world_for_runtime(&mut self, world: &mut bevy_ecs::world::World) {
-        self.prepare_app_world_for_state_schedule_inner(world, false);
-    }
-
-    fn prepare_app_world_for_state_schedule_inner(
-        &mut self,
-        world: &mut bevy_ecs::world::World,
-        install_legacy_state_mirrors: bool,
-    ) {
-        puffin::profile_scope!("StateSchedule");
-        // Phase 3.17: `SetSelectedTap` is an App-world carve-out, but
-        // tap insertion/removal/time-edit history still lives on the
-        // legacy `State`. Mirror the tap arrays into
-        // `EditorTimelineRes` before the schedule runs so the handler
-        // can validate and select against the current legacy-owned data.
-        if install_legacy_state_mirrors {
-            let mut objects = world.resource_mut::<EditorObjectsRes>();
-            objects.objects = self.editor.objects.clone();
-            objects.history_restore_pending = false;
-            objects.object_mutation_pending = false;
-        }
-        if install_legacy_state_mirrors {
-            world.resource_mut::<EditorHistoryRes>().0 = self.editor.runtime.history.clone();
-            {
-                let mut timeline = world.resource_mut::<EditorTimelineRes>();
-                timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
-                timeline.0.taps.tap_indicator_positions =
-                    self.editor.timeline.taps.tap_indicator_positions.clone();
-                timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
-                timeline.0.playback.playing = self.editor.timeline.playback.playing;
-                timeline.0.playback.runtime = None;
-                timeline.0.playback.pending_seek_time_seconds =
-                    self.editor.timeline.playback.pending_seek_time_seconds;
-                timeline.0.playback.seek_resync_cooldown_seconds =
-                    self.editor.timeline.playback.seek_resync_cooldown_seconds;
-            }
-            {
-                let mut runtime = world.resource_mut::<EditorRuntimeRes>();
-                runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
-                runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
-            }
-        }
-        // Phase 3.18 / 3.52: pause/resume intent is App-world
-        // authoritative, but playtest/real-gameplay classification and
-        // direct legacy callers can still update the compatibility
-        // `State.session` fields. Mirror those fields before the schedule
-        // runs so stale resources cannot misclassify Escape or undo a
-        // legacy pause on the next frame.
-        {
-            let mut session = world.resource_mut::<SessionStateRes>();
-            session.playtesting_editor = self.session.playtesting_editor;
-            session.game_paused = self.session.game_paused;
-        }
-        // Phase 3.19 / 3.24: settings carve-outs mutate fields on
-        // `SessionStateRes.app_settings` directly, while some tests
-        // and temporary callers can still mutate the legacy settings
-        // object directly. Mirror the carved-out settings before the
-        // schedule runs so stale App settings cannot clobber a legacy
-        // update on a no-op frame.
-        {
-            let mut session = world.resource_mut::<SessionStateRes>();
-            session.app_settings.ui_scale_multiplier =
-                self.session.app_settings.ui_scale_multiplier;
-            session.app_settings.keybinds = self.session.app_settings.keybinds.clone();
-        }
-        // Phase 3.23: `SetGraphicsBackend` mutates
-        // `SessionStateRes.app_settings.graphics_backend` and
-        // `settings_restart_required` directly. Mirror the legacy
-        // preference + lock before the schedule runs so stale App
-        // settings cannot clobber a legacy update, and so the direct
-        // handler honors the same lock guard as the legacy setter.
-        {
-            let mut session = world.resource_mut::<SessionStateRes>();
-            session.app_settings.graphics_backend =
-                self.session.app_settings.graphics_backend.clone();
-            session.settings_restart_required = self.session.settings_restart_required;
-            session.graphics_backend_locked = self.session.graphics_backend_locked;
-        }
-        // The channel wrappers are auto-installed from the
-        // `Arc<Mutex<Receiver<T>>>` fields on the legacy `State`.
-        // Both the State and the World hold an `Arc` clone of the
-        // same receiver; production frames drain those receivers
-        // through `StateSchedule`.
-        //
-        // The `install_async_bridge_from_state_arc` helper is
-        // idempotent: a second call is a no-op.
-        self.install_async_channel_resources(world);
-    }
-
-    /// Apply async-result closures emitted by App-world handler systems.
-    pub fn drain_pending_async_results(&mut self) {
-        // Phase 6b: drain the pending async-result closures
-        // installed by the handler systems and apply each one to
-        // the legacy `State`. The closures route the result events
-        // to the matching `complete_*` methods / per-channel
-        // mutation logic.
-        async_bridge::drain_pending_async_result_fns(self);
-    }
-
     /// Compute the current per-frame `RenderFrameInput` snapshot
     /// from the legacy state. Phase 4a calls this once per tick
     /// to capture the `Copy` values needed by the mirror closure.
@@ -421,26 +315,29 @@ impl State {
         }
     }
 
-    /// Phase 6b: install the Bevy `Message<T>` resources + the
-    /// 5 channel-wrapper resources (`AuthChannelRes`, etc.) on
-    /// the World, sharing the `Arc<Mutex<Receiver<T>>>` fields
-    /// from the legacy `State` with the World's resources.
-    ///
-    /// The `install_async_bridge_from_state` helper is idempotent
-    /// (no-op for already-installed resources), so calling this on
-    /// every `tick_state` is safe. The first call wires the
-    /// `Arc<Mutex<Receiver<T>>>` into the World's
-    /// `Mutex<Receiver<T>>` wrapper (one extra layer of `Mutex` —
-    /// see `state::async_bridge` for the rationale).
-    fn install_async_channel_resources(&self, world: &mut bevy_ecs::world::World) {
+    /// Install the five App-world async channel resources during Runtime
+    /// construction. Production frames poll these resources directly.
+    pub fn install_async_channel_resources(&self, world: &mut bevy_ecs::world::World) {
         async_bridge::install_async_bridge_from_state_arc(
             world,
-            std::sync::Arc::clone(&self.auth.channel.1),
+            std::sync::Arc::clone(&self.auth.receiver),
             std::sync::Arc::clone(&self.audio.state.editor.audio_import_channel.1),
             std::sync::Arc::clone(&self.audio.state.editor.waveform_load_channel.1),
             std::sync::Arc::clone(&self.audio.state.runtime_preload.preload_channel.1),
             std::sync::Arc::clone(&self.session.editor_level_import_channel.1),
         );
+        world.insert_resource(LevelImportSenderRes::new(
+            self.session.editor_level_import_channel.0.clone(),
+        ));
+        world.insert_resource(AudioImportSenderRes::new(
+            self.audio.state.editor.audio_import_channel.0.clone(),
+        ));
+        world.insert_resource(self.audio.state.editor.cache.clone());
+        world.insert_resource(self.audio.state.runtime_preload.cache.clone());
+        world.insert_resource(self.audio.state.runtime.clone());
+        world.insert_resource(WaveformLoadSenderRes(
+            self.audio.state.editor.waveform_load_channel.0.clone(),
+        ));
     }
 
     /// Resizes the rendering surface to the new dimensions.

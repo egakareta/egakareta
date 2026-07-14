@@ -10,8 +10,7 @@
 //! The legacy `State` struct holds five `mpsc::Receiver`s that the
 //! platform layer (auth service, audio service, level importer) and
 //! background tasks write to. The production frame now drains those
-//! receivers through `StateSchedule`; the older direct `update_*`
-//! helpers remain for focused compatibility tests.
+//! receivers through `StateSchedule`.
 //!
 //! Phase 6a introduces **Bevy resources** that wrap each receiver
 //! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
@@ -21,10 +20,7 @@
 //! result event into the World (Phase 6a's five new
 //! [`async_results`](crate::events::async_results) message types).
 //!
-//! `StateSchedule` is the production owner for these drains. Direct
-//! calls to the older helper methods still call `try_recv`, so tests
-//! can exercise the compatibility bodies without running a full App
-//! schedule.
+//! `StateSchedule` is the sole owner for these drains.
 //!
 //! ## Why a `Mutex<Receiver<T>>` wrapper?
 //!
@@ -39,17 +35,11 @@
 //! ## Phase 6b: result handler systems
 //!
 //! Phase 6a established the `poll_channels_system` that drains the
-//! 5 receivers into 5 distinct result events. Phase 6b adds **5
-//! handler systems** (one per channel) that consume the result
-//! events and apply them to the legacy `State`.
-//!
-//! The handler systems can't take `&mut State` directly because
-//! `State` owns `Arc<Mutex<Receiver<T>>>` (and previously
-//! `mpsc::Receiver<T>`) which makes it `!Send`. The remaining compatibility
-//! path uses a thread-local bridge: each handler system installs a
-//! `FnOnce(&mut State)` closure
-//! into a thread-local slot; the runtime drains the slot and applies
-//! each closure after the schedule finishes.
+//! 5 receivers into 5 distinct result events. Phase 6b added one
+//! handler system per channel. All five handlers mutate App-world
+//! resources directly. Shared editor and runtime audio-cache resources
+//! let remaining compatibility playback code read the same authoritative
+//! cache without copying it back into `State`.
 //!
 //! ## Schedule graph (post Phase 6b)
 //!
@@ -61,20 +51,17 @@
 //!   ApplyAsyncResultsSet
 //!     auth_handler_system              // AuthServiceResultEvent
 //!     audio_import_handler_system      // AudioImportResultEvent
-//!     waveform_handler_system          // WaveformResultEvent
+//!     waveform_handler_system          // WaveformResultEvent → timing + audio caches
 //!     audio_preload_handler_system     // AudioPreloadResultEvent
-//!     level_import_handler_system      // LevelImportResultEvent
-//!   Runtime/compatibility test harness drains pending async-result closures
+//!     level_import_handler_system      // LevelImportResultEvent → editor/session resources
 //! ```
 //!
 //! REFACTOR POINT(full-bevy): the `mpsc` channels disappear in the
 //! full-Bevy migration; background tasks write directly into
 //! `Messages<T>` or `AssetEvent<T>`. The `poll_channels_system` is
-//! replaced by `bevy_tasks` async event streams. The thread-local
-//! bridge is replaced by Bevy `Resource`s that the handler systems
-//! mutate directly (no closures needed).
+//! replaced by `bevy_tasks` async event streams. Handler systems already
+//! mutate Bevy resources directly.
 
-use std::cell::RefCell;
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -88,7 +75,11 @@ use crate::events::async_results::{
     AudioImportResultEvent, AudioPreloadResultEvent, AuthServiceResultEvent,
     LevelImportResultEvent, WaveformResultEvent,
 };
-use crate::state::{AuthStateRes, State};
+use crate::state::{
+    AuthStateRes, EditorAudioCacheRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
+    EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState,
+    EditorTriggerRes, RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes,
+};
 
 // ---------------------------------------------------------------------------
 // Type aliases for the shared `Arc<Mutex<Receiver<T>>>` channels
@@ -185,14 +176,9 @@ pub struct PollChannelsSet;
 ///
 /// Drains each channel in a `while let Ok(...) = try_recv()` loop so
 /// a single frame consumes every message that's currently buffered.
-/// Production frames drain channels here. Direct calls to the old
-/// `update_*` helpers can still consume messages in tests that do not
-/// run `StateSchedule`.
-///
-/// Phase 6a emitted the events; Phase 6b added handler systems that
-/// consume the events and install compatibility closures. The runtime
-/// drains those closures before the remaining `State::update` branch
-/// logic runs.
+/// Production frames drain channels here. Phase 6a emitted the events;
+/// Phase 6b added handler systems, which now apply every result directly
+/// to App-world resources.
 #[allow(clippy::too_many_arguments)]
 pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
@@ -406,74 +392,18 @@ pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 6b: result handler systems + thread-local bridge
+// Phase 6b: result handler systems
 // ---------------------------------------------------------------------------
-
-/// A closure that mutates the legacy `State` to apply a single
-/// async result. The handler systems (below) install one closure
-/// per result event into a thread-local slot; the runtime/test harness
-/// drains the slot after the schedule finishes and applies each closure
-/// to the State.
-///
-/// The closure must be `'static` (no borrowed State) because the
-/// schedule outlives a single call: handler systems run during
-/// `StateSchedule`, but the closure is invoked after `try_run_schedule`
-/// returns by the runtime/test harness.
-pub type AsyncResultFn = Box<dyn FnOnce(&mut State)>;
-
-thread_local! {
-    /// Thread-local queue of pending async-result closures. Each
-    /// handler system pushes a closure per consumed event; the
-    /// runtime/test harness drains the slot after the schedule finishes.
-    ///
-    /// Why a thread-local? `State` is `!Send` (it owns the
-    /// `Arc<Mutex<Receiver<T>>>` wrappers from Phase 6b which
-    /// contain `mpsc::Receiver<T>`). The schedule is invoked on
-    /// the main thread today; the closure runs on the same
-    /// thread, so the thread-local slot is the simplest correct
-    /// mechanism. In the full-Bevy migration the slot disappears
-    /// (handler systems mutate Bevy `Resource`s directly).
-    static PENDING_ASYNC_RESULT_FNS: RefCell<Vec<AsyncResultFn>> =
-        const { RefCell::new(Vec::new()) };
-}
-
-/// Install a closure that will be applied to the legacy `State`
-/// after the schedule finishes. Called by the handler systems
-/// below; the runtime/test harness drains the queue via
-/// [`drain_pending_async_result_fns`].
-#[allow(dead_code)]
-pub fn install_async_result_fn<F>(f: F)
-where
-    F: FnOnce(&mut State) + 'static,
-{
-    PENDING_ASYNC_RESULT_FNS.with(|cell| cell.borrow_mut().push(Box::new(f)));
-}
-
-/// Drain every pending async-result closure and apply it to
-/// `state`. Called after the schedule finishes. Idempotent: a second
-/// call with no pending closures is a no-op.
-#[allow(dead_code)]
-pub fn drain_pending_async_result_fns(state: &mut State) {
-    let pending: Vec<AsyncResultFn> =
-        PENDING_ASYNC_RESULT_FNS.with(|cell| std::mem::take(&mut *cell.borrow_mut()));
-    for f in pending {
-        f(state);
-    }
-}
 
 /// System set for the result handler systems. Runs after
 /// `PollChannelsSet` (the events must be emitted first) and after
 /// `CommandHandlerSet` (the per-message drain systems must finish
-/// first, so any per-frame command ordering is preserved). The
-/// handler systems only install closures into the thread-local
-/// slot; the actual State mutation happens in
-/// the runtime/test-harness drain after the schedule.
+/// first, so any per-frame command ordering is preserved).
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ApplyAsyncResultsSet;
 
 /// Consume `AuthServiceResultEvent`s and apply them to App-world auth state.
-/// Legacy `State` is synced from `AuthStateRes` by Runtime during the
-/// compatibility window.
+/// Auth results never install a compatibility closure.
 #[allow(dead_code)]
 pub fn auth_handler_system(
     mut events: MessageReader<AuthServiceResultEvent>,
@@ -489,48 +419,42 @@ pub fn auth_handler_system(
     }
 }
 
-/// Consume `AudioImportResultEvent`s and install one closure per
-/// event. Each closure mirrors the body of
-/// `State::update_audio_imports` (Phase 6a: copy filename + bytes
-/// into the editor audio cache, then reload the waveform).
+/// Consume `AudioImportResultEvent`s, update the App-owned editor audio cache,
+/// reset waveform presentation, and start decoding through the App-owned sender.
 #[allow(dead_code)]
-pub fn audio_import_handler_system(mut events: MessageReader<AudioImportResultEvent>) {
+pub fn audio_import_handler_system(
+    mut events: MessageReader<AudioImportResultEvent>,
+    session: Res<SessionStateRes>,
+    cache: Res<EditorAudioCacheRes>,
+    waveform_sender: Res<WaveformLoadSenderRes>,
+    mut timing: ResMut<EditorTimingRes>,
+) {
     for event in events.read() {
-        let filename = event.filename.clone();
-        let bytes = event.bytes.clone();
-        install_async_result_fn(move |state: &mut State| {
-            // Phase 6b: replay the body of `update_audio_imports`
-            // for a single (filename, bytes) result. The original
-            // helper is left in place (drains the same shared
-            // receiver) — when the schedule runs first, this
-            // closure does the work and the helper becomes a
-            // no-op for the same frame.
-            let _ = filename;
-            let level_name = state
-                .session
-                .editor_level_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string());
-            let bytes = match bytes {
-                Some(b) => b,
-                None => return,
-            };
-            let source_key = state
-                .audio
-                .state
-                .editor
-                .cache
-                .insert_level_audio(&level_name, bytes);
-            state.audio.state.editor.cache.remove_waveform(&source_key);
-            state.audio.state.editor.cache.set_loading_source(None);
-            state.load_waveform_for_current_audio();
-        });
+        let Some(bytes) = event.bytes.clone() else {
+            continue;
+        };
+        let level_name = session
+            .editor_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
+        let source_key = cache.insert_level_audio(&level_name, bytes.clone());
+        cache.remove_waveform(&source_key);
+        cache.set_loading_source(Some(source_key));
+        timing.0.waveform_samples.clear();
+        timing.0.waveform_sample_rate = 0;
+        timing.0.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
+        timing.0.waveform_loading = true;
+        timing.0.waveform_complete = false;
+        eg_audio::service::start_waveform_loading(
+            level_name,
+            Some(bytes),
+            waveform_sender.0.clone(),
+        );
     }
 }
 
-/// Consume `WaveformResultEvent`s and install one closure per
-/// event. Each closure mirrors the body of
-/// `State::update_waveform_loading` for one `WaveformLoadMessage`.
+/// Consume `WaveformResultEvent`s and update App-owned waveform presentation,
+/// editor cache, persistent cache, and runtime preload resources directly.
 ///
 /// Phase 6b note: `WaveformResultEvent` is not `Clone` (its
 /// payload is a non-`Clone` `WaveformLoadMessage`), so we can't
@@ -540,6 +464,16 @@ pub fn audio_import_handler_system(mut events: MessageReader<AudioImportResultEv
 #[allow(dead_code)]
 pub fn waveform_handler_system(world: &mut World) {
     use bevy_ecs::message::Messages;
+    use eg_audio::audio::runtime_asset_source_key;
+
+    let current_level_name = world
+        .resource::<SessionStateRes>()
+        .editor_level_name
+        .clone()
+        .unwrap_or_else(|| "Untitled".to_string());
+    let current_source_key = runtime_asset_source_key(&current_level_name, "audio.mp3");
+    let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
+    let runtime_preload = world.resource::<RuntimeAudioPreloadRes>().clone();
     let drained: Vec<WaveformResultEvent> = {
         let mut messages = world.resource_mut::<Messages<WaveformResultEvent>>();
         messages.drain().collect()
@@ -548,20 +482,82 @@ pub fn waveform_handler_system(world: &mut World) {
         let source = event.source;
         let level_name = event.level_name;
         let message = event.message;
-        install_async_result_fn(move |state: &mut State| {
-            apply_waveform_message(state, source, level_name, message);
-        });
+        let source_key = runtime_asset_source_key(&level_name, &source);
+        if source_key == current_source_key {
+            apply_waveform_timing_message(&mut world.resource_mut::<EditorTimingRes>().0, &message);
+        }
+        apply_waveform_cache_message(&editor_cache, &runtime_preload, source, level_name, message);
     }
 }
 
-/// Apply a single `(source, level_name, WaveformLoadMessage)` to
-/// the legacy `State`. Mirrors the body of the `Started` /
-/// `Chunk` / `Cached` / `Finished` / `Failed` arms of
-/// `State::update_waveform_loading`. Lives in the schedule
-/// helper module so the handler system can stay a one-liner.
-#[allow(dead_code)]
-fn apply_waveform_message(
-    state: &mut State,
+fn apply_waveform_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: &[f32]) {
+    if samples.len() < start_peak {
+        samples.resize(start_peak, 0.0);
+    }
+    let end_peak = start_peak + peaks.len();
+    if samples.len() < end_peak {
+        samples.resize(end_peak, 0.0);
+    }
+    samples[start_peak..end_peak].copy_from_slice(peaks);
+}
+
+fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &WaveformLoadMessage) {
+    match message {
+        WaveformLoadMessage::Started { window_size } => {
+            timing.waveform_samples.clear();
+            timing.waveform_sample_rate = 0;
+            timing.waveform_window_size = *window_size;
+            timing.waveform_loading = true;
+            timing.waveform_complete = false;
+        }
+        WaveformLoadMessage::Chunk {
+            start_peak,
+            peaks,
+            sample_rate,
+            window_size,
+        } => {
+            apply_waveform_chunk(&mut timing.waveform_samples, *start_peak, peaks);
+            timing.waveform_sample_rate = *sample_rate;
+            timing.waveform_window_size = *window_size;
+            timing.waveform_loading = true;
+            timing.waveform_complete = false;
+        }
+        WaveformLoadMessage::Cached {
+            samples,
+            sample_rate,
+            window_size,
+            ..
+        } => {
+            timing.waveform_samples = samples.clone();
+            timing.waveform_sample_rate = *sample_rate;
+            timing.waveform_window_size = *window_size;
+            timing.waveform_loading = false;
+            timing.waveform_complete = true;
+        }
+        WaveformLoadMessage::Finished {
+            sample_rate,
+            window_size,
+            total_peaks,
+            ..
+        } => {
+            timing.waveform_samples.truncate(*total_peaks);
+            timing.waveform_sample_rate = *sample_rate;
+            timing.waveform_window_size = *window_size;
+            timing.waveform_loading = false;
+            timing.waveform_complete = true;
+        }
+        WaveformLoadMessage::Failed { .. } => {
+            timing.waveform_samples.clear();
+            timing.waveform_sample_rate = 0;
+            timing.waveform_loading = false;
+            timing.waveform_complete = false;
+        }
+    }
+}
+
+fn apply_waveform_cache_message(
+    editor_cache: &EditorAudioCacheRes,
+    runtime_preload: &RuntimeAudioPreloadRes,
     source: String,
     level_name: String,
     message: WaveformLoadMessage,
@@ -570,38 +566,15 @@ fn apply_waveform_message(
     use eg_audio::service::WaveformCacheEntry;
 
     let source_key = runtime_asset_source_key(&level_name, &source);
-    let is_current = state.audio.state.editor.cache.loading_source() == Some(source_key.as_str());
-
-    /// Mirror of the private `apply_waveform_chunk` helper in
-    /// `state::audio_state` — inlined here so the handler system
-    /// doesn't depend on a private function. Same semantics.
-    fn apply_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: Vec<f32>) {
-        if samples.len() < start_peak {
-            samples.resize(start_peak, 0.0);
-        }
-        let end_peak = start_peak + peaks.len();
-        if samples.len() < end_peak {
-            samples.resize(end_peak, 0.0);
-        }
-        samples[start_peak..end_peak].copy_from_slice(&peaks);
-    }
-
     match message {
         WaveformLoadMessage::Started { window_size } => {
-            state.audio.state.editor.cache.insert_waveform(
+            editor_cache.insert_waveform(
                 source_key.clone(),
                 WaveformCacheEntry {
                     window_size,
                     ..WaveformCacheEntry::default()
                 },
             );
-            if is_current {
-                state.editor.timing.waveform_samples.clear();
-                state.editor.timing.waveform_sample_rate = 0;
-                state.editor.timing.waveform_window_size = window_size;
-                state.editor.timing.waveform_loading = true;
-                state.editor.timing.waveform_complete = false;
-            }
         }
         WaveformLoadMessage::Chunk {
             start_peak,
@@ -609,24 +582,13 @@ fn apply_waveform_message(
             sample_rate,
             window_size,
         } => {
-            let entry = state
-                .audio
-                .state
-                .editor
-                .cache
-                .waveform_mut_or_default(source_key.clone());
-            entry.sample_rate = sample_rate;
-            entry.window_size = window_size;
-            entry.complete = false;
-            apply_chunk(&mut entry.samples, start_peak, peaks);
-            let entry = entry.clone();
-            if is_current {
-                state.editor.timing.waveform_samples = entry.samples.clone();
-                state.editor.timing.waveform_sample_rate = sample_rate;
-                state.editor.timing.waveform_window_size = window_size;
-                state.editor.timing.waveform_loading = true;
-                state.editor.timing.waveform_complete = false;
-            }
+            editor_cache.with_mut(|cache| {
+                let entry = cache.waveform_mut_or_default(source_key.clone());
+                entry.sample_rate = sample_rate;
+                entry.window_size = window_size;
+                entry.complete = false;
+                apply_waveform_chunk(&mut entry.samples, start_peak, &peaks);
+            });
         }
         WaveformLoadMessage::Cached {
             samples,
@@ -640,32 +602,10 @@ fn apply_waveform_message(
                 window_size,
                 complete: true,
             };
-            state
-                .audio
-                .state
-                .editor
-                .cache
-                .insert_waveform(source_key.clone(), entry.clone());
-            if is_current {
-                state.editor.timing.waveform_samples = entry.samples.clone();
-                state.editor.timing.waveform_sample_rate = entry.sample_rate;
-                state.editor.timing.waveform_window_size = entry.window_size;
-                state.editor.timing.waveform_loading = false;
-                state.editor.timing.waveform_complete = true;
-                state
-                    .audio
-                    .state
-                    .editor
-                    .cache
-                    .clear_loading_source_if(&source_key);
-            }
+            editor_cache.insert_waveform(source_key.clone(), entry);
+            editor_cache.clear_loading_source_if(&source_key);
             if let Some(bytes) = bytes {
-                state
-                    .audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key.clone(), bytes);
+                runtime_preload.insert_preloaded(source_key.clone(), bytes);
             }
         }
         WaveformLoadMessage::Finished {
@@ -675,123 +615,142 @@ fn apply_waveform_message(
             cache_key,
             bytes,
         } => {
-            let entry = {
-                let entry = state
-                    .audio
-                    .state
-                    .editor
-                    .cache
-                    .waveform_mut_or_default(source_key.clone());
+            let entry = editor_cache.with_mut(|cache| {
+                let entry = cache.waveform_mut_or_default(source_key.clone());
                 entry.sample_rate = sample_rate;
                 entry.window_size = window_size;
                 entry.complete = true;
                 entry.samples.truncate(total_peaks);
                 entry.clone()
-            };
+            });
             if let Some(cache_key) = cache_key {
                 use crate::state::audio_state::persist_waveform_cache_entry;
                 persist_waveform_cache_entry(cache_key, &entry);
             }
-            if is_current {
-                state.editor.timing.waveform_samples = entry.samples.clone();
-                state.editor.timing.waveform_sample_rate = sample_rate;
-                state.editor.timing.waveform_window_size = window_size;
-                state.editor.timing.waveform_loading = false;
-                state.editor.timing.waveform_complete = true;
-            }
             if let Some(bytes) = bytes {
-                state
-                    .audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key.clone(), bytes);
+                runtime_preload.insert_preloaded(source_key.clone(), bytes);
             }
-            if is_current {
-                state
-                    .audio
-                    .state
-                    .editor
-                    .cache
-                    .clear_loading_source_if(&source_key);
-            }
+            editor_cache.clear_loading_source_if(&source_key);
         }
         WaveformLoadMessage::Failed { bytes } => {
-            state.audio.state.editor.cache.remove_waveform(&source_key);
-            if is_current {
-                state.editor.timing.waveform_samples.clear();
-                state.editor.timing.waveform_sample_rate = 0;
-                state.editor.timing.waveform_loading = false;
-                state.editor.timing.waveform_complete = false;
-            }
+            editor_cache.remove_waveform(&source_key);
             if let Some(bytes) = bytes {
-                state
-                    .audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key.clone(), bytes);
+                runtime_preload.insert_preloaded(source_key.clone(), bytes);
             }
-            if is_current {
-                state
-                    .audio
-                    .state
-                    .editor
-                    .cache
-                    .clear_loading_source_if(&source_key);
-            }
+            editor_cache.clear_loading_source_if(&source_key);
         }
     }
 }
 
-/// Consume `AudioPreloadResultEvent`s and install one closure per
-/// event. Each closure mirrors the body of
-/// `State::update_runtime_audio_preloads` for one
-/// `AudioPreloadResult`.
+/// Consume `AudioPreloadResultEvent`s into the shared App-owned preload cache.
 #[allow(dead_code)]
-pub fn audio_preload_handler_system(mut events: MessageReader<AudioPreloadResultEvent>) {
+pub fn audio_preload_handler_system(
+    mut events: MessageReader<AudioPreloadResultEvent>,
+    preload: Res<RuntimeAudioPreloadRes>,
+) {
     for event in events.read() {
-        let source_key = event.source_key.clone();
-        let bytes = event.bytes.clone();
-        install_async_result_fn(move |state: &mut State| {
-            state
-                .audio
-                .state
-                .runtime_preload
-                .preloading_source_keys
-                .remove(&source_key);
-            if let Some(bytes) = bytes {
-                state
-                    .audio
-                    .state
-                    .runtime_preload
-                    .preloaded_audio
-                    .insert(source_key, bytes);
-            }
-        });
+        preload.apply_result(event.source_key.clone(), event.bytes.clone());
     }
 }
 
-/// Consume `LevelImportResultEvent`s and install one closure per
-/// event. Each closure mirrors the body of
-/// `State::update_level_imports` for one level bytes payload.
+/// Consume `LevelImportResultEvent`s and replace the App-owned editor session.
+/// Bundled `.egz` audio bytes are inserted into the shared editor cache directly.
 #[allow(dead_code)]
-pub fn level_import_handler_system(mut events: MessageReader<LevelImportResultEvent>) {
-    for event in events.read() {
-        let bytes = event.bytes.clone();
-        install_async_result_fn(
-            move |state: &mut State| match state.import_level_egz(&bytes) {
-                Ok(()) => {}
-                Err(egz_error) => {
-                    if let Err(binary_error) = state.import_level(&bytes) {
-                        log::error!(
-                            "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
-                        );
-                    }
+pub fn level_import_handler_system(world: &mut World) {
+    use bevy_ecs::message::Messages;
+
+    let events: Vec<LevelImportResultEvent> = world
+        .resource_mut::<Messages<LevelImportResultEvent>>()
+        .drain()
+        .collect();
+    for event in events {
+        let (metadata, audio_bytes) = match eg_level::read_metadata_from_egz(&event.bytes) {
+            Ok(import) => import,
+            Err(egz_error) => match eg_codec::decode_level_metadata_binary(&event.bytes) {
+                Ok(metadata) => (metadata, None),
+                Err(binary_error) => {
+                    log::error!(
+                        "Level import failed (.egz parse error: {egz_error}; binary parse error: {binary_error})"
+                    );
+                    continue;
                 }
             },
-        );
+        };
+
+        let level_name = apply_imported_level_to_world(world, metadata);
+        if let Some(bytes) = audio_bytes {
+            world
+                .resource::<EditorAudioCacheRes>()
+                .insert_level_audio(&level_name, bytes);
+        }
     }
+}
+
+pub(crate) fn apply_imported_level_to_world(
+    world: &mut World,
+    metadata: eg_types::LevelMetadata,
+) -> String {
+    let level_name = metadata.basic.name.clone();
+    let mut init = eg_editor_domain::editor_session_init_from_metadata(Some(metadata));
+    init.timing_points
+        .sort_by(|a, b| f32::total_cmp(&a.time_seconds, &b.time_seconds));
+    let tap_indicator_positions = eg_editor_domain::derive_tap_indicator_positions(
+        init.spawn.position,
+        init.spawn.direction,
+        &init.tap_times,
+        &init.objects,
+    );
+
+    {
+        let mut objects = world.resource_mut::<EditorObjectsRes>();
+        objects.objects = init.objects;
+        objects.history_restore_pending = false;
+        objects.object_mutation_pending = true;
+    }
+    {
+        let mut input = world.resource_mut::<EditorInputRes>();
+        input.0.cursor = init.cursor;
+        input.0.selected_block_index = None;
+        input.0.selected_block_indices.clear();
+        input.0.hovered_block_index = None;
+    }
+    {
+        let mut timeline = world.resource_mut::<EditorTimelineRes>();
+        timeline.0.taps.tap_times = init.tap_times;
+        timeline.0.taps.tap_indicator_positions = tap_indicator_positions;
+        timeline.0.taps.selected_index = None;
+        timeline.0.tap_cursor_override = None;
+        timeline.0.clock.time_seconds = init.timeline_time_seconds;
+        timeline.0.clock.duration_seconds = init.timeline_duration_seconds;
+    }
+    {
+        let mut timing = world.resource_mut::<EditorTimingRes>();
+        timing.0.timing_points = init.timing_points;
+        timing.0.timing_selected_index = None;
+        timing.0.mark_timing_points_changed();
+    }
+    world.resource_mut::<EditorSpawnRes>().0 = init.spawn;
+    {
+        let mut camera = world.resource_mut::<EditorCameraRes>();
+        camera.0.editor_pan = init.camera_pan;
+        camera.0.editor_target_z = init.cursor[1];
+    }
+    world.resource_mut::<EditorTriggerRes>().0.selected_index = None;
+    {
+        let mut history = world.resource_mut::<EditorHistoryRes>();
+        history.0.undo.clear();
+        history.0.redo.clear();
+    }
+    {
+        let mut session = world.resource_mut::<SessionStateRes>();
+        session.editor_level_name = Some(level_name.clone());
+        session.editor_music_metadata = init.music;
+        session.editor_creator_metadata = init.creator_metadata;
+        session.editor_sky_color = init.sky_color;
+        session.editor_menu_preview_camera = init.menu_preview_camera;
+    }
+
+    level_name
 }
 
 /// Add the 5 result handler systems to a `Schedule`. Each system
@@ -822,8 +781,8 @@ mod tests {
 
     fn build_world() -> World {
         let mut world = World::new();
+        crate::state::plugins::register_state_resources(&mut world);
         register_state_async_bridge_world(&mut world);
-        world.init_resource::<AuthStateRes>();
         world
     }
 
@@ -912,14 +871,8 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 6b: result handler systems + thread-local bridge tests
+    // Result handler system tests
     // -----------------------------------------------------------------------
-
-    /// Build a `State` synchronously for use in handler tests.
-    /// Wraps `State::new_test().await` in `pollster::block_on`.
-    fn new_test_sync() -> State {
-        pollster::block_on(State::new_test())
-    }
 
     #[test]
     fn install_async_bridge_from_state_arc_shares_receivers() {
@@ -1006,35 +959,6 @@ mod tests {
     }
 
     #[test]
-    fn async_result_fn_slot_drains_in_order() {
-        // Verify the thread-local slot accepts multiple closures
-        // and drains them in insertion order. Each closure
-        // appends a value to a shared `Vec`; we check the
-        // final order matches insertion order.
-        let collected: std::sync::Arc<std::sync::Mutex<Vec<u32>>> =
-            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        for i in 0..5u32 {
-            let c = std::sync::Arc::clone(&collected);
-            install_async_result_fn(move |_state: &mut State| {
-                c.lock().expect("test mutex poisoned").push(i);
-            });
-        }
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
-        assert_eq!(*collected.lock().unwrap(), vec![0, 1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn async_result_fn_slot_drain_is_idempotent() {
-        // After draining, a second drain with no new closures
-        // is a no-op (no panic, no error).
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
-        // No closures were installed, so this is a no-op.
-        drain_pending_async_result_fns(&mut fake_state);
-    }
-
-    #[test]
     fn auth_handler_system_updates_auth_resource_for_sign_out() {
         // Write an `AuthServiceResultEvent::SignedOut(Ok(()))` into
         // the buffer, run the handler system, and verify the
@@ -1076,16 +1000,11 @@ mod tests {
         schedule.add_systems(audio_preload_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
         let source_key = "Level1:audio.mp3".to_string();
         assert!(
-            fake_state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .contains_key(&source_key)
+            world
+                .resource::<RuntimeAudioPreloadRes>()
+                .contains_preloaded(&source_key)
         );
     }
 
@@ -1105,60 +1024,171 @@ mod tests {
         schedule.add_systems(audio_preload_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
         let source_key = "Level1:audio.mp3".to_string();
         assert!(
-            !fake_state
-                .audio
-                .state
-                .runtime_preload
-                .preloaded_audio
-                .contains_key(&source_key)
+            !world
+                .resource::<RuntimeAudioPreloadRes>()
+                .contains_preloaded(&source_key)
         );
     }
 
     #[test]
     fn level_import_handler_system_is_safe_on_invalid_bytes() {
-        // The handler should not panic on invalid level bytes;
-        // the result is logged but the State remains usable.
+        // The handler should not panic or mutate App resources on invalid bytes.
         use crate::events::async_results::LevelImportResultEvent;
         let mut world = build_world();
+        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Original".to_string());
         world.write_message(LevelImportResultEvent::new(vec![0xDE, 0xAD]));
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(level_import_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
-        // No assertion on the level (the bytes are invalid) — we
-        // just verify the State remains valid (no panic).
+        assert_eq!(
+            world
+                .resource::<SessionStateRes>()
+                .editor_level_name
+                .as_deref(),
+            Some("Original")
+        );
     }
 
     #[test]
-    fn waveform_handler_system_drains_events() {
-        // Verify the `waveform_handler_system` (which uses
-        // `Messages::drain` instead of `MessageReader`) consumes
-        // the event and installs a closure.
+    fn level_import_handler_system_replaces_app_editor_session_without_state_closure() {
+        use crate::events::async_results::LevelImportResultEvent;
+        use eg_types::{Direction, LevelMetadata, LevelObject, SpawnMetadata};
+
+        let mut world = build_world();
+        let metadata = LevelMetadata {
+            basic: eg_types::BasicLevelMetadata {
+                name: "Imported".to_string(),
+                ..eg_types::BasicLevelMetadata::default()
+            },
+            spawn: SpawnMetadata {
+                position: [2.0, 3.0, 4.0],
+                direction: Direction::Right,
+            },
+            tap_times: vec![0.8, 0.2],
+            timeline_duration_seconds: 9.0,
+            objects: vec![LevelObject {
+                position: [6.0, 2.0, 1.0],
+                ..LevelObject::default()
+            }],
+            ..LevelMetadata::default()
+        };
+        let bytes = eg_codec::encode_level_metadata_binary(&metadata).expect("encode level");
+        world.write_message(LevelImportResultEvent::new(bytes));
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(level_import_handler_system);
+        schedule.run(&mut world);
+
+        let session = world.resource::<SessionStateRes>();
+        assert_eq!(session.editor_level_name.as_deref(), Some("Imported"));
+        let objects = world.resource::<EditorObjectsRes>();
+        assert_eq!(objects.objects.len(), 1);
+        assert_eq!(objects.objects[0].position, [6.0, 2.0, 1.0]);
+        assert!(objects.object_mutation_pending);
+        assert_eq!(world.resource::<EditorSpawnRes>().0, metadata.spawn);
+        let timeline = &world.resource::<EditorTimelineRes>().0;
+        assert_eq!(timeline.taps.tap_times, vec![0.2, 0.8]);
+        assert_eq!(timeline.taps.tap_indicator_positions.len(), 2);
+        assert_eq!(timeline.clock.duration_seconds, 9.0);
+        let input = &world.resource::<EditorInputRes>().0;
+        assert_eq!(input.cursor, [6.0, 2.0, 1.0]);
+        assert_eq!(input.selected_block_index, None);
+    }
+
+    #[test]
+    fn waveform_handler_system_updates_current_app_timing_state() {
         use crate::events::async_results::WaveformResultEvent;
         let mut world = build_world();
-        let result: WaveformResult = (
+        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Level1".to_string());
+        world.write_message(WaveformResultEvent::from_result((
             "audio.mp3".to_string(),
             "Level1".to_string(),
-            WaveformLoadMessage::Failed { bytes: None },
-        );
-        world.write_message(WaveformResultEvent::from_result(result));
+            WaveformLoadMessage::Started { window_size: 128 },
+        )));
+        world.write_message(WaveformResultEvent::from_result((
+            "audio.mp3".to_string(),
+            "Level1".to_string(),
+            WaveformLoadMessage::Chunk {
+                start_peak: 1,
+                peaks: vec![0.25, 0.75],
+                sample_rate: 44_100,
+                window_size: 128,
+            },
+        )));
+        world.write_message(WaveformResultEvent::from_result((
+            "audio.mp3".to_string(),
+            "Level1".to_string(),
+            WaveformLoadMessage::Finished {
+                sample_rate: 44_100,
+                window_size: 128,
+                total_peaks: 3,
+                cache_key: None,
+                bytes: None,
+            },
+        )));
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(waveform_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
-        // No assertion on the audio cache (the State has no
-        // current audio loaded) — we just verify the handler
-        // ran and the closure was applied without panic.
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.waveform_samples, vec![0.0, 0.25, 0.75]);
+        assert_eq!(timing.waveform_sample_rate, 44_100);
+        assert_eq!(timing.waveform_window_size, 128);
+        assert!(!timing.waveform_loading);
+        assert!(timing.waveform_complete);
+
+        let source_key = eg_audio::audio::runtime_asset_source_key("Level1", "audio.mp3");
+        assert!(
+            world
+                .resource::<EditorAudioCacheRes>()
+                .waveform(&source_key)
+                .is_some_and(|entry| entry.complete)
+        );
+    }
+
+    #[test]
+    fn waveform_handler_system_keeps_stale_results_out_of_app_timing_state() {
+        use crate::events::async_results::WaveformResultEvent;
+        let mut world = build_world();
+        world.resource_mut::<SessionStateRes>().editor_level_name =
+            Some("CurrentLevel".to_string());
+        {
+            let mut timing = world.resource_mut::<EditorTimingRes>();
+            timing.0.waveform_samples = vec![1.0];
+            timing.0.waveform_sample_rate = 22_050;
+            timing.0.waveform_complete = true;
+        }
+        world.write_message(WaveformResultEvent::from_result((
+            "audio.mp3".to_string(),
+            "OldLevel".to_string(),
+            WaveformLoadMessage::Cached {
+                samples: vec![0.25, 0.75],
+                sample_rate: 44_100,
+                window_size: 256,
+                bytes: None,
+            },
+        )));
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(waveform_handler_system);
+        schedule.run(&mut world);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.waveform_samples, vec![1.0]);
+        assert_eq!(timing.waveform_sample_rate, 22_050);
+        assert!(timing.waveform_complete);
+
+        let source_key = eg_audio::audio::runtime_asset_source_key("OldLevel", "audio.mp3");
+        assert!(
+            world
+                .resource::<EditorAudioCacheRes>()
+                .contains_waveform(&source_key)
+        );
     }
 
     #[test]
@@ -1173,17 +1203,54 @@ mod tests {
         schedule.add_systems(audio_import_handler_system);
         schedule.run(&mut world);
 
-        let mut fake_state = new_test_sync();
-        drain_pending_async_result_fns(&mut fake_state);
-        // No assertion on the cache (cancellation is a no-op).
+        assert!(
+            world
+                .resource::<EditorAudioCacheRes>()
+                .bytes_for_source("level1.ogg")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn audio_import_handler_system_resets_app_waveform_presentation() {
+        use crate::events::async_results::AudioImportResultEvent;
+        let mut world = build_world();
+        {
+            let mut timing = world.resource_mut::<EditorTimingRes>();
+            timing.0.waveform_samples = vec![0.5];
+            timing.0.waveform_sample_rate = 44_100;
+            timing.0.waveform_complete = true;
+        }
+        world.write_message(AudioImportResultEvent::new(
+            "imported.mp3".to_string(),
+            Some(vec![1, 2, 3, 4]),
+        ));
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems(audio_import_handler_system);
+        schedule.run(&mut world);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert!(timing.waveform_samples.is_empty());
+        assert_eq!(timing.waveform_sample_rate, 0);
+        assert_eq!(
+            timing.waveform_window_size,
+            eg_audio::service::WAVEFORM_WINDOW
+        );
+        assert!(timing.waveform_loading);
+        assert!(!timing.waveform_complete);
+
+        let source_key = eg_audio::audio::runtime_asset_source_key("Untitled", "audio.mp3");
+        assert_eq!(
+            world
+                .resource::<EditorAudioCacheRes>()
+                .bytes_for_source(&source_key),
+            Some(vec![1, 2, 3, 4])
+        );
     }
 
     // ----- helpers for the handler-system tests -----
 
-    /// Synchronous test constructor for `State`. Used by handler
-    /// tests that need a `&mut State` to drain the thread-local
-    /// slot into, without spinning up the full async
-    /// `State::new_test()`.
     fn test_auth_session() -> eg_types::AuthSession {
         use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
         AuthSession {

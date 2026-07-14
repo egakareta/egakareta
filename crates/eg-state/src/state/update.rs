@@ -9,9 +9,7 @@ use super::State;
 use super::runtime::BlockVisualEffect;
 use eg_blocks::BlockEffectColorMode;
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
-use eg_game::{
-    TimelineSimulationRuntime, advance_simulation_time, trigger_transformed_objects_at_time,
-};
+use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
 use eg_mesh::{
     BlockEffectInstance, build_block_effect_vertices,
     build_block_instance_batches_from_refs_at_time, build_trail_vertices,
@@ -161,162 +159,15 @@ impl State {
             .session
             .playing_trigger_base_objects
             .get_or_insert_with(|| self.gameplay.state.objects.clone());
-
         if base_objects.len() != self.gameplay.state.objects.len() {
             *base_objects = self.gameplay.state.objects.clone();
         }
 
-        // Visual rendering always reflects every transform trigger applied to the
-        // (consumed-pruned when simulating) base object set.
         Some(trigger_transformed_objects_at_time(
             base_objects,
             &self.editor.trigger_objects(),
             time_seconds.max(0.0),
         ))
-    }
-
-    fn prune_playing_trigger_base_objects_from_consumed(&mut self) {
-        puffin::profile_scope!("PlayingTriggerPruneConsumed");
-        let _ = self.gameplay.state.take_consumed_object_indices();
-    }
-
-    fn apply_playing_object_triggers(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
-        // The visual set applies every transform trigger to the base objects.
-        let visual = self.playing_trigger_objects_at_time(time_seconds)?;
-
-        Some(visual)
-    }
-
-    fn apply_pending_gameplay_turns_up_to(&mut self, time_seconds: f32) {
-        const INPUT_TIME_EPSILON: f32 = 1e-6;
-        while self
-            .gameplay
-            .pending_turn_inputs
-            .front()
-            .is_some_and(|input| input.time_seconds <= time_seconds + INPUT_TIME_EPSILON)
-        {
-            let _ = self.gameplay.pending_turn_inputs.pop_front();
-            self.gameplay.state.turn_right();
-        }
-    }
-
-    fn target_playing_time(&self, frame_dt: f32) -> f32 {
-        let elapsed = self.gameplay.state.elapsed_seconds.max(0.0);
-        if !self.gameplay.state.started
-            || self.gameplay.state.game_over
-            || self.gameplay.state.level_complete
-        {
-            return elapsed;
-        }
-
-        let fallback_target = elapsed + frame_dt.max(0.0);
-        let audio_target = self
-            .audio
-            .state
-            .runtime
-            .playback_time_seconds()
-            .unwrap_or(fallback_target);
-
-        let clamped_forward_target = audio_target.max(elapsed);
-        clamped_forward_target
-            .min(elapsed + 0.25)
-            .min(self.gameplay.state.level_duration_seconds)
-    }
-
-    fn advance_playing_state_segment_to_time(
-        &mut self,
-        elapsed_seconds: &mut f32,
-        target_time: f32,
-        simulation_dt: f32,
-        trigger_render_objects: &mut Option<Vec<LevelObject>>,
-    ) -> bool {
-        let mut should_continue = true;
-        advance_simulation_time(
-            elapsed_seconds,
-            target_time,
-            simulation_dt,
-            |step_target, step_dt| {
-                *trigger_render_objects = self.apply_playing_object_triggers(step_target);
-                self.gameplay.state.update(step_dt);
-                let events = self.gameplay.state.take_consumed_object_events();
-                if !events.is_empty() && trigger_render_objects.is_none() {
-                    *trigger_render_objects = Some(self.gameplay.state.objects.clone());
-                }
-                self.push_block_effect_events(events);
-                self.prune_playing_trigger_base_objects_from_consumed();
-                should_continue =
-                    !self.gameplay.state.game_over && !self.gameplay.state.level_complete;
-                should_continue
-            },
-        );
-        self.gameplay.state.elapsed_seconds = *elapsed_seconds;
-        should_continue
-    }
-
-    fn advance_playing_state_to_time(
-        &mut self,
-        target_time: f32,
-        simulation_dt: f32,
-    ) -> Option<Vec<LevelObject>> {
-        puffin::profile_scope!("PlayingAdvanceToTime");
-        const INPUT_TIME_EPSILON: f32 = 1e-6;
-        let mut trigger_render_objects: Option<Vec<LevelObject>> = None;
-        let mut elapsed_seconds = self.gameplay.state.elapsed_seconds;
-
-        self.apply_pending_gameplay_turns_up_to(elapsed_seconds);
-        while elapsed_seconds + INPUT_TIME_EPSILON < target_time {
-            let next_turn_time = self
-                .gameplay
-                .pending_turn_inputs
-                .front()
-                .map(|input| input.time_seconds);
-
-            let Some(next_turn_time) = next_turn_time else {
-                let _ = self.advance_playing_state_segment_to_time(
-                    &mut elapsed_seconds,
-                    target_time,
-                    simulation_dt,
-                    &mut trigger_render_objects,
-                );
-                break;
-            };
-
-            if next_turn_time > target_time + INPUT_TIME_EPSILON {
-                let _ = self.advance_playing_state_segment_to_time(
-                    &mut elapsed_seconds,
-                    target_time,
-                    simulation_dt,
-                    &mut trigger_render_objects,
-                );
-                break;
-            }
-
-            let segment_target = next_turn_time.max(elapsed_seconds);
-            if segment_target > elapsed_seconds + INPUT_TIME_EPSILON
-                && !self.advance_playing_state_segment_to_time(
-                    &mut elapsed_seconds,
-                    segment_target,
-                    simulation_dt,
-                    &mut trigger_render_objects,
-                )
-            {
-                break;
-            }
-
-            self.gameplay.state.elapsed_seconds = elapsed_seconds;
-            self.apply_pending_gameplay_turns_up_to(elapsed_seconds);
-            if self.gameplay.state.game_over {
-                break;
-            }
-        }
-        self.gameplay.state.elapsed_seconds = elapsed_seconds;
-
-        if self.editor.has_object_transform_triggers() {
-            trigger_render_objects =
-                self.apply_playing_object_triggers(self.gameplay.state.elapsed_seconds);
-        }
-
-        trigger_render_objects
     }
 
     fn build_editor_playback_trail_vertices(
@@ -545,15 +396,9 @@ impl State {
     /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
     pub fn update(&mut self) {
         puffin::profile_scope!("FrameTotal");
-        const FIXED_DT: f32 = 1.0 / 120.0;
-
-        let using_scheduled_frame_time = self.frame_runtime.editor.scheduled_delta_available;
-        let frame_dt = self.frame_delta_for_legacy_update();
+        let frame_dt = self.frame_runtime.editor.delta_seconds;
         if self.phase == AppPhase::Menu {
             puffin::profile_scope!("MenuUpdate");
-            if !using_scheduled_frame_time {
-                self.frame_runtime.editor.accumulator = 0.0;
-            }
             self.frame_runtime.player_render.gem_shatter_effects.clear();
             self.render_meshes_mut().gem_shatter_effects.clear();
             self.refresh_menu_level_preview_if_needed();
@@ -562,9 +407,6 @@ impl State {
 
         if self.phase == AppPhase::Editor {
             puffin::profile_scope!("EditorUpdate");
-            if !using_scheduled_frame_time {
-                self.frame_runtime.editor.accumulator = 0.0;
-            }
             self.render_meshes_mut().trail.clear();
 
             if self.editor.timeline.playback.playing {
@@ -775,20 +617,11 @@ impl State {
 
         puffin::profile_scope!("PlayingUpdate");
         if self.is_game_paused() {
-            self.frame_runtime.editor.accumulator = 0.0;
             return;
         }
 
-        let trigger_render_objects = if self.gameplay_app_authoritative {
-            None
-        } else if self.gameplay.state.level_complete {
-            self.gameplay.state.update(frame_dt);
-            None
-        } else {
-            let target_time = self.target_playing_time(frame_dt);
-            self.advance_playing_state_to_time(target_time, FIXED_DT)
-        };
-        self.frame_runtime.editor.accumulator = 0.0;
+        let trigger_render_objects =
+            self.playing_trigger_objects_at_time(self.gameplay.state.elapsed_seconds);
         self.update_block_effect_mesh(frame_dt);
 
         let render_objects = trigger_render_objects
@@ -914,7 +747,7 @@ impl State {
 mod tests {
     use super::State;
     use eg_audio::audio::runtime_asset_source_key;
-    use eg_game::{GameState, TimelineSimulationRuntime};
+    use eg_game::TimelineSimulationRuntime;
     use eg_types::{
         AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, Direction, EasingDirection, EditorMode,
         LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TimingPoint, TriggerTarget,
@@ -954,79 +787,6 @@ mod tests {
             }),
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         }
-    }
-
-    fn gameplay_floor() -> LevelObject {
-        LevelObject {
-            id: "floor".to_string(),
-            position: [-10.0, -1.0, -10.0],
-            size: [20.0, 1.0, 20.0],
-            ..LevelObject::default()
-        }
-    }
-
-    fn prepare_started_gameplay(state: &mut State, speed: f32) {
-        state.phase = AppPhase::Playing;
-        state.gameplay.state = GameState::new();
-        state.gameplay.state.objects = vec![gameplay_floor()];
-        state.gameplay.state.rebuild_behavior_cache();
-        state
-            .gameplay
-            .state
-            .apply_spawn_exact([0.0, 0.0, 0.0], Direction::Forward);
-        state.gameplay.state.started = true;
-        state.gameplay.state.speed = speed;
-        state.clear_pending_gameplay_inputs();
-    }
-
-    #[tokio::test]
-    async fn target_playing_time_respects_started_and_game_over_state() {
-        let mut state = State::new_test().await;
-
-        state.gameplay.state.elapsed_seconds = 1.25;
-        state.gameplay.state.started = false;
-        assert_eq!(state.target_playing_time(0.2), 1.25);
-
-        state.gameplay.state.started = true;
-        state.gameplay.state.game_over = false;
-        assert_eq!(state.target_playing_time(0.2), 1.45);
-
-        state.gameplay.state.game_over = true;
-        assert_eq!(state.target_playing_time(0.2), 1.25);
-
-        state.gameplay.state.game_over = false;
-        assert_eq!(state.target_playing_time(10.0), 1.5);
-        assert_eq!(state.target_playing_time(-1.0), 1.25);
-    }
-
-    #[tokio::test]
-    async fn queued_gameplay_turn_applies_at_its_timestamp() {
-        let mut state = State::new_test().await;
-        prepare_started_gameplay(&mut state, 12.0);
-
-        state.queue_gameplay_turn_right_at(0.05);
-        let _ = state.advance_playing_state_to_time(0.1, 1.0 / 120.0);
-
-        assert!(matches!(state.gameplay.state.direction, Direction::Right));
-        approx::assert_abs_diff_eq!(state.gameplay.state.position[2], 0.6, epsilon = 1e-4);
-        approx::assert_abs_diff_eq!(state.gameplay.state.position[0], 0.6, epsilon = 1e-4);
-        assert!(state.gameplay.pending_turn_inputs.is_empty());
-    }
-
-    #[tokio::test]
-    async fn active_gameplay_turn_right_queues_until_update() {
-        let mut state = State::new_test().await;
-        prepare_started_gameplay(&mut state, 10.0);
-
-        state.turn_right();
-
-        assert!(matches!(state.gameplay.state.direction, Direction::Forward));
-        assert_eq!(state.gameplay.pending_turn_inputs.len(), 1);
-
-        let _ = state.advance_playing_state_to_time(1.0 / 120.0, 1.0 / 120.0);
-
-        assert!(matches!(state.gameplay.state.direction, Direction::Right));
-        assert!(state.gameplay.pending_turn_inputs.is_empty());
     }
 
     #[tokio::test]
@@ -1100,24 +860,6 @@ mod tests {
         }));
         assert!(!state.render_meshes().blocks_instanced.is_empty());
         assert!(state.render_meshes().blocks.draw_data().is_none());
-    }
-
-    #[tokio::test]
-    async fn advance_playing_state_to_time_updates_elapsed_and_returns_render_objects() {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Playing;
-        state.gameplay.state.started = true;
-        state.gameplay.state.objects = vec![sample_object()];
-        state.gameplay.state.rebuild_behavior_cache();
-        state.editor.objects.push(instant_move_trigger());
-
-        let transformed = state
-            .advance_playing_state_to_time(0.2, 1.0 / 120.0)
-            .expect("expected trigger render objects");
-
-        assert!(state.gameplay.state.elapsed_seconds <= 0.2 + 1e-6);
-        assert_eq!(transformed[0].position, [2.0, 0.0, 0.0]);
     }
 
     #[tokio::test]
@@ -1212,19 +954,6 @@ mod tests {
             !vertices.is_empty(),
             "grounded scrub trail should draw before a fall or turn creates a new segment"
         );
-    }
-
-    #[tokio::test]
-    async fn perf_overlay_toggle_controls_visibility() {
-        let mut state = State::new_test().await;
-
-        assert!(!state.perf_overlay_enabled());
-
-        state.toggle_perf_overlay();
-        assert!(state.perf_overlay_enabled());
-
-        state.toggle_perf_overlay();
-        assert!(!state.perf_overlay_enabled());
     }
 
     #[tokio::test]
@@ -1340,17 +1069,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_menu_branch_resets_accumulator() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Menu;
-        state.frame_runtime.editor.accumulator = 0.2;
-
-        state.update();
-
-        assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
-    }
-
-    #[tokio::test]
     async fn update_does_not_drain_async_audio_import_channel() {
         let mut state = State::new_test().await;
         state.phase = AppPhase::Editor;
@@ -1371,13 +1089,6 @@ mod tests {
             state.audio.state.editor.cache.bytes_for_source(&source_key),
             None,
             "State::update should leave async channel draining to StateSchedule"
-        );
-
-        state.update_audio_imports();
-        assert_eq!(
-            state.audio.state.editor.cache.bytes_for_source(&source_key),
-            Some(&vec![5, 6, 7]),
-            "the legacy helper still drains the queued result when called directly"
         );
     }
 
@@ -1508,7 +1219,6 @@ mod tests {
         assert_eq!(state.phase, AppPhase::Playing);
         assert_eq!(state.gameplay.state.elapsed_seconds, 1.0);
         assert_eq!(state.gameplay.state.position, [2.0, 0.0, 3.0]);
-        assert_eq!(state.frame_runtime.editor.accumulator, 0.0);
     }
 
     #[tokio::test]

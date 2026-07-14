@@ -29,57 +29,30 @@ pub type AuthChannelReceiver =
     std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<AuthServiceMessage>>>;
 
 pub struct AuthSubsystem {
-    pub session: Option<AuthSession>,
-    pub pending: bool,
-    pub message: Option<String>,
-    pub refresh_started: bool,
-    pub external_navigation_enabled: bool,
-    pub channel: (
-        std::sync::mpsc::Sender<AuthServiceMessage>,
-        AuthChannelReceiver,
-    ),
+    pub state: AuthStateRes,
+    pub receiver: AuthChannelReceiver,
+}
+
+impl AuthSubsystem {
+    pub fn new(session: Option<AuthSession>, external_navigation_enabled: bool) -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        Self {
+            state: AuthStateRes {
+                session,
+                pending: false,
+                message: None,
+                refresh_started: false,
+                external_navigation_enabled,
+                sender,
+            },
+            receiver: std::sync::Arc::new(std::sync::Mutex::new(receiver)),
+        }
+    }
 }
 
 impl State {
-    pub fn auth_state_resource(&self) -> AuthStateRes {
-        AuthStateRes {
-            session: self.auth.session.clone(),
-            pending: self.auth.pending,
-            message: self.auth.message.clone(),
-            refresh_started: self.auth.refresh_started,
-            external_navigation_enabled: self.auth.external_navigation_enabled,
-            sender: self.auth.channel.0.clone(),
-        }
-    }
-
-    pub fn apply_auth_state_resource(&mut self, auth: &AuthStateRes) {
-        self.auth.session = auth.session.clone();
-        self.auth.pending = auth.pending;
-        self.auth.message = auth.message.clone();
-        self.auth.refresh_started = auth.refresh_started;
-        self.auth.external_navigation_enabled = auth.external_navigation_enabled;
-    }
-
-    pub fn auth_display_name(&self) -> Option<&str> {
-        self.auth
-            .session
-            .as_ref()
-            .and_then(|session| session.profile.as_ref())
-            .and_then(|profile| profile.username.as_deref())
-            .or_else(|| {
-                self.auth
-                    .session
-                    .as_ref()
-                    .and_then(|session| session.user.email.as_deref())
-            })
-    }
-
-    pub fn auth_pending(&self) -> bool {
-        self.auth.pending
-    }
-
-    pub fn auth_message(&self) -> Option<&str> {
-        self.auth.message.as_deref()
+    pub fn take_auth_state_resource(&mut self) -> AuthStateRes {
+        std::mem::take(&mut self.auth.state)
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -89,158 +62,25 @@ impl State {
         pending: bool,
         message: Option<String>,
     ) {
-        self.auth.session = session;
-        self.auth.pending = pending;
-        self.auth.message = message;
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn submit_auth_sign_in(&mut self) {
-        if self.auth.pending {
-            return;
-        }
-
-        self.auth.pending = true;
-        self.auth.message = Some("Complete sign-in in your browser.".to_string());
-        trigger_auth_sign_in(self.auth.channel.0.clone());
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn refresh_auth_session(&mut self) {
-        if self.auth.pending || self.auth.refresh_started {
-            return;
-        }
-
-        let Some(refresh_token) = self
-            .auth
-            .session
-            .as_ref()
-            .map(|session| session.session.refresh_token.clone())
-        else {
-            return;
-        };
-
-        self.auth.refresh_started = true;
-        trigger_auth_refresh(refresh_token, self.auth.channel.0.clone());
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn sign_out_auth_session(&mut self) {
-        if self.auth.pending {
-            return;
-        }
-
-        let access_token = self
-            .auth
-            .session
-            .as_ref()
-            .map(|session| session.session.access_token.clone());
-        self.auth.pending = true;
-        self.auth.message = None;
-        trigger_auth_sign_out(access_token, self.auth.channel.0.clone());
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn open_auth_signup_page(&mut self) {
-        if !self.auth.external_navigation_enabled {
-            return;
-        }
-
-        if let Err(error) = eg_platform::auth::open_signup_page() {
-            self.auth.message = Some(error);
-        }
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn refresh_auth_session_if_needed(&mut self) {
-        if self.auth.session.is_some() && !self.auth.refresh_started {
-            self.refresh_auth_session();
-        }
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn update_auth_results(&mut self) {
-        self.refresh_auth_session_if_needed();
-
-        // Phase 6b: the receiver is shared with the Phase 6b handler
-        // system via `Arc<Mutex<>>`. We drain the receiver into a
-        // local `Vec` under the lock, then drop the lock and apply
-        // each message to the State (the `complete_*` methods take
-        // `&mut self` which conflicts with the held mutex guard).
-        let drained: Vec<AuthServiceMessage> = {
-            let guard = self
-                .auth
-                .channel
-                .1
-                .lock()
-                .expect("auth channel mutex poisoned");
-            let mut out: Vec<AuthServiceMessage> = Vec::new();
-            while let Ok(message) = guard.try_recv() {
-                out.push(message);
-            }
-            out
-        };
-        for message in drained {
-            match message {
-                AuthServiceMessage::SignedIn(result) => self.complete_auth_sign_in(result),
-                AuthServiceMessage::Refreshed(result) => self.complete_auth_refresh(result),
-                AuthServiceMessage::SignedOut(result) => self.complete_auth_sign_out(result),
-            }
-        }
-    }
-
-    /// Phase 6b: visible to the `auth_handler_system` in
-    /// `state::async_bridge`. The system installs a closure that
-    /// calls this method, so it must be at least `pub(crate)`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn complete_auth_sign_in(&mut self, result: Result<AuthSession, String>) {
-        self.auth.pending = false;
-        match result {
-            Ok(session) => {
-                self.auth.session = Some(session);
-                self.auth.refresh_started = true;
-                self.auth.message = None;
-            }
-            Err(error) => {
-                self.auth.message = Some(error);
-            }
-        }
-    }
-
-    /// Phase 6b: visible to `auth_handler_system`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn complete_auth_refresh(&mut self, result: Result<AuthSession, String>) {
-        match result {
-            Ok(session) => {
-                self.auth.session = Some(session);
-                self.auth.refresh_started = true;
-            }
-            Err(error) => {
-                self.auth.session = None;
-                self.auth.refresh_started = false;
-                self.auth.message = Some(error);
-            }
-        }
-    }
-
-    /// Phase 6b: visible to `auth_handler_system`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn complete_auth_sign_out(&mut self, result: Result<(), String>) {
-        self.auth.pending = false;
-        self.auth.refresh_started = false;
-        self.auth.session = None;
-        match result {
-            Ok(()) => {
-                self.auth.message = None;
-            }
-            Err(error) => {
-                self.auth.message = Some(error);
-            }
-        }
+        self.auth.state.session = session;
+        self.auth.state.pending = pending;
+        self.auth.state.message = message;
     }
 }
 
 impl AuthStateRes {
+    pub fn display_name(&self) -> Option<&str> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.profile.as_ref())
+            .and_then(|profile| profile.username.as_deref())
+            .or_else(|| {
+                self.session
+                    .as_ref()
+                    .and_then(|session| session.user.email.as_deref())
+            })
+    }
+
     pub fn submit_auth_sign_in(&mut self) {
         if self.pending {
             return;
@@ -409,164 +249,21 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn auth_display_name_prefers_profile_username_then_email() {
-        let mut state = State::new_test().await;
-        assert_eq!(state.auth_display_name(), None);
+    #[test]
+    fn auth_resource_display_name_prefers_profile_username_then_email() {
+        let mut auth = AuthStateRes::default();
+        assert_eq!(auth.display_name(), None);
 
-        state.auth.session = Some(test_auth_session(
+        auth.session = Some(test_auth_session(
             Some("player"),
             Some("player@example.com"),
         ));
-        assert_eq!(state.auth_display_name(), Some("player"));
+        assert_eq!(auth.display_name(), Some("player"));
 
-        state.auth.session = Some(test_auth_session(None, Some("player@example.com")));
-        assert_eq!(state.auth_display_name(), Some("player@example.com"));
+        auth.session = Some(test_auth_session(None, Some("player@example.com")));
+        assert_eq!(auth.display_name(), Some("player@example.com"));
 
-        state.auth.session = Some(test_auth_session(None, None));
-        assert_eq!(state.auth_display_name(), None);
-    }
-
-    #[tokio::test]
-    async fn auth_actions_ignore_pending_or_missing_session_guards() {
-        let mut state = State::new_test().await;
-
-        state.auth.pending = true;
-        state.submit_auth_sign_in();
-        assert!(state.auth.pending);
-        assert_eq!(state.auth.message, None);
-
-        state.auth.pending = false;
-        state.refresh_auth_session();
-        assert!(!state.auth.refresh_started);
-
-        state.auth.session = Some(test_auth_session(
-            Some("player"),
-            Some("player@example.com"),
-        ));
-        state.auth.pending = true;
-        state.refresh_auth_session();
-        assert!(!state.auth.refresh_started);
-
-        state.auth.pending = false;
-        state.auth.refresh_started = true;
-        state.refresh_auth_session();
-        assert!(state.auth.refresh_started);
-
-        state.auth.pending = true;
-        state.auth.message = Some("keep me".to_string());
-        state.sign_out_auth_session();
-        assert_eq!(state.auth.message.as_deref(), Some("keep me"));
-    }
-
-    #[tokio::test]
-    async fn update_auth_results_applies_sign_in_success_and_failure() {
-        let mut state = State::new_test().await;
-        let session = test_auth_session(Some("player"), Some("player@example.com"));
-
-        state.auth.pending = true;
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::SignedIn(Ok(session.clone())))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert!(!state.auth.pending);
-        assert_eq!(state.auth.session, Some(session));
-        assert!(state.auth.refresh_started);
-        assert_eq!(state.auth.message, None);
-
-        state.auth.pending = true;
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::SignedIn(Err(
-                "sign-in failed".to_string()
-            )))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert!(!state.auth.pending);
-        assert_eq!(state.auth.message.as_deref(), Some("sign-in failed"));
-    }
-
-    #[tokio::test]
-    async fn update_auth_results_applies_refresh_success_and_failure() {
-        let mut state = State::new_test().await;
-        let original = test_auth_session(Some("old"), Some("old@example.com"));
-        let refreshed = test_auth_session(Some("new"), Some("new@example.com"));
-
-        state.auth.session = Some(original);
-        state.auth.refresh_started = true;
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::Refreshed(Ok(refreshed.clone())))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert_eq!(state.auth.session, Some(refreshed));
-        assert!(state.auth.refresh_started);
-        assert_eq!(state.auth.message, None);
-
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::Refreshed(Err(
-                "refresh failed".to_string()
-            )))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert_eq!(state.auth.session, None);
-        assert!(!state.auth.refresh_started);
-        assert_eq!(state.auth.message.as_deref(), Some("refresh failed"));
-    }
-
-    #[tokio::test]
-    async fn update_auth_results_applies_sign_out_success_and_failure() {
-        let mut state = State::new_test().await;
-
-        state.auth.session = Some(test_auth_session(
-            Some("player"),
-            Some("player@example.com"),
-        ));
-        state.auth.pending = true;
-        state.auth.refresh_started = true;
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::SignedOut(Ok(())))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert!(!state.auth.pending);
-        assert!(!state.auth.refresh_started);
-        assert_eq!(state.auth.session, None);
-        assert_eq!(state.auth.message, None);
-
-        state.auth.session = Some(test_auth_session(None, Some("player@example.com")));
-        state.auth.pending = true;
-        state.auth.refresh_started = true;
-        state
-            .auth
-            .channel
-            .0
-            .send(AuthServiceMessage::SignedOut(Err(
-                "sign-out failed".to_string()
-            )))
-            .expect("message should send");
-        state.update_auth_results();
-
-        assert!(!state.auth.pending);
-        assert!(!state.auth.refresh_started);
-        assert_eq!(state.auth.session, None);
-        assert_eq!(state.auth.message.as_deref(), Some("sign-out failed"));
+        auth.session = Some(test_auth_session(None, None));
+        assert_eq!(auth.display_name(), None);
     }
 }

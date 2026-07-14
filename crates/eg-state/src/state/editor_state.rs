@@ -326,10 +326,6 @@ impl EditorSubsystem {
         };
     }
 
-    pub fn fps(&self) -> f32 {
-        self.perf.fps_smoothed
-    }
-
     pub fn set_timeline_time_seconds(&mut self, time_seconds: f32) -> bool {
         let old_time = self.timeline.clock.time_seconds;
         self.timeline.clock.time_seconds =
@@ -1239,11 +1235,6 @@ impl State {
         }
 
         changed
-    }
-
-    /// Returns the smoothed frames-per-second (FPS) measurement for the editor.
-    pub fn editor_fps(&self) -> f32 {
-        self.editor.fps()
     }
 
     pub fn editor_marquee_selection_rect_screen(&self) -> Option<([f64; 2], [f64; 2], bool)> {

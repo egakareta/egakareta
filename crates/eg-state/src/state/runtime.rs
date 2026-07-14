@@ -219,8 +219,6 @@ pub struct EditorRuntimeState {
 pub struct EditorFrameState {
     pub last_frame: web_time::Instant,
     pub delta_seconds: f32,
-    pub accumulator: f32,
-    pub scheduled_delta_available: bool,
 }
 
 pub struct BlockVisualEffect {

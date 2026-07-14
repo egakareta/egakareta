@@ -308,6 +308,11 @@ impl State {
         self.phase = phase;
     }
 
+    /// Mirror the App-owned playtest flag into the compatibility session.
+    pub fn set_playtesting_editor_from_app(&mut self, playtesting_editor: bool) {
+        self.session.playtesting_editor = playtesting_editor;
+    }
+
     /// Test-only setter for `session.playtesting_editor`.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_playtesting_editor_for_test(&mut self, playtesting_editor: bool) {

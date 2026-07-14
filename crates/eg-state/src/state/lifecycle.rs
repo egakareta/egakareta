@@ -525,7 +525,7 @@ impl State {
         let local_audio_cache = std::collections::HashMap::new();
         let available_graphics_backends = discover_graphics_backends();
         let available_audio_backends = eg_audio::audio::available_host_labels();
-        let mut audio_state = AudioState::new(local_audio_cache);
+        let audio_state = AudioState::new(local_audio_cache);
         let _ = audio_state
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
@@ -606,17 +606,7 @@ impl State {
                     camera_arrow: MeshSlot::Empty,
                 },
             ),
-            auth: AuthSubsystem {
-                session: auth_session,
-                pending: false,
-                message: None,
-                refresh_started: false,
-                external_navigation_enabled: false,
-                channel: {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-                },
-            },
+            auth: AuthSubsystem::new(auth_session, false),
             gameplay: GameplaySubsystem {
                 state: game,
                 pending_turn_inputs: std::collections::VecDeque::new(),
@@ -628,8 +618,6 @@ impl State {
                 editor: EditorFrameState {
                     last_frame: now,
                     delta_seconds: 0.0,
-                    accumulator: 0.0,
-                    scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
                     gem_shatter_effects: Vec::new(),
@@ -684,7 +672,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            gameplay_app_authoritative: false,
             gameplay_world_needs_seed: false,
         }
     }
@@ -1442,7 +1429,7 @@ impl State {
         };
         let available_graphics_backends = discover_graphics_backends();
         let available_audio_backends = eg_audio::audio::available_host_labels();
-        let mut audio_state = AudioState::new(local_audio_cache);
+        let audio_state = AudioState::new(local_audio_cache);
         let _ = audio_state
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
@@ -1520,17 +1507,7 @@ impl State {
                     camera_arrow: MeshSlot::Empty,
                 },
             ),
-            auth: AuthSubsystem {
-                session: auth_session,
-                pending: false,
-                message: None,
-                refresh_started: false,
-                external_navigation_enabled: true,
-                channel: {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-                },
-            },
+            auth: AuthSubsystem::new(auth_session, true),
             gameplay: GameplaySubsystem {
                 state: game,
                 pending_turn_inputs: std::collections::VecDeque::new(),
@@ -1542,8 +1519,6 @@ impl State {
                 editor: EditorFrameState {
                     last_frame: now,
                     delta_seconds: 0.0,
-                    accumulator: 0.0,
-                    scheduled_delta_available: false,
                 },
                 player_render: PlayerRenderState {
                     gem_shatter_effects: Vec::new(),
@@ -1598,7 +1573,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            gameplay_app_authoritative: false,
             gameplay_world_needs_seed: false,
         })
     }

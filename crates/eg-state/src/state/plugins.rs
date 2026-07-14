@@ -39,14 +39,14 @@ use bevy_ecs::prelude::*;
 use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
-    AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-    CompleteImportRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, EscapeRequest, ExportLevelRequest, FrameTimeRes, GameQuitToMenuRequest,
-    GameRestartLevelRequest, GameplayResetRes, GameplayWorldRes, LoadLevelRequest,
-    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, SetAudioBackendRequest,
-    ToggleEditorRequest, TriggerAudioImportRequest, TurnRightRequest,
+    AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+    AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
+    EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest, FrameTimeRes,
+    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, PerfFrameCopyRequest, PerfRes,
+    PlaytestRequest, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
 };
+use super::{AudioBackendRes, EditorAudioCacheRes, RuntimeAudioPreloadRes, WaveformLoadSenderRes};
 
 /// Registers the headless gameplay systems. Currently a thin shim around
 /// [`eg_game::GamePlugin`]; in later phases the gameplay plugin will
@@ -56,8 +56,7 @@ pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(eg_game::GamePlugin)
-            .init_resource::<GameplayWorldRes>();
+        app.add_plugins(eg_game::GamePlugin);
     }
 }
 
@@ -87,15 +86,16 @@ impl Plugin for EditorPlugin {
             .init_resource::<AuthSubmitSignInRequest>()
             .init_resource::<AuthSignOutRequest>()
             .init_resource::<AuthOpenSignupRequest>()
-            .init_resource::<GameQuitToMenuRequest>()
-            .init_resource::<GameRestartLevelRequest>()
             .init_resource::<GameplayResetRes>()
             .init_resource::<PlaytestRequest>()
-            .init_resource::<LoadLevelRequest>()
-            .init_resource::<ExportLevelRequest>()
-            .init_resource::<SetAudioBackendRequest>()
-            .init_resource::<CompleteImportRequest>()
-            .init_resource::<TriggerAudioImportRequest>()
+            .init_resource::<BuiltinLevelCatalogRes>()
+            .init_resource::<LevelExportServiceRes>()
+            .init_resource::<LevelImportSenderRes>()
+            .init_resource::<AudioImportSenderRes>()
+            .init_resource::<AudioBackendRes>()
+            .init_resource::<EditorAudioCacheRes>()
+            .init_resource::<RuntimeAudioPreloadRes>()
+            .init_resource::<WaveformLoadSenderRes>()
             .init_resource::<TurnRightRequest>()
             .init_resource::<ToggleEditorRequest>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
@@ -212,16 +212,16 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AuthSubmitSignInRequest>();
     world.init_resource::<AuthSignOutRequest>();
     world.init_resource::<AuthOpenSignupRequest>();
-    world.init_resource::<GameQuitToMenuRequest>();
-    world.init_resource::<GameRestartLevelRequest>();
     world.init_resource::<GameplayResetRes>();
-    world.init_resource::<GameplayWorldRes>();
     world.init_resource::<PlaytestRequest>();
-    world.init_resource::<LoadLevelRequest>();
-    world.init_resource::<ExportLevelRequest>();
-    world.init_resource::<SetAudioBackendRequest>();
-    world.init_resource::<CompleteImportRequest>();
-    world.init_resource::<TriggerAudioImportRequest>();
+    world.init_resource::<BuiltinLevelCatalogRes>();
+    world.init_resource::<LevelExportServiceRes>();
+    world.init_resource::<LevelImportSenderRes>();
+    world.init_resource::<AudioImportSenderRes>();
+    world.init_resource::<AudioBackendRes>();
+    world.init_resource::<EditorAudioCacheRes>();
+    world.init_resource::<RuntimeAudioPreloadRes>();
+    world.init_resource::<WaveformLoadSenderRes>();
     world.init_resource::<TurnRightRequest>();
     world.init_resource::<ToggleEditorRequest>();
     super::input_bridge::register_platform_input_resources(world);
@@ -286,7 +286,6 @@ pub fn register_state_command_pipeline(world: &mut World) {
         (
             crate::state::transitions::phase_transition_schedule_system,
             crate::state::frame_time::advance_frame_time_system,
-            crate::state::frame_time::reset_menu_editor_frame_accumulator_system,
         )
             .chain(),
     );

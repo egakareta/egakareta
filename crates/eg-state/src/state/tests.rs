@@ -27,12 +27,6 @@ async fn new_editor_state() -> State {
     state
 }
 
-fn tick_state_with_app(state: &mut State, app: &mut crate::state::test_support::TestApp) {
-    state.prepare_app_world_for_state_schedule(app.world_mut());
-    app.tick_state();
-    state.drain_pending_async_results();
-}
-
 fn transform_trigger_object(
     time_seconds: f32,
     duration_seconds: f32,
@@ -320,48 +314,25 @@ fn test_app_tick_state_advances_frame_time_resource() {
 }
 
 #[test]
-fn test_app_tick_state_resets_menu_editor_frame_accumulator() {
+fn tick_state_is_safe_to_call_with_empty_schedule() {
     let mut app = crate::state::test_support::TestApp::minimal();
-    {
-        app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Menu);
-        let mut frame_time = app.world_mut().resource_mut::<FrameTimeRes>();
-        frame_time.last_frame = web_time::Instant::now() - std::time::Duration::from_millis(20);
-        frame_time.accumulator = 0.2;
-    }
-
     app.tick_state();
-
-    assert_eq!(
-        app.world().resource::<FrameTimeRes>().accumulator,
-        0.0,
-        "StateSchedule must own the non-playing accumulator reset before legacy update"
-    );
+    app.tick_state();
+    app.tick_state();
 }
 
-#[tokio::test]
-async fn tick_state_is_safe_to_call_with_empty_schedule() {
-    let mut state = State::new_test().await;
-    let mut app = crate::state::test_support::TestApp::minimal();
-    tick_state_with_app(&mut state, &mut app);
-    tick_state_with_app(&mut state, &mut app);
-    tick_state_with_app(&mut state, &mut app);
-}
-
-#[tokio::test]
-async fn tick_state_runs_phase_transition_system() {
+#[test]
+fn tick_state_runs_phase_transition_system() {
     // Phase 2c: `tick_state` now runs the `phase_transition_system`
     // which detects changes to `AppPhaseRes` and runs `OnEnter` /
     // `OnExit` side effects. Demonstrate the bookkeeping works:
     // - the first tick is a no-op (current == previous == Menu)
     // - after we change the resource, the next tick updates the
     //   `previous_app_phase` field.
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Initial tick: no transition.
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
     assert_eq!(
         app.world().resource::<AppPhaseRes>().previous_app_phase,
         eg_types::AppPhase::Menu
@@ -374,7 +345,7 @@ async fn tick_state_runs_phase_transition_system() {
         .set(eg_types::AppPhase::Playing);
 
     // Tick: should detect the change and update `previous_app_phase`.
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
     assert_eq!(
         app.world().resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Playing
@@ -385,7 +356,7 @@ async fn tick_state_runs_phase_transition_system() {
     );
 
     // Subsequent tick with no change: no-op.
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
     assert_eq!(
         app.world().resource::<AppPhaseRes>().previous_app_phase,
         eg_types::AppPhase::Playing
@@ -626,15 +597,11 @@ async fn tick_state_registers_render_pod_resources_on_construction() {
     assert!(world.contains_resource::<RenderResizeRequest>());
 }
 
-#[tokio::test]
-async fn tick_state_poll_channels_emits_audio_import_result_event() {
+#[test]
+fn tick_state_poll_channels_emits_audio_import_result_event() {
     use crate::events::async_results::AudioImportResultEvent;
     use crate::state::async_bridge::AudioImportChannelRes;
     use bevy_ecs::message::Messages;
-    use eg_audio::audio::runtime_asset_source_key;
-
-    let mut state = State::new_test().await;
-    state.set_editor_level_name("ScheduleAudioImport".to_string());
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Create a fresh channel whose receiver sits in the Bevy
@@ -655,7 +622,7 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     tx.send(("level1.ogg".to_string(), vec![1, 2, 3, 4]))
         .unwrap();
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     // The event should be in the Messages<AudioImportResultEvent>
     // buffer. We read it via the resource API.
@@ -665,28 +632,14 @@ async fn tick_state_poll_channels_emits_audio_import_result_event() {
     assert_eq!(events.len(), 1, "expected one audio import event");
     assert_eq!(events[0].filename, "level1.ogg");
     assert_eq!(events[0].bytes, Some(vec![1, 2, 3, 4]));
-    assert_eq!(
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .bytes_for_source(&runtime_asset_source_key(
-                "ScheduleAudioImport",
-                "audio.mp3"
-            )),
-        Some(&vec![1, 2, 3, 4]),
-        "StateSchedule async-result handler should apply audio imports before State::update"
-    );
 }
 
-#[tokio::test]
-async fn tick_state_poll_channels_emits_level_import_result_event() {
+#[test]
+fn tick_state_poll_channels_emits_level_import_result_event() {
     use crate::events::async_results::LevelImportResultEvent;
     use crate::state::async_bridge::LevelImportChannelRes;
     use bevy_ecs::message::Messages;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
 
     let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
@@ -697,7 +650,7 @@ async fn tick_state_poll_channels_emits_level_import_result_event() {
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     let messages = app.world().resource::<Messages<LevelImportResultEvent>>();
     let mut cursor = messages.get_cursor();
@@ -706,13 +659,12 @@ async fn tick_state_poll_channels_emits_level_import_result_event() {
     assert_eq!(events[0].bytes, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 }
 
-#[tokio::test]
-async fn tick_state_poll_channels_emits_auth_service_result_event() {
+#[test]
+fn tick_state_poll_channels_emits_auth_service_result_event() {
     use crate::events::async_results::AuthServiceResultEvent;
     use crate::state::async_bridge::AuthChannelRes;
     use bevy_ecs::message::Messages;
 
-    let mut state = State::new_test().await;
     let mut app = crate::state::test_support::TestApp::minimal();
 
     let (tx, rx) = std::sync::mpsc::channel::<eg_platform::services::AuthServiceMessage>();
@@ -726,7 +678,7 @@ async fn tick_state_poll_channels_emits_auth_service_result_event() {
     tx.send(eg_platform::services::AuthServiceMessage::SignedOut(Ok(())))
         .unwrap();
 
-    tick_state_with_app(&mut state, &mut app);
+    app.tick_state();
 
     let messages = app.world().resource::<Messages<AuthServiceResultEvent>>();
     let mut cursor = messages.get_cursor();
@@ -1448,7 +1400,7 @@ async fn editor_load_level_in_timing_mode_reloads_waveform_for_new_level() {
     let expected_source_key = runtime_asset_source_key(&next_level, "audio.mp3");
     assert_eq!(
         state.audio.state.editor.cache.loading_source(),
-        Some(expected_source_key.as_str()),
+        Some(expected_source_key),
         "switching levels in timing mode should start loading waveform for the new level"
     );
 }
@@ -1720,13 +1672,11 @@ async fn test_timing_mode_persistence_during_playback() {
         Some(EditorMode::Timing)
     );
 
-    // 3. Verify ViewModel shows we are still conceptually in Timing
-    let view = state.ui_state_snapshot();
-    let is_timing = view.mode == EditorMode::Timing
-        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Timing));
-    assert!(
-        is_timing,
-        "UI should still consider itself in Timing mode during playback"
+    // 3. The App-world UI view derives the effective mode from these fields.
+    assert_eq!(state.editor.input.mode, EditorMode::Null);
+    assert_eq!(
+        state.editor.runtime.interaction.last_mode,
+        Some(EditorMode::Timing)
     );
 
     // 4. Toggle playback off

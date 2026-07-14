@@ -43,15 +43,6 @@ impl State {
         }
     }
 
-    pub(super) fn restart_game_from_pause(&mut self) {
-        if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
-            return;
-        }
-
-        self.session.game_paused = false;
-        self.restart_level();
-    }
-
     /// Applies the practice-mode toggle side effects while practice ownership
     /// is still synchronized back into legacy gameplay/session state.
     pub(super) fn set_practice_mode_enabled_internal(&mut self, enabled: bool) {
@@ -71,23 +62,6 @@ impl State {
         self.rebuild_practice_checkpoint_vertices();
         self.restart_level();
         self.resume_game();
-    }
-
-    pub(super) fn quit_game_from_pause(&mut self) {
-        if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
-            return;
-        }
-
-        self.session.game_paused = false;
-        self.back_to_menu();
-    }
-
-    pub fn apply_game_quit_to_menu(&mut self) {
-        self.quit_game_from_pause();
-    }
-
-    pub fn apply_game_restart_level(&mut self) {
-        self.restart_game_from_pause();
     }
 
     pub fn practice_checkpoints(&self) -> Vec<PracticeCheckpoint> {

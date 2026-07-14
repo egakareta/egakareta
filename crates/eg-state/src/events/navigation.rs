@@ -36,8 +36,8 @@ use eg_types::{AppPhase, EditorMode};
 use crate::state::{
     AppPhaseRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
     EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    GameQuitToMenuRequest, GameRestartLevelRequest, GameplayResetRes, MenuStateRes,
-    PracticeCheckpoint, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
+    GameplayResetRes, MenuStateRes, PracticeCheckpoint, SessionStateRes, ToggleEditorRequest,
+    TurnRightRequest,
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -277,14 +277,24 @@ pub fn handle_toggle_editor(
     mut request: ResMut<ToggleEditorRequest>,
 ) {
     for _ in events.read() {
-        if phase.current == AppPhase::Editor
-            && let Some(menu) = menu.as_deref_mut()
-        {
-            phase.set(AppPhase::Menu);
-            session.transition_to_menu();
-            menu.0.preview_level_index = None;
-        } else {
-            request.request();
+        match phase.current {
+            AppPhase::Editor => {
+                if let Some(menu) = menu.as_deref_mut() {
+                    phase.set(AppPhase::Menu);
+                    session.transition_to_menu();
+                    menu.0.preview_level_index = None;
+                } else {
+                    request.request();
+                }
+            }
+            AppPhase::Playing if session.playtesting_editor => {
+                phase.set(AppPhase::Editor);
+                session.playtesting_editor = false;
+                session.game_paused = false;
+                session.audio_stop_pending = true;
+            }
+            AppPhase::Menu => request.request(),
+            AppPhase::Playing | AppPhase::GameOver => {}
         }
     }
 }
@@ -298,32 +308,20 @@ pub fn handle_game_resume(
     }
 }
 
-// `GameRestartLevel` writes a typed request resource (same
-// request-resource pattern as
-// `events::auth::handle_resize_surface` and
-// `events::misc::handle_escape`): the handler writes
-// `GameRestartLevelRequest.pending = true` and
-// `Runtime::sync_app_game_restart_level_request` consumes the request
-// during the typed request sync pass and calls the
-// existing legacy `State::apply_game_restart_level` compatibility
-// method. The restart side effect (gameplay clock reset, audio
-// restart) stays legacy-owned.
+// Active real gameplay restart is fully App-owned. Other phases and editor
+// playtests ignore this pause-menu command.
 pub fn handle_game_restart_level(
     mut events: MessageReader<GameRestartLevel>,
     phase: Res<AppPhaseRes>,
     session: Res<SessionStateRes>,
-    mut gameplay_reset: Option<ResMut<GameplayResetRes>>,
-    mut restart_request: ResMut<GameRestartLevelRequest>,
+    mut gameplay_reset: ResMut<GameplayResetRes>,
 ) {
     for _ in events.read() {
-        if phase.current == AppPhase::Playing
-            && !session.playtesting_editor
-            && let Some(reset) = gameplay_reset.as_deref_mut()
-        {
-            reset.request();
-        } else {
-            restart_request.request();
+        if phase.current != AppPhase::Playing || session.playtesting_editor {
+            continue;
         }
+
+        gameplay_reset.request();
     }
 }
 
@@ -453,31 +451,23 @@ pub fn handle_game_remove_practice_checkpoint(
     }
 }
 
-// `GameQuitToMenu` is a Phase 3.48 carve-out: same request-resource
-// pattern as `GameRestartLevel`. The handler writes
-// `GameQuitToMenuRequest.pending = true` and
-// `Runtime::sync_app_game_quit_to_menu_request` consumes the
-// request and calls the existing legacy
-// `State::apply_game_quit_to_menu` compatibility method. The
-// `back_to_menu` side effect (phase change + audio stop + gameplay
-// state reset) stays legacy-owned.
+// Active real gameplay quit-to-menu is fully App-owned. Other phases and
+// editor playtests ignore this pause-menu command.
 pub fn handle_game_quit_to_menu(
     mut events: MessageReader<GameQuitToMenu>,
     mut phase: ResMut<AppPhaseRes>,
     mut session: ResMut<SessionStateRes>,
     mut menu: Option<ResMut<MenuStateRes>>,
-    mut quit_request: ResMut<GameQuitToMenuRequest>,
 ) {
     for _ in events.read() {
-        if phase.current == AppPhase::Playing
-            && !session.playtesting_editor
-            && let Some(menu) = menu.as_deref_mut()
-        {
-            phase.set(AppPhase::Menu);
-            session.transition_to_menu();
+        if phase.current != AppPhase::Playing || session.playtesting_editor {
+            continue;
+        }
+
+        phase.set(AppPhase::Menu);
+        session.transition_to_menu();
+        if let Some(menu) = menu.as_deref_mut() {
             menu.0.preview_level_index = None;
-        } else {
-            quit_request.request();
         }
     }
 }
