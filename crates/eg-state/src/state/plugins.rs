@@ -42,11 +42,13 @@ use super::state_resources::{
     AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
     EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest, FrameTimeRes,
-    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, PerfFrameCopyRequest, PerfRes,
-    PlaytestRequest, SessionStateRes, ToggleEditorRequest, TurnRightRequest,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+    LevelExportServiceRes, LevelImportSenderRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
-use super::{AudioBackendRes, EditorAudioCacheRes, RuntimeAudioPreloadRes, WaveformLoadSenderRes};
+use super::{
+    AudioBackendRes, EditorAudioCacheRes, RuntimeAudioPreloadRes, RuntimeAudioPreloadSenderRes,
+    WaveformLoadSenderRes,
+};
 
 /// Registers the headless gameplay systems. Currently a thin shim around
 /// [`eg_game::GamePlugin`]; in later phases the gameplay plugin will
@@ -81,13 +83,11 @@ impl Plugin for EditorPlugin {
             .init_resource::<FrameTimeRes>()
             .init_resource::<PerfRes>()
             .init_resource::<PerfFrameCopyRequest>()
-            .init_resource::<EscapeRequest>()
             .init_resource::<AuthStateRes>()
             .init_resource::<AuthSubmitSignInRequest>()
             .init_resource::<AuthSignOutRequest>()
             .init_resource::<AuthOpenSignupRequest>()
             .init_resource::<GameplayResetRes>()
-            .init_resource::<PlaytestRequest>()
             .init_resource::<BuiltinLevelCatalogRes>()
             .init_resource::<LevelExportServiceRes>()
             .init_resource::<LevelImportSenderRes>()
@@ -95,9 +95,8 @@ impl Plugin for EditorPlugin {
             .init_resource::<AudioBackendRes>()
             .init_resource::<EditorAudioCacheRes>()
             .init_resource::<RuntimeAudioPreloadRes>()
-            .init_resource::<WaveformLoadSenderRes>()
-            .init_resource::<TurnRightRequest>()
-            .init_resource::<ToggleEditorRequest>();
+            .init_resource::<RuntimeAudioPreloadSenderRes>()
+            .init_resource::<WaveformLoadSenderRes>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -180,6 +179,8 @@ pub fn run_state_schedule_in_world(world: &mut World) {
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
     super::gameplay_world::run_app_gameplay_schedule(world);
+    super::gameplay_world::apply_completed_gameplay_transition_system(world);
+    super::gameplay_world::apply_game_over_transition_system(world);
     let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
 }
 
@@ -207,13 +208,11 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<FrameTimeRes>();
     world.init_resource::<PerfRes>();
     world.init_resource::<PerfFrameCopyRequest>();
-    world.init_resource::<EscapeRequest>();
     world.init_resource::<AuthStateRes>();
     world.init_resource::<AuthSubmitSignInRequest>();
     world.init_resource::<AuthSignOutRequest>();
     world.init_resource::<AuthOpenSignupRequest>();
     world.init_resource::<GameplayResetRes>();
-    world.init_resource::<PlaytestRequest>();
     world.init_resource::<BuiltinLevelCatalogRes>();
     world.init_resource::<LevelExportServiceRes>();
     world.init_resource::<LevelImportSenderRes>();
@@ -221,9 +220,8 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AudioBackendRes>();
     world.init_resource::<EditorAudioCacheRes>();
     world.init_resource::<RuntimeAudioPreloadRes>();
+    world.init_resource::<RuntimeAudioPreloadSenderRes>();
     world.init_resource::<WaveformLoadSenderRes>();
-    world.init_resource::<TurnRightRequest>();
-    world.init_resource::<ToggleEditorRequest>();
     super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
     // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,
@@ -292,7 +290,9 @@ pub fn register_state_command_pipeline(world: &mut World) {
     crate::events::add_command_systems(&mut schedule);
     schedule.add_systems(
         super::gameplay_world::apply_pending_gameplay_reset_system
-            .after(crate::events::navigation::handle_game_restart_level),
+            .after(crate::events::navigation::handle_turn_right)
+            .after(crate::events::navigation::handle_game_restart_level)
+            .after(crate::events::timeline::handle_playtest),
     );
     schedule.add_systems(
         crate::state::auth_state::process_auth_requests_system

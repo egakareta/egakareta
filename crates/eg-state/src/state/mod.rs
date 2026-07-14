@@ -57,7 +57,7 @@ pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 pub(crate) use async_bridge::apply_imported_level_to_world;
 pub use audio_state::{
     AudioBackendRes, AudioState, AudioSubsystem, EditorAudioCacheRes, RuntimeAudioPreloadRes,
-    WaveformLoadSenderRes,
+    RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
 };
 pub use auth_state::AuthSubsystem;
 pub use editor_camera::EditorCameraState;
@@ -93,10 +93,9 @@ pub use state_resources::{
     AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
     EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, EscapeRequest, FrameTimeRes,
-    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, MenuStateRes,
-    PerfFrameCopyRequest, PerfRes, PlaytestRequest, SessionStateRes, ToggleEditorRequest,
-    TurnRightRequest,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+    GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuStateRes,
+    PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 pub use ui_snapshot::{UiStateData, UiStateRes, UiStateSnapshot};
 
@@ -334,6 +333,9 @@ impl State {
         ));
         world.insert_resource(self.audio.state.editor.cache.clone());
         world.insert_resource(self.audio.state.runtime_preload.cache.clone());
+        world.insert_resource(RuntimeAudioPreloadSenderRes(
+            self.audio.state.runtime_preload.preload_channel.0.clone(),
+        ));
         world.insert_resource(self.audio.state.runtime.clone());
         world.insert_resource(WaveformLoadSenderRes(
             self.audio.state.editor.waveform_load_channel.0.clone(),

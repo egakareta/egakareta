@@ -15,7 +15,7 @@ use bevy_ecs::system::SystemParam;
 use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
     AppPhaseRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
-    EscapeRequest, MenuStateRes, PerfRes, SessionStateRes,
+    MenuStateRes, PerfRes, SessionStateRes,
 };
 
 /// Toggle editor hitbox visualization.
@@ -92,8 +92,8 @@ pub fn handle_toggle_place_window(
 // `Escape` handles local branches directly in App-world resources:
 // real-gameplay pause, playtest exit, editor selection clearing, editor
 // timeline playback stop, editor timeline clock reset, and editor-to-menu
-// transition. Other fallback branches still write `EscapeRequest.pending` for
-// Runtime to consume through the legacy compatibility state machine.
+// transition. Menu and game-over branches are also resolved directly in the
+// App world.
 pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
     for _ in events.read() {
         match resources.phase.current {
@@ -138,10 +138,18 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
                     menu.0.preview_level_index = None;
                     continue;
                 }
+                resources.phase.set(eg_types::AppPhase::Menu);
+                resources.session.transition_to_menu();
             }
-            _ => {}
+            eg_types::AppPhase::GameOver => {
+                resources.phase.set(eg_types::AppPhase::Menu);
+                resources.session.transition_to_menu();
+                if let Some(menu) = resources.menu.as_deref_mut() {
+                    menu.0.preview_level_index = None;
+                }
+            }
+            eg_types::AppPhase::Menu => {}
         }
-        resources.escape_request.request();
     }
 }
 
@@ -154,7 +162,6 @@ pub struct EscapeResources<'w> {
     runtime: ResMut<'w, EditorRuntimeRes>,
     session: ResMut<'w, SessionStateRes>,
     menu: Option<ResMut<'w, MenuStateRes>>,
-    escape_request: ResMut<'w, EscapeRequest>,
 }
 
 fn clear_editor_selection_for_escape(

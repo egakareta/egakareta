@@ -24,10 +24,8 @@ use eg_state::state::EditorConfigRes;
 use eg_state::state::EditorRuntimeRes;
 use eg_state::state::EditorTimelineRes;
 use eg_state::state::EditorTimingRes;
-use eg_state::state::EscapeRequest;
 use eg_state::state::FrameTimeRes;
 use eg_state::state::MenuStateRes;
-use eg_state::state::PlaytestRequest;
 use eg_state::state::RenderConfigRes;
 #[cfg(not(test))]
 use eg_state::state::RenderFrameInputRes;
@@ -36,8 +34,6 @@ use eg_state::state::RenderResizeRequest;
 use eg_state::state::RenderUniformUploadRes;
 use eg_state::state::SessionStateRes;
 use eg_state::state::State;
-use eg_state::state::ToggleEditorRequest;
-use eg_state::state::TurnRightRequest;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::run_state_schedule_in_world;
@@ -390,9 +386,6 @@ impl Runtime {
         Self::sync_app_menu_state(state, app.world());
         Self::sync_app_phase_state(state, app.world());
         Self::sync_app_session_state(state, app.world_mut());
-        Self::sync_app_escape_request(state, app.world_mut());
-        Self::sync_app_playtest_request(state, app.world_mut());
-        Self::sync_app_navigation_requests(state, app.world_mut());
         state.sync_app_gameplay_world_if_needed(app.world_mut());
 
         #[cfg(not(test))]
@@ -1014,53 +1007,6 @@ impl Runtime {
         }
     }
 
-    /// Consume the App-world `EscapeRequest` and apply the remaining
-    /// context-sensitive escape state machine through the legacy
-    /// `State::apply_editor_escape` compatibility method.
-    ///
-    /// `events::misc::handle_escape` toggles real-gameplay pause, clears
-    /// editor selection, stops editor timeline playback, and resets editor
-    /// timeline time in App-world resources directly. Back-to-menu/phase
-    /// fallback branches write `EscapeRequest.pending = true` so the legacy
-    /// state machine remains reachable without the deleted command bridge.
-    /// The sync runs before async-result draining so the request is consumed
-    /// in the same frame and any state changes (phase, timeline, session)
-    /// propagate through the downstream sync helpers.
-    fn sync_app_escape_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<EscapeRequest>().take() {
-            return;
-        }
-        state.apply_editor_escape();
-    }
-
-    /// Consume the App-world `PlaytestRequest` and apply the legacy
-    /// `State::editor_playtest` compatibility method.
-    ///
-    /// The playtest side effect builds gameplay state, primes audio,
-    /// and transitions phase, so it stays legacy-owned until those
-    /// subsystems move into App resources.
-    fn sync_app_playtest_request(state: &mut State, world: &mut World) {
-        if !world.resource_mut::<PlaytestRequest>().take() {
-            return;
-        }
-        state.editor_playtest();
-    }
-
-    /// Consume remaining App-world navigation requests and apply the
-    /// existing legacy compatibility methods.
-    ///
-    /// Editor `TurnRight` placement and game-over return-to-menu mutate
-    /// App-world resources directly; this sync only covers `TurnRight`
-    /// and `ToggleEditor` fallbacks whose side effects still live on `State`.
-    fn sync_app_navigation_requests(state: &mut State, world: &mut World) {
-        if world.resource_mut::<TurnRightRequest>().take() {
-            state.turn_right();
-        }
-        if world.resource_mut::<ToggleEditorRequest>().take() {
-            state.toggle_editor();
-        }
-    }
-
     /// Queue platform input in the App world for scheduled processing.
     pub fn process_input_event(&mut self, event: eg_state::commands::InputEvent) {
         enqueue_platform_input(self.app.world_mut(), event);
@@ -1075,9 +1021,8 @@ mod tests {
         AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
         AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
         EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
-        EditorTriggerRes, EscapeRequest, FrameTimeRes, GameplayResetRes, MenuStateRes,
-        PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
-        TurnRightRequest, UiStateRes,
+        EditorTriggerRes, FrameTimeRes, GameplayResetRes, MenuStateRes, PerfFrameCopyRequest,
+        PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes, UiStateRes,
     };
     use eg_ui::EguiContextRes;
 
@@ -1578,16 +1523,142 @@ mod tests {
             !runtime
                 .app
                 .world()
-                .resource::<ToggleEditorRequest>()
-                .pending
+                .resource::<SessionStateRes>()
+                .audio_stop_pending
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_toggle_editor_from_menu_enters_app_owned_editor() {
+        use eg_state::events::navigation::ToggleEditor;
+
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(ToggleEditor);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Editor
+        );
+        assert!(runtime.state.is_editor());
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .editor_level_name
+                .is_some(),
+            "menu ToggleEditor must load the selected level into App editor resources"
+        );
+        assert_eq!(
+            runtime.app.world().resource::<EditorInputRes>().0.mode,
+            eg_types::EditorMode::Null
         );
         assert!(
             !runtime
                 .app
                 .world()
-                .resource::<SessionStateRes>()
-                .audio_stop_pending
+                .resource::<EditorTimelineRes>()
+                .0
+                .playback
+                .playing
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_from_menu_starts_app_owned_gameplay() {
+        let state = State::new_test().await;
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(GameTurnRight);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Playing
+        );
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playing_level_name
+                .is_some(),
+            "menu TurnRight must start the selected level in App-owned session state"
+        );
+        assert!(
+            !runtime.app.world().resource::<GameplayResetRes>().pending,
+            "menu TurnRight reset must be consumed during the same App frame"
+        );
+        assert_eq!(runtime.state.app_phase_value(), eg_types::AppPhase::Playing);
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_starts_unstarted_app_gameplay_without_request() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .playing_level_name = Some("RuntimeTurnRight".to_string());
+        runtime.app.world_mut().write_message(GameTurnRight);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(runtime.app.world().resource::<eg_game::GameClock>().started);
+    }
+
+    #[tokio::test]
+    async fn runtime_playtest_enters_app_owned_gameplay_world() {
+        use eg_state::events::timeline::Playtest;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("RuntimePlaytest");
+        state.set_editor_timeline_duration_seconds(5.0);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Playtest);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Playing
+        );
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playtesting_editor,
+            "Playtest must mark the App session as editor playtesting"
+        );
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<eg_game::LevelMeta>()
+                .level_duration_seconds,
+            5.0
+        );
+        assert!(
+            !runtime.app.world().resource::<GameplayResetRes>().pending,
+            "Playtest reset must be consumed during the same App frame"
+        );
+        let player_exists = {
+            let mut query = runtime.app.world_mut().query::<&eg_game::PlayerPosition>();
+            query.iter(runtime.app.world()).next().is_some()
+        };
+        assert!(
+            player_exists,
+            "Playtest must seed an App-world player entity"
+        );
+        assert!(runtime.state.session_state_resource().playtesting_editor);
     }
 
     /// Real gameplay restart is applied by the App-world gameplay reset
@@ -1741,6 +1812,179 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn runtime_completed_real_gameplay_returns_to_app_menu() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            world.resource_mut::<SessionStateRes>().playing_level_name =
+                Some("RuntimeComplete".to_string());
+            let mut clock = world.resource_mut::<eg_game::GameClock>();
+            clock.started = true;
+            clock.level_complete = true;
+            clock.completion_hold_seconds = 0.0;
+        }
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
+        );
+        assert!(runtime.state.is_menu());
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playing_level_name
+                .is_none()
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .level_complete
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_game_over_side_effects_are_app_owned() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            let mut clock = world.resource_mut::<eg_game::GameClock>();
+            clock.started = true;
+            clock.game_over = true;
+            world
+                .resource_mut::<eg_game::PendingTurnInputs>()
+                .taps
+                .push_back(eg_game::TimedTurnInput {
+                    at_seconds: 1.0,
+                    kind: eg_game::TurnInputKind::TurnRight,
+                });
+            world.resource_mut::<eg_game::DeathSfxFlag>().0 = true;
+        }
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let world = runtime.app.world();
+        assert_eq!(
+            world.resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Playing
+        );
+        assert!(world.resource::<eg_game::GameClock>().game_over);
+        assert!(
+            world
+                .resource::<eg_game::PendingTurnInputs>()
+                .taps
+                .is_empty()
+        );
+        assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
+    }
+
+    #[tokio::test]
+    async fn runtime_game_over_practice_respawn_is_app_owned() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        let checkpoint =
+            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
+                position: [2.0, 0.0, 3.0],
+                direction: eg_types::Direction::Right,
+                elapsed_seconds: 3.5,
+                speed: 2.0,
+                objects: Vec::new(),
+                vertical_velocity: 0.25,
+                is_grounded: false,
+                progress: eg_types::PlayerLevelProgress {
+                    progress_percent: 42.0,
+                    completed: false,
+                    gems_collected: 2,
+                    gems_max: 5,
+                },
+            });
+        {
+            let world = runtime.app.world_mut();
+            let mut clock = world.resource_mut::<eg_game::GameClock>();
+            clock.started = true;
+            clock.game_over = true;
+            world
+                .resource_mut::<SessionStateRes>()
+                .practice_mode_enabled = true;
+            world
+                .resource_mut::<SessionStateRes>()
+                .practice_checkpoints
+                .push(eg_state::state::PracticeCheckpoint {
+                    gameplay: checkpoint,
+                    trigger_base_objects: None,
+                });
+            world.resource_mut::<eg_game::DeathSfxFlag>().0 = true;
+        }
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let world = runtime.app.world();
+        assert!(!world.resource::<eg_game::GameClock>().game_over);
+        assert_eq!(world.resource::<eg_game::GameClock>().elapsed_seconds, 3.5);
+        assert!(world.resource::<SessionStateRes>().practice_mode_enabled);
+        assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
+    }
+
+    #[tokio::test]
+    async fn runtime_completed_playtest_returns_to_app_editor() {
+        use eg_state::events::timeline::Playtest;
+
+        let mut state = State::new_test().await;
+        state.enter_editor_phase_for_test("RuntimePlaytestComplete");
+        state.set_editor_timeline_duration_seconds(5.0);
+        let mut runtime = Runtime::new(state);
+
+        runtime.app.world_mut().write_message(Playtest);
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        {
+            let world = runtime.app.world_mut();
+            let mut clock = world.resource_mut::<eg_game::GameClock>();
+            clock.level_complete = true;
+            clock.completion_hold_seconds = 0.0;
+        }
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert_eq!(
+            runtime.app.world().resource::<AppPhaseRes>().current,
+            eg_types::AppPhase::Editor
+        );
+        assert!(runtime.state.is_editor());
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .playtesting_editor
+        );
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .level_complete
+        );
+    }
+
+    #[tokio::test]
     async fn runtime_active_turn_right_is_consumed_by_app_gameplay() {
         let state = State::new_test().await;
         let mut runtime = Runtime::new(state);
@@ -1778,7 +2022,6 @@ mod tests {
                 .0
         };
         assert_eq!(direction, eg_types::Direction::Right);
-        assert!(!runtime.app.world().resource::<TurnRightRequest>().pending);
     }
 
     // --- Phase 7 carve-out sync tests (snap domain) ---
@@ -5204,10 +5447,6 @@ mod tests {
             !objects.object_mutation_pending,
             "Runtime object sync must consume the App-world object mutation flag"
         );
-        assert!(
-            !runtime.app.world().resource::<TurnRightRequest>().pending,
-            "Editor TurnRight must not leave a Runtime request to consume"
-        );
         assert_eq!(runtime.state.editor_objects().len(), 1);
         assert_eq!(
             runtime.state.editor_mode(),
@@ -5237,9 +5476,129 @@ mod tests {
             runtime.state.is_menu(),
             "sync_app_phase_state must mirror the direct game-over phase carve-out"
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_in_non_practice_game_over_resets_app_gameplay() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            world.resource_mut::<eg_game::GameClock>().started = true;
+            world.resource_mut::<eg_game::GameClock>().game_over = true;
+            world.write_message(GameTurnRight);
+        }
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
         assert!(
-            !runtime.app.world().resource::<TurnRightRequest>().pending,
-            "GameOver TurnRight must not leave a Runtime request to consume"
+            !runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .game_over
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_respawns_from_app_practice_checkpoint() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        let checkpoint =
+            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
+                position: [2.0, 0.0, 3.0],
+                direction: eg_types::Direction::Right,
+                elapsed_seconds: 3.5,
+                speed: 2.0,
+                objects: Vec::new(),
+                vertical_velocity: 0.25,
+                is_grounded: false,
+                progress: eg_types::PlayerLevelProgress {
+                    progress_percent: 42.0,
+                    completed: false,
+                    gems_collected: 2,
+                    gems_max: 5,
+                },
+            });
+        {
+            let world = runtime.app.world_mut();
+            world.resource_mut::<eg_game::GameClock>().started = true;
+            world.resource_mut::<eg_game::GameClock>().game_over = true;
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.practice_mode_enabled = true;
+            session
+                .practice_checkpoints
+                .push(eg_state::state::PracticeCheckpoint {
+                    gameplay: checkpoint,
+                    trigger_base_objects: None,
+                });
+            world.write_message(GameTurnRight);
+        }
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .game_over
+        );
+        assert_eq!(
+            runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .elapsed_seconds,
+            3.5
+        );
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_turn_right_restarts_practice_without_checkpoint_in_app_world() {
+        let mut state = State::new_test().await;
+        state.set_phase_for_test(eg_types::AppPhase::Playing);
+        state.set_playtesting_editor_for_test(false);
+        state.set_game_paused_for_test(false);
+        let mut runtime = Runtime::new(state);
+
+        {
+            let world = runtime.app.world_mut();
+            world.resource_mut::<eg_game::GameClock>().started = true;
+            world.resource_mut::<eg_game::GameClock>().game_over = true;
+            world
+                .resource_mut::<SessionStateRes>()
+                .practice_mode_enabled = true;
+            world.write_message(GameTurnRight);
+        }
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        assert!(
+            !runtime
+                .app
+                .world()
+                .resource::<eg_game::GameClock>()
+                .game_over
+        );
+        assert!(
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled
         );
     }
 
@@ -5273,10 +5632,6 @@ mod tests {
         assert!(
             runtime.state.game_paused_value(),
             "paused gameplay TurnRight must preserve the legacy pause state"
-        );
-        assert!(
-            !runtime.app.world().resource::<TurnRightRequest>().pending,
-            "paused gameplay TurnRight must not leave a Runtime request to consume"
         );
     }
 
@@ -5530,12 +5885,10 @@ mod tests {
         );
     }
 
-    /// `Escape` is still request-backed when no direct App-world branch can
-    /// handle it: the handler writes `EscapeRequest.pending = true`, the
-    /// runtime sync consumes the request and calls the legacy
-    /// `State::apply_editor_escape` compatibility method.
+    /// `Escape` in the menu is an App-owned no-op and does not use a legacy
+    /// Runtime request consumer.
     #[tokio::test]
-    async fn runtime_carve_out_escape_consumes_request_without_legacy_command_bridge() {
+    async fn runtime_escape_in_menu_is_app_owned_noop() {
         use eg_state::events::misc::Escape;
 
         let state = State::new_test().await;
@@ -5544,11 +5897,7 @@ mod tests {
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let request = runtime.app.world().resource::<EscapeRequest>();
-        assert!(
-            !request.pending,
-            "runtime must consume EscapeRequest after applying it"
-        );
+        assert!(runtime.state.is_menu());
     }
 
     #[tokio::test]
@@ -5576,11 +5925,6 @@ mod tests {
             runtime.state.game_paused_value(),
             "sync_app_session_state must apply the legacy pause side effects"
         );
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "real-gameplay pause Escape must not leave a Runtime request"
-        );
-
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -5595,10 +5939,6 @@ mod tests {
         assert!(
             !runtime.state.game_paused_value(),
             "sync_app_session_state must apply the legacy resume side effects"
-        );
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "real-gameplay resume Escape must not leave a Runtime request"
         );
     }
 
@@ -5640,10 +5980,6 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .playtesting_editor
         );
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "playtest Escape must not leave a Runtime request"
-        );
     }
 
     #[tokio::test]
@@ -5670,10 +6006,6 @@ mod tests {
                 .resource::<EditorObjectsRes>()
                 .object_mutation_pending,
             "Runtime object sync must consume Escape selection mutation"
-        );
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "selection-clearing Escape must not leave a Runtime request"
         );
         assert!(
             runtime.state.editor_selected_block().is_none(),
@@ -5705,10 +6037,6 @@ mod tests {
             eg_types::EditorMode::Timing
         );
         assert_eq!(runtime.state.editor_mode(), eg_types::EditorMode::Timing);
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "playback-stop Escape must not leave a Runtime request"
-        );
     }
 
     #[tokio::test]
@@ -5740,10 +6068,6 @@ mod tests {
             0.0,
             epsilon = 1e-6
         );
-        assert!(
-            !runtime.app.world().resource::<EscapeRequest>().pending,
-            "timeline-reset Escape must not leave a Runtime request"
-        );
     }
 
     #[tokio::test]
@@ -5763,7 +6087,6 @@ mod tests {
             eg_types::AppPhase::Menu
         );
         assert!(runtime.state.is_menu());
-        assert!(!runtime.app.world().resource::<EscapeRequest>().pending);
         assert!(
             !runtime
                 .app
@@ -5779,14 +6102,7 @@ mod tests {
     async fn runtime_carve_out_escape_no_message_frame_is_noop() {
         let state = State::new_test().await;
         let mut runtime = Runtime::new(state);
-        // No message; pre-condition: request is not pending.
-        assert!(!runtime.app.world().resource::<EscapeRequest>().pending);
         let _ = runtime.run_app_frame(egui::RawInput::default());
-        let request = runtime.app.world().resource::<EscapeRequest>();
-        assert!(
-            !request.pending,
-            "no-message frame must not request an App-world escape"
-        );
     }
 
     // --- Phase 3.13 / Editor-mode carve-out test ---

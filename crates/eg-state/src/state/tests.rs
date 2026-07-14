@@ -9,7 +9,7 @@ use super::EditorDirtyFlags;
 use super::State;
 use crate::state::{
     AppPhaseRes, EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes,
-    SessionStateRes, TurnRightRequest,
+    SessionStateRes,
 };
 use eg_audio::audio::runtime_asset_source_key;
 use eg_editor_domain::{derive_tap_indicator_positions, derive_timeline_position};
@@ -366,8 +366,7 @@ fn tick_state_runs_phase_transition_system() {
 // ── Phase 3 — command / event fragmentation tests ───────────────
 #[test]
 fn test_app_tick_state_writes_command_messages_to_app_resources() {
-    // Runtime owns request consumption during the compatibility window;
-    // the schedule only writes App-world resources.
+    // TurnRight and SetEditorMode are handled through App-world resources.
     use crate::events::editor_mode::SetEditorMode;
     use crate::events::navigation::TurnRight;
     use eg_types::EditorMode;
@@ -384,13 +383,9 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
     app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
-    // Tick: per-event systems fire and write App-world resources/requests.
+    // Tick: per-event systems fire and mutate App-world resources.
     app.tick_state();
 
-    assert!(
-        app.world().resource::<TurnRightRequest>().pending,
-        "Menu TurnRight handler must write TurnRightRequest"
-    );
     assert_eq!(
         app.world().resource::<EditorInputRes>().0.mode,
         EditorMode::Place,
@@ -399,7 +394,7 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
     assert_eq!(
         app.world().resource::<AppPhaseRes>().get(),
         AppPhase::Menu,
-        "Menu TurnRight request write must not start gameplay in the schedule"
+        "The minimal menu test world has no selected level to start"
     );
 }
 

@@ -882,12 +882,10 @@ mod tests {
         world.init_resource::<crate::state::AppPhaseRes>();
         world.init_resource::<crate::state::RenderUniformsRes>();
         world.init_resource::<crate::state::RenderResizeRequest>();
-        world.init_resource::<crate::state::EscapeRequest>();
         world.init_resource::<crate::state::AuthSubmitSignInRequest>();
         world.init_resource::<crate::state::AuthSignOutRequest>();
         world.init_resource::<crate::state::AuthOpenSignupRequest>();
         world.init_resource::<crate::state::GameplayResetRes>();
-        world.init_resource::<crate::state::PlaytestRequest>();
         world.init_resource::<crate::state::BuiltinLevelCatalogRes>();
         world.init_resource::<crate::state::LevelExportServiceRes>();
         world.init_resource::<crate::state::LevelImportSenderRes>();
@@ -895,9 +893,8 @@ mod tests {
         world.init_resource::<crate::state::AudioBackendRes>();
         world.init_resource::<crate::state::EditorAudioCacheRes>();
         world.init_resource::<crate::state::RuntimeAudioPreloadRes>();
+        world.init_resource::<crate::state::RuntimeAudioPreloadSenderRes>();
         world.init_resource::<crate::state::WaveformLoadSenderRes>();
-        world.init_resource::<crate::state::TurnRightRequest>();
-        world.init_resource::<crate::state::ToggleEditorRequest>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -915,18 +912,47 @@ mod tests {
         add_command_systems(&mut schedule);
         schedule.add_systems(
             crate::state::gameplay_world::apply_pending_gameplay_reset_system
-                .after(crate::events::navigation::handle_game_restart_level),
+                .after(crate::events::navigation::handle_turn_right)
+                .after(crate::events::navigation::handle_game_restart_level)
+                .after(crate::events::timeline::handle_playtest),
         );
         world.add_schedule(schedule);
         world
     }
 
     #[test]
-    fn carve_out_turn_right_outside_editor_writes_request_resource() {
+    fn turn_right_from_menu_starts_app_owned_gameplay() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Playing
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .playing_level_name
+                .as_deref(),
+            Some("NavigationLevelA")
+        );
+        assert!(!world.resource::<crate::state::GameplayResetRes>().pending);
+    }
+
+    #[test]
+    fn turn_right_starts_unstarted_app_gameplay_without_request() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .playing_level_name = Some("NavigationLevelA".to_string());
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(world.resource::<eg_game::GameClock>().started);
     }
 
     #[test]
@@ -943,10 +969,6 @@ mod tests {
             world.resource::<crate::state::AppPhaseRes>().current,
             AppPhase::Menu,
             "GameOver TurnRight must return to menu through AppPhaseRes"
-        );
-        assert!(
-            !world.resource::<crate::state::TurnRightRequest>().pending,
-            "GameOver TurnRight must not request the legacy navigation fallback"
         );
     }
 
@@ -974,9 +996,102 @@ mod tests {
                 .game_paused,
             "paused gameplay TurnRight must preserve the App-world pause flag"
         );
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_non_practice_game_over_requests_app_reset() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.resource_mut::<eg_game::GameClock>().game_over = true;
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(!world.resource::<crate::state::GameplayResetRes>().pending);
+        assert!(!world.resource::<eg_game::GameClock>().game_over);
+    }
+
+    #[test]
+    fn turn_right_respawns_from_app_practice_checkpoint_without_request() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.resource_mut::<eg_game::GameClock>().game_over = true;
+        let checkpoint =
+            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
+                position: [2.0, 0.0, 3.0],
+                direction: eg_types::Direction::Right,
+                elapsed_seconds: 3.5,
+                speed: 2.0,
+                objects: Vec::new(),
+                vertical_velocity: 0.25,
+                is_grounded: false,
+                progress: eg_types::PlayerLevelProgress {
+                    progress_percent: 42.0,
+                    completed: false,
+                    gems_collected: 2,
+                    gems_max: 5,
+                },
+            });
+        let mut session = world.resource_mut::<crate::state::SessionStateRes>();
+        session.practice_mode_enabled = true;
+        session
+            .practice_checkpoints
+            .push(crate::state::PracticeCheckpoint {
+                gameplay: checkpoint,
+                trigger_base_objects: None,
+            });
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(!world.resource::<eg_game::GameClock>().game_over);
+        assert_eq!(world.resource::<eg_game::GameClock>().elapsed_seconds, 3.5);
         assert!(
-            !world.resource::<crate::state::TurnRightRequest>().pending,
-            "paused gameplay TurnRight must not request the legacy navigation fallback"
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_mode_enabled
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_checkpoints
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn turn_right_restarts_practice_without_checkpoint_in_app_world() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.resource_mut::<eg_game::GameClock>().game_over = true;
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .practice_mode_enabled = true;
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert!(!world.resource::<eg_game::GameClock>().game_over);
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_mode_enabled
+        );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .practice_checkpoints
+                .is_empty()
         );
     }
 
@@ -1008,7 +1123,33 @@ mod tests {
         let pending = world.resource::<eg_game::PendingTurnInputs>();
         assert_eq!(pending.taps.len(), 1);
         assert_eq!(pending.taps[0].at_seconds, 1.25);
-        assert!(!world.resource::<crate::state::TurnRightRequest>().pending);
+    }
+
+    #[test]
+    fn carve_out_turn_right_in_airborne_gameplay_queues_app_turn() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Playing);
+        world.resource_mut::<eg_game::GameClock>().started = true;
+        world.spawn(eg_game::PlayerBundle {
+            player: eg_game::Player,
+            position: eg_game::PlayerPosition([0.0, 0.0, 0.0]),
+            direction: eg_game::PlayerDirection(eg_types::Direction::Forward),
+            speed: eg_game::PlayerSpeed(1.0),
+            vertical_velocity: eg_game::VerticalVelocity(1.0),
+            grounded: eg_game::Grounded(false),
+            trail: eg_game::Trail {
+                segments: vec![vec![[0.0, 0.0, 0.0]]],
+            },
+            spawn_position: eg_game::SpawnPosition([0.0, 0.0, 0.0]),
+            spawn_direction: eg_game::SpawnDirection(eg_types::Direction::Forward),
+        });
+
+        world.write_message(TurnRight);
+        world.run_schedule(crate::state::StateSchedule);
+
+        assert_eq!(world.resource::<eg_game::PendingTurnInputs>().taps.len(), 1);
     }
 
     #[test]
@@ -1032,10 +1173,6 @@ mod tests {
             objects.object_mutation_pending,
             "Editor TurnRight must mark object sync pending"
         );
-        assert!(
-            !world.resource::<crate::state::TurnRightRequest>().pending,
-            "Editor TurnRight must not fall back to the Runtime request"
-        );
         let input = &world.resource::<crate::state::EditorInputRes>().0;
         assert_eq!(input.selected_block_index, Some(0));
         assert_eq!(input.selected_block_indices, vec![0]);
@@ -1051,14 +1188,24 @@ mod tests {
     }
 
     #[test]
-    fn carve_out_toggle_editor_writes_request_resource() {
+    fn toggle_editor_from_menu_enters_app_owned_editor() {
         let mut world = build_event_world();
         world.write_message(navigation::ToggleEditor);
         world.run_schedule(crate::state::StateSchedule);
-        assert!(
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Editor
+        );
+        assert_eq!(
             world
-                .resource::<crate::state::ToggleEditorRequest>()
-                .pending
+                .resource::<crate::state::SessionStateRes>()
+                .editor_level_name
+                .as_deref(),
+            Some("NavigationLevelA")
+        );
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.mode,
+            EditorMode::Null
         );
     }
 
@@ -1079,11 +1226,6 @@ mod tests {
             world
                 .resource::<crate::state::SessionStateRes>()
                 .audio_stop_pending
-        );
-        assert!(
-            !world
-                .resource::<crate::state::ToggleEditorRequest>()
-                .pending
         );
     }
 
@@ -1108,11 +1250,6 @@ mod tests {
         assert!(!session.playtesting_editor);
         assert!(!session.game_paused);
         assert!(session.audio_stop_pending);
-        assert!(
-            !world
-                .resource::<crate::state::ToggleEditorRequest>()
-                .pending
-        );
     }
 
     #[test]
@@ -2045,13 +2182,16 @@ mod tests {
     }
 
     #[test]
-    fn multiple_turn_right_messages_coalesce_into_request() {
+    fn multiple_turn_right_messages_are_handled_without_legacy_request() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Playing
+        );
     }
 
     #[test]
@@ -2061,14 +2201,13 @@ mod tests {
     }
 
     #[test]
-    fn mixed_message_types_write_request_and_direct_resource() {
-        // Menu `TurnRight` writes a request resource; `SetSnapToGrid` writes
-        // to `EditorConfigRes` directly. Neither stages a legacy command.
+    fn mixed_message_types_write_direct_resources() {
+        // Menu `TurnRight` and `SetSnapToGrid` both resolve in App-world
+        // handlers without staging a legacy command.
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
         world.run_schedule(crate::state::StateSchedule);
-        assert!(world.resource::<crate::state::TurnRightRequest>().pending);
         assert!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3321,18 +3460,18 @@ mod tests {
         );
     }
 
-    /// `Escape` still writes a request when no direct App-world branch can
-    /// handle it. Pin the request is set and no legacy command is staged.
+    /// `Escape` in the menu is an App-owned no-op and does not stage a
+    /// legacy command or request.
     #[test]
-    fn carve_out_escape_without_editor_selection_writes_request() {
+    fn escape_in_menu_is_app_owned_noop() {
         let mut world = build_event_world();
 
         world.write_message(Escape);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert!(
-            world.resource::<crate::state::EscapeRequest>().pending,
-            "Escape handler must request an App-world escape"
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            eg_types::AppPhase::Menu
         );
     }
 
@@ -3357,11 +3496,6 @@ mod tests {
                 .game_paused,
             "real-gameplay Escape must pause through SessionStateRes"
         );
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "real-gameplay pause Escape must not request the legacy state machine"
-        );
-
         world.write_message(Escape);
         world.run_schedule(crate::state::StateSchedule);
 
@@ -3370,10 +3504,6 @@ mod tests {
                 .resource::<crate::state::SessionStateRes>()
                 .game_paused,
             "real-gameplay Escape must toggle pause back off"
-        );
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "real-gameplay resume Escape must not request the legacy state machine"
         );
     }
 
@@ -3412,7 +3542,6 @@ mod tests {
                 .resource::<crate::state::SessionStateRes>()
                 .audio_stop_pending
         );
-        assert!(!world.resource::<crate::state::EscapeRequest>().pending);
     }
 
     /// In editor, Escape first clears block/tap selection directly in
@@ -3457,10 +3586,6 @@ mod tests {
                 .resource::<crate::state::EditorObjectsRes>()
                 .object_mutation_pending,
             "Escape block-selection clearing must mark selection sync pending"
-        );
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "selection-clearing Escape must not request the legacy state machine"
         );
     }
 
@@ -3507,10 +3632,6 @@ mod tests {
                 .last_mode,
             None
         );
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "playback-stop Escape must not request the legacy state machine"
-        );
     }
 
     #[test]
@@ -3537,10 +3658,6 @@ mod tests {
             0.0,
             epsilon = 1e-6
         );
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "timeline-reset Escape must not request the legacy state machine"
-        );
     }
 
     /// Editor Escape at the timeline origin transitions directly to the
@@ -3562,32 +3679,6 @@ mod tests {
             world
                 .resource::<crate::state::SessionStateRes>()
                 .audio_stop_pending
-        );
-        assert!(!world.resource::<crate::state::EscapeRequest>().pending);
-    }
-
-    /// `Escape` is consumed by the runtime sync. After the first
-    /// frame the request is consumed and a second no-message frame
-    /// stays a no-op (pin the change guard: stale requests don't
-    /// accumulate across frames).
-    #[test]
-    fn carve_out_escape_request_is_consumed_after_first_frame() {
-        let mut world = build_event_world();
-
-        world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
-        // Simulate the runtime sync consuming the request, mirroring
-        // `Runtime::sync_app_escape_request`.
-        world.resource_mut::<crate::state::EscapeRequest>().take();
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "request must be consumed after the runtime sync"
-        );
-        // A second no-message frame must not re-fire the request.
-        world.run_schedule(crate::state::StateSchedule);
-        assert!(
-            !world.resource::<crate::state::EscapeRequest>().pending,
-            "no-message frame must not re-request escape"
         );
     }
 
@@ -3852,19 +3943,44 @@ mod tests {
         );
     }
 
-    /// `Playtest` is a request-resource carve-out: the schedule records
-    /// the playtest intent in `PlaytestRequest` while Runtime keeps the
-    /// legacy phase/gameplay/audio transition as the side-effect owner.
+    /// `Playtest` builds the App-world transition and applies the seeded
+    /// gameplay reset without staging a Runtime request.
     #[test]
-    fn carve_out_playtest_writes_request_resource() {
+    fn playtest_enters_app_owned_gameplay_world() {
         use crate::events::timeline::Playtest;
 
         let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_level_name = Some("AppPlaytest".to_string());
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
 
         world.write_message(Playtest);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert!(world.resource::<crate::state::PlaytestRequest>().pending);
+        assert_eq!(
+            world.resource::<crate::state::AppPhaseRes>().current,
+            AppPhase::Playing
+        );
+        let session = world.resource::<crate::state::SessionStateRes>();
+        assert!(session.playtesting_editor);
+        assert!(session.audio_stop_pending);
+        assert!(!world.resource::<crate::state::GameplayResetRes>().pending);
+        assert!(
+            world
+                .resource::<eg_game::LevelMeta>()
+                .level_duration_seconds
+                > 0.0
+        );
+        let mut query = world.query::<&eg_game::PlayerPosition>();
+        assert!(query.iter(&world).next().is_some());
     }
 
     /// Built-in loading mutates App resources directly. Remaining export/audio

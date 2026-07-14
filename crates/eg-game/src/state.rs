@@ -51,6 +51,12 @@ pub struct GameCheckpointState {
     progress: PlayerLevelProgress,
 }
 
+impl GameCheckpointState {
+    pub fn progress(&self) -> PlayerLevelProgress {
+        self.progress
+    }
+}
+
 /// Values captured from an authoritative App-world gameplay state when a
 /// practice checkpoint is created.
 pub struct GameCheckpointParts {

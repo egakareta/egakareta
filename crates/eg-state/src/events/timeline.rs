@@ -29,18 +29,21 @@
 //! - `SetPlaybackSpeed`, `SetWaveformZoom`, and `SetWaveformScroll`
 //!   write `EditorTimingRes.0.{playback_speed,waveform_zoom,waveform_scroll}`
 //!
-//! `Playtest` writes a request resource that Runtime consumes through the
-//! legacy playtest transition while phase/gameplay/audio startup remain
-//! legacy-owned.
+//! `Playtest` records an App-world gameplay transition seed; the exclusive
+//! gameplay reset system applies the world replacement atomically.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use eg_editor_domain::{add_tap_with_indicator, remove_tap_with_indicator};
+use eg_editor_domain::{
+    EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
+    remove_tap_with_indicator,
+};
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
-    PlaytestRequest,
+    AppPhaseRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
+    SessionStateRes,
 };
 
 /// Toggle timeline playback.
@@ -356,8 +359,61 @@ pub fn handle_set_waveform_scroll(
     }
 }
 
-pub fn handle_playtest(mut events: MessageReader<Playtest>, mut request: ResMut<PlaytestRequest>) {
+pub fn handle_playtest(
+    mut events: MessageReader<Playtest>,
+    mut phase: ResMut<AppPhaseRes>,
+    objects: Res<EditorObjectsRes>,
+    spawn: Res<EditorSpawnRes>,
+    mut timeline: ResMut<EditorTimelineRes>,
+    mut session: ResMut<SessionStateRes>,
+    mut camera: ResMut<EditorCameraRes>,
+    mut input: ResMut<EditorInputRes>,
+    mut gameplay_reset: ResMut<GameplayResetRes>,
+) {
     for _ in events.read() {
-        request.request();
+        if phase.current != AppPhase::Editor {
+            continue;
+        }
+
+        let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
+            objects: &objects.objects,
+            level_name: session.editor_level_name.as_deref(),
+            spawn: spawn.0.clone(),
+            sky_color: session.editor_sky_color,
+            tap_times: &timeline.0.taps.tap_times,
+            timeline_seconds: (
+                timeline.0.clock.time_seconds,
+                timeline.0.clock.duration_seconds,
+            ),
+        });
+
+        timeline.0.playback.playing = false;
+        timeline.0.playback.runtime = None;
+        phase.set(AppPhase::Playing);
+        session.game_paused = false;
+        session.playtesting_editor = true;
+        session.playing_level_name = transition.playing_level_name.clone();
+        session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
+        session.playing_sky_color = transition.sky_color;
+        session.playing_trigger_base_objects = Some(transition.objects.clone());
+        session.practice_mode_enabled = false;
+        session.practice_checkpoints.clear();
+        session.practice_checkpoints_dirty = true;
+        session.audio_stop_pending = true;
+        camera.0.playing_rotation = transition.camera_rotation;
+        camera.0.playing_pitch = transition.camera_pitch;
+        input.0.right_dragging = false;
+        gameplay_reset.request_with_seed(GameplayResetSeed {
+            objects: transition.objects,
+            position: transition.spawn_position,
+            direction: transition.spawn_direction,
+            speed: transition.spawn_speed,
+            vertical_velocity: transition.spawn_vertical_velocity,
+            is_grounded: transition.spawn_is_grounded,
+            elapsed_seconds: transition.playtest_audio_start_seconds,
+            level_duration_seconds: transition.level_duration_seconds,
+            progress: None,
+            preserve_practice_state: false,
+        });
     }
 }

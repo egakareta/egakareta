@@ -183,6 +183,16 @@ impl RuntimeAudioPreloadRes {
     }
 }
 
+#[derive(Resource, Clone)]
+pub struct RuntimeAudioPreloadSenderRes(pub Sender<AudioPreloadResult>);
+
+impl Default for RuntimeAudioPreloadSenderRes {
+    fn default() -> Self {
+        let (sender, _receiver) = std::sync::mpsc::channel();
+        Self(sender)
+    }
+}
+
 pub struct RuntimeAudioPreloadState {
     pub cache: RuntimeAudioPreloadRes,
     pub preload_channel: (Sender<AudioPreloadResult>, AudioPreloadChannelReceiver),

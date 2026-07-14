@@ -24,8 +24,8 @@
 use bevy_ecs::prelude::*;
 use eg_platform::services::AuthServiceMessage;
 use eg_types::{
-    AppPhase, AppSettings, AuthSession, BasicLevelMetadata, LevelObject,
-    LevelPreviewCameraMetadata, MenuState,
+    AppPhase, AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
+    LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress,
 };
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -231,18 +231,40 @@ impl SessionStateRes {
     }
 }
 
-/// App-world marker for a real gameplay restart. The navigation message
-/// records intent here and the gameplay-world system applies the entity and
-/// resource reset before the next gameplay tick; it is not a Runtime/State
-/// request bridge.
+/// App-world seed for a gameplay transition that must replace the active
+/// player/object world atomically before the next gameplay tick.
+#[derive(Clone)]
+pub struct GameplayResetSeed {
+    pub objects: Vec<LevelObject>,
+    pub position: [f32; 3],
+    pub direction: Direction,
+    pub speed: f32,
+    pub vertical_velocity: f32,
+    pub is_grounded: bool,
+    pub elapsed_seconds: f32,
+    pub level_duration_seconds: f32,
+    pub progress: Option<PlayerLevelProgress>,
+    pub preserve_practice_state: bool,
+}
+
+/// App-world marker for a gameplay world replacement. The navigation and
+/// timeline handlers record intent here and the exclusive gameplay-world
+/// system applies the entity/resource reset before the next gameplay tick.
 #[derive(Resource, Default)]
 pub struct GameplayResetRes {
     pub pending: bool,
+    pub seed: Option<GameplayResetSeed>,
 }
 
 impl GameplayResetRes {
     pub fn request(&mut self) {
         self.pending = true;
+        self.seed = None;
+    }
+
+    pub fn request_with_seed(&mut self, seed: GameplayResetSeed) {
+        self.pending = true;
+        self.seed = Some(seed);
     }
 
     pub fn take(&mut self) -> bool {
@@ -360,32 +382,6 @@ impl PerfFrameCopyRequest {
     }
 }
 
-/// App-world request to run the remaining legacy `Escape` state machine.
-///
-/// The Escape keypress is a multi-step context-sensitive state machine
-/// (toggle game pause → back to menu → clear selection → toggle timeline
-/// playback → reset timeline time → back to menu). The editor
-/// real-gameplay pause, editor selection-clearing, playback-stop, and
-/// timeline-reset branches are App-world direct; back-to-menu/phase
-/// fallback branches still route through this request resource so Runtime
-/// can call `State::apply_editor_escape` during the compatibility window.
-#[derive(Resource, Default)]
-pub struct EscapeRequest {
-    pub pending: bool,
-}
-
-impl EscapeRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
 /// App-world auth state and service sender. Auth request consumption, async
 /// result application, and UI reads all use this resource directly.
 #[derive(Resource, Clone)]
@@ -468,29 +464,6 @@ pub struct AuthOpenSignupRequest {
 }
 
 impl AuthOpenSignupRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
-/// App-world request to start editor playtest mode.
-///
-/// The playtest transition still builds gameplay state, primes audio,
-/// and changes phase through legacy `State::editor_playtest`, so the
-/// side effect stays legacy-owned while the App world owns the user
-/// intent.
-#[derive(Resource, Default)]
-pub struct PlaytestRequest {
-    pub pending: bool,
-}
-
-impl PlaytestRequest {
     pub fn request(&mut self) {
         self.pending = true;
     }
@@ -611,43 +584,5 @@ impl Default for AudioImportSenderRes {
     fn default() -> Self {
         let (sender, _receiver) = mpsc::channel();
         Self::new(sender)
-    }
-}
-
-/// App-world request for non-editor primary start/turn behavior.
-///
-/// Editor placement is handled directly through App-world editor resources.
-#[derive(Resource, Default)]
-pub struct TurnRightRequest {
-    pub pending: bool,
-}
-
-impl TurnRightRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
-    }
-}
-
-/// App-world request to toggle between menu/editor/playtest editor.
-#[derive(Resource, Default)]
-pub struct ToggleEditorRequest {
-    pub pending: bool,
-}
-
-impl ToggleEditorRequest {
-    pub fn request(&mut self) {
-        self.pending = true;
-    }
-
-    pub fn take(&mut self) -> bool {
-        let pending = self.pending;
-        self.pending = false;
-        pending
     }
 }

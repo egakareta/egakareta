@@ -17,10 +17,6 @@ use eg_mesh::{
 };
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
-const DEAD_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/dead.mp3"
-));
 const METRONOME_MAJOR_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/metronome_major.mp3"
@@ -35,15 +31,6 @@ fn is_play_world_render_object(object: &LevelObject) -> bool {
 }
 
 impl State {
-    fn play_death_sfx_once(&mut self) {
-        if self.gameplay.death_sfx_played {
-            return;
-        }
-
-        self.gameplay.death_sfx_played = true;
-        self.audio.state.runtime.play_sfx(DEAD_SFX);
-    }
-
     fn push_block_effect_events(&mut self, events: Vec<eg_game::ConsumedObjectEvent>) {
         self.frame_runtime
             .player_render
@@ -655,22 +642,6 @@ impl State {
             self.render_meshes_mut().blocks_chunked.clear();
         }
 
-        if self.gameplay.state.level_complete && self.gameplay.state.completion_hold_seconds <= 0.0
-        {
-            self.record_current_level_progress();
-            self.back_to_menu();
-            return;
-        }
-
-        if self.gameplay.state.game_over {
-            self.play_death_sfx_once();
-            if !self.respawn_from_practice_checkpoint() {
-                self.record_current_level_progress();
-                self.stop_audio();
-                self.clear_pending_gameplay_inputs();
-            }
-        }
-
         let mut trail_vertices = Vec::new();
         {
             puffin::profile_scope!("PlayingTrailBuild");
@@ -1137,55 +1108,6 @@ mod tests {
                 .pending_seek_time_seconds
                 .is_none()
         );
-    }
-
-    #[tokio::test]
-    async fn update_playing_phase_level_complete_returns_to_menu() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Playing;
-        state.gameplay.state.level_complete = true;
-        state.gameplay.state.completion_hold_seconds = 0.0;
-
-        state.update();
-
-        assert_eq!(state.phase, AppPhase::Menu);
-    }
-
-    #[tokio::test]
-    async fn update_playtest_level_complete_returns_to_editor_after_hold() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("PlaytestComplete".to_string());
-        state.editor.objects = vec![sample_object()];
-        state.editor_playtest();
-        state.gameplay.state.level_complete = true;
-        state.gameplay.state.completion_hold_seconds = 0.0;
-
-        state.update();
-
-        assert_eq!(state.phase, AppPhase::Editor);
-        assert!(!state.session.playtesting_editor);
-        assert_eq!(state.gameplay.state.objects, state.editor.objects);
-    }
-
-    #[tokio::test]
-    async fn update_playing_phase_game_over_keeps_phase_and_stops_audio_path() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Playing;
-        state.gameplay.state.started = true;
-        state.gameplay.state.game_over = true;
-        state.gameplay.state.objects = vec![sample_object()];
-        state.gameplay.state.rebuild_behavior_cache();
-
-        assert!(!state.gameplay.death_sfx_played);
-        state.update();
-
-        assert_eq!(state.phase, AppPhase::Playing);
-        assert!(state.gameplay.state.game_over);
-        assert!(state.gameplay.death_sfx_played);
-
-        state.update();
-
-        assert!(state.gameplay.death_sfx_played);
     }
 
     #[tokio::test]

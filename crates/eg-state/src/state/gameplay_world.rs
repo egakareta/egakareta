@@ -15,6 +15,7 @@
 
 use bevy_ecs::prelude::*;
 
+use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
     BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FixedStepConfig,
     FrameDelta, GameClock, LevelMeta, Object, ObjectBundle, ObjectData, ObjectId,
@@ -22,9 +23,18 @@ use eg_game::{
     PlayerSpeed, Position, Rotation, Size, SpatialIndex, SpawnDirection, SpawnPosition,
     TimedTurnInput, Trail, TurnInputKind, VerticalVelocity,
 };
-use eg_types::{Direction, LevelObject};
+use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
-use super::{AppPhaseRes, FrameTimeRes, GameplayResetRes, SessionStateRes, State};
+use super::{
+    AppPhaseRes, AudioBackendRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
+    FrameTimeRes, GameplayResetRes, GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes,
+    SessionStateRes, State,
+};
+
+const DEAD_SFX: &[u8] = include_bytes!(concat!(
+    env!("EGAKARETA_WORKSPACE_ROOT"),
+    "/assets/dead.mp3"
+));
 
 impl State {
     /// Seed the App-world gameplay entities/resources from the legacy state at
@@ -110,30 +120,79 @@ pub fn run_app_gameplay_schedule(world: &mut World) {
     world.run_schedule(eg_game::GameplaySchedule);
 }
 
-/// Apply a real-gameplay restart recorded by the navigation message handler.
-/// This exclusive system is the only place that needs to replace the object
-/// entity set, so the reset remains one atomic App-world operation.
-pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
-    if !world.resource_mut::<GameplayResetRes>().take() {
-        return;
-    }
+/// Apply the terminal gameplay transition after the App-owned simulation has
+/// completed its hold timer. This removes the phase/session decision from the
+/// compatibility `State::update` path while keeping the legacy renderer fed
+/// through the existing Runtime resource mirrors.
+pub fn apply_completed_gameplay_transition_system(world: &mut World) {
+    let (playtesting_editor, level_name, progress) = {
+        let phase = world.resource::<AppPhaseRes>();
+        let clock = world.resource::<GameClock>();
+        if phase.current != eg_types::AppPhase::Playing
+            || !clock.level_complete
+            || clock.completion_hold_seconds > 0.0
+        {
+            return;
+        }
 
-    let (objects, position, direction, duration) = {
-        let meta = world.resource::<LevelMeta>();
         (
-            meta.objects.clone(),
-            meta.spawn_position,
-            meta.spawn_direction,
-            meta.level_duration_seconds,
+            world.resource::<SessionStateRes>().playtesting_editor,
+            world
+                .resource::<SessionStateRes>()
+                .playing_level_name
+                .clone(),
+            world.resource::<PlayerProgress>().sanitized(),
         )
     };
-    {
+
+    if !playtesting_editor && level_name.is_some() {
+        persist_level_progress(world, progress);
+    }
+
+    let (objects, position, direction, duration) = if playtesting_editor {
+        let spawn = &world.resource::<EditorSpawnRes>().0;
+        (
+            world.resource::<EditorObjectsRes>().objects.clone(),
+            spawn.position,
+            spawn.direction,
+            world
+                .resource::<EditorTimelineRes>()
+                .0
+                .clock
+                .duration_seconds,
+        )
+    } else {
+        (
+            Vec::new(),
+            [0.0, 0.0, 0.0],
+            Direction::Forward,
+            f32::INFINITY,
+        )
+    };
+
+    if playtesting_editor {
+        world
+            .resource_mut::<AppPhaseRes>()
+            .set(eg_types::AppPhase::Editor);
         let mut session = world.resource_mut::<SessionStateRes>();
+        session.playtesting_editor = false;
         session.game_paused = false;
+        session.playtest_audio_start_seconds = None;
+        session.playing_trigger_base_objects = None;
         session.practice_mode_enabled = false;
         session.practice_checkpoints.clear();
         session.practice_checkpoints_dirty = true;
+        session.audio_stop_pending = true;
+    } else {
+        world
+            .resource_mut::<AppPhaseRes>()
+            .set(eg_types::AppPhase::Menu);
+        world.resource_mut::<SessionStateRes>().transition_to_menu();
     }
+    if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
+        menu.0.preview_level_index = None;
+    }
+
     replace_app_gameplay_world(
         world,
         GameplayWorldSeed {
@@ -151,6 +210,238 @@ pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
             level_complete: false,
             completion_hold_seconds: 0.0,
             progress: eg_types::PlayerLevelProgress::default(),
+            pending_turns: Vec::new(),
+            death_sfx_played: false,
+        },
+    );
+}
+
+/// Apply the non-practice GameOver side effects after gameplay has marked the
+/// App-owned clock. Practice respawn remains a compatibility path until its
+/// checkpoint presentation is also world-owned.
+pub fn apply_game_over_transition_system(world: &mut World) {
+    let (playtesting_editor, practice_mode_enabled, progress) = {
+        let phase = world.resource::<AppPhaseRes>();
+        let clock = world.resource::<GameClock>();
+        if phase.current != eg_types::AppPhase::Playing || !clock.game_over {
+            return;
+        }
+
+        (
+            world.resource::<SessionStateRes>().playtesting_editor,
+            world.resource::<SessionStateRes>().practice_mode_enabled,
+            world.resource::<PlayerProgress>().sanitized(),
+        )
+    };
+
+    let should_play_death_sfx = {
+        let mut death_sfx = world.resource_mut::<DeathSfxFlag>();
+        let pending = death_sfx.0;
+        death_sfx.0 = false;
+        pending
+    };
+    if should_play_death_sfx {
+        world.resource::<AudioBackendRes>().play_sfx(DEAD_SFX);
+    }
+
+    if practice_mode_enabled && !playtesting_editor {
+        let (seed, trigger_base_objects) = {
+            let session = world.resource::<SessionStateRes>();
+            let clock = world.resource::<GameClock>();
+            if let Some(checkpoint) = session.practice_checkpoints.last().cloned() {
+                let gameplay = checkpoint.gameplay;
+                (
+                    GameplayResetSeed {
+                        objects: gameplay.objects.clone(),
+                        position: gameplay.position,
+                        direction: gameplay.direction,
+                        speed: gameplay.speed,
+                        vertical_velocity: gameplay.vertical_velocity,
+                        is_grounded: gameplay.is_grounded,
+                        elapsed_seconds: gameplay.elapsed_seconds,
+                        level_duration_seconds: clock.level_duration_seconds,
+                        progress: Some(gameplay.progress()),
+                        preserve_practice_state: true,
+                    },
+                    checkpoint.trigger_base_objects,
+                )
+            } else {
+                let level_meta = world.resource::<LevelMeta>();
+                (
+                    GameplayResetSeed {
+                        objects: level_meta.objects.clone(),
+                        position: level_meta.spawn_position,
+                        direction: level_meta.spawn_direction,
+                        speed: BASE_PLAYER_SPEED,
+                        vertical_velocity: 0.0,
+                        is_grounded: true,
+                        elapsed_seconds: 0.0,
+                        level_duration_seconds: level_meta.level_duration_seconds,
+                        progress: None,
+                        preserve_practice_state: true,
+                    },
+                    None,
+                )
+            }
+        };
+
+        world.resource::<AudioBackendRes>().stop();
+        world.resource_mut::<PendingTurnInputs>().taps.clear();
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.playing_trigger_base_objects = trigger_base_objects;
+            if seed.progress.is_none() {
+                session.practice_checkpoints.clear();
+                session.practice_checkpoints_dirty = true;
+            }
+        }
+        warmup_gameplay_audio(world, seed.elapsed_seconds);
+        world
+            .resource_mut::<GameplayResetRes>()
+            .request_with_seed(seed);
+        apply_pending_gameplay_reset_system(world);
+        return;
+    }
+
+    if !playtesting_editor {
+        persist_level_progress(world, progress);
+    }
+    world.resource::<AudioBackendRes>().stop();
+    world.resource_mut::<PendingTurnInputs>().taps.clear();
+}
+
+fn warmup_gameplay_audio(world: &World, start_seconds: f32) {
+    let Some(level_name) = world
+        .resource::<SessionStateRes>()
+        .playing_level_name
+        .as_deref()
+        .map(str::to_owned)
+    else {
+        return;
+    };
+    let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
+    if let Some(bytes) = world
+        .resource::<RuntimeAudioPreloadRes>()
+        .bytes(&source_key)
+    {
+        world
+            .resource::<AudioBackendRes>()
+            .warmup_preloaded_asset_at(&level_name, &bytes, start_seconds);
+    } else {
+        world
+            .resource::<AudioBackendRes>()
+            .warmup_at(&level_name, start_seconds);
+    }
+}
+
+fn persist_level_progress(world: &mut World, progress: PlayerLevelProgress) {
+    let Some(level_name) = world
+        .resource::<SessionStateRes>()
+        .playing_level_name
+        .clone()
+    else {
+        return;
+    };
+
+    let settings_to_persist = {
+        let mut session = world.resource_mut::<SessionStateRes>();
+        if session
+            .app_settings
+            .update_level_progress(&level_name, progress)
+        {
+            Some(session.app_settings.clone())
+        } else {
+            None
+        }
+    };
+
+    #[cfg(not(test))]
+    if let Some(settings) = settings_to_persist {
+        eg_platform::task::spawn_background(async move {
+            if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
+                log::warn!("Failed to persist gameplay progress: {error}");
+            }
+        });
+    }
+    #[cfg(test)]
+    let _ = settings_to_persist;
+}
+
+/// Apply a real-gameplay restart recorded by the navigation message handler.
+/// This exclusive system is the only place that needs to replace the object
+/// entity set, so the reset remains one atomic App-world operation.
+pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
+    let transition_seed = {
+        let mut reset = world.resource_mut::<GameplayResetRes>();
+        if !reset.pending {
+            return;
+        }
+        reset.pending = false;
+        reset.seed.take()
+    };
+    let preserve_practice_state = transition_seed
+        .as_ref()
+        .is_some_and(|seed| seed.preserve_practice_state);
+    let progress = transition_seed.as_ref().and_then(|seed| seed.progress);
+    let (
+        objects,
+        position,
+        direction,
+        speed,
+        vertical_velocity,
+        is_grounded,
+        elapsed_seconds,
+        duration,
+    ) = if let Some(seed) = transition_seed {
+        (
+            seed.objects,
+            seed.position,
+            seed.direction,
+            seed.speed,
+            seed.vertical_velocity,
+            seed.is_grounded,
+            seed.elapsed_seconds,
+            seed.level_duration_seconds,
+        )
+    } else {
+        let meta = world.resource::<LevelMeta>();
+        (
+            meta.objects.clone(),
+            meta.spawn_position,
+            meta.spawn_direction,
+            BASE_PLAYER_SPEED,
+            0.0,
+            true,
+            0.0,
+            meta.level_duration_seconds,
+        )
+    };
+    {
+        let mut session = world.resource_mut::<SessionStateRes>();
+        session.game_paused = false;
+        session.practice_mode_enabled = preserve_practice_state;
+        if !preserve_practice_state {
+            session.practice_checkpoints.clear();
+        }
+        session.practice_checkpoints_dirty = true;
+    }
+    replace_app_gameplay_world(
+        world,
+        GameplayWorldSeed {
+            objects,
+            position,
+            direction,
+            speed,
+            vertical_velocity,
+            is_grounded,
+            trail_segments: vec![vec![position]],
+            elapsed_seconds,
+            level_duration_seconds: duration,
+            started: false,
+            game_over: false,
+            level_complete: false,
+            completion_hold_seconds: 0.0,
+            progress: progress.unwrap_or_default(),
             pending_turns: Vec::new(),
             death_sfx_played: false,
         },
