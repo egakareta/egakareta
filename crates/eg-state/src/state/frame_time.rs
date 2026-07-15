@@ -25,6 +25,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub fn apply_frame_time_resource(&mut self, frame_time: &FrameTimeRes) {
         self.frame_runtime.editor.last_frame = frame_time.last_frame;
         self.frame_runtime.editor.delta_seconds = frame_time.delta_seconds;

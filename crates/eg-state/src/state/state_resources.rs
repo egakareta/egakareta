@@ -7,12 +7,12 @@
 */
 //! ECS resource definitions for eg-state.
 //!
-//! These resources are the canonical mirror of the per-subsystem state that
-//! lives on the legacy `State` struct (see [`crate::state::State`]). During
-//! the Phase 2 migration the legacy fields are kept authoritative and
-//! the resources are written from those fields each frame; in later phases
-//! the resources will become authoritative and the legacy fields will be
-//! removed.
+//! These resources are the App-world state boundary for the per-subsystem
+//! values that historically lived on the legacy `State` struct (see
+//! [`crate::state::State`]). The initial construction path seeds them from
+//! `State`; migrated production systems then own the live values, while the
+//! legacy fields remain only where an external side effect or compatibility
+//! presenter still requires them.
 //!
 //! Naming convention: `<Domain>Res` for top-level domain resources, and
 //! `<Domain><Noun>Res` for grouped sub-state.
@@ -38,7 +38,7 @@ use crate::state::editor_timing::EditorTimingState;
 use crate::state::editor_triggers::EditorTriggerState;
 use crate::state::history::EditorHistoryState;
 use crate::state::perf::PerfState;
-use crate::state::runtime::EditorRuntimeState;
+use crate::state::runtime::{BlockVisualEffect, EditorRuntimeState};
 
 use eg_types::SpawnMetadata;
 
@@ -205,9 +205,6 @@ pub struct SessionStateRes {
     pub playing_trigger_base_objects: Option<Vec<LevelObject>>,
     pub practice_mode_enabled: bool,
     pub practice_checkpoints: Vec<PracticeCheckpoint>,
-    /// One-shot compatibility marker for rebuilding the legacy checkpoint mesh
-    /// until presentation reads the App-world checkpoint list directly.
-    pub practice_checkpoints_dirty: bool,
     /// One-shot audio compatibility intent for an App-owned quit-to-menu
     /// transition. The audio service remains external until its resource
     /// migration, so Runtime consumes this marker once to stop playback.
@@ -226,7 +223,6 @@ impl SessionStateRes {
         self.playing_trigger_base_objects = None;
         self.practice_mode_enabled = false;
         self.practice_checkpoints.clear();
-        self.practice_checkpoints_dirty = true;
         self.audio_stop_pending = true;
     }
 }
@@ -286,6 +282,28 @@ impl MenuStateRes {
     pub fn new(menu: MenuState) -> Self {
         Self(menu)
     }
+}
+
+/// App-owned authored objects for the menu's selected-level preview.
+///
+/// The menu preview is not the editor object list: returning from an editor
+/// session must preserve the authored editor objects while the menu renders
+/// the selected built-in level. This resource keeps that distinction explicit;
+/// the render extraction schedule builds the preview mesh from it.
+#[derive(Resource, Default, Clone)]
+pub struct MenuPreviewObjectsRes {
+    pub objects: Vec<LevelObject>,
+}
+
+/// App-owned active block visual effects.
+///
+/// Playback systems enqueue new effects through `EditorRuntimeRes`; the
+/// scheduled effect system consumes, ages, and expires them here. Runtime
+/// mirrors the active list into the compatibility renderer until mesh storage
+/// is fully App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct BlockEffectsRes {
+    pub effects: Vec<BlockVisualEffect>,
 }
 
 /// `EditorInputState` mirrored as a resource. UI + interaction systems

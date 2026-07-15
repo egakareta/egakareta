@@ -28,7 +28,8 @@ pub struct SelectedTapViewModel {
     pub position: [f32; 3],
 }
 
-pub struct UiStateSnapshot<'a> {
+/// Borrowed UI view assembled from App-owned resources.
+pub struct UiStateView<'a> {
     pub is_editor: bool,
     pub is_menu: bool,
     pub is_game_paused: bool,
@@ -192,17 +193,17 @@ pub struct UiStateData {
 impl UiStateRes {
     /// Build the presentation view from authoritative App-world resources.
     ///
-    /// `UiStateSnapshot` remains the borrowed shape consumed by the existing
-    /// egui helpers, but this constructor no longer needs the compatibility
+    /// `UiStateView` is the borrowed shape consumed by the existing egui
+    /// helpers, but this constructor no longer needs the compatibility
     /// `State` object. `MenuStateRes` is optional for headless TestApp worlds;
     /// production Runtime inserts it during construction.
     pub fn from_world(world: &World) -> Self {
         Self(UiStateData::from_world(world))
     }
 
-    pub fn view(&self) -> UiStateSnapshot<'_> {
+    pub fn view(&self) -> UiStateView<'_> {
         let data = &self.0;
-        UiStateSnapshot {
+        UiStateView {
             is_editor: data.is_editor,
             is_menu: data.is_menu,
             is_game_paused: data.is_game_paused,
@@ -471,7 +472,7 @@ impl UiStateData {
         }
     }
 
-    pub fn from_snapshot(view: &UiStateSnapshot<'_>) -> Self {
+    pub fn from_snapshot(view: &UiStateView<'_>) -> Self {
         Self {
             is_editor: view.is_editor,
             is_menu: view.is_menu,

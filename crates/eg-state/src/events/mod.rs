@@ -631,6 +631,7 @@ pub fn add_command_systems(schedule: &mut Schedule) {
                 navigation::handle_game_remove_practice_checkpoint,
                 navigation::handle_game_quit_to_menu,
             )
+                .after(pointer::handle_mouse_button)
                 .in_set(CommandHandlerSet),
         )
         // Auth
@@ -1409,7 +1410,6 @@ mod tests {
             let mut session = world.resource_mut::<crate::state::SessionStateRes>();
             session.game_paused = true;
             session.practice_mode_enabled = true;
-            session.practice_checkpoints_dirty = false;
         }
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.init_resource::<eg_game::LevelMeta>();
@@ -1528,12 +1528,6 @@ mod tests {
                 .practice_checkpoints
                 .is_empty(),
             "GameRemovePracticeCheckpoint must remove the newest App-world checkpoint"
-        );
-        assert!(
-            world
-                .resource::<crate::state::SessionStateRes>()
-                .practice_checkpoints_dirty,
-            "GameRemovePracticeCheckpoint must mark the compatibility mesh sync dirty"
         );
     }
 

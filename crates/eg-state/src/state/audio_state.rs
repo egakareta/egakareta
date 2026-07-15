@@ -105,6 +105,31 @@ impl AudioBackendRes {
     }
 }
 
+pub(crate) fn start_audio_source_at_seconds_for_resources(
+    is_editor: bool,
+    playtesting_editor: bool,
+    level_name: &str,
+    start_seconds: f32,
+    audio: &AudioBackendRes,
+    editor_audio: &EditorAudioCacheRes,
+    runtime_preload: &RuntimeAudioPreloadRes,
+) {
+    let source_key = runtime_asset_source_key(level_name, "audio.mp3");
+
+    if (is_editor || playtesting_editor)
+        && let Some(bytes) = editor_audio.bytes_for_level_audio(level_name)
+    {
+        audio.start_with_bytes_at(&bytes, start_seconds);
+        return;
+    }
+
+    if let Some(bytes) = runtime_preload.bytes(&source_key) {
+        audio.start_preloaded_asset_at(level_name, &bytes, start_seconds);
+    } else {
+        audio.start_at(level_name, start_seconds);
+    }
+}
+
 /// Receiver end of the audio-preload channel. Production frames drain
 /// this through `StateSchedule`. See [`AuthChannelReceiver`] in
 /// `state::auth_state` for the shared-receiver rationale.

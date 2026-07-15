@@ -765,6 +765,7 @@ impl EditorSubsystem {
 }
 
 impl State {
+    #[cfg(test)]
     pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
             self.render_gpu().config.width as f32,
@@ -774,6 +775,7 @@ impl State {
             .drag_gizmo_from_screen(x, y, viewport, self.phase)
     }
 
+    #[cfg(test)]
     pub fn begin_editor_gizmo_drag(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
             self.render_gpu().config.width as f32,

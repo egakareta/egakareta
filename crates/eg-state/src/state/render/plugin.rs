@@ -7,13 +7,11 @@
 */
 //! Rendering extraction plugin.
 //!
-//! Owns the render resource boundary + system-set graph. `State`
+//! Owns the render resource boundary + system-set graph. `Runtime`
 //! construction inserts the authoritative heavy resources
 //! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`]);
-//! the per-frame schedule mirrors POD frame/uniform values and emits
-//! rebuild events from ECS change detection. Production still presents
-//! through `State::render_egui` until Phase 7 moves frame ownership to
-//! `bevy_app::App`.
+//! the per-frame schedule mirrors POD frame/uniform values, uploads extracted
+//! mesh buffers, and presents the scene plus egui from App-owned resources.
 //!
 //! REFACTOR POINT(full-bevy): this plugin + system set graph is the
 //! placeholder for `bevy_render`'s render-world + render graph. The
@@ -25,17 +23,51 @@ use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{Schedule, SystemSet};
 use bevy_ecs::system::SystemParam;
-use eg_types::{AppPhase, CameraUniform, ColorSpaceUniform, Direction, LevelMetadata, LineUniform};
-use glam::Vec3;
+use eg_blocks::{BlockDefinition, BlockRenderProfile};
+use eg_editor_domain::{
+    TapDivisionPreviewRange, derive_timing_division_tap_previews, tap_time_is_timing_division,
+};
+use eg_game::trigger_transformed_objects_at_time;
+use eg_mesh::{
+    BlockEffectInstance, GizmoParams, GizmoPart, PracticeCheckpointFlagInstance,
+    TransformTriggerMarker, Vertex, build_block_effect_vertices, build_block_geometry_for_object,
+    build_block_geometry_from_refs, build_block_geometry_from_refs_at_time,
+    build_block_instance_batches_from_refs_at_time, build_camera_arrow_vertices,
+    build_chunked_block_mesh_from_refs, build_chunked_block_mesh_from_refs_at_time,
+    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
+    build_editor_tap_cursor_vertices, build_editor_transform_trigger_target_outline_vertices,
+    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
+    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
+    build_transform_trigger_marker_vertices,
+};
+use eg_render::EditorOutlineInstance;
+use eg_types::{
+    AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelMetadata, LevelObject,
+    LineUniform, TransformVisibility, TriggerTarget,
+};
+use glam::{Mat4, Vec2, Vec3};
 
+use super::draw::render_egui_with_resources;
 use super::resources::{
-    RenderConfigRes, RenderFrameInputRes, RenderGpuRes, RenderMeshesRes, RenderResizeRequest,
-    RenderSurfaceHostRes, RenderUniformUploadRes, RenderUniformsRes,
+    RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
+    RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
+    RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
+    RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
+    RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
+    RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
+    RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
+    RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
+    RenderUniformsRes,
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
 use crate::state::{
-    AppPhaseRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorTimelineRes,
-    FrameTimeRes, MenuStateRes, SessionStateRes, evaluate_camera_track_for_objects,
+    AppPhaseRes, BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, FrameTimeRes, MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+    editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
+    evaluate_camera_track_for_objects,
 };
 
 /// System sets for the rendering extraction plugin.
@@ -88,6 +120,20 @@ impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderUniformsRes>()
             .init_resource::<RenderFrameInputRes>()
+            .init_resource::<RenderTrailVerticesRes>()
+            .init_resource::<RenderEditorCameraArrowVerticesRes>()
+            .init_resource::<RenderEditorCursorVerticesRes>()
+            .init_resource::<RenderEditorHitboxVerticesRes>()
+            .init_resource::<RenderEditorTapIndicatorVerticesRes>()
+            .init_resource::<RenderEditorSelectionOverlayRes>()
+            .init_resource::<RenderEditorHoverOverlayRes>()
+            .init_resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+            .init_resource::<RenderBlockEffectVerticesRes>()
+            .init_resource::<RenderPracticeCheckpointVerticesRes>()
+            .init_resource::<RenderPlayingBlockMeshesRes>()
+            .init_resource::<RenderEditorBlockMeshesRes>()
+            .init_resource::<RenderEditorSpawnMarkerVerticesRes>()
+            .init_resource::<RenderEditorGizmoVerticesRes>()
             .init_resource::<RenderConfigRes>()
             .init_resource::<RenderResizeRequest>()
             .init_non_send::<RenderMeshesRes>()
@@ -103,6 +149,20 @@ impl Plugin for RenderPlugin {
 pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();
+    world.init_resource::<RenderTrailVerticesRes>();
+    world.init_resource::<RenderEditorCameraArrowVerticesRes>();
+    world.init_resource::<RenderEditorCursorVerticesRes>();
+    world.init_resource::<RenderEditorHitboxVerticesRes>();
+    world.init_resource::<RenderEditorTapIndicatorVerticesRes>();
+    world.init_resource::<RenderEditorSelectionOverlayRes>();
+    world.init_resource::<RenderEditorHoverOverlayRes>();
+    world.init_resource::<RenderEditorTransformTriggerMarkerVerticesRes>();
+    world.init_resource::<RenderBlockEffectVerticesRes>();
+    world.init_resource::<RenderPracticeCheckpointVerticesRes>();
+    world.init_resource::<RenderPlayingBlockMeshesRes>();
+    world.init_resource::<RenderEditorBlockMeshesRes>();
+    world.init_resource::<RenderEditorSpawnMarkerVerticesRes>();
+    world.init_resource::<RenderEditorGizmoVerticesRes>();
     world.init_resource::<RenderConfigRes>();
     world.init_resource::<RenderResizeRequest>();
     // Phase 4c: insert default heavy resources so standalone worlds
@@ -116,20 +176,57 @@ pub fn register_render_pod_resources(world: &mut World) {
 
 /// Resource-backed `RenderSet::Present` boundary.
 ///
-/// Production still calls `State::render_egui` from the frame pipeline
-/// until Phase 7 moves frame ownership to `bevy_app::App`, but the
-/// Bevy schedule now reads the same authoritative resources that own
-/// GPU, mesh, surface, uniform, and frame-input state. This keeps the
-/// present set wired to the final resource boundary without acquiring
-/// the surface twice in the current compatibility path.
+/// Production consumes App-owned GPU, mesh, surface, uniform, frame-input,
+/// and egui resources directly. The legacy State render wrappers remain only
+/// for focused compatibility tests.
 pub fn present_render_frame_system(
-    gpu: Option<NonSend<RenderGpuRes>>,
-    meshes: NonSend<RenderMeshesRes>,
-    surface_host: NonSend<RenderSurfaceHostRes>,
+    mut gpu: Option<NonSendMut<RenderGpuRes>>,
+    mut meshes: Option<NonSendMut<RenderMeshesRes>>,
+    surface_host: Option<NonSend<RenderSurfaceHostRes>>,
+    mut egui: Option<NonSendMut<RenderEguiRes>>,
     uniforms: Res<RenderUniformsRes>,
     frame_input: Res<RenderFrameInputRes>,
 ) {
-    let _ = (&gpu, &meshes, &surface_host, &uniforms, &frame_input);
+    let (Some(mut gpu), Some(mut meshes), Some(mut egui)) =
+        (gpu.take(), meshes.take(), egui.take())
+    else {
+        return;
+    };
+    let RenderEguiRes {
+        renderer,
+        paint_jobs,
+        screen_descriptor,
+    } = &mut *egui;
+    let result = render_egui_with_resources(
+        &mut gpu.0,
+        &mut meshes.0,
+        renderer,
+        paint_jobs,
+        screen_descriptor,
+        frame_input.0,
+        uniforms.camera.view_proj,
+    );
+    if matches!(
+        result,
+        Err(eg_render::RenderSurfaceError::Lost) | Err(eg_render::RenderSurfaceError::Outdated)
+    ) {
+        let size = surface_host
+            .as_ref()
+            .and_then(|host| host.0.as_ref())
+            .map(|host| host.current_size())
+            .unwrap_or(gpu.0.size);
+        if size.width > 0 && size.height > 0 {
+            if let Some(host) = surface_host
+                .as_ref()
+                .and_then(|surface_host| surface_host.0.as_ref())
+            {
+                host.prepare_resize(size);
+            }
+            gpu.0.apply_resize(size);
+        }
+    } else if let Err(error) = result {
+        log::error!("Render error: {error:?}");
+    }
 }
 
 /// Build the per-frame render input directly from App-world resources.
@@ -189,6 +286,1243 @@ pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParam
         grid_center,
         apply_gamma_correction: params.config.apply_gamma_correction,
     };
+}
+
+/// Extract the gameplay ghost trail from App-owned gameplay components.
+///
+/// The compatibility renderer still owns the GPU mesh slot, so Runtime
+/// uploads this extracted vertex list after the schedule completes.
+pub(crate) fn extract_trail_vertices_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    timeline: Res<EditorTimelineRes>,
+    clock: Option<Res<eg_game::GameClock>>,
+    player: Query<(
+        &eg_game::PlayerPosition,
+        &eg_game::PlayerDirection,
+        &eg_game::Grounded,
+        &eg_game::Trail,
+    )>,
+    mut trail_vertices: ResMut<RenderTrailVerticesRes>,
+) {
+    if phase.current == AppPhase::Editor {
+        if input.0.mode == EditorMode::Timing {
+            trail_vertices.0.clear();
+        } else if timeline.0.playback.playing {
+            trail_vertices.0 = timeline
+                .0
+                .playback
+                .runtime
+                .as_ref()
+                .map(build_editor_playback_trail_vertices)
+                .unwrap_or_default();
+        } else {
+            let target_time = timeline
+                .0
+                .clock
+                .time_seconds
+                .clamp(0.0, timeline.0.clock.duration_seconds.max(0.0));
+            trail_vertices.0 = build_editor_scrub_trail_vertices(&timeline.0, target_time);
+        }
+        return;
+    }
+
+    if !matches!(phase.current, AppPhase::Playing | AppPhase::GameOver) {
+        trail_vertices.0.clear();
+        return;
+    }
+
+    let Some((position, direction, grounded, trail)) = player.iter().next() else {
+        trail_vertices.0.clear();
+        return;
+    };
+
+    let game_over = clock.as_ref().is_some_and(|clock| clock.game_over);
+    const CULL_DISTANCE_SQ: f32 = 120.0 * 120.0;
+    const MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT: usize = 1024;
+
+    let mut vertices = Vec::new();
+    for (segment_index, segment) in trail.segments.iter().enumerate() {
+        if segment.is_empty() {
+            continue;
+        }
+
+        let is_last_segment = segment_index + 1 == trail.segments.len();
+        if !is_last_segment {
+            let Some(last_point) = segment.last() else {
+                continue;
+            };
+            let dx = last_point[0] - position.0[0];
+            let dy = last_point[1] - position.0[1];
+            let dz = last_point[2] - position.0[2];
+            if dx * dx + dy * dy + dz * dz > CULL_DISTANCE_SQ {
+                continue;
+            }
+        }
+
+        let start = segment
+            .len()
+            .saturating_sub(MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT);
+        if is_last_segment && grounded.0 {
+            let mut points = segment[start..].to_vec();
+            points.push(position.0);
+            vertices.extend(eg_mesh::build_trail_vertices(&points, game_over));
+        } else {
+            vertices.extend(eg_mesh::build_trail_vertices(&segment[start..], game_over));
+        }
+    }
+
+    if !grounded.0 {
+        let head_length = 0.22;
+        let dir = match direction.0 {
+            eg_types::Direction::Forward => [0.0, 1.0],
+            eg_types::Direction::Right => [1.0, 0.0],
+        };
+        let head_start = [
+            position.0[0] - dir[0] * head_length,
+            position.0[1],
+            position.0[2] - dir[1] * head_length,
+        ];
+        vertices.extend(eg_mesh::build_trail_vertices(
+            &[head_start, position.0],
+            game_over,
+        ));
+    }
+
+    trail_vertices.0 = vertices;
+}
+
+/// Extract active block-effect vertices from the App-owned effect lifecycle.
+/// Runtime uploads the derived vertices into the compatibility mesh slot.
+pub(crate) fn extract_block_effect_vertices_system(
+    effects: Res<BlockEffectsRes>,
+    mut effect_vertices: ResMut<RenderBlockEffectVerticesRes>,
+) {
+    if effects.effects.is_empty() {
+        effect_vertices.0.clear();
+        return;
+    }
+
+    let instances = effects
+        .effects
+        .iter()
+        .map(|effect| BlockEffectInstance {
+            position: effect.position,
+            size: effect.size,
+            color: effect.color,
+            effect: effect.effect,
+            age_seconds: effect.age_seconds,
+        })
+        .collect::<Vec<_>>();
+    effect_vertices.0 = build_block_effect_vertices(&instances);
+}
+
+/// Extract practice-checkpoint flags from the App-owned session resource.
+/// The compatibility renderer receives the resulting vertices through the
+/// normal scheduled mesh upload path.
+pub(crate) fn extract_practice_checkpoint_vertices_system(
+    phase: Res<AppPhaseRes>,
+    session: Res<SessionStateRes>,
+    mut checkpoint_vertices: ResMut<RenderPracticeCheckpointVerticesRes>,
+) {
+    if phase.current != AppPhase::Playing
+        || session.playtesting_editor
+        || !session.practice_mode_enabled
+        || session.practice_checkpoints.is_empty()
+    {
+        checkpoint_vertices.0.clear();
+        return;
+    }
+
+    let latest_index = session.practice_checkpoints.len().saturating_sub(1);
+    let flags = session
+        .practice_checkpoints
+        .iter()
+        .enumerate()
+        .map(|(index, checkpoint)| PracticeCheckpointFlagInstance {
+            position: checkpoint.gameplay.position,
+            direction: checkpoint.gameplay.direction,
+            is_latest: index == latest_index,
+        })
+        .collect::<Vec<_>>();
+    checkpoint_vertices.0 = build_practice_checkpoint_flag_geometry(&flags).vertices;
+}
+fn gameplay_object_order_key(id: &str) -> (u8, usize, &str) {
+    id.strip_prefix("__obj_")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .map(|index| (0, index, id))
+        .unwrap_or((1, 0, id))
+}
+
+fn editor_trigger_objects_for_render(objects: &EditorObjectsRes) -> Vec<LevelObject> {
+    let mut triggers = objects
+        .objects
+        .iter()
+        .filter(|object| object.trigger.is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    triggers.sort_by(|left, right| {
+        let left_time = left
+            .trigger
+            .as_ref()
+            .map(|trigger| trigger.time_seconds)
+            .unwrap_or(0.0);
+        let right_time = right
+            .trigger
+            .as_ref()
+            .map(|trigger| trigger.time_seconds)
+            .unwrap_or(0.0);
+        f32::total_cmp(&left_time, &right_time)
+    });
+    triggers
+}
+
+fn is_play_world_render_object(object: &LevelObject) -> bool {
+    BlockDefinition::get(&object.block_id).render.profile != BlockRenderProfile::CameraTrigger
+}
+
+fn has_object_transform_triggers(triggers: &[LevelObject]) -> bool {
+    triggers.iter().any(|object| {
+        let Some(trigger) = object.trigger.as_ref() else {
+            return false;
+        };
+        trigger.transform && !matches!(trigger.target, TriggerTarget::Camera)
+    })
+}
+
+fn has_camera_timeline_triggers(triggers: &[LevelObject]) -> bool {
+    triggers.iter().any(|object| {
+        let Some(trigger) = object.trigger.as_ref() else {
+            return false;
+        };
+        matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
+    })
+}
+
+fn editor_objects_for_render(
+    objects: &EditorObjectsRes,
+    timeline: &EditorTimelineRes,
+    trigger_objects: &[LevelObject],
+) -> Vec<LevelObject> {
+    if !timeline.0.playback.playing {
+        if has_object_transform_triggers(trigger_objects) {
+            return trigger_transformed_objects_at_time(
+                &objects.objects,
+                trigger_objects,
+                timeline.0.clock.time_seconds,
+            );
+        }
+        return objects.objects.clone();
+    }
+
+    if !has_object_transform_triggers(trigger_objects) {
+        return timeline
+            .0
+            .playback
+            .runtime
+            .as_ref()
+            .map(|runtime| runtime.objects().to_vec())
+            .unwrap_or_else(|| objects.objects.clone());
+    }
+
+    trigger_transformed_objects_at_time(
+        &objects.objects,
+        trigger_objects,
+        timeline.0.clock.time_seconds,
+    )
+}
+
+/// Extract time-dependent gameplay block batches from App-owned gameplay
+/// entities. This is the scheduled replacement for the animated-block branch
+/// in `State::update`.
+pub(crate) fn extract_playing_block_meshes_system(
+    phase: Res<AppPhaseRes>,
+    session: Res<SessionStateRes>,
+    clock: Option<Res<eg_game::GameClock>>,
+    editor_objects: Res<EditorObjectsRes>,
+    objects: Query<(&eg_game::ObjectId, &eg_game::ObjectData), With<eg_game::Object>>,
+    mut block_meshes: ResMut<RenderPlayingBlockMeshesRes>,
+) {
+    block_meshes.result = None;
+    block_meshes.chunked = None;
+    if !matches!(phase.current, AppPhase::Playing | AppPhase::GameOver) || session.game_paused {
+        return;
+    }
+    let Some(clock) = clock else {
+        return;
+    };
+
+    let mut gameplay_objects = objects
+        .iter()
+        .map(|(id, data)| (gameplay_object_order_key(&id.0), data.0.clone()))
+        .collect::<Vec<_>>();
+    gameplay_objects.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut gameplay_objects = gameplay_objects
+        .into_iter()
+        .map(|(_, object)| object)
+        .collect::<Vec<_>>();
+    let trigger_objects = editor_trigger_objects_for_render(&editor_objects);
+    let has_object_transform_triggers = has_object_transform_triggers(&trigger_objects);
+    let has_camera_timeline_triggers = has_camera_timeline_triggers(&trigger_objects);
+    let has_animated_blocks = gameplay_objects.iter().any(|object| {
+        BlockDefinition::get(&object.block_id)
+            .animation
+            .idle
+            .has_motion()
+    });
+    if has_object_transform_triggers {
+        gameplay_objects = trigger_transformed_objects_at_time(
+            &gameplay_objects,
+            &trigger_objects,
+            clock.elapsed_seconds.max(0.0),
+        );
+    }
+    let render_object_refs = gameplay_objects
+        .iter()
+        .filter(|object| is_play_world_render_object(object))
+        .collect::<Vec<_>>();
+    if has_animated_blocks || has_object_transform_triggers || has_camera_timeline_triggers {
+        block_meshes.result = Some(build_block_instance_batches_from_refs_at_time(
+            &render_object_refs,
+            Some(clock.elapsed_seconds),
+        ));
+    } else {
+        block_meshes.chunked = Some(build_chunked_block_mesh_from_refs(&render_object_refs));
+    }
+}
+
+/// Extract the selected menu preview blocks from App-owned preview objects.
+/// The cache key is the selected preview index so an idle menu does not
+/// rebuild the same static chunk mesh every frame.
+pub(crate) fn extract_menu_preview_block_mesh_system(
+    phase: Res<AppPhaseRes>,
+    menu: Option<Res<MenuStateRes>>,
+    preview_objects: Res<MenuPreviewObjectsRes>,
+    mut block_meshes: ResMut<RenderMenuPreviewBlockMeshesRes>,
+) {
+    if phase.current != AppPhase::Menu {
+        return;
+    }
+    let Some(menu) = menu else {
+        return;
+    };
+    if block_meshes.preview_level_index == menu.0.preview_level_index
+        && block_meshes.chunked.is_some()
+    {
+        return;
+    }
+
+    let objects = preview_objects.objects.iter().collect::<Vec<_>>();
+    block_meshes.preview_level_index = menu.0.preview_level_index;
+    block_meshes.chunked = Some(build_chunked_block_mesh_from_refs(&objects));
+}
+
+/// Extract the editor static and selected block meshes from App-owned editor
+/// resources. This is the scheduled replacement for the editor block rebuild
+/// branches in `State::update`.
+pub(crate) fn extract_editor_block_meshes_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    objects: Res<EditorObjectsRes>,
+    timeline: Res<EditorTimelineRes>,
+    mut block_meshes: ResMut<RenderEditorBlockMeshesRes>,
+) {
+    block_meshes.static_mesh = eg_mesh::ChunkedBlockMesh::default();
+    block_meshes.selected_geometry = eg_mesh::MeshGeometry::default();
+    if phase.current != AppPhase::Editor {
+        return;
+    }
+
+    let trigger_objects = editor_trigger_objects_for_render(&objects);
+    let object_source = editor_objects_for_render(&objects, &timeline, &trigger_objects);
+    let selected_indices = normalized_editor_selection_indices(&input, object_source.len());
+    let selected_mask = selected_indices
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    let static_objects = object_source
+        .iter()
+        .enumerate()
+        .filter_map(|(index, object)| (!selected_mask.contains(&index)).then_some(object))
+        .collect::<Vec<_>>();
+    let time_seconds =
+        has_camera_timeline_triggers(&trigger_objects).then_some(timeline.0.clock.time_seconds);
+    block_meshes.static_mesh = match time_seconds {
+        Some(time_seconds) => build_chunked_block_mesh_from_refs_at_time(
+            &static_objects,
+            Some(time_seconds),
+            eg_mesh::DEFAULT_RENDER_CHUNK_SIZE,
+        ),
+        None => build_chunked_block_mesh_from_refs(&static_objects),
+    };
+
+    if selected_indices.len() > 100_000 {
+        log::warn!(
+            "Skipping selected block mesh for {} selected objects to avoid an oversized expanded mesh",
+            selected_indices.len()
+        );
+        return;
+    }
+    let selected_objects = object_source
+        .iter()
+        .enumerate()
+        .filter_map(|(index, object)| selected_mask.contains(&index).then_some(object))
+        .collect::<Vec<_>>();
+    block_meshes.selected_geometry = match time_seconds {
+        Some(time_seconds) => {
+            build_block_geometry_from_refs_at_time(&selected_objects, Some(time_seconds))
+        }
+        None => build_block_geometry_from_refs(&selected_objects),
+    };
+}
+
+/// Extract the editor spawn marker from App-owned spawn metadata.
+pub(crate) fn extract_editor_spawn_marker_vertices_system(
+    phase: Res<AppPhaseRes>,
+    spawn: Res<EditorSpawnRes>,
+    mut marker_vertices: ResMut<RenderEditorSpawnMarkerVerticesRes>,
+) {
+    if phase.current != AppPhase::Editor {
+        marker_vertices.0.clear();
+        return;
+    }
+
+    marker_vertices.0 = build_spawn_marker_vertices(
+        spawn.0.position,
+        matches!(spawn.0.direction, Direction::Right),
+    );
+}
+
+fn editor_selection_bounds_for_gizmo(
+    objects: &[LevelObject],
+    selected_indices: &[usize],
+    trigger_target: Option<&LevelObject>,
+) -> Option<([f32; 3], [f32; 3])> {
+    let Some(first_index) = selected_indices.first().copied() else {
+        return trigger_target.map(|object| (object.position, object.size));
+    };
+    let first = objects.get(first_index)?;
+    let mut min = first.position;
+    let mut max = [
+        first.position[0] + first.size[0],
+        first.position[1] + first.size[1],
+        first.position[2] + first.size[2],
+    ];
+    for index in selected_indices.iter().copied().skip(1) {
+        let Some(object) = objects.get(index) else {
+            continue;
+        };
+        min[0] = min[0].min(object.position[0]);
+        min[1] = min[1].min(object.position[1]);
+        min[2] = min[2].min(object.position[2]);
+        max[0] = max[0].max(object.position[0] + object.size[0]);
+        max[1] = max[1].max(object.position[1] + object.size[1]);
+        max[2] = max[2].max(object.position[2] + object.size[2]);
+    }
+    Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
+}
+
+fn gizmo_pixels_to_world_scale(
+    center: Vec3,
+    pixels: f32,
+    uniforms: &RenderUniformsRes,
+    config: &RenderConfigRes,
+) -> f32 {
+    let view_proj = Mat4::from_cols_array_2d(&uniforms.camera.view_proj);
+    let viewport = Vec2::new(config.width.max(1) as f32, config.height.max(1) as f32);
+    let world_to_screen = |point: Vec3| {
+        let clip = view_proj * point.extend(1.0);
+        if clip.w.abs() <= f32::EPSILON {
+            return None;
+        }
+        let ndc = clip.truncate() / clip.w;
+        Some(Vec2::new(
+            (ndc.x + 1.0) * 0.5 * viewport.x,
+            (1.0 - ndc.y) * 0.5 * viewport.y,
+        ))
+    };
+    let Some(origin) = world_to_screen(center) else {
+        return 0.06;
+    };
+    [Vec3::X, Vec3::Y, Vec3::Z]
+        .into_iter()
+        .filter_map(|axis| {
+            let screen = world_to_screen(center + axis)?;
+            let pixels_per_world = screen.distance(origin);
+            (pixels_per_world > f32::EPSILON).then_some(pixels / pixels_per_world)
+        })
+        .reduce(f32::min)
+        .unwrap_or(0.06)
+}
+
+/// Extract the editor transform gizmo from App-owned selection, objects,
+/// interaction state, camera uniform, and viewport configuration.
+pub(crate) fn extract_editor_gizmo_vertices_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    objects: Res<EditorObjectsRes>,
+    triggers: Res<EditorTriggerRes>,
+    runtime: Res<EditorRuntimeRes>,
+    uniforms: Res<RenderUniformsRes>,
+    config: Res<RenderConfigRes>,
+    mut gizmo_vertices: ResMut<RenderEditorGizmoVerticesRes>,
+) {
+    gizmo_vertices.0.clear();
+    if phase.current != AppPhase::Editor {
+        return;
+    }
+
+    let trigger_objects = editor_trigger_objects_for_render(&objects);
+    let trigger_target =
+        if normalized_editor_selection_indices(&input, objects.objects.len()).is_empty() {
+            triggers
+                .0
+                .selected_index
+                .and_then(|index| trigger_objects.get(index))
+                .filter(|object| object.is_transform_trigger())
+        } else {
+            None
+        };
+    let selected_indices = normalized_editor_selection_indices(&input, objects.objects.len());
+    let Some((bounds_position, bounds_size)) =
+        editor_selection_bounds_for_gizmo(&objects.objects, &selected_indices, trigger_target)
+    else {
+        return;
+    };
+    let visibility = if selected_indices.is_empty() {
+        trigger_target
+            .map(|_| TransformVisibility::all())
+            .unwrap_or_else(TransformVisibility::none)
+    } else {
+        selected_indices
+            .iter()
+            .filter_map(|index| objects.objects.get(*index))
+            .map(LevelObject::transform_field_visibility)
+            .fold(
+                TransformVisibility::all(),
+                TransformVisibility::intersection,
+            )
+    };
+    let mode = input.0.mode;
+    let show_move_handles = mode.shows_move_gizmo() && visibility.position;
+    let show_scale_handles = mode.shows_scale_gizmo() && visibility.size;
+    let show_rotate_handles = mode.shows_rotate_gizmo() && visibility.rotation;
+    if !show_move_handles && !show_scale_handles && !show_rotate_handles {
+        return;
+    }
+
+    let center = Vec3::new(
+        bounds_position[0] + bounds_size[0] * 0.5,
+        bounds_position[1] + bounds_size[1] * 0.5,
+        bounds_position[2] + bounds_size[2] * 0.5,
+    );
+    let scale = gizmo_pixels_to_world_scale(center, 100.0, &uniforms, &config);
+    let axis_width = gizmo_pixels_to_world_scale(center, 4.5, &uniforms, &config);
+    let resize_radius = gizmo_pixels_to_world_scale(center, 8.5, &uniforms, &config);
+    let resize_offsets = [
+        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
+        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
+        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
+    ];
+    let rotation = selected_indices
+        .first()
+        .and_then(|index| objects.objects.get(*index))
+        .map(|object| object.rotation)
+        .or_else(|| trigger_target.map(|object| object.rotation))
+        .unwrap_or([0.0, 0.0, 0.0]);
+    let dragged_part = runtime
+        .0
+        .interaction
+        .gizmo_drag
+        .as_ref()
+        .map(|drag| GizmoPart::from_axis_kind(drag.axis, drag.kind));
+    let hovered_part = runtime
+        .0
+        .interaction
+        .hovered_gizmo
+        .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
+    gizmo_vertices.0 = build_editor_gizmo_vertices(GizmoParams {
+        position: bounds_position,
+        size: bounds_size,
+        rotation,
+        axis_lengths: [scale, scale, scale],
+        axis_width,
+        resize_radius,
+        resize_offsets,
+        show_move_handles,
+        show_scale_handles,
+        show_rotate_handles,
+        hovered_part,
+        dragged_part,
+    });
+}
+
+/// Dirty flags are retained for compatibility tests and legacy editor
+/// callers, but App-owned extraction no longer needs them to decide which
+/// presentation buffers to rebuild. Consume them after the scheduled
+/// extraction so the legacy State update cannot become a second renderer.
+pub(crate) fn clear_editor_dirty_flags_system(mut runtime: ResMut<EditorRuntimeRes>) {
+    runtime.0.dirty = Default::default();
+}
+
+/// Extract the editor camera arrow from App-owned camera/timeline resources.
+/// Runtime uploads the derived vertices into the compatibility mesh slot.
+pub(crate) fn extract_editor_camera_arrow_vertices_system(
+    phase: Res<AppPhaseRes>,
+    objects: Res<EditorObjectsRes>,
+    camera: Res<EditorCameraRes>,
+    timeline: Res<EditorTimelineRes>,
+    mut arrow_vertices: ResMut<RenderEditorCameraArrowVerticesRes>,
+) {
+    if phase.current != AppPhase::Editor || timeline.0.playback.playing {
+        arrow_vertices.0.clear();
+        return;
+    }
+
+    let target = Vec3::from_array(timeline.0.preview.position);
+    let sample = evaluate_camera_track_for_objects(
+        &camera.0,
+        &objects.objects,
+        timeline.0.clock.time_seconds,
+        target,
+        true,
+    );
+    let forward = {
+        let direction = sample.target - sample.eye;
+        if direction.length_squared() > f32::EPSILON {
+            direction.normalize().to_array()
+        } else {
+            [0.0, 0.0, 1.0]
+        }
+    };
+    let editor_camera_eye =
+        (camera.0.editor_camera_target() + camera.0.editor_camera_offset()).to_array();
+    arrow_vertices.0 =
+        build_camera_arrow_vertices(sample.eye.to_array(), forward, editor_camera_eye);
+}
+
+/// Extract the editor cursor from App-owned input/config/timeline resources.
+/// Runtime uploads the derived vertices into the compatibility mesh slot.
+pub(crate) fn extract_editor_cursor_vertices_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    config: Res<EditorConfigRes>,
+    runtime: Res<EditorRuntimeRes>,
+    timeline: Res<EditorTimelineRes>,
+    mut cursor_vertices: ResMut<RenderEditorCursorVerticesRes>,
+) {
+    if phase.current != AppPhase::Editor {
+        cursor_vertices.0.clear();
+        return;
+    }
+
+    let effective_mode = if timeline.0.playback.playing && input.0.mode == EditorMode::Null {
+        runtime.0.interaction.last_mode.unwrap_or(input.0.mode)
+    } else {
+        input.0.mode
+    };
+
+    if effective_mode == EditorMode::Tapping {
+        let overlap_index = runtime
+            .0
+            .interaction
+            .hovered_tap_index
+            .or(timeline.0.taps.selected_index)
+            .filter(|index| {
+                timeline
+                    .0
+                    .taps
+                    .tap_indicator_positions
+                    .get(*index)
+                    .is_some_and(|position| positions_match(*position, input.0.cursor))
+            });
+        if overlap_index.is_some() {
+            cursor_vertices.0.clear();
+            return;
+        }
+        cursor_vertices.0 = build_editor_tap_cursor_vertices(input.0.cursor);
+        return;
+    }
+
+    let size = BlockDefinition::get(&config.0.selected_block_id)
+        .render
+        .default_size;
+    cursor_vertices.0 = build_editor_cursor_vertices(
+        input.0.cursor,
+        size,
+        &config.0.selected_block_id,
+        config.0.selected_block_rotation_degrees,
+    );
+}
+
+/// Extract editor hitbox visualization from App-owned editor resources.
+/// Runtime uploads the derived vertices into the compatibility mesh slot.
+pub(crate) fn extract_editor_hitbox_vertices_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    runtime: Res<EditorRuntimeRes>,
+    objects: Res<EditorObjectsRes>,
+    timeline: Res<EditorTimelineRes>,
+    mut hitbox_vertices: ResMut<RenderEditorHitboxVerticesRes>,
+) {
+    let effective_mode = if timeline.0.playback.playing && input.0.mode == EditorMode::Null {
+        runtime.0.interaction.last_mode.unwrap_or(input.0.mode)
+    } else {
+        input.0.mode
+    };
+    if phase.current != AppPhase::Editor
+        || effective_mode == EditorMode::Timing
+        || !input.0.show_hitbox_visualization
+    {
+        hitbox_vertices.0.clear();
+        return;
+    }
+
+    let player_hitbox = editor_preview_player_hitbox(timeline.0.preview.position);
+    hitbox_vertices.0 =
+        build_editor_hitbox_visualization_vertices(&objects.objects, Some(player_hitbox));
+}
+
+fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
+    const PLAYER_WIDTH: f32 = 0.8;
+    const PLAYER_HEIGHT: f32 = 0.8;
+    const PLAYER_FOOTPRINT_TOLERANCE: f32 = PLAYER_WIDTH * 0.05;
+
+    let inset_width = PLAYER_WIDTH - PLAYER_FOOTPRINT_TOLERANCE * 2.0;
+    let inset_height = PLAYER_HEIGHT - PLAYER_FOOTPRINT_TOLERANCE * 2.0;
+    LevelObject {
+        position: [
+            position[0] - inset_width * 0.5,
+            position[1] + PLAYER_FOOTPRINT_TOLERANCE,
+            position[2] - inset_width * 0.5,
+        ],
+        size: [inset_width, inset_height, inset_width],
+        ..LevelObject::new("core/void")
+    }
+}
+
+/// Extract editor tap indicators from App-owned timeline and interaction
+/// resources. Runtime uploads the derived vertices into the compatibility
+/// mesh slot.
+pub(crate) fn extract_editor_tap_indicator_vertices_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    runtime: Res<EditorRuntimeRes>,
+    objects: Res<EditorObjectsRes>,
+    spawn: Res<EditorSpawnRes>,
+    timeline: Res<EditorTimelineRes>,
+    timing: Res<EditorTimingRes>,
+    mut tap_vertices: ResMut<RenderEditorTapIndicatorVerticesRes>,
+) {
+    let effective_mode = if timeline.0.playback.playing && input.0.mode == EditorMode::Null {
+        runtime.0.interaction.last_mode.unwrap_or(input.0.mode)
+    } else {
+        input.0.mode
+    };
+    if phase.current != AppPhase::Editor || effective_mode == EditorMode::Timing {
+        tap_vertices.0.clear();
+        return;
+    }
+
+    let show_timing_division_previews = effective_mode == EditorMode::Tapping;
+    let hovered_tap_index = runtime.0.interaction.hovered_tap_index;
+    let selected_tap_index = timeline.0.taps.selected_index;
+    let hovered_division = runtime.0.interaction.hovered_tap_division;
+    let duration_seconds = timeline.0.clock.duration_seconds.max(0.0);
+    let preview_indicators: Vec<([f32; 3], [f32; 4])> = if show_timing_division_previews {
+        let previews = derive_timing_division_tap_previews(
+            spawn.0.position,
+            spawn.0.direction,
+            &timeline.0.taps.tap_times,
+            &timing.0.timing_points,
+            duration_seconds,
+            TapDivisionPreviewRange {
+                start_seconds: 0.0,
+                end_seconds: duration_seconds,
+            },
+            &objects.objects,
+        );
+        let tap_positions = &timeline.0.taps.tap_indicator_positions;
+        let mut indicators: Vec<([f32; 3], [f32; 4])> = previews
+            .iter()
+            .copied()
+            .filter(|preview| {
+                !tap_positions
+                    .iter()
+                    .any(|position| positions_match(*position, preview.indicator_position))
+            })
+            .map(|preview| {
+                let is_hovered = hovered_division.is_some_and(|hovered| {
+                    (hovered.time_seconds - preview.time_seconds).abs() <= 0.001
+                        && positions_match(hovered.indicator_position, preview.indicator_position)
+                });
+                let alpha = if is_hovered { 0.95 } else { 0.24 };
+                (preview.indicator_position, [0.05, 0.48, 0.95, alpha])
+            })
+            .collect::<Vec<_>>();
+        indicators.sort_unstable_by(|a, b| {
+            a.0[0]
+                .total_cmp(&b.0[0])
+                .then(a.0[1].total_cmp(&b.0[1]))
+                .then(a.0[2].total_cmp(&b.0[2]))
+                .then(a.1[3].total_cmp(&b.1[3]))
+        });
+        indicators.dedup_by(|a, b| positions_match(a.0, b.0) && (a.1[3] - b.1[3]).abs() < 0.001);
+        indicators
+    } else {
+        Vec::new()
+    };
+
+    let tap_positions = &timeline.0.taps.tap_indicator_positions;
+    let mut indicators = tap_positions
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, position)| {
+            (
+                position,
+                editor_tap_indicator_color(index, hovered_tap_index, selected_tap_index),
+            )
+        })
+        .collect::<Vec<_>>();
+    indicators.sort_unstable_by(|a, b| {
+        a.0[0]
+            .total_cmp(&b.0[0])
+            .then(a.0[1].total_cmp(&b.0[1]))
+            .then(a.0[2].total_cmp(&b.0[2]))
+            .then(a.1[3].total_cmp(&b.1[3]))
+    });
+    indicators.dedup_by(|a, b| {
+        positions_match(a.0, b.0)
+            && (a.1[0] - b.1[0]).abs() < 0.001
+            && (a.1[1] - b.1[1]).abs() < 0.001
+            && (a.1[2] - b.1[2]).abs() < 0.001
+            && (a.1[3] - b.1[3]).abs() < 0.001
+    });
+
+    let division_tap_indicators = if show_timing_division_previews {
+        timeline
+            .0
+            .taps
+            .tap_times
+            .iter()
+            .copied()
+            .zip(tap_positions.iter().copied())
+            .filter(|(tap_time, _)| {
+                tap_time_is_timing_division(*tap_time, &timing.0.timing_points, duration_seconds)
+            })
+            .map(|(_, position)| (position, [0.0, 0.0, 0.0, 1.0]))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    if indicators.is_empty() && preview_indicators.is_empty() && division_tap_indicators.is_empty()
+    {
+        tap_vertices.0.clear();
+        return;
+    }
+
+    if indicators.is_empty() && division_tap_indicators.is_empty() {
+        tap_vertices.0 = build_tap_division_preview_vertices(&preview_indicators);
+        return;
+    }
+
+    let mut vertices = build_tap_division_preview_vertices(&preview_indicators);
+    vertices.extend(build_colored_tap_indicator_vertices(&indicators));
+    vertices.extend(build_tap_division_tap_marker_vertices(
+        &division_tap_indicators,
+    ));
+    tap_vertices.0 = vertices;
+}
+
+fn editor_tap_indicator_color(
+    index: usize,
+    hovered_tap_index: Option<usize>,
+    selected_tap_index: Option<usize>,
+) -> [f32; 4] {
+    if selected_tap_index == Some(index) {
+        [0.2, 0.85, 0.95, 1.0]
+    } else if hovered_tap_index == Some(index) {
+        [0.1, 0.45, 0.5, 1.0]
+    } else {
+        [0.0, 0.0, 0.0, 1.0]
+    }
+}
+
+const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
+
+fn normalized_editor_selection_indices(input: &EditorInputRes, object_count: usize) -> Vec<usize> {
+    let mut indices = input
+        .0
+        .selected_block_indices
+        .iter()
+        .copied()
+        .chain(input.0.selected_block_index)
+        .filter(|index| *index < object_count)
+        .collect::<Vec<_>>();
+    indices.sort_unstable();
+    indices.dedup();
+    indices
+}
+
+fn is_camera_trigger_block(object: &LevelObject) -> bool {
+    BlockDefinition::get(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
+}
+
+fn build_editor_object_outline_vertices(
+    object: &LevelObject,
+    selection: bool,
+    line_width: f32,
+) -> Vec<Vertex> {
+    if is_camera_trigger_block(object) {
+        let color = if selection {
+            [0.098, 0.6, 1.0, 1.0]
+        } else {
+            [0.698, 0.898, 1.0, 1.0]
+        };
+        let outline_width_pixels = (line_width * 1.35).max(1.0);
+        let mut vertices = build_block_geometry_for_object(object).to_triangle_vertices();
+        for vertex in &mut vertices {
+            vertex.color = color;
+            vertex.color_outline = [
+                object.position[0],
+                object.position[1],
+                object.position[2],
+                outline_width_pixels,
+            ];
+            vertex.render_profile = 3.0;
+        }
+        vertices
+    } else if selection {
+        build_editor_selection_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation,
+            line_width,
+        )
+    } else {
+        build_editor_hover_outline_vertices(
+            object.position,
+            object.size,
+            object.rotation,
+            line_width,
+        )
+    }
+}
+
+fn transform_trigger_target_indices_for_block(
+    objects: &[LevelObject],
+    trigger_block_index: usize,
+) -> Vec<usize> {
+    let Some(trigger) = objects
+        .get(trigger_block_index)
+        .and_then(|object| object.trigger.as_ref())
+    else {
+        return Vec::new();
+    };
+    if !trigger.transform {
+        return Vec::new();
+    }
+    let TriggerTarget::Objects { object_ids } = &trigger.target else {
+        return Vec::new();
+    };
+    let mut indices = objects
+        .iter()
+        .enumerate()
+        .filter_map(|(index, object)| object_ids.contains(&object.id).then_some(index))
+        .collect::<Vec<_>>();
+    indices.sort_unstable();
+    indices.dedup();
+    indices
+}
+
+fn append_outline_instance(
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+    object: &LevelObject,
+    object_outline_vertices: Vec<Vertex>,
+) {
+    let mask_start = mask_vertices.len() as u32;
+    mask_vertices.extend(build_block_geometry_for_object(object).to_triangle_vertices());
+    let mask_end = mask_vertices.len() as u32;
+    let outline_start = outline_vertices.len() as u32;
+    outline_vertices.extend(object_outline_vertices);
+    let outline_end = outline_vertices.len() as u32;
+    instances.push(EditorOutlineInstance {
+        mask_vertices: mask_start..mask_end,
+        outline_vertices: outline_start..outline_end,
+    });
+}
+
+fn append_transform_trigger_target_outline_instances(
+    objects: &[LevelObject],
+    trigger_indices: impl IntoIterator<Item = usize>,
+    mask_vertices: &mut Vec<Vertex>,
+    outline_vertices: &mut Vec<Vertex>,
+    instances: &mut Vec<EditorOutlineInstance>,
+) {
+    let mut target_indices = trigger_indices
+        .into_iter()
+        .flat_map(|index| transform_trigger_target_indices_for_block(objects, index))
+        .collect::<Vec<_>>();
+    target_indices.sort_unstable();
+    target_indices.dedup();
+    for target_index in target_indices {
+        if let Some(object) = objects.get(target_index) {
+            append_outline_instance(
+                mask_vertices,
+                outline_vertices,
+                instances,
+                object,
+                build_editor_transform_trigger_target_outline_vertices(
+                    object.position,
+                    object.size,
+                    object.rotation,
+                    2.5,
+                ),
+            );
+        }
+    }
+}
+
+fn selected_editor_group_bounds(
+    objects: &[LevelObject],
+    selected_indices: &[usize],
+) -> Option<([f32; 3], [f32; 3])> {
+    let first = *selected_indices.first()?;
+    let first_object = objects.get(first)?;
+    let mut min = first_object.position;
+    let mut max = [
+        first_object.position[0] + first_object.size[0],
+        first_object.position[1] + first_object.size[1],
+        first_object.position[2] + first_object.size[2],
+    ];
+    for index in selected_indices.iter().copied().skip(1) {
+        if let Some(object) = objects.get(index) {
+            min[0] = min[0].min(object.position[0]);
+            min[1] = min[1].min(object.position[1]);
+            min[2] = min[2].min(object.position[2]);
+            max[0] = max[0].max(object.position[0] + object.size[0]);
+            max[1] = max[1].max(object.position[1] + object.size[1]);
+            max[2] = max[2].max(object.position[2] + object.size[2]);
+        }
+    }
+    Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
+}
+
+/// Extract editor selection and hover outlines from App-owned objects/input.
+/// Runtime uploads the derived mesh data into the compatibility slots.
+pub(crate) fn extract_editor_selection_overlays_system(
+    phase: Res<AppPhaseRes>,
+    input: Res<EditorInputRes>,
+    objects: Res<EditorObjectsRes>,
+    mut selection: ResMut<RenderEditorSelectionOverlayRes>,
+    mut hover: ResMut<RenderEditorHoverOverlayRes>,
+) {
+    selection.stencil_vertices.clear();
+    selection.outline_vertices.clear();
+    selection.instances.clear();
+    hover.stencil_vertices.clear();
+    hover.outline_vertices.clear();
+
+    if phase.current != AppPhase::Editor || !input.0.mode.is_transform_mode() {
+        return;
+    }
+
+    let RenderEditorSelectionOverlayRes {
+        stencil_vertices: selection_stencil,
+        outline_vertices: selection_outline,
+        instances: selection_instances,
+    } = &mut *selection;
+    let RenderEditorHoverOverlayRes {
+        stencil_vertices: hover_stencil,
+        outline_vertices: hover_outline,
+    } = &mut *hover;
+
+    let selected_indices = normalized_editor_selection_indices(&input, objects.objects.len());
+    if selected_indices.len() <= SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
+        for index in selected_indices.iter().copied() {
+            if let Some(object) = objects.objects.get(index) {
+                append_outline_instance(
+                    selection_stencil,
+                    selection_outline,
+                    selection_instances,
+                    object,
+                    build_editor_object_outline_vertices(object, true, 2.0),
+                );
+            }
+        }
+    } else if let Some((position, size)) =
+        selected_editor_group_bounds(&objects.objects, &selected_indices)
+    {
+        let bounds_object = LevelObject {
+            position,
+            size,
+            ..LevelObject::default()
+        };
+        append_outline_instance(
+            selection_stencil,
+            selection_outline,
+            selection_instances,
+            &bounds_object,
+            build_editor_selection_outline_vertices(position, size, [0.0, 0.0, 0.0], 2.0),
+        );
+    }
+    append_transform_trigger_target_outline_instances(
+        &objects.objects,
+        selected_indices.iter().copied(),
+        selection_stencil,
+        selection_outline,
+        selection_instances,
+    );
+
+    let hovered_index = input
+        .0
+        .hovered_block_index
+        .filter(|index| *index < objects.objects.len());
+    let selected_mask = selected_indices
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    if let Some(index) = hovered_index
+        && !selected_mask.contains(&index)
+        && let Some(object) = objects.objects.get(index)
+    {
+        let mut hover_instances = Vec::new();
+        append_outline_instance(
+            hover_stencil,
+            hover_outline,
+            &mut hover_instances,
+            object,
+            build_editor_object_outline_vertices(object, false, 3.0),
+        );
+    }
+
+    let mut target_indices = hovered_index
+        .into_iter()
+        .flat_map(|index| transform_trigger_target_indices_for_block(&objects.objects, index))
+        .collect::<Vec<_>>();
+    target_indices.sort_unstable();
+    target_indices.dedup();
+    let mut target_instances = Vec::new();
+    for target_index in target_indices {
+        if let Some(object) = objects.objects.get(target_index) {
+            append_outline_instance(
+                hover_stencil,
+                hover_outline,
+                &mut target_instances,
+                object,
+                build_editor_transform_trigger_target_outline_vertices(
+                    object.position,
+                    object.size,
+                    object.rotation,
+                    2.5,
+                ),
+            );
+        }
+    }
+}
+
+fn transform_trigger_markers_for_triggers(
+    objects: &[LevelObject],
+    trigger_objects: &[LevelObject],
+    selected_trigger_index: Option<usize>,
+) -> Vec<TransformTriggerMarker> {
+    let mut markers = Vec::new();
+    for (trigger_index, trigger_object) in trigger_objects.iter().enumerate() {
+        let Some(trigger) = trigger_object.trigger.as_ref() else {
+            continue;
+        };
+        let TriggerTarget::Objects { object_ids } = &trigger.target else {
+            continue;
+        };
+        if !trigger.transform {
+            continue;
+        }
+
+        let source_objects = if trigger_index == 0 {
+            std::borrow::Cow::Borrowed(objects)
+        } else {
+            std::borrow::Cow::Owned(trigger_transformed_objects_at_time(
+                objects,
+                &trigger_objects[..trigger_index],
+                trigger.time_seconds,
+            ))
+        };
+        if object_ids.is_empty() {
+            markers.push(TransformTriggerMarker {
+                source_position: None,
+                source_size: None,
+                target_position: trigger_object.position,
+                target_rotation_degrees: trigger_object.rotation,
+                target_size: trigger_object.size,
+                time_seconds: trigger.time_seconds,
+                duration_seconds: trigger.duration_seconds,
+                is_selected: selected_trigger_index == Some(trigger_index),
+            });
+        } else {
+            for object_id in object_ids {
+                let Some(source_object) =
+                    source_objects.iter().find(|object| object.id == *object_id)
+                else {
+                    continue;
+                };
+                markers.push(TransformTriggerMarker {
+                    source_position: Some(source_object.position),
+                    source_size: Some(source_object.size),
+                    target_position: trigger_object.position,
+                    target_rotation_degrees: trigger_object.rotation,
+                    target_size: trigger_object.size,
+                    time_seconds: trigger.time_seconds,
+                    duration_seconds: trigger.duration_seconds,
+                    is_selected: selected_trigger_index == Some(trigger_index),
+                });
+            }
+        }
+    }
+    markers
+}
+
+/// Extract editor transform-trigger markers from App-owned objects and
+/// timeline state. Runtime uploads the derived vertices into the
+/// compatibility mesh slot.
+pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
+    phase: Res<AppPhaseRes>,
+    objects: Res<EditorObjectsRes>,
+    triggers: Res<EditorTriggerRes>,
+    timeline: Res<EditorTimelineRes>,
+    mut marker_vertices: ResMut<RenderEditorTransformTriggerMarkerVerticesRes>,
+) {
+    if phase.current != AppPhase::Editor {
+        marker_vertices.0.clear();
+        return;
+    }
+
+    let trigger_objects = objects
+        .objects
+        .iter()
+        .filter(|object| object.trigger.is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    let markers = transform_trigger_markers_for_triggers(
+        &objects.objects,
+        &trigger_objects,
+        triggers.0.selected_index,
+    );
+    if markers.is_empty() {
+        marker_vertices.0.clear();
+        return;
+    }
+    marker_vertices.0 =
+        build_transform_trigger_marker_vertices(&markers, timeline.0.clock.time_seconds);
+}
+
+fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
+    (left[0] - right[0]).abs() < 0.001
+        && (left[1] - right[1]).abs() < 0.001
+        && (left[2] - right[2]).abs() < 0.001
 }
 
 #[derive(SystemParam)]
@@ -380,6 +1714,183 @@ pub fn apply_resize_surface_system(
     }
 }
 
+/// Upload the CPU meshes extracted by the App world into the App-owned GPU
+/// mesh storage. This is the final compatibility upload boundary before the
+/// custom renderer is replaced by the full Bevy render world.
+#[derive(SystemParam)]
+pub(crate) struct RenderMeshUploadParams<'w> {
+    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    meshes: Option<NonSendMut<'w, RenderMeshesRes>>,
+    phase: Res<'w, AppPhaseRes>,
+    block_effects: Res<'w, RenderBlockEffectVerticesRes>,
+    playing: Res<'w, RenderPlayingBlockMeshesRes>,
+    menu_preview: Res<'w, RenderMenuPreviewBlockMeshesRes>,
+    editor_blocks: Res<'w, RenderEditorBlockMeshesRes>,
+    spawn_marker: Res<'w, RenderEditorSpawnMarkerVerticesRes>,
+    gizmo: Res<'w, RenderEditorGizmoVerticesRes>,
+    trail: Res<'w, RenderTrailVerticesRes>,
+    practice_checkpoints: Res<'w, RenderPracticeCheckpointVerticesRes>,
+    camera_arrow: Res<'w, RenderEditorCameraArrowVerticesRes>,
+    cursor: Res<'w, RenderEditorCursorVerticesRes>,
+    hitbox: Res<'w, RenderEditorHitboxVerticesRes>,
+    tap_indicator: Res<'w, RenderEditorTapIndicatorVerticesRes>,
+    selection: Res<'w, RenderEditorSelectionOverlayRes>,
+    hover: Res<'w, RenderEditorHoverOverlayRes>,
+    transform_markers: Res<'w, RenderEditorTransformTriggerMarkerVerticesRes>,
+}
+
+pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadParams) {
+    let RenderMeshUploadParams {
+        gpu,
+        meshes,
+        phase,
+        block_effects,
+        playing,
+        menu_preview,
+        editor_blocks,
+        spawn_marker,
+        gizmo,
+        trail,
+        practice_checkpoints,
+        camera_arrow,
+        cursor,
+        hitbox,
+        tap_indicator,
+        selection,
+        hover,
+        transform_markers,
+    } = params;
+    let Some(gpu) = gpu else {
+        return;
+    };
+    let Some(mut meshes) = meshes else {
+        return;
+    };
+    let device = &gpu.0.device;
+    let queue = &gpu.0.queue;
+
+    meshes.0.gem_shatter_effects.replace_with_vertices(
+        device,
+        "Gem Shatter Vertex Buffer",
+        &block_effects.0,
+    );
+    if let Some(result) = playing.result.as_ref() {
+        meshes
+            .0
+            .blocks_instanced
+            .replace_with_batches(device, "Block Instance Buffer", result);
+        meshes.0.blocks.replace_with_geometry(
+            device,
+            "Block Vertex Buffer",
+            &result.fallback_geometry,
+        );
+        meshes.0.blocks_chunked.clear();
+    } else if let Some(chunked) = playing.chunked.as_ref() {
+        meshes
+            .0
+            .blocks_chunked
+            .replace_with_chunked_mesh(device, "Chunked Block Buffer", chunked);
+        meshes.0.blocks.clear();
+        meshes.0.blocks_instanced.clear();
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_chunked.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks_selected.clear();
+    }
+    if phase.current == AppPhase::Menu
+        && let Some(chunked) = menu_preview.chunked.as_ref()
+    {
+        meshes.0.blocks_chunked.replace_with_chunked_mesh(
+            device,
+            "Menu Preview Chunked Block Buffer",
+            chunked,
+        );
+        meshes.0.blocks.clear();
+        meshes.0.blocks_instanced.clear();
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_chunked.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks_selected.clear();
+    }
+    if phase.current == AppPhase::Editor {
+        meshes.0.blocks_static_chunked.replace_with_chunked_mesh(
+            device,
+            "Chunked Block Static Buffer",
+            &editor_blocks.static_mesh,
+        );
+        meshes.0.blocks_selected.replace_with_geometry(
+            device,
+            "Block Selected Vertex Buffer",
+            &editor_blocks.selected_geometry,
+        );
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks.clear();
+        meshes.0.blocks_chunked.clear();
+    }
+
+    meshes.0.spawn_marker.replace_with_vertices(
+        device,
+        "Spawn Marker Vertex Buffer",
+        &spawn_marker.0,
+    );
+    meshes
+        .0
+        .editor_gizmo
+        .replace_with_vertices(device, "Editor Gizmo Vertex Buffer", &gizmo.0);
+    meshes.0.trail.write_streaming_vertices(queue, &trail.0);
+    meshes.0.practice_checkpoints.replace_with_vertices(
+        device,
+        "Practice Checkpoint Flag Vertex Buffer",
+        &practice_checkpoints.0,
+    );
+    meshes.0.camera_arrow.replace_with_vertices(
+        device,
+        "Camera Arrow Vertex Buffer",
+        &camera_arrow.0,
+    );
+    meshes
+        .0
+        .editor_cursor
+        .replace_with_vertices(device, "Editor Cursor Vertex Buffer", &cursor.0);
+    meshes.0.editor_hitbox_visualization.replace_with_vertices(
+        device,
+        "Editor Hitbox Visualization Vertex Buffer",
+        &hitbox.0,
+    );
+    meshes.0.tap_indicators.replace_with_vertices(
+        device,
+        "Tap Indicator Vertex Buffer",
+        &tap_indicator.0,
+    );
+    meshes.0.editor_selection_stencil.replace_with_vertices(
+        device,
+        "Editor Selection Stencil Vertex Buffer",
+        &selection.stencil_vertices,
+    );
+    meshes.0.editor_selection_outline.replace_with_vertices(
+        device,
+        "Editor Selection Outline Vertex Buffer",
+        &selection.outline_vertices,
+    );
+    meshes.0.editor_selection_outline_instances = selection.instances.clone();
+    meshes.0.editor_hover_stencil.replace_with_vertices(
+        device,
+        "Editor Hover Stencil Vertex Buffer",
+        &hover.stencil_vertices,
+    );
+    meshes.0.editor_hover_outline.replace_with_vertices(
+        device,
+        "Editor Hover Outline Vertex Buffer",
+        &hover.outline_vertices,
+    );
+    meshes.0.transform_trigger_markers.replace_with_vertices(
+        device,
+        "Transform Trigger Marker Vertex Buffer",
+        &transform_markers.0,
+    );
+}
+
 /// Bevy [`QueryFilter`] for the authored object fields that trigger
 /// a mesh rebuild on change.
 ///
@@ -430,21 +1941,16 @@ pub fn mark_mesh_dirty_system(
 pub fn add_state_render_systems(schedule: &mut Schedule) {
     schedule.add_systems((
         mark_mesh_dirty_system.in_set(RenderSet::RebuildMesh),
-        update_render_frame_input_system
-            .after(crate::state::async_bridge::ApplyAsyncResultsSet)
-            .before(present_render_frame_system),
+        update_render_frame_input_system.after(crate::state::async_bridge::ApplyAsyncResultsSet),
         update_color_space_uniform_system
             .after(crate::state::frame_time::advance_frame_time_system),
         upload_color_space_uniform_system
             .after(update_color_space_uniform_system)
             .after(apply_resize_surface_system)
-            .before(present_render_frame_system)
             .in_set(RenderSet::Present),
         apply_resize_surface_system
             .after(crate::events::auth::handle_resize_surface)
-            .before(present_render_frame_system)
             .in_set(RenderSet::Present),
-        present_render_frame_system.in_set(RenderSet::Present),
     ));
 }
 

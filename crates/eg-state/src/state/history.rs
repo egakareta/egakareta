@@ -40,7 +40,7 @@ impl EditorSubsystem {
         }
     }
 
-    pub(super) fn record_history_state(&mut self) {
+    pub(crate) fn record_history_state(&mut self) {
         self.record_history_state_force();
     }
 

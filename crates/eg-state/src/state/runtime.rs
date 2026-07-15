@@ -210,6 +210,7 @@ pub struct EditorGizmoState {
 pub struct EditorRuntimeState {
     pub dirty: EditorDirtyFlags,
     pub pending_block_mesh_appends: Vec<usize>,
+    pub pending_block_effects: Vec<BlockVisualEffect>,
     pub gizmo: EditorGizmoState,
     pub drag_heavy_rebuild_accumulator: f32,
     pub interaction: EditorInteractionState,
@@ -221,6 +222,7 @@ pub struct EditorFrameState {
     pub delta_seconds: f32,
 }
 
+#[derive(Clone)]
 pub struct BlockVisualEffect {
     pub position: [f32; 3],
     pub size: [f32; 3],
@@ -241,12 +243,7 @@ impl BlockVisualEffect {
     }
 }
 
-pub struct PlayerRenderState {
-    pub gem_shatter_effects: Vec<BlockVisualEffect>,
-}
-
 pub struct FrameRuntimeState {
     pub editor: EditorFrameState,
-    pub player_render: PlayerRenderState,
     pub global_time_seconds: f32,
 }

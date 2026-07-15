@@ -104,6 +104,7 @@ impl FrustumPlane {
     }
 }
 
+#[cfg(test)]
 fn view_projection_for_current_phase(state: &State) -> Mat4 {
     let height = state.render_gpu().config.height.max(1);
     let aspect = state.render_gpu().config.width.max(1) as f32 / height as f32;
@@ -160,68 +161,104 @@ fn draw_visible_chunked_instances(
     }
 }
 
+struct RenderContext<'a> {
+    gpu: &'a mut eg_render::GpuContext,
+    meshes: &'a mut eg_render::SceneMeshes,
+}
+
+impl RenderContext<'_> {
+    fn render_gpu(&self) -> &eg_render::GpuContext {
+        self.gpu
+    }
+
+    fn render_meshes(&self) -> &eg_render::SceneMeshes {
+        self.meshes
+    }
+}
+
+/// Present the scene and egui using the App-owned render resources.
+pub fn render_egui_with_resources(
+    gpu: &mut eg_render::GpuContext,
+    meshes: &mut eg_render::SceneMeshes,
+    renderer: &mut EguiRenderer,
+    paint_jobs: &[egui::ClippedPrimitive],
+    screen_descriptor: &ScreenDescriptor,
+    frame_input: RenderFrameInput,
+    camera_view_projection: [[f32; 4]; 4],
+) -> Result<(), RenderSurfaceError> {
+    let mut context = RenderContext { gpu, meshes };
+    context.render_egui_with_frame_input(
+        renderer,
+        paint_jobs,
+        screen_descriptor,
+        frame_input,
+        camera_view_projection,
+    )
+}
+
 impl State {
+    #[cfg(test)]
+    fn with_render_context<T>(&mut self, f: impl FnOnce(&mut RenderContext<'_>) -> T) -> T {
+        let resources = self
+            .render_resources
+            .as_mut()
+            .expect("State render resources are App-owned in production");
+        f(&mut RenderContext {
+            gpu: &mut resources.gpu,
+            meshes: &mut resources.meshes,
+        })
+    }
+
     /// Renders the `egui` user interface over the current frame.
     ///
     /// This should be called after the main scene rendering to ensure the UI
     /// appears on top. It handles updating `egui` buffers and executing the
     /// render pass.
+    #[cfg(test)]
     pub fn render_egui(
         &mut self,
         renderer: &mut EguiRenderer,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
     ) -> Result<(), RenderSurfaceError> {
-        self.render_egui_with_frame_input(
-            renderer,
-            paint_jobs,
-            screen_descriptor,
-            self.compute_frame_input_snapshot(),
-        )
+        let frame_input = self.compute_frame_input_snapshot();
+        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
+        self.with_render_context(|context| {
+            context.render_egui_with_frame_input(
+                renderer,
+                paint_jobs,
+                screen_descriptor,
+                frame_input,
+                camera_view_projection,
+            )
+        })
     }
 
     /// Render egui using the App-owned frame-input resource.
+    #[cfg(test)]
     pub fn render_egui_with_frame_input(
         &mut self,
         renderer: &mut EguiRenderer,
         paint_jobs: &[egui::ClippedPrimitive],
         screen_descriptor: &ScreenDescriptor,
         frame_input: RenderFrameInput,
+        camera_view_projection: [[f32; 4]; 4],
     ) -> Result<(), RenderSurfaceError> {
-        puffin::profile_scope!("RenderEgui");
-        self.render_with_overlay_and_frame_input(frame_input, |device, queue, view, encoder| {
-            {
-                puffin::profile_scope!("EguiUpdateBuffers");
-                renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
-            }
-
-            {
-                puffin::profile_scope!("EguiRenderPass");
-                let mut pass = encoder
-                    .begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("egui_render_pass"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Load,
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        depth_stencil_attachment: None,
-                        timestamp_writes: None,
-                        occlusion_query_set: None,
-                        multiview_mask: None,
-                    })
-                    .forget_lifetime();
-
-                renderer.render(&mut pass, paint_jobs, screen_descriptor);
-            }
+        let frame_input = frame_input;
+        let camera_view_projection = camera_view_projection;
+        self.with_render_context(|context| {
+            context.render_egui_with_frame_input(
+                renderer,
+                paint_jobs,
+                screen_descriptor,
+                frame_input,
+                camera_view_projection,
+            )
         })
     }
 
     /// Creates a new `EguiRenderer` configured for the current GPU device and surface format.
+    #[cfg(test)]
     pub fn create_egui_renderer(&self) -> EguiRenderer {
         EguiRenderer::new(
             &self.render_gpu().device,
@@ -233,6 +270,7 @@ impl State {
     /// Performs a full render of the current application state.
     ///
     /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
+    #[cfg(test)]
     pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
         puffin::profile_scope!("RenderFrame");
         self.render_with_overlay(|_, _, _, _| {})
@@ -242,16 +280,101 @@ impl State {
     ///
     /// The `overlay` closure is provided with the GPU device, queue, current texture view,
     /// and a command encoder to perform additional drawing operations.
+    #[cfg(test)]
     pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), RenderSurfaceError>
     where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
-        self.render_with_overlay_and_frame_input(self.compute_frame_input_snapshot(), overlay)
+        let frame_input = self.compute_frame_input_snapshot();
+        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
+        self.with_render_context(|context| {
+            context.render_with_overlay_and_frame_input(
+                frame_input,
+                camera_view_projection,
+                overlay,
+            )
+        })
+    }
+
+    #[cfg(test)]
+    pub fn render_to_view<F>(
+        &mut self,
+        view: &wgpu::TextureView,
+        encoder: &mut wgpu::CommandEncoder,
+        overlay: F,
+    ) where
+        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
+    {
+        let frame_input = self.compute_frame_input_snapshot();
+        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
+        self.with_render_context(|context| {
+            context.render_to_view_with_frame_input(
+                view,
+                encoder,
+                frame_input,
+                camera_view_projection,
+                overlay,
+            )
+        });
+    }
+
+    #[cfg(test)]
+    pub fn recreate_surface(&mut self) {
+        let size = self.current_render_size();
+        self.resize_surface(size);
+    }
+}
+
+impl RenderContext<'_> {
+    fn render_egui_with_frame_input(
+        &mut self,
+        renderer: &mut EguiRenderer,
+        paint_jobs: &[egui::ClippedPrimitive],
+        screen_descriptor: &ScreenDescriptor,
+        frame_input: RenderFrameInput,
+        camera_view_projection: [[f32; 4]; 4],
+    ) -> Result<(), RenderSurfaceError> {
+        puffin::profile_scope!("RenderEgui");
+        self.render_with_overlay_and_frame_input(
+            frame_input,
+            camera_view_projection,
+            |device, queue, view, encoder| {
+                {
+                    puffin::profile_scope!("EguiUpdateBuffers");
+                    renderer.update_buffers(device, queue, encoder, paint_jobs, screen_descriptor);
+                }
+
+                {
+                    puffin::profile_scope!("EguiRenderPass");
+                    let mut pass = encoder
+                        .begin_render_pass(&wgpu::RenderPassDescriptor {
+                            label: Some("egui_render_pass"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view,
+                                resolve_target: None,
+                                depth_slice: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            multiview_mask: None,
+                        })
+                        .forget_lifetime();
+
+                    renderer.render(&mut pass, paint_jobs, screen_descriptor);
+                }
+            },
+        )
     }
 
     fn render_with_overlay_and_frame_input<F>(
         &mut self,
         frame_input: RenderFrameInput,
+        camera_view_projection: [[f32; 4]; 4],
         overlay: F,
     ) -> Result<(), RenderSurfaceError>
     where
@@ -281,7 +404,13 @@ impl State {
 
         {
             puffin::profile_scope!("RenderToView");
-            self.render_to_view_with_frame_input(&view, &mut encoder, frame_input, overlay);
+            self.render_to_view_with_frame_input(
+                &view,
+                &mut encoder,
+                frame_input,
+                camera_view_projection,
+                overlay,
+            );
         }
 
         {
@@ -295,38 +424,24 @@ impl State {
         Ok(())
     }
 
-    pub fn render_to_view<F>(
-        &mut self,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-        overlay: F,
-    ) where
-        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
-    {
-        self.render_to_view_with_frame_input(
-            view,
-            encoder,
-            self.compute_frame_input_snapshot(),
-            overlay,
-        );
-    }
-
     fn render_to_view_with_frame_input<F>(
         &mut self,
         view: &wgpu::TextureView,
         encoder: &mut wgpu::CommandEncoder,
         frame_input: RenderFrameInput,
+        camera_view_projection: [[f32; 4]; 4],
         overlay: F,
     ) where
         F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
     {
         puffin::profile_scope!("RenderWorld");
+        let phase = frame_input.phase;
         let skip_world = frame_input.should_skip_world();
         let draw_editor_overlays = frame_input.should_draw_editor_overlays();
         let clear_color = frame_input.clear_color();
         let grid_uniform = frame_input.grid_uniform(GRID_HALF_EXTENT);
         let block_frustum =
-            ViewFrustum::from_view_projection(view_projection_for_current_phase(self));
+            ViewFrustum::from_view_projection(Mat4::from_cols_array_2d(&camera_view_projection));
         self.render_gpu().queue.write_buffer(
             &self.render_gpu().grid_uniform_buffer,
             0,
@@ -386,14 +501,14 @@ impl State {
             }
         }
 
-        if self.phase == AppPhase::Playing
-            || self.phase == AppPhase::GameOver
-            || self.phase == AppPhase::Editor
-            || self.phase == AppPhase::Menu
+        if phase == AppPhase::Playing
+            || phase == AppPhase::GameOver
+            || phase == AppPhase::Editor
+            || phase == AppPhase::Menu
         {
             if !skip_world {
                 puffin::profile_scope!("DrawBlocksTrail");
-                if self.phase == AppPhase::Editor {
+                if phase == AppPhase::Editor {
                     render_pass.set_pipeline(&self.render_gpu().instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_visible_chunked_instances(
@@ -466,7 +581,7 @@ impl State {
                 }
 
                 if let Some(draw_data) = self.render_meshes().trail.draw_data() {
-                    if self.phase == AppPhase::Editor {
+                    if phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render_gpu().editor_ghost_trail_pipeline);
                         render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
@@ -485,7 +600,7 @@ impl State {
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
 
-                    if self.phase == AppPhase::Editor {
+                    if phase == AppPhase::Editor {
                         render_pass.set_pipeline(&self.render_gpu().render_pipeline);
                         render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
                         render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
@@ -865,12 +980,6 @@ impl State {
                 encoder,
             );
         }
-    }
-
-    /// Recreates the window surface following a resize or other configuration change.
-    pub fn recreate_surface(&mut self) {
-        let size = self.current_render_size();
-        self.resize_surface(size);
     }
 }
 

@@ -7,7 +7,7 @@
 */
 use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateSnapshot;
+use eg_state::state::UiStateView;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::EditorMode;
 
@@ -84,13 +84,13 @@ fn timeline_bar_nearest_tap_index(
         .map(|(index, _)| index)
 }
 
-fn timeline_bar_view_is_tapping(view: &UiStateSnapshot<'_>) -> bool {
+fn timeline_bar_view_is_tapping(view: &UiStateView<'_>) -> bool {
     view.mode == EditorMode::Tapping
         || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
 }
 
 fn timeline_bar_push_tap_click_commands(
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     pointer_x: f32,
     rect: egui::Rect,
     view_start: f32,
@@ -156,7 +156,7 @@ fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
 
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     duration_seconds: f32,
     commands: &mut impl UiCommandSink,
 ) {
@@ -499,7 +499,7 @@ pub(crate) fn show_timeline_bar(
 
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     puffin::profile_scope!("UiWaveformPanel");
@@ -730,7 +730,7 @@ mod tests {
         waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
-    ) -> eg_state::state::UiStateSnapshot<'a> {
+    ) -> eg_state::state::UiStateView<'a> {
         let mut view = editor_ui_snapshot(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);

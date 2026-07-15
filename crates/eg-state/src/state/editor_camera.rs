@@ -467,6 +467,7 @@ impl State {
         )
     }
 
+    #[cfg(test)]
     pub(super) fn playing_camera_view(&self) -> (Vec3, Vec3) {
         let target = Vec3::from_array(self.gameplay.state.position);
         let sample = self.evaluate_camera_track(

@@ -112,6 +112,7 @@ impl EditorSubsystem {
 }
 
 impl State {
+    #[cfg(test)]
     pub fn force_editor_cursor_from_pointer(&mut self) {
         let Some(pointer) = self.editor.input.pointer_screen else {
             return;
@@ -124,6 +125,7 @@ impl State {
         self.force_editor_cursor_from_screen(pointer[0], pointer[1]);
     }
 
+    #[cfg(test)]
     pub fn force_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         if self.phase != AppPhase::Editor {
             return;
@@ -140,6 +142,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
         let viewport_size = Vec2::new(
             self.render_gpu().config.width as f32,

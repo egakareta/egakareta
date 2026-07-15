@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(test)]
 use std::borrow::Cow;
 
 use glam::Vec3;
@@ -14,20 +15,22 @@ use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use eg_game::trigger_transformed_objects_at_time;
+#[cfg(test)]
+use eg_mesh::build_editor_hitbox_visualization_vertices;
 use eg_mesh::{
-    GizmoParams, GizmoPart, MeshGeometry, PracticeCheckpointFlagInstance, TransformTriggerMarker,
-    Vertex, build_block_geometry_for_object, build_block_geometry_from_refs,
-    build_block_geometry_from_refs_at_time, build_camera_arrow_vertices, build_chunked_block_mesh,
+    GizmoParams, GizmoPart, MeshGeometry, PracticeCheckpointFlagInstance, Vertex,
+    build_block_geometry_for_object, build_block_geometry_from_refs,
+    build_block_geometry_from_refs_at_time, build_chunked_block_mesh,
     build_chunked_block_mesh_at_time, build_chunked_block_mesh_from_refs,
     build_chunked_block_mesh_from_refs_at_time, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-    build_transform_trigger_marker_vertices,
 };
+#[cfg(test)]
+use eg_mesh::{TransformTriggerMarker, build_transform_trigger_marker_vertices};
 use eg_render::EditorOutlineInstance;
 use eg_types::{
     AppPhase, Direction, EditorMode, EditorPlaceMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
@@ -226,6 +229,7 @@ fn append_hovered_transform_trigger_target_outlines(
     }
 }
 
+#[cfg(test)]
 fn transform_trigger_markers_for_triggers(
     objects: &[LevelObject],
     trigger_objects: &[LevelObject],
@@ -291,6 +295,7 @@ fn transform_trigger_markers_for_triggers(
     markers
 }
 
+#[cfg(test)]
 fn transform_trigger_marker_source_objects<'a>(
     objects: &'a [LevelObject],
     trigger_objects: &[LevelObject],
@@ -459,6 +464,7 @@ impl State {
         ))
     }
 
+    #[cfg(test)]
     pub(super) fn process_editor_dirty(&mut self, frame_dt: f32) {
         let pending = self.editor.runtime.dirty;
         if !pending.any() {
@@ -521,6 +527,7 @@ impl State {
             self.editor.runtime.dirty.rebuild_hitbox_visualization = false;
         }
 
+        #[cfg(test)]
         if dirty.rebuild_block_mesh {
             puffin::profile_scope!("DirtyBlockMesh");
             self.editor.runtime.pending_block_mesh_appends.clear();
@@ -539,6 +546,7 @@ impl State {
         }
 
         if dirty.rebuild_selection_overlays {
+            #[cfg(test)]
             {
                 puffin::profile_scope!("DirtySelectionGizmo");
                 self.rebuild_editor_gizmo_vertices();
@@ -549,11 +557,13 @@ impl State {
                 self.rebuild_camera_trigger_marker_vertices();
             }
 
+            #[cfg(test)]
             {
                 puffin::profile_scope!("DirtyHoverOutline");
                 self.rebuild_editor_hover_outline_vertices();
             }
 
+            #[cfg(test)]
             {
                 puffin::profile_scope!("DirtySelectionOutline");
                 self.rebuild_editor_selection_outline_vertices();
@@ -561,13 +571,19 @@ impl State {
         }
 
         if dirty.rebuild_tap_indicators {
-            puffin::profile_scope!("DirtyTapIndicators");
-            self.rebuild_tap_indicator_vertices();
+            #[cfg(test)]
+            {
+                puffin::profile_scope!("DirtyTapIndicators");
+                self.rebuild_tap_indicator_vertices();
+            }
         }
 
         if dirty.rebuild_transform_trigger_markers {
-            puffin::profile_scope!("DirtyTransformTriggerMarkers");
-            self.rebuild_transform_trigger_marker_vertices();
+            #[cfg(test)]
+            {
+                puffin::profile_scope!("DirtyTransformTriggerMarkers");
+                self.rebuild_transform_trigger_marker_vertices();
+            }
         }
 
         if dirty.rebuild_preview_player {
@@ -576,13 +592,19 @@ impl State {
         }
 
         if dirty.rebuild_cursor {
-            puffin::profile_scope!("DirtyCursor");
-            self.rebuild_editor_cursor_vertices();
+            #[cfg(test)]
+            {
+                puffin::profile_scope!("DirtyCursor");
+                self.rebuild_editor_cursor_vertices();
+            }
         }
 
         if dirty.rebuild_hitbox_visualization {
-            puffin::profile_scope!("DirtyHitboxVisualization");
-            self.rebuild_editor_hitbox_visualization_vertices();
+            #[cfg(test)]
+            {
+                puffin::profile_scope!("DirtyHitboxVisualization");
+                self.rebuild_editor_hitbox_visualization_vertices();
+            }
         }
 
         if dirty.sync_game_objects || dirty.rebuild_block_mesh {
@@ -607,6 +629,7 @@ impl State {
         self.editor.sync_objects();
     }
 
+    #[cfg(test)]
     pub(super) fn sync_editor_objects_after_drag_release(&mut self) {
         self.editor.sync_objects_after_drag_release();
     }
@@ -982,11 +1005,13 @@ impl State {
         });
     }
 
+    #[cfg(test)]
     pub(super) fn rebuild_camera_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("CameraTriggerMarkerMesh");
         self.render_meshes_mut().camera_trigger_markers.clear();
     }
 
+    #[cfg(test)]
     pub(super) fn rebuild_transform_trigger_marker_vertices(&mut self) {
         puffin::profile_scope!("TransformTriggerMarkerMesh");
         if self.phase != AppPhase::Editor {
@@ -1192,6 +1217,7 @@ impl State {
         self.render_meshes_mut().blocks_chunked.clear();
     }
 
+    #[cfg(test)]
     fn rebuild_editor_selected_block_vertices(&mut self) {
         puffin::profile_scope!("BlockMeshSelectedOnly");
         let object_source = self
@@ -1364,6 +1390,7 @@ impl State {
         });
     }
 
+    #[cfg(test)]
     pub(super) fn rebuild_editor_preview_player_vertices(&mut self) {
         self.render_meshes_mut().editor_preview_player.clear();
     }
@@ -1379,6 +1406,7 @@ impl State {
         self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
+    #[cfg(test)]
     pub(super) fn rebuild_editor_hitbox_visualization_vertices(&mut self) {
         puffin::profile_scope!("EditorHitboxVisualizationMesh");
         let effective_mode = self.editor_effective_mode_for_playback();
@@ -1405,44 +1433,9 @@ impl State {
             );
         });
     }
-
-    pub(super) fn rebuild_camera_arrow_vertices(&mut self) {
-        puffin::profile_scope!("CameraArrowMesh");
-        if self.phase != AppPhase::Editor || self.editor_is_playing() {
-            self.render_meshes_mut().camera_arrow.clear();
-            return;
-        }
-
-        let (eye, target) = {
-            let (e, t) = self.editor_preview_camera_view();
-            (Vec3::from_array(e), Vec3::from_array(t))
-        };
-
-        let forward = {
-            let dir = target - eye;
-            if dir.length_squared() > f32::EPSILON {
-                dir.normalize().to_array()
-            } else {
-                [0.0, 0.0, 1.0]
-            }
-        };
-
-        let editor_camera_eye = {
-            let target = self.editor.editor_camera_target();
-            let offset = self.editor_camera_offset();
-            (target + offset).to_array()
-        };
-        let vertices = build_camera_arrow_vertices(eye.to_array(), forward, editor_camera_eye);
-        self.with_render_meshes_and_device(|device, meshes| {
-            meshes.camera_arrow.replace_with_vertices(
-                device,
-                "Camera Arrow Vertex Buffer",
-                &vertices,
-            );
-        });
-    }
 }
 
+#[cfg(test)]
 fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
     const PLAYER_WIDTH: f32 = 0.8;
     const PLAYER_HEIGHT: f32 = 0.8;

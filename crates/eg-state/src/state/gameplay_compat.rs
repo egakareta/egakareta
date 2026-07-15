@@ -43,36 +43,7 @@ impl State {
         }
     }
 
-    /// Applies the practice-mode toggle side effects while practice ownership
-    /// is still synchronized back into legacy gameplay/session state.
-    pub(super) fn set_practice_mode_enabled_internal(&mut self, enabled: bool) {
-        if self.phase != eg_types::AppPhase::Playing || self.session.playtesting_editor {
-            return;
-        }
-
-        self.mark_app_gameplay_world_for_legacy_seed();
-        self.session.practice_mode_enabled = enabled;
-        self.session.practice_checkpoints.clear();
-
-        if enabled {
-            self.resume_game();
-            return;
-        }
-
-        self.rebuild_practice_checkpoint_vertices();
-        self.restart_level();
-        self.resume_game();
-    }
-
     pub fn practice_checkpoints(&self) -> Vec<PracticeCheckpoint> {
         self.session.practice_checkpoints.clone()
-    }
-
-    /// Temporary compatibility setter for the App-world checkpoint list.
-    /// The mesh rebuild remains here until presentation consumes
-    /// `SessionStateRes.practice_checkpoints` directly.
-    pub fn set_practice_checkpoints_from_app(&mut self, checkpoints: Vec<PracticeCheckpoint>) {
-        self.session.practice_checkpoints = checkpoints;
-        self.rebuild_practice_checkpoint_vertices();
     }
 }

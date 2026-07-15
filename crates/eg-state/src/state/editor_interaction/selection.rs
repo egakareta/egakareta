@@ -655,6 +655,7 @@ impl EditorSubsystem {
 }
 
 impl State {
+    #[cfg(test)]
     pub fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.begin_marquee_selection(x, y, self.phase);
         if handled {
@@ -664,6 +665,7 @@ impl State {
         handled
     }
 
+    #[cfg(test)]
     pub fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let handled = self.editor.update_marquee_selection(x, y, self.phase);
         if handled {
@@ -681,6 +683,7 @@ impl State {
         handled
     }
 
+    #[cfg(test)]
     pub fn finish_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
             self.render_gpu().config.width as f32,
@@ -711,6 +714,7 @@ impl State {
         false
     }
 
+    #[cfg(test)]
     pub fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
         let viewport = Vec2::new(
             self.render_gpu().config.width as f32,
@@ -720,6 +724,7 @@ impl State {
             .drag_selection_from_screen(x, y, viewport, self.phase)
     }
 
+    #[cfg(test)]
     pub fn begin_editor_selected_block_drag(&mut self, x: f64, y: f64) -> bool {
         let viewport_size = Vec2::new(
             self.render_gpu().config.width as f32,

@@ -7,19 +7,26 @@
 */
 use glam::Vec2;
 
-use super::{EditorDirtyFlags, EditorSubsystem, State, TAP_CLICK_SCREEN_EPSILON_PIXELS};
+#[cfg(test)]
+use super::TAP_CLICK_SCREEN_EPSILON_PIXELS;
+use super::{EditorDirtyFlags, EditorSubsystem, State};
+#[cfg(test)]
+use eg_editor_domain::add_tap_with_indicator;
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, TapDivisionPreview, TapDivisionPreviewRange,
-    TimelineNearSearch, add_tap_with_indicator, build_editor_playtest_transition,
-    derive_tap_indicator_positions, derive_timeline_time_for_world_target_near_time,
-    derive_timing_division_tap_previews, remove_topmost_block_at_cursor, snap_cell_to_step,
+    TimelineNearSearch, build_editor_playtest_transition, derive_tap_indicator_positions,
+    derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
+    remove_topmost_block_at_cursor, snap_cell_to_step,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
     toggle_spawn_direction, topmost_block_index_at_cursor,
 };
 use eg_game::{GameState, TimelineSimulationRuntime};
+#[cfg(test)]
+use eg_types::EditorTapDivisionPick;
 use eg_types::TriggerTarget;
-use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
+use eg_types::{AppPhase, EditorMode, LevelObject};
 
+#[cfg(test)]
 const TAP_CLICK_ADD_EPSILON_SECONDS: f32 = 0.001;
 fn object_ids_for_removed_indices(
     objects: &[LevelObject],
@@ -545,6 +552,7 @@ impl State {
         ));
     }
 
+    #[cfg(test)]
     pub(super) fn editor_handle_tapping_click_from_screen(&mut self, x: f64, y: f64) -> bool {
         if self.phase != AppPhase::Editor || self.editor.input.mode != EditorMode::Tapping {
             return false;
@@ -616,6 +624,7 @@ impl State {
         self.editor_add_tap_click_pick(target_pick)
     }
 
+    #[cfg(test)]
     fn editor_add_tap_click_pick(&mut self, pick: EditorTapDivisionPick) -> bool {
         self.editor.runtime.interaction.pending_tap_click = None;
         self.record_editor_history_state();
@@ -1117,7 +1126,6 @@ impl State {
 
         self.gameplay.state = GameState::new();
         self.gameplay.death_sfx_played = false;
-        self.refresh_menu_level_preview_if_needed();
         self.render_meshes_mut().trail.clear();
     }
 

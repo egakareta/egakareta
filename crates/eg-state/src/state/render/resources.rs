@@ -15,7 +15,7 @@
 //! [`RenderFrameInputRes`]) are still mirrored while the legacy frame
 //! update computes uniforms, and the heavy resources
 //! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`])
-//! own the authoritative values inserted during `State` construction.
+//! own the authoritative values transferred during `Runtime` construction.
 //!
 //! ## Why split POD vs heavy?
 //!
@@ -23,7 +23,7 @@
 //!   `wgpu::BindGroup` and friends are render-thread-owned handles.
 //!   Some of their web backends contain non-`Send` DOM values, so Phase
 //!   4 stores these heavy values as Bevy non-send resources behind
-//!   `State` accessors.
+//!   App-owned non-send resources.
 //! - Mirroring just the POD types first establishes the resource
 //!   boundary, the system-set graph, and the extraction system
 //!   contract. Subsequent phases replace the POD mirror with direct
@@ -38,12 +38,36 @@
 
 use bevy_ecs::prelude::*;
 use eg_platform::state_host::SurfaceHost;
-use eg_render::{RenderFrameInput, SceneMeshes};
+use eg_render::{EditorOutlineInstance, RenderFrameInput, SceneMeshes};
 use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
+
+/// App-owned egui GPU presentation state.
+///
+/// The winit shell still owns the egui context and menu-specific UI assets,
+/// but the renderer and the current paint jobs belong to the render present
+/// boundary so the scene and UI are submitted by one App-world system.
+pub struct RenderEguiRes {
+    pub renderer: egui_wgpu::Renderer,
+    pub paint_jobs: Vec<egui::ClippedPrimitive>,
+    pub screen_descriptor: egui_wgpu::ScreenDescriptor,
+}
+
+impl RenderEguiRes {
+    pub fn new(renderer: egui_wgpu::Renderer) -> Self {
+        Self {
+            renderer,
+            paint_jobs: Vec::new(),
+            screen_descriptor: egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [1, 1],
+                pixels_per_point: 1.0,
+            },
+        }
+    }
+}
 
 /// Wrapper resource for the full [`eg_render::GpuContext`].
 ///
-/// Inserted by `State` construction with the authoritative wgpu
+/// Inserted by `Runtime` construction with the authoritative wgpu
 /// context. Bare test worlds that do not initialize wgpu may omit it.
 #[allow(dead_code)]
 pub struct RenderGpuRes(pub eg_render::GpuContext);
@@ -102,18 +126,18 @@ impl RenderUniformUploadRes {
 
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
 ///
-/// Phase 4c moved the former `State::render.meshes` field into this
-/// resource so scene mesh storage is now held by the Bevy world while
-/// legacy callers go through `State::render_meshes()`.
+/// Production moves the former `State::render.meshes` field into this
+/// resource so scene mesh storage is held by the Bevy world. Test-only
+/// compatibility callers may still use `State::render_meshes()`.
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderMeshesRes(pub SceneMeshes);
 
 /// Wrapper resource for the optional platform [`SurfaceHost`].
 ///
-/// Phase 4c moved the former `State::render.surface_host` field into
-/// this resource so surface ownership is now held by the Bevy world
-/// while legacy callers go through `State::surface_host()`.
+/// Production moves the former `State::render.surface_host` field into
+/// this resource so surface ownership is held by the Bevy world. Test-only
+/// compatibility callers may still use `State::surface_host()`.
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
@@ -187,6 +211,102 @@ impl Default for RenderFrameInputRes {
         })
     }
 }
+
+/// Extracted gameplay trail vertices consumed by the compatibility renderer.
+///
+/// The vertex list is built from App-owned gameplay components in
+/// `RenderExtractSchedule`; Runtime only uploads the result while the legacy
+/// `SceneMeshes` storage remains in `State`.
+#[derive(Resource, Default, Clone)]
+pub struct RenderTrailVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor camera-arrow vertices consumed by the compatibility
+/// renderer until editor overlay mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorCameraArrowVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor cursor vertices consumed by the compatibility renderer.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorCursorVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor hitbox visualization vertices consumed by the
+/// compatibility renderer.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorHitboxVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor tap-indicator vertices consumed by the compatibility
+/// renderer until editor overlay mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorTapIndicatorVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor selection overlay data consumed by the compatibility
+/// renderer until editor overlay mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorSelectionOverlayRes {
+    pub stencil_vertices: Vec<eg_mesh::Vertex>,
+    pub outline_vertices: Vec<eg_mesh::Vertex>,
+    pub instances: Vec<EditorOutlineInstance>,
+}
+
+/// Extracted editor hover overlay data consumed by the compatibility renderer
+/// until editor overlay mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorHoverOverlayRes {
+    pub stencil_vertices: Vec<eg_mesh::Vertex>,
+    pub outline_vertices: Vec<eg_mesh::Vertex>,
+}
+
+/// Extracted editor transform-trigger marker vertices consumed by the
+/// compatibility renderer until editor overlay mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorTransformTriggerMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted block-effect vertices consumed by the compatibility renderer
+/// until effect mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderBlockEffectVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted practice-checkpoint flag vertices consumed by the compatibility
+/// renderer until the custom scene mesh storage is fully Bevy-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderPracticeCheckpointVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// CPU block batches extracted for a gameplay frame that needs time-dependent
+/// rendering. Runtime uploads the result into the compatibility mesh slots
+/// until GPU mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderPlayingBlockMeshesRes {
+    pub result: Option<eg_mesh::BlockInstanceBuildResult>,
+    pub chunked: Option<eg_mesh::ChunkedBlockMesh>,
+}
+
+/// Static menu-preview blocks extracted from the App-owned preview objects.
+/// Runtime uploads the cached chunk mesh into the compatibility presenter
+/// until the custom wgpu scene storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderMenuPreviewBlockMeshesRes {
+    pub preview_level_index: Option<usize>,
+    pub chunked: Option<eg_mesh::ChunkedBlockMesh>,
+}
+
+/// CPU editor block meshes extracted from App-owned editor resources. Runtime
+/// uploads the static chunk mesh and selected geometry into compatibility GPU
+/// slots until render mesh storage is App-owned.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorBlockMeshesRes {
+    pub static_mesh: eg_mesh::ChunkedBlockMesh,
+    pub selected_geometry: eg_mesh::MeshGeometry,
+}
+
+/// Extracted editor spawn-marker vertices consumed by the compatibility
+/// renderer.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorSpawnMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
+
+/// Extracted editor transform-gizmo vertices consumed by the compatibility
+/// renderer.
+#[derive(Resource, Default, Clone)]
+pub struct RenderEditorGizmoVerticesRes(pub Vec<eg_mesh::Vertex>);
 
 /// Resize request resource.
 ///
@@ -269,6 +389,21 @@ impl RenderResizeRequest {
 pub fn render_pod_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderUniformsRes>()
         && world.contains_resource::<RenderFrameInputRes>()
+        && world.contains_resource::<RenderTrailVerticesRes>()
+        && world.contains_resource::<RenderEditorCameraArrowVerticesRes>()
+        && world.contains_resource::<RenderEditorCursorVerticesRes>()
+        && world.contains_resource::<RenderEditorHitboxVerticesRes>()
+        && world.contains_resource::<RenderEditorTapIndicatorVerticesRes>()
+        && world.contains_resource::<RenderEditorSelectionOverlayRes>()
+        && world.contains_resource::<RenderEditorHoverOverlayRes>()
+        && world.contains_resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+        && world.contains_resource::<RenderBlockEffectVerticesRes>()
+        && world.contains_resource::<RenderPracticeCheckpointVerticesRes>()
+        && world.contains_resource::<RenderPlayingBlockMeshesRes>()
+        && world.contains_resource::<RenderMenuPreviewBlockMeshesRes>()
+        && world.contains_resource::<RenderEditorBlockMeshesRes>()
+        && world.contains_resource::<RenderEditorSpawnMarkerVerticesRes>()
+        && world.contains_resource::<RenderEditorGizmoVerticesRes>()
         && world.contains_resource::<RenderConfigRes>()
         && world.contains_resource::<RenderResizeRequest>()
 }

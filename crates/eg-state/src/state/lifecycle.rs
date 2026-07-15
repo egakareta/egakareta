@@ -5,9 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::runtime::{
-    EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState, PlayerRenderState,
-};
+use super::runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState};
 use super::{
     AudioState, AudioSubsystem, AuthSubsystem, EditorConfigState, EditorSubsystem,
     GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
@@ -533,7 +531,7 @@ impl State {
         let now = web_time::Instant::now();
 
         Self {
-            render_resources: build_state_render_resources(
+            render_resources: Some(build_state_render_resources(
                 GpuContext {
                     surface: None,
                     adapter_info: fixture.adapter_info.clone(),
@@ -605,7 +603,7 @@ impl State {
                     editor_hitbox_visualization: MeshSlot::Empty,
                     camera_arrow: MeshSlot::Empty,
                 },
-            ),
+            )),
             auth: AuthSubsystem::new(auth_session, false),
             gameplay: GameplaySubsystem {
                 state: game,
@@ -618,9 +616,6 @@ impl State {
                 editor: EditorFrameState {
                     last_frame: now,
                     delta_seconds: 0.0,
-                },
-                player_render: PlayerRenderState {
-                    gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
             },
@@ -1440,7 +1435,7 @@ impl State {
         let now = web_time::Instant::now();
 
         Some(Self {
-            render_resources: build_state_render_resources(
+            render_resources: Some(build_state_render_resources(
                 GpuContext {
                     surface,
                     adapter_info,
@@ -1506,7 +1501,7 @@ impl State {
                     editor_hitbox_visualization: MeshSlot::Empty,
                     camera_arrow: MeshSlot::Empty,
                 },
-            ),
+            )),
             auth: AuthSubsystem::new(auth_session, true),
             gameplay: GameplaySubsystem {
                 state: game,
@@ -1519,9 +1514,6 @@ impl State {
                 editor: EditorFrameState {
                     last_frame: now,
                     delta_seconds: 0.0,
-                },
-                player_render: PlayerRenderState {
-                    gem_shatter_effects: Vec::new(),
                 },
                 global_time_seconds: 0.0,
             },

@@ -40,10 +40,11 @@ use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-    AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
-    EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-    LevelExportServiceRes, LevelImportSenderRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
+    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
+    PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 use super::{
     AudioBackendRes, EditorAudioCacheRes, RuntimeAudioPreloadRes, RuntimeAudioPreloadSenderRes,
@@ -105,6 +106,36 @@ impl Plugin for EditorPlugin {
 /// settings, practice mode).
 pub struct SessionPlugin;
 
+fn sync_gameplay_audio_pause_system(
+    phase: Res<AppPhaseRes>,
+    session: Res<SessionStateRes>,
+    audio: Res<AudioBackendRes>,
+    mut pending_turn_inputs: ResMut<eg_game::PendingTurnInputs>,
+) {
+    if !session.is_changed()
+        || phase.current != eg_types::AppPhase::Playing
+        || session.playtesting_editor
+    {
+        return;
+    }
+    if session.game_paused {
+        pending_turn_inputs.taps.clear();
+        audio.pause();
+    } else {
+        audio.resume();
+    }
+}
+
+fn consume_audio_stop_request_system(
+    mut session: ResMut<SessionStateRes>,
+    audio: Res<AudioBackendRes>,
+) {
+    if session.audio_stop_pending {
+        audio.stop();
+        session.audio_stop_pending = false;
+    }
+}
+
 impl Plugin for SessionPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SessionStateRes>();
@@ -122,7 +153,9 @@ pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AppPhaseRes>();
+        app.init_resource::<AppPhaseRes>()
+            .init_resource::<MenuPreviewObjectsRes>()
+            .init_resource::<BlockEffectsRes>();
         // `MenuStateRes` is added by the `State` constructor because it
         // needs level names from `eg-level`.
     }
@@ -194,6 +227,8 @@ pub fn run_state_schedule_in_world(world: &mut World) {
 #[allow(dead_code)]
 pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AppPhaseRes>();
+    world.init_resource::<MenuPreviewObjectsRes>();
+    world.init_resource::<BlockEffectsRes>();
     world.init_resource::<SessionStateRes>();
     world.init_resource::<EditorInputRes>();
     world.init_resource::<EditorObjectsRes>();
@@ -224,11 +259,9 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<WaveformLoadSenderRes>();
     super::input_bridge::register_platform_input_resources(world);
     // Phase 4a: rendering extraction plugin's POD resources. The
-    // heavy resources (`RenderGpuRes`, `RenderMeshesRes`,
-    // `RenderSurfaceHostRes`) are not registered here — they are
-    // defined in `state::render::resources` and will be inserted in
-    // Phase 4b/4c when the legacy `State::render` field ownership
-    // moves into the world.
+    // The heavy GPU resource is not default-constructible. Production
+    // Runtime construction transfers all heavy resources into the App world;
+    // bare test worlds keep only the default mesh/surface placeholders.
     super::render::plugin::register_render_pod_resources(world);
 }
 
@@ -288,10 +321,29 @@ pub fn register_state_command_pipeline(world: &mut World) {
             .chain(),
     );
     crate::events::add_command_systems(&mut schedule);
+    schedule.add_systems(consume_audio_stop_request_system.after(crate::events::CommandHandlerSet));
+    schedule.add_systems(sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system));
+    schedule.add_systems(
+        crate::state::editor_playback::update_editor_timeline_playback_system
+            .after(crate::events::CommandHandlerSet),
+    );
+    schedule.add_systems(
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_system
+            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
+    );
+    schedule.add_systems(
+        crate::state::menu_preview::refresh_menu_preview_system
+            .after(crate::events::CommandHandlerSet),
+    );
+    schedule.add_systems(
+        crate::state::visual_effects::update_block_effects_system
+            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
+    );
     schedule.add_systems(
         super::gameplay_world::apply_pending_gameplay_reset_system
             .after(crate::events::navigation::handle_turn_right)
             .after(crate::events::navigation::handle_game_restart_level)
+            .after(crate::events::navigation::handle_game_set_practice_mode)
             .after(crate::events::timeline::handle_playtest),
     );
     schedule.add_systems(
@@ -319,12 +371,38 @@ pub fn register_state_command_pipeline(world: &mut World) {
         bevy_ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
     render_extract_schedule.add_systems(
         (
+            crate::state::render::plugin::extract_trail_vertices_system,
+            crate::state::render::plugin::extract_block_effect_vertices_system,
+            crate::state::render::plugin::extract_practice_checkpoint_vertices_system,
+            crate::state::render::plugin::extract_playing_block_meshes_system,
+            crate::state::render::plugin::extract_menu_preview_block_mesh_system,
+            crate::state::render::plugin::extract_editor_block_meshes_system,
+            crate::state::render::plugin::extract_editor_spawn_marker_vertices_system,
+            crate::state::render::plugin::extract_editor_camera_arrow_vertices_system,
+            crate::state::render::plugin::extract_editor_cursor_vertices_system,
+            crate::state::render::plugin::extract_editor_hitbox_vertices_system,
+            crate::state::render::plugin::extract_editor_tap_indicator_vertices_system,
+            crate::state::render::plugin::extract_editor_selection_overlays_system,
+            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
             crate::state::render::plugin::update_render_frame_input_system,
             crate::state::render::plugin::update_render_uniforms_system,
+            crate::state::render::plugin::extract_editor_gizmo_vertices_system
+                .after(crate::state::render::plugin::update_render_uniforms_system),
             crate::state::render::plugin::upload_render_uniforms_system
                 .after(crate::state::render::plugin::update_render_uniforms_system),
+            crate::state::render::plugin::clear_editor_dirty_flags_system,
         )
             .chain(),
+    );
+    render_extract_schedule.add_systems(
+        crate::state::render::plugin::upload_extracted_render_meshes_system
+            .after(crate::state::render::plugin::clear_editor_dirty_flags_system)
+            .in_set(crate::state::render::plugin::RenderSet::Present),
+    );
+    render_extract_schedule.add_systems(
+        crate::state::render::plugin::present_render_frame_system
+            .after(crate::state::render::plugin::upload_extracted_render_meshes_system)
+            .in_set(crate::state::render::plugin::RenderSet::Present),
     );
     world.add_schedule(render_extract_schedule);
 }

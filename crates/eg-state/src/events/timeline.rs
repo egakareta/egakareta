@@ -36,14 +36,16 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
-    remove_tap_with_indicator,
+    derive_timeline_elapsed_seconds, remove_tap_with_indicator,
 };
+use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AppPhaseRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
-    SessionStateRes,
+    AppPhaseRes, AudioBackendRes, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    start_audio_source_at_seconds_for_resources,
 };
 
 /// Toggle timeline playback.
@@ -129,6 +131,12 @@ pub fn handle_toggle_timeline_playback(
     mut input: ResMut<EditorInputRes>,
     mut runtime: ResMut<EditorRuntimeRes>,
     mut timeline: ResMut<EditorTimelineRes>,
+    audio: Res<AudioBackendRes>,
+    editor_audio: Res<EditorAudioCacheRes>,
+    runtime_preload: Res<RuntimeAudioPreloadRes>,
+    objects: Res<EditorObjectsRes>,
+    spawn: Res<EditorSpawnRes>,
+    session: Res<SessionStateRes>,
 ) {
     for _ in events.read() {
         if phase.current != AppPhase::Editor {
@@ -136,9 +144,29 @@ pub fn handle_toggle_timeline_playback(
         }
 
         if timeline.0.playback.playing {
-            stop_editor_timeline_playback(&mut input, &mut runtime, &mut timeline);
+            if stop_editor_timeline_playback(&mut input, &mut runtime, &mut timeline) {
+                audio.stop();
+                runtime
+                    .0
+                    .dirty
+                    .merge(EditorDirtyFlags::playback_mode_changed());
+            }
         } else {
-            start_editor_timeline_playback(&mut input, &mut runtime, &mut timeline);
+            start_editor_timeline_playback(
+                &mut input,
+                &mut runtime,
+                &mut timeline,
+                &audio,
+                &editor_audio,
+                &runtime_preload,
+                &objects,
+                &spawn,
+                &session,
+            );
+            runtime
+                .0
+                .dirty
+                .merge(EditorDirtyFlags::playback_mode_changed());
         }
     }
 }
@@ -169,13 +197,52 @@ fn start_editor_timeline_playback(
     input: &mut EditorInputRes,
     runtime: &mut EditorRuntimeRes,
     timeline: &mut EditorTimelineRes,
+    audio: &AudioBackendRes,
+    editor_audio: &EditorAudioCacheRes,
+    runtime_preload: &RuntimeAudioPreloadRes,
+    objects: &EditorObjectsRes,
+    spawn: &EditorSpawnRes,
+    session: &SessionStateRes,
 ) {
+    let start_mode = input.0.mode;
     timeline.0.playback.playing = true;
-    timeline.0.playback.runtime = None;
     timeline.0.playback.pending_seek_time_seconds = None;
     timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
-    runtime.0.interaction.last_mode = Some(input.0.mode);
+    runtime.0.interaction.last_mode = Some(start_mode);
     input.0.mode = EditorMode::Null;
+
+    let start_seconds = if start_mode == EditorMode::Timing {
+        timeline.0.playback.runtime = None;
+        derive_timeline_elapsed_seconds(
+            spawn.0.position,
+            spawn.0.direction,
+            &timeline.0.taps.tap_times,
+            timeline.0.clock.time_seconds,
+            &objects.objects,
+        )
+    } else {
+        let mut playback_runtime = TimelineSimulationRuntime::new(
+            spawn.0.position,
+            spawn.0.direction,
+            &objects.objects,
+            &timeline.0.taps.tap_times,
+        );
+        playback_runtime.advance_to(timeline.0.clock.time_seconds);
+        let start_seconds = playback_runtime.elapsed_seconds();
+        timeline.0.playback.runtime = Some(playback_runtime);
+        start_seconds
+    };
+
+    let level_name = session.editor_level_name.as_deref().unwrap_or("Untitled");
+    start_audio_source_at_seconds_for_resources(
+        true,
+        false,
+        level_name,
+        start_seconds,
+        audio,
+        editor_audio,
+        runtime_preload,
+    );
 }
 
 pub fn handle_shift_timeline(
@@ -186,6 +253,7 @@ pub fn handle_shift_timeline(
         let current_time = timeline.0.clock.time_seconds;
         let next_time = (current_time + event.0).clamp(0.0, timeline.0.clock.duration_seconds);
         timeline.0.clock.time_seconds = next_time;
+        queue_playback_seek(&mut timeline);
     }
 }
 
@@ -195,6 +263,7 @@ pub fn handle_set_timeline_time(
 ) {
     for event in events.read() {
         timeline.0.clock.time_seconds = event.0.clamp(0.0, timeline.0.clock.duration_seconds);
+        queue_playback_seek(&mut timeline);
     }
 }
 
@@ -209,6 +278,14 @@ pub fn handle_set_timeline_duration(
             .clock
             .time_seconds
             .min(timeline.0.clock.duration_seconds);
+        queue_playback_seek(&mut timeline);
+    }
+}
+
+fn queue_playback_seek(timeline: &mut EditorTimelineRes) {
+    if timeline.0.playback.playing {
+        timeline.0.playback.pending_seek_time_seconds = Some(timeline.0.clock.time_seconds);
+        timeline.0.playback.seek_resync_cooldown_seconds = 0.12;
     }
 }
 
@@ -398,7 +475,6 @@ pub fn handle_playtest(
         session.playing_trigger_base_objects = Some(transition.objects.clone());
         session.practice_mode_enabled = false;
         session.practice_checkpoints.clear();
-        session.practice_checkpoints_dirty = true;
         session.audio_stop_pending = true;
         camera.0.playing_rotation = transition.camera_rotation;
         camera.0.playing_pitch = transition.camera_pitch;

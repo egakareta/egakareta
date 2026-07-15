@@ -5,84 +5,51 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(test)]
 use super::State;
-use super::runtime::BlockVisualEffect;
-use eg_blocks::BlockEffectColorMode;
+#[cfg(test)]
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
-use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
-use eg_mesh::{
-    BlockEffectInstance, build_block_effect_vertices,
-    build_block_instance_batches_from_refs_at_time, build_trail_vertices,
-    build_trail_vertices_with_alpha,
-};
-use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
+#[cfg(test)]
+use eg_game::TimelineSimulationRuntime;
+#[cfg(test)]
+use eg_game::trigger_transformed_objects_at_time;
+#[cfg(test)]
+use eg_mesh::build_trail_vertices_with_alpha;
+#[cfg(test)]
+use eg_types::AppPhase;
+#[cfg(test)]
+use eg_types::{Direction, EditorMode, LevelObject};
 
-const METRONOME_MAJOR_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/metronome_major.mp3"
-));
-const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/metronome_minor.mp3"
-));
-
+#[cfg(test)]
 fn is_play_world_render_object(object: &LevelObject) -> bool {
     BlockDefinition::get(&object.block_id).render.profile != BlockRenderProfile::CameraTrigger
 }
 
+#[cfg(test)]
 impl State {
-    fn push_block_effect_events(&mut self, events: Vec<eg_game::ConsumedObjectEvent>) {
-        self.frame_runtime
-            .player_render
-            .gem_shatter_effects
-            .extend(events.iter().filter_map(|event| {
-                let block = BlockDefinition::get(&event.object.block_id);
-                let effect = block.animation.on_consumed?;
-                let color = match effect.color_mode {
-                    BlockEffectColorMode::Tint => event.object.color_tint,
-                    BlockEffectColorMode::Render => [
-                        block.render.color_top[0],
-                        block.render.color_top[1],
-                        block.render.color_top[2],
-                    ],
-                };
-                Some(BlockVisualEffect::from_object(&event.object, effect, color))
-            }));
-    }
-
-    fn update_block_effect_mesh(&mut self, frame_dt: f32) {
-        puffin::profile_scope!("BlockEffectMesh");
-        let effects = &mut self.frame_runtime.player_render.gem_shatter_effects;
-        for effect in effects.iter_mut() {
-            effect.age_seconds += frame_dt.max(0.0);
-        }
-        effects.retain(|effect| effect.age_seconds < effect.effect.duration_seconds);
-
-        if effects.is_empty() {
-            self.render_meshes_mut().gem_shatter_effects.clear();
-            return;
+    #[cfg(test)]
+    fn playing_trigger_objects_at_time(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
+        puffin::profile_scope!("PlayingTriggerObjects");
+        if self.phase != AppPhase::Playing || !self.editor.has_object_transform_triggers() {
+            return None;
         }
 
-        let instances = effects
-            .iter()
-            .map(|effect| BlockEffectInstance {
-                position: effect.position,
-                size: effect.size,
-                color: effect.color,
-                effect: effect.effect,
-                age_seconds: effect.age_seconds,
-            })
-            .collect::<Vec<_>>();
-        let vertices = build_block_effect_vertices(&instances);
-        self.with_render_meshes_and_device(|device, meshes| {
-            meshes.gem_shatter_effects.replace_with_vertices(
-                device,
-                "Gem Shatter Vertex Buffer",
-                &vertices,
-            );
-        });
+        let base_objects = self
+            .session
+            .playing_trigger_base_objects
+            .get_or_insert_with(|| self.gameplay.state.objects.clone());
+        if base_objects.len() != self.gameplay.state.objects.len() {
+            *base_objects = self.gameplay.state.objects.clone();
+        }
+
+        Some(trigger_transformed_objects_at_time(
+            base_objects,
+            &self.editor.trigger_objects(),
+            time_seconds.max(0.0),
+        ))
     }
 
+    #[cfg(test)]
     fn recent_trail_segments<'a>(
         trail_segments: &'a [Vec<[f32; 3]>],
         max_points: usize,
@@ -112,6 +79,7 @@ impl State {
         selected
     }
 
+    #[cfg(test)]
     fn maybe_resync_editor_playback_from_pending_seek(&mut self, frame_dt: f32) {
         if self.phase != AppPhase::Editor || !self.editor.timeline.playback.playing {
             return;
@@ -136,27 +104,7 @@ impl State {
         self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
     }
 
-    fn playing_trigger_objects_at_time(&mut self, time_seconds: f32) -> Option<Vec<LevelObject>> {
-        puffin::profile_scope!("PlayingTriggerObjects");
-        if self.phase != AppPhase::Playing || !self.editor.has_object_transform_triggers() {
-            return None;
-        }
-
-        let base_objects = self
-            .session
-            .playing_trigger_base_objects
-            .get_or_insert_with(|| self.gameplay.state.objects.clone());
-        if base_objects.len() != self.gameplay.state.objects.len() {
-            *base_objects = self.gameplay.state.objects.clone();
-        }
-
-        Some(trigger_transformed_objects_at_time(
-            base_objects,
-            &self.editor.trigger_objects(),
-            time_seconds.max(0.0),
-        ))
-    }
-
+    #[cfg(test)]
     fn build_editor_playback_trail_vertices(
         runtime: &TimelineSimulationRuntime,
     ) -> Vec<eg_mesh::Vertex> {
@@ -230,6 +178,7 @@ impl State {
         trail_vertices
     }
 
+    #[cfg(test)]
     fn update_editor_playback_trail_mesh(&mut self) {
         puffin::profile_scope!("EditorPlaybackTrailMesh");
         let Some(runtime) = self.editor.timeline.playback.runtime.as_ref() else {
@@ -245,6 +194,7 @@ impl State {
         });
     }
 
+    #[cfg(test)]
     fn update_editor_scrub_trail_mesh(&mut self) {
         puffin::profile_scope!("EditorScrubTrailMesh");
         let target_time = self
@@ -263,6 +213,7 @@ impl State {
         });
     }
 
+    #[cfg(test)]
     fn build_editor_scrub_trail_vertices_from_cache(
         &self,
         target_time: f32,
@@ -346,6 +297,7 @@ impl State {
         trail_vertices
     }
 
+    #[cfg(test)]
     fn cached_editor_trail_segments_for_snapshot(
         &self,
         snapshot: &crate::state::editor_timeline::EditorTimelineSnapshot,
@@ -381,164 +333,30 @@ impl State {
     /// - Starting auth refreshes for existing sessions.
     /// - Consuming the scheduled frame delta for the fixed-step simulation.
     /// - Updating the active subsystem (Menu, Editor, or Gameplay) logic.
+    #[cfg(test)]
     pub fn update(&mut self) {
         puffin::profile_scope!("FrameTotal");
+        #[cfg(test)]
         let frame_dt = self.frame_runtime.editor.delta_seconds;
         if self.phase == AppPhase::Menu {
-            puffin::profile_scope!("MenuUpdate");
-            self.frame_runtime.player_render.gem_shatter_effects.clear();
-            self.render_meshes_mut().gem_shatter_effects.clear();
-            self.refresh_menu_level_preview_if_needed();
             return;
         }
 
         if self.phase == AppPhase::Editor {
             puffin::profile_scope!("EditorUpdate");
-            self.render_meshes_mut().trail.clear();
+            #[cfg(test)]
+            {
+                self.render_meshes_mut().trail.clear();
 
-            if self.editor.timeline.playback.playing {
-                self.maybe_resync_editor_playback_from_pending_seek(frame_dt);
-                puffin::profile_scope!("TimelinePlayback");
-                let audio_time = self
-                    .audio
-                    .state
-                    .runtime
-                    .playback_time_seconds()
-                    .unwrap_or(self.editor.timeline.clock.time_seconds);
-                let timeline_time_source = self
-                    .editor
-                    .timeline
-                    .playback
-                    .pending_seek_time_seconds
-                    .unwrap_or(audio_time);
-                let clamped_time =
-                    timeline_time_source.min(self.editor.timeline.clock.duration_seconds);
-                let simulate_preview = !self.editor_is_effectively_timing_mode();
-
-                if !simulate_preview {
-                    self.editor.timeline.playback.runtime = None;
-                }
-
-                if (clamped_time - self.editor.timeline.clock.time_seconds).abs() > 1e-4 {
-                    let old_time = self.editor.timeline.clock.time_seconds;
-                    self.editor.timeline.clock.time_seconds = clamped_time;
-
-                    if simulate_preview
-                        && (self.editor.has_object_transform_triggers()
-                            || self.editor.has_camera_timeline_triggers())
-                    {
-                        self.mark_editor_dirty(
-                            super::EditorDirtyFlags::timeline_trigger_preview_changed(),
-                        );
-                    }
-
-                    if simulate_preview {
-                        let mut applied_runtime_state = false;
-                        if let Some(runtime) = self.editor.timeline.playback.runtime.as_mut()
-                            && clamped_time + 1e-6 >= runtime.elapsed_seconds()
-                        {
-                            runtime.advance_to(clamped_time);
-                            let events = runtime.take_consumed_object_events();
-                            let consumed_gems = !events.is_empty();
-                            let snapshot = runtime.snapshot();
-                            self.push_block_effect_events(events);
-                            if consumed_gems {
-                                self.mark_editor_dirty(
-                                    super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
-                                );
-                            }
-                            self.apply_editor_timeline_preview_state(
-                                snapshot.position,
-                                snapshot.direction,
-                            );
-                            applied_runtime_state = true;
-                        }
-
-                        if !applied_runtime_state {
-                            let mut runtime = TimelineSimulationRuntime::new(
-                                self.editor.spawn.position,
-                                self.editor.spawn.direction,
-                                &self.editor.objects,
-                                &self.editor.timeline.taps.tap_times,
-                            );
-                            runtime.advance_to(clamped_time);
-                            let events = runtime.take_consumed_object_events();
-                            let consumed_gems = !events.is_empty();
-                            self.push_block_effect_events(events);
-                            let snapshot = runtime.snapshot();
-                            if consumed_gems {
-                                self.mark_editor_dirty(
-                                    super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
-                                );
-                            }
-                            self.apply_editor_timeline_preview_state(
-                                snapshot.position,
-                                snapshot.direction,
-                            );
-                            self.editor.timeline.playback.runtime = Some(runtime);
-                        }
-                    } else if clamped_time > old_time
-                        && let Some(tp) = self
-                            .editor
-                            .timing
-                            .timing_points
-                            .iter()
-                            .rev()
-                            .find(|tp| tp.time_seconds <= clamped_time)
-                        && tp.bpm > 0.0
-                    {
-                        let beat_duration = 60.0 / tp.bpm;
-                        let old_beat = if old_time < tp.time_seconds {
-                            -1
-                        } else {
-                            ((old_time - tp.time_seconds) / beat_duration).floor() as i64
-                        };
-                        let new_beat =
-                            ((clamped_time - tp.time_seconds) / beat_duration).floor() as i64;
-
-                        if new_beat > old_beat {
-                            let is_downbeat =
-                                new_beat % (tp.time_signature_numerator.max(1) as i64) == 0;
-                            if is_downbeat {
-                                self.audio.state.runtime.play_sfx(METRONOME_MAJOR_SFX);
-                            } else {
-                                self.audio.state.runtime.play_sfx(METRONOME_MINOR_SFX);
-                            }
-                        }
-                    }
-                }
-
-                if simulate_preview {
-                    self.update_editor_playback_trail_mesh();
-                }
-                self.update_block_effect_mesh(frame_dt);
-
-                if clamped_time >= self.editor.timeline.clock.duration_seconds
-                    || !self.audio.state.runtime.is_playing()
-                {
-                    self.editor.timeline.playback.playing = false;
-                    self.editor.timeline.playback.runtime = None;
-                    self.editor.timeline.playback.pending_seek_time_seconds = None;
-                    self.editor.timeline.playback.seek_resync_cooldown_seconds = 0.0;
-                    if let Some(last_mode) = self.editor.runtime.interaction.last_mode.take() {
-                        self.editor.set_mode(last_mode);
+                if self.editor.timeline.playback.playing {
+                    if !self.editor_is_effectively_timing_mode() {
+                        self.update_editor_playback_trail_mesh();
                     } else {
-                        self.editor.set_mode(EditorMode::Place);
+                        self.render_meshes_mut().trail.clear();
                     }
-                    if simulate_preview {
-                        self.mark_editor_dirty(
-                            super::EditorDirtyFlags::block_mesh_and_hitboxes_changed(),
-                        );
-                    }
-                    self.stop_audio();
+                } else if self.editor.input.mode != EditorMode::Timing {
+                    self.update_editor_scrub_trail_mesh();
                 }
-            } else if self.editor.input.mode != EditorMode::Timing {
-                self.frame_runtime.player_render.gem_shatter_effects.clear();
-                self.render_meshes_mut().gem_shatter_effects.clear();
-                self.update_editor_scrub_trail_mesh();
-            } else {
-                self.frame_runtime.player_render.gem_shatter_effects.clear();
-                self.render_meshes_mut().gem_shatter_effects.clear();
             }
 
             if (self.editor.runtime.interaction.gizmo_drag.is_some()
@@ -549,55 +367,10 @@ impl State {
                 self.drag_editor_selection_from_screen(pointer[0], pointer[1]);
             }
 
-            let camera_changed = (self.editor.camera.editor_pan[0]
-                - self.editor.runtime.gizmo.last_pan[0])
-                .abs()
-                > 1e-4
-                || (self.editor.camera.editor_pan[1] - self.editor.runtime.gizmo.last_pan[1]).abs()
-                    > 1e-4
-                || (self.editor.camera.editor_target_z - self.editor.runtime.gizmo.last_target_z)
-                    .abs()
-                    > 1e-4
-                || (self.editor.camera.editor_yaw - self.editor.runtime.gizmo.last_rotation).abs()
-                    > 1e-4
-                || (self.editor.camera.editor_pitch - self.editor.runtime.gizmo.last_pitch).abs()
-                    > 1e-4;
-
-            let has_selection = self.editor.input.selected_block_index.is_some()
-                || !self.editor.input.selected_block_indices.is_empty();
-            let is_dragging = self.editor.runtime.interaction.gizmo_drag.is_some()
-                || self.editor.runtime.interaction.block_drag.is_some();
-
-            if has_selection && self.editor.input.mode.shows_gizmo() {
-                if is_dragging {
-                    puffin::profile_scope!("GizmoRebuild");
-                    self.rebuild_editor_gizmo_vertices();
-                    self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
-                } else if camera_changed {
-                    self.editor.runtime.gizmo.rebuild_accumulator += frame_dt;
-                    if self.editor.runtime.gizmo.rebuild_accumulator >= (1.0 / 24.0) {
-                        puffin::profile_scope!("GizmoRebuild");
-                        self.rebuild_editor_gizmo_vertices();
-                        self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
-                    }
-                } else {
-                    self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
-                }
-            } else {
-                self.editor.runtime.gizmo.rebuild_accumulator = 0.0;
-            }
-
-            self.editor.runtime.gizmo.last_pan = self.editor.camera.editor_pan;
-            self.editor.runtime.gizmo.last_target_z = self.editor.camera.editor_target_z;
-            self.editor.runtime.gizmo.last_rotation = self.editor.camera.editor_yaw;
-            self.editor.runtime.gizmo.last_pitch = self.editor.camera.editor_pitch;
+            #[cfg(test)]
             {
                 puffin::profile_scope!("DirtyProcess");
                 self.process_editor_dirty(frame_dt);
-            }
-            {
-                puffin::profile_scope!("CameraArrowRebuild");
-                self.rebuild_camera_arrow_vertices();
             }
             return;
         }
@@ -606,111 +379,41 @@ impl State {
         if self.is_game_paused() {
             return;
         }
-
-        let trigger_render_objects =
-            self.playing_trigger_objects_at_time(self.gameplay.state.elapsed_seconds);
-        self.update_block_effect_mesh(frame_dt);
-
-        let render_objects = trigger_render_objects
-            .as_deref()
-            .unwrap_or(&self.gameplay.state.objects);
-        if self.gameplay.state.has_animated_blocks()
-            || trigger_render_objects.is_some()
-            || self.editor.has_camera_timeline_triggers()
+        #[cfg(test)]
         {
-            puffin::profile_scope!("PlayingAnimatedBlockMesh");
-            let render_object_refs = render_objects
-                .iter()
-                .filter(|object| is_play_world_render_object(object))
-                .collect::<Vec<_>>();
-            let animated_batches = build_block_instance_batches_from_refs_at_time(
-                &render_object_refs,
-                Some(self.gameplay.state.elapsed_seconds),
-            );
-            self.with_render_meshes_and_device(|device, meshes| {
-                meshes.blocks_instanced.replace_with_batches(
-                    device,
-                    "Block Instance Buffer",
-                    &animated_batches,
+            let trigger_render_objects =
+                self.playing_trigger_objects_at_time(self.gameplay.state.elapsed_seconds);
+            let render_objects = trigger_render_objects
+                .as_deref()
+                .unwrap_or(&self.gameplay.state.objects);
+            if self.gameplay.state.has_animated_blocks()
+                || trigger_render_objects.is_some()
+                || self.editor.has_camera_timeline_triggers()
+            {
+                puffin::profile_scope!("PlayingAnimatedBlockMesh");
+                let render_object_refs = render_objects
+                    .iter()
+                    .filter(|object| is_play_world_render_object(object))
+                    .collect::<Vec<_>>();
+                let animated_batches = eg_mesh::build_block_instance_batches_from_refs_at_time(
+                    &render_object_refs,
+                    Some(self.gameplay.state.elapsed_seconds),
                 );
-                meshes.blocks.replace_with_geometry(
-                    device,
-                    "Block Vertex Buffer",
-                    &animated_batches.fallback_geometry,
-                );
-            });
-            self.render_meshes_mut().blocks_chunked.clear();
-        }
-
-        let mut trail_vertices = Vec::new();
-        {
-            puffin::profile_scope!("PlayingTrailBuild");
-            let player_pos = self.gameplay.state.position;
-            // Cull segments that are too far from the player to save on vertices.
-            const CULL_DISTANCE_SQ: f32 = 120.0 * 120.0;
-            const MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT: usize = 1024;
-
-            for (segment_index, segment) in self.gameplay.state.trail_segments.iter().enumerate() {
-                if segment.is_empty() {
-                    continue;
-                }
-
-                let is_last_segment = segment_index + 1 == self.gameplay.state.trail_segments.len();
-
-                // For older segments, check if they are still potentially visible.
-                if !is_last_segment {
-                    let last_point = segment.last().unwrap();
-                    let dx = last_point[0] - player_pos[0];
-                    let dy = last_point[1] - player_pos[1];
-                    let dz = last_point[2] - player_pos[2];
-                    if dx * dx + dy * dy + dz * dz > CULL_DISTANCE_SQ {
-                        continue;
-                    }
-                }
-
-                if is_last_segment && self.gameplay.state.is_grounded {
-                    let start = segment
-                        .len()
-                        .saturating_sub(MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT);
-                    let mut points = segment[start..].to_vec();
-                    points.push(self.gameplay.state.position);
-                    trail_vertices
-                        .extend(build_trail_vertices(&points, self.gameplay.state.game_over));
-                } else {
-                    let start = segment
-                        .len()
-                        .saturating_sub(MAX_RENDERED_PLAYING_TRAIL_POINTS_PER_SEGMENT);
-                    trail_vertices.extend(build_trail_vertices(
-                        &segment[start..],
-                        self.gameplay.state.game_over,
-                    ));
-                }
-            }
-
-            if !self.gameplay.state.is_grounded {
-                let head_length = 0.22;
-                let dir = match self.gameplay.state.direction {
-                    Direction::Forward => [0.0, 1.0],
-                    Direction::Right => [1.0, 0.0],
-                };
-                let head_start = [
-                    self.gameplay.state.position[0] - dir[0] * head_length,
-                    self.gameplay.state.position[1],
-                    self.gameplay.state.position[2] - dir[1] * head_length,
-                ];
-                let head_points = [head_start, self.gameplay.state.position];
-                trail_vertices.extend(build_trail_vertices(
-                    &head_points,
-                    self.gameplay.state.game_over,
-                ));
+                self.with_render_meshes_and_device(|device, meshes| {
+                    meshes.blocks_instanced.replace_with_batches(
+                        device,
+                        "Block Instance Buffer",
+                        &animated_batches,
+                    );
+                    meshes.blocks.replace_with_geometry(
+                        device,
+                        "Block Vertex Buffer",
+                        &animated_batches.fallback_geometry,
+                    );
+                });
+                self.render_meshes_mut().blocks_chunked.clear();
             }
         }
-
-        self.with_render_meshes_and_queue(|queue, meshes| {
-            meshes
-                .trail
-                .write_streaming_vertices(queue, &trail_vertices);
-        });
     }
 }
 

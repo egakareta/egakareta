@@ -153,7 +153,7 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
 pub struct TurnRightResources<'w> {
     phase: ResMut<'w, AppPhaseRes>,
     session: ResMut<'w, SessionStateRes>,
-    menu: Res<'w, MenuStateRes>,
+    menu: Option<Res<'w, MenuStateRes>>,
     catalog: Res<'w, BuiltinLevelCatalogRes>,
     gameplay_reset: ResMut<'w, GameplayResetRes>,
     audio: Res<'w, AudioBackendRes>,
@@ -243,7 +243,6 @@ fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_>) {
     resources.audio.stop();
     resources.pending_turns.taps.clear();
     resources.session.practice_checkpoints.clear();
-    resources.session.practice_checkpoints_dirty = true;
     resources
         .gameplay_reset
         .request_with_seed(GameplayResetSeed {
@@ -261,13 +260,10 @@ fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_>) {
 }
 
 fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
-    let Some(level_name) = resources
-        .menu
-        .0
-        .levels
-        .get(resources.menu.0.selected_level)
-        .cloned()
-    else {
+    let Some(menu) = resources.menu.as_ref() else {
+        return;
+    };
+    let Some(level_name) = menu.0.levels.get(menu.0.selected_level).cloned() else {
         return;
     };
     let metadata = resources.catalog.get(&level_name).unwrap_or_else(|| {
@@ -286,7 +282,6 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
     resources.session.playing_trigger_base_objects = None;
     resources.session.practice_mode_enabled = false;
     resources.session.practice_checkpoints.clear();
-    resources.session.practice_checkpoints_dirty = true;
     resources.session.audio_stop_pending = false;
 
     resources.objects.objects = objects.clone();
@@ -525,7 +520,6 @@ fn enter_editor_from_menu(world: &mut World) {
         session.playing_trigger_base_objects = None;
         session.practice_mode_enabled = false;
         session.practice_checkpoints.clear();
-        session.practice_checkpoints_dirty = true;
         session.audio_stop_pending = false;
     }
     if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
@@ -583,24 +577,23 @@ pub fn handle_game_restart_level(
     }
 }
 
-/// `GameSetPracticeMode` is a carve-out: the handler writes the
-/// enabled flag directly to `SessionStateRes.practice_mode_enabled`
-/// instead of staging a legacy `AppCommand`. The legacy
-/// `set_practice_mode_enabled` compatibility setter has
-/// heavy side effects (clears `practice_checkpoints`, calls
-/// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
-/// `resume_game`); the change-guarded sync in
-/// `Runtime::sync_app_session_state` invokes the legacy setter only
-/// on real user-driven changes.
+/// `GameSetPracticeMode` mutates the App-owned practice session directly.
+/// Disabling real gameplay practice mode also queues the existing
+/// App-world gameplay reset, matching the legacy restart behavior.
 pub fn handle_game_set_practice_mode(
     mut events: MessageReader<GameSetPracticeMode>,
+    phase: Res<AppPhaseRes>,
     mut session: ResMut<SessionStateRes>,
+    mut gameplay_reset: ResMut<GameplayResetRes>,
 ) {
     for event in events.read() {
         if session.practice_mode_enabled != event.enabled {
             session.practice_mode_enabled = event.enabled;
             session.practice_checkpoints.clear();
-            session.practice_checkpoints_dirty = true;
+            session.game_paused = false;
+            if phase.current == AppPhase::Playing && !session.playtesting_editor && !event.enabled {
+                gameplay_reset.request();
+            }
         }
     }
 }
@@ -685,7 +678,6 @@ pub fn handle_game_set_practice_checkpoint(
                 gameplay: checkpoint,
                 trigger_base_objects,
             });
-        resources.session.practice_checkpoints_dirty = true;
     }
 }
 
@@ -704,7 +696,6 @@ pub fn handle_game_remove_practice_checkpoint(
             && !session.game_paused
         {
             let _ = session.practice_checkpoints.pop();
-            session.practice_checkpoints_dirty = true;
         }
     }
 }

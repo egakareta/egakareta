@@ -838,6 +838,7 @@ impl State {
         super::EditorHistoryRes(self.editor.runtime.history.clone())
     }
 
+    #[cfg(test)]
     pub fn set_editor_history_state(&mut self, history: super::EditorHistoryState) {
         self.editor.runtime.history = history;
     }
@@ -866,6 +867,8 @@ impl State {
         let mut timeline = super::EditorTimelineRes::default();
         timeline.0.clock.time_seconds = self.editor.timeline.clock.time_seconds;
         timeline.0.clock.duration_seconds = self.editor.timeline.clock.duration_seconds;
+        timeline.0.preview.position = self.editor.timeline.preview.position;
+        timeline.0.preview.direction = self.editor.timeline.preview.direction;
         timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
         timeline.0.taps.tap_indicator_positions =
             self.editor.timeline.taps.tap_indicator_positions.clone();
@@ -883,6 +886,52 @@ impl State {
         runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
         runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
         runtime
+    }
+
+    /// Mirror App-owned timeline playback into the compatibility presentation
+    /// state without invoking legacy setters or starting/stopping audio.
+    pub fn sync_editor_timeline_playback_from_app(
+        &mut self,
+        duration_seconds: f32,
+        time_seconds: f32,
+        preview_position: [f32; 3],
+        preview_direction: Direction,
+        playing: bool,
+        pending_seek_time_seconds: Option<f32>,
+        seek_resync_cooldown_seconds: f32,
+        last_mode: Option<EditorMode>,
+    ) {
+        self.editor.timeline.clock.duration_seconds = duration_seconds;
+        self.editor.timeline.clock.time_seconds = time_seconds;
+        self.editor.timeline.preview.position = preview_position;
+        self.editor.timeline.preview.direction = preview_direction;
+        self.editor.timeline.playback.playing = playing;
+        self.editor.timeline.playback.pending_seek_time_seconds = pending_seek_time_seconds;
+        self.editor.timeline.playback.seek_resync_cooldown_seconds = seek_resync_cooldown_seconds;
+        self.editor.runtime.interaction.last_mode = last_mode;
+
+        if playing {
+            self.editor.input.mode = EditorMode::Null;
+            if last_mode == Some(EditorMode::Timing) {
+                self.editor.timeline.playback.runtime = None;
+            } else {
+                let mut runtime = TimelineSimulationRuntime::new(
+                    self.editor.spawn.position,
+                    self.editor.spawn.direction,
+                    &self.editor.objects,
+                    &self.editor.timeline.taps.tap_times,
+                );
+                runtime.advance_to(time_seconds);
+                self.editor.timeline.playback.runtime = Some(runtime);
+            }
+        } else {
+            self.editor.timeline.playback.runtime = None;
+        }
+    }
+
+    /// Forward scheduled App dirty flags to the legacy mesh presenter.
+    pub fn merge_editor_dirty_flags(&mut self, dirty: EditorDirtyFlags) {
+        self.editor.mark_dirty(dirty);
     }
 
     pub fn editor_clipboard(&self) -> Option<&super::EditorClipboard> {
@@ -905,16 +954,9 @@ impl State {
     /// `sync_app_session_state` is a no-op on the first frame for
     /// unchanged fields.
     ///
-    /// Also seeds `playtesting_editor`, `game_paused` (Phase 3.18
-    /// `GameResume` carve-out, later shared by Escape pause), and
-    /// `practice_mode_enabled` (Phase 3.15 navigation carve-out — see
-    /// `events::navigation::handle_game_set_practice_mode`).
-    /// Without this seed, a user who toggled practice mode on a
-    /// previous frame would see the resource reset to `false` on
-    /// the first frame, and the change-guarded sync would then
-    /// fire the legacy `set_practice_mode_enabled(false)` setter
-    /// (which calls `restart_level` + `resume_game` — both heavy
-    /// side effects).
+    /// Also seeds `playtesting_editor`, `game_paused`, and
+    /// `practice_mode_enabled` so the App world starts from the
+    /// current compatibility-state values at construction time.
     pub fn session_state_resource(&self) -> super::SessionStateRes {
         super::SessionStateRes {
             editor_level_name: self.session.editor_level_name.clone(),
@@ -1363,137 +1405,11 @@ impl State {
     }
 
     pub(super) fn rebuild_editor_timeline_snapshot_cache_if_needed(&mut self) {
-        if self.editor.timeline.snapshot_cache_revision == self.editor.timeline.simulation_revision
-            && !self.editor.timeline.snapshot_cache.is_empty()
-        {
-            return;
-        }
-
-        puffin::profile_scope!("TimelineSamples");
-        let duration_seconds = self.editor.timeline.clock.duration_seconds.max(0.0);
-        let step_seconds = self
-            .editor
-            .timeline
-            .snapshot_cache_step_seconds
-            .max(1.0 / 480.0);
-
-        let total_sample_count =
-            ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
-
-        // Partial rebuild: reuse retained prefix from invalidate_samples_from
-        let existing_count = self.editor.timeline.snapshot_cache.len();
-        let resume_index =
-            if existing_count > 0 && self.editor.timeline.snapshot_cache_revision == 0 {
-                existing_count
-            } else {
-                self.editor.timeline.snapshot_cache.clear();
-                self.editor.timeline.trail_point_cache.clear();
-                self.editor.timeline.trail_segment_start_cache.clear();
-                0
-            };
-
-        let mut runtime = {
-            puffin::profile_scope!("TimelineSamplesRuntimeBuild");
-            TimelineSimulationRuntime::new(
-                self.editor.spawn.position,
-                self.editor.spawn.direction,
-                &self.editor.objects,
-                &self.editor.timeline.taps.tap_times,
-            )
-        };
-
-        // Fast-forward runtime to the resume point
-        if resume_index > 0 {
-            let resume_time = ((resume_index - 1) as f32 * step_seconds).min(duration_seconds);
-            {
-                puffin::profile_scope!("TimelineSamplesResumeCatchUp");
-                runtime.advance_to(resume_time);
-            }
-        }
-
-        let mut trail_segment_lengths = self.editor_timeline_cached_trail_segment_lengths();
-
-        self.editor
-            .timeline
-            .snapshot_cache
-            .reserve(total_sample_count.saturating_sub(existing_count));
-        {
-            puffin::profile_scope!("TimelineSamplesSampleLoop");
-            for index in resume_index..total_sample_count.max(1) {
-                let sample_time = (index as f32 * step_seconds).min(duration_seconds);
-                runtime.advance_to(sample_time);
-                self.append_editor_timeline_trail_cache(
-                    runtime.trail_segments(),
-                    &mut trail_segment_lengths,
-                );
-                let snapshot = runtime.snapshot();
-                self.editor.timeline.snapshot_cache.push(
-                    crate::state::editor_timeline::EditorTimelineSnapshot {
-                        position: snapshot.position,
-                        direction: snapshot.direction,
-                        is_grounded: snapshot.is_grounded,
-                        game_over: runtime.game_over(),
-                        trail_segment_count: self.editor.timeline.trail_segment_start_cache.len(),
-                        trail_point_count: self.editor.timeline.trail_point_cache.len(),
-                    },
-                );
-            }
-        }
-
-        self.editor.timeline.snapshot_cache_revision = self.editor.timeline.simulation_revision;
-        self.editor.timeline.scrub_runtime = None;
-        self.editor.timeline.scrub_runtime_revision = 0;
-    }
-
-    fn append_editor_timeline_trail_cache(
-        &mut self,
-        trail_segments: &[Vec<[f32; 3]>],
-        cached_segment_lengths: &mut Vec<usize>,
-    ) {
-        for (segment_index, segment) in trail_segments.iter().enumerate() {
-            if segment_index >= cached_segment_lengths.len() {
-                self.editor
-                    .timeline
-                    .trail_segment_start_cache
-                    .push(self.editor.timeline.trail_point_cache.len());
-                self.editor
-                    .timeline
-                    .trail_point_cache
-                    .extend(segment.iter().copied());
-                cached_segment_lengths.push(segment.len());
-                continue;
-            }
-
-            let cached_len = cached_segment_lengths[segment_index];
-            if segment.len() > cached_len {
-                self.editor
-                    .timeline
-                    .trail_point_cache
-                    .extend(segment[cached_len..].iter().copied());
-                cached_segment_lengths[segment_index] = segment.len();
-            }
-        }
-    }
-
-    fn editor_timeline_cached_trail_segment_lengths(&self) -> Vec<usize> {
-        let point_count = self.editor.timeline.trail_point_cache.len();
-        self.editor
-            .timeline
-            .trail_segment_start_cache
-            .iter()
-            .enumerate()
-            .map(|(segment_index, start)| {
-                let end = self
-                    .editor
-                    .timeline
-                    .trail_segment_start_cache
-                    .get(segment_index + 1)
-                    .copied()
-                    .unwrap_or(point_count)
-                    .min(point_count);
-                end.saturating_sub((*start).min(point_count))
-            })
-            .collect()
+        super::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
+            &mut self.editor.timeline,
+            &self.editor.objects,
+            &self.editor.spawn,
+        );
     }
 
     /// Sets the total duration of the editor timeline.
@@ -1733,30 +1649,10 @@ impl State {
         self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
-    /// Read-only accessor for the raw `session.practice_mode_enabled`
-    /// flag (the underlying boolean regardless of phase). Mirrors the
-    /// legacy `session.practice_mode_enabled` field. Exposed in
-    /// non-test builds because the Phase 3.15 navigation carve-out
-    /// syncs the value from `SessionStateRes.practice_mode_enabled`
-    /// into this field (see `Runtime::sync_app_session_state`).
-    /// The phase-aware accessor is `is_practice_mode_enabled()`.
+    /// Test-only accessor for the raw `session.practice_mode_enabled` flag.
+    #[cfg(test)]
     pub fn practice_mode_enabled_value(&self) -> bool {
         self.session.practice_mode_enabled
-    }
-
-    /// Setter for the practice-mode toggle. The Phase 3.15
-    /// navigation carve-out syncs
-    /// `SessionStateRes.practice_mode_enabled` into this field via
-    /// `Runtime::sync_app_session_state`; the change guard in the
-    /// runtime ensures the heavy side effects (clears
-    /// `practice_checkpoints`, calls
-    /// `rebuild_practice_checkpoint_vertices`, `restart_level`, and
-    /// `resume_game`) fire only on real user-driven changes.
-    pub fn set_practice_mode_enabled(&mut self, enabled: bool) {
-        // Delegate to the gameplay compatibility setter so the side-effect
-        // ordering (clear checkpoints → maybe resume → else rebuild +
-        // restart + resume) is preserved.
-        self.set_practice_mode_enabled_internal(enabled);
     }
 
     /// Read-only accessor for the raw `session.game_paused` flag.

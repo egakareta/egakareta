@@ -151,8 +151,8 @@ impl App {
         !cursor.hides_system_cursor()
     }
 
-    fn system_cursor_visible_for_frame(state: &State, pointer_over_egui: bool) -> bool {
-        Self::system_cursor_visible(state.game_cursor(pointer_over_egui))
+    fn system_cursor_visible_for_frame(runtime: &Runtime, _pointer_over_egui: bool) -> bool {
+        Self::system_cursor_visible(runtime.game_cursor())
     }
 
     fn should_route_mouse_button_input(
@@ -339,7 +339,7 @@ impl ApplicationHandler for App {
 
             let state = pollster::block_on(State::new_native(Arc::new(window)));
             let runtime = Runtime::new(state);
-            let Some(window) = runtime.state.window() else {
+            let Some(window) = runtime.window() else {
                 log::error!("Native runtime missing window handle after initialization");
                 return;
             };
@@ -417,7 +417,7 @@ impl ApplicationHandler for App {
         }
 
         #[cfg(not(target_arch = "wasm32"))]
-        let Some(window) = runtime.state.window().cloned() else {
+        let Some(window) = runtime.window().cloned() else {
             log::warn!("Dropping native window event because no window handle is available");
             return;
         };
@@ -526,7 +526,7 @@ impl ApplicationHandler for App {
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
                     let over_ui = runtime.egui_context().is_pointer_over_egui();
-                    let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
+                    let visible = Self::system_cursor_visible_for_frame(runtime, over_ui);
                     window.as_ref().set_cursor_visible(visible);
                 }
 
@@ -541,7 +541,7 @@ impl ApplicationHandler for App {
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
                     let over_ui = runtime.egui_context().is_pointer_over_egui();
-                    let visible = Self::system_cursor_visible_for_frame(&runtime.state, over_ui);
+                    let visible = Self::system_cursor_visible_for_frame(runtime, over_ui);
                     window.set_cursor_visible(visible);
                     window.request_redraw();
                 }
@@ -557,7 +557,7 @@ impl ApplicationHandler for App {
 
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(runtime) = &self.runtime
-            && let Some(window) = runtime.state.window()
+            && let Some(window) = runtime.window()
         {
             window.request_redraw();
         }
@@ -600,9 +600,10 @@ mod tests {
     #[tokio::test]
     async fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
         let state = State::new_test().await;
+        let runtime = Runtime::new(state);
 
-        assert!(App::system_cursor_visible_for_frame(&state, false));
-        assert!(App::system_cursor_visible_for_frame(&state, true));
+        assert!(App::system_cursor_visible_for_frame(&runtime, false));
+        assert!(App::system_cursor_visible_for_frame(&runtime, true));
     }
 
     #[test]

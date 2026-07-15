@@ -86,6 +86,7 @@ impl State {
 
     /// Refresh only the compatibility `GameState` fields from the App-world
     /// gameplay entities/resources. No App-world value is overwritten.
+    #[cfg(test)]
     pub fn sync_gameplay_from_app_world(&mut self, world: &mut World) {
         self.gameplay.state.sync_from_external_world(world);
         if world.resource::<DeathSfxFlag>().0 {
@@ -181,7 +182,6 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
         session.playing_trigger_base_objects = None;
         session.practice_mode_enabled = false;
         session.practice_checkpoints.clear();
-        session.practice_checkpoints_dirty = true;
         session.audio_stop_pending = true;
     } else {
         world
@@ -292,7 +292,6 @@ pub fn apply_game_over_transition_system(world: &mut World) {
             session.playing_trigger_base_objects = trigger_base_objects;
             if seed.progress.is_none() {
                 session.practice_checkpoints.clear();
-                session.practice_checkpoints_dirty = true;
             }
         }
         warmup_gameplay_audio(world, seed.elapsed_seconds);
@@ -423,7 +422,6 @@ pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
         if !preserve_practice_state {
             session.practice_checkpoints.clear();
         }
-        session.practice_checkpoints_dirty = true;
     }
     replace_app_gameplay_world(
         world,

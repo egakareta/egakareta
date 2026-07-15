@@ -30,7 +30,7 @@ use crate::modes::timing::show_timing_mode_bottom_panel;
 use bevy_ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateSnapshot;
+use eg_state::state::UiStateView;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -368,7 +368,7 @@ fn context_menu_button_impl(
 
 fn show_editor_context_menu(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
     commands: &mut impl UiCommandSink,
 ) {
@@ -642,7 +642,7 @@ fn show_editor_context_menu(
 
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
@@ -661,7 +661,7 @@ fn show_settings_sidebar_area(
 
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
     sidebar_width: f32,
     viewport_height: f32,
@@ -742,7 +742,7 @@ fn show_settings_section_tab(
 
 fn show_backend_settings(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     show_backend_selector(
@@ -825,7 +825,7 @@ fn show_backend_selector(
 
 fn show_ui_scale_setting(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
@@ -847,7 +847,7 @@ fn show_ui_scale_setting(
 
 fn show_keybind_settings(
     ui: &mut egui::Ui,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
@@ -901,10 +901,10 @@ fn show_keybind_settings(
 
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
 /// Hidden during active gameplay.
-/// Renders from [`UiStateSnapshot`] and queues commands for the caller to dispatch.
+/// Renders from [`UiStateView`] and queues commands for the caller to dispatch.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.show_settings {
@@ -923,7 +923,7 @@ pub fn show_settings_sidebar(
 #[allow(deprecated)]
 pub fn show_editor_ui_from_view(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut impl UiCommandSink,
 ) -> Vec<[f32; 4]> {
@@ -1417,7 +1417,7 @@ pub fn show_editor_ui_from_view(
 #[allow(deprecated)]
 pub fn show_editor_ui_commands_from_view(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
     let mut commands = Vec::new();
@@ -1429,7 +1429,7 @@ pub fn show_editor_ui_commands_from_view(
 /// Shows the app-wide profiler window when the performance overlay is enabled.
 pub fn show_perf_overlay(
     ctx: &egui::Context,
-    view: &UiStateSnapshot<'_>,
+    view: &UiStateView<'_>,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.perf_overlay_enabled {
@@ -1988,7 +1988,7 @@ mod tests {
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateSnapshot;
+    use eg_state::state::UiStateView;
     use eg_state::state::editor_command::EditorCommand;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
     use glam::{Mat3, Vec3};
@@ -2019,7 +2019,7 @@ mod tests {
         sign != 0.0
     }
 
-    fn run_editor_ui_once(view: &UiStateSnapshot<'_>) {
+    fn run_editor_ui_once(view: &UiStateView<'_>) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
@@ -2302,7 +2302,7 @@ mod test_utils {
     use std::sync::LazyLock;
 
     use eg_blocks::BlockId;
-    use eg_state::state::UiStateSnapshot;
+    use eg_state::state::UiStateView;
     use eg_types::{
         AppSettings, Direction, EditorMode, LevelMetadata, MusicMetadata, SettingsSection,
     };
@@ -2312,8 +2312,8 @@ mod test_utils {
     pub fn editor_ui_snapshot<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
-    ) -> UiStateSnapshot<'a> {
-        UiStateSnapshot {
+    ) -> UiStateView<'a> {
+        UiStateView {
             is_editor: true,
             is_menu: false,
             is_game_paused: false,

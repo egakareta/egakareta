@@ -15,14 +15,13 @@ use eg_game::GameState;
 use eg_level::{build_level_export, load_builtin_level_metadata, read_metadata_from_egz};
 use eg_platform::io::{read_editor_music_bytes, save_level_export};
 use eg_platform::task::spawn_background;
-use eg_types::{
-    AppPhase, AppSettings, DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-    DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode, KeyChord, KeybindBinding, SettingsSection,
-};
+use eg_types::{AppPhase, AppSettings, EditorMode, KeyChord, KeybindBinding, SettingsSection};
 use eg_types::{
     BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, SpawnMetadata,
 };
+#[cfg(test)]
+use eg_types::{DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET};
 use glam::Vec3;
 
 impl State {
@@ -400,6 +399,7 @@ impl State {
         self.session.editor_menu_preview_camera = None;
     }
 
+    #[cfg(test)]
     pub(super) fn refresh_menu_level_preview_if_needed(&mut self) {
         if self.phase != AppPhase::Menu {
             return;
@@ -430,6 +430,7 @@ impl State {
         self.rebuild_block_vertices();
     }
 
+    #[cfg(test)]
     fn reset_menu_preview_to_default_scene(&mut self) {
         self.gameplay.state.objects = vec![];
         self.gameplay.state.rebuild_behavior_cache();
@@ -621,10 +622,20 @@ impl State {
         })
     }
 
+    /// Seed the App-owned menu preview object list once during Runtime
+    /// construction when the legacy State already has a loaded preview.
+    pub fn menu_preview_objects_resource(&self) -> super::MenuPreviewObjectsRes {
+        super::MenuPreviewObjectsRes {
+            objects: self.gameplay.state.objects.clone(),
+        }
+    }
+
+    #[cfg(test)]
     pub fn menu_selected_level_index(&self) -> usize {
         self.menu.state.selected_level
     }
 
+    #[cfg(test)]
     pub fn set_menu_selected_level_index(&mut self, selected_level: usize) {
         self.menu.state.selected_level = selected_level;
     }
@@ -652,7 +663,7 @@ impl State {
     }
 }
 
-fn menu_preview_camera_for_metadata(metadata: &LevelMetadata) -> ([f32; 3], [f32; 3]) {
+pub(crate) fn menu_preview_camera_for_metadata(metadata: &LevelMetadata) -> ([f32; 3], [f32; 3]) {
     metadata
         .menu_preview_camera
         .as_ref()

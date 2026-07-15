@@ -13,10 +13,13 @@ mod editor_camera;
 pub mod editor_command;
 mod editor_config_state;
 mod editor_interaction;
+mod editor_playback;
 mod editor_scene;
 mod editor_state;
 mod editor_timeline;
+mod editor_timeline_cache;
 mod editor_timing;
+mod editor_trail;
 mod editor_triggers;
 mod escape_compat;
 mod frame_time;
@@ -26,6 +29,7 @@ mod history;
 mod input_bridge;
 mod level_management;
 mod lifecycle;
+mod menu_preview;
 mod perf;
 mod plugins;
 mod render;
@@ -36,6 +40,7 @@ mod state_resources;
 mod transitions;
 mod ui_snapshot;
 mod update;
+mod visual_effects;
 
 use crate::events as state_events;
 pub use state_events::{CommandHandlerSet, add_command_systems, register_command_events};
@@ -55,6 +60,7 @@ use std::collections::VecDeque;
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
 pub(crate) use async_bridge::apply_imported_level_to_world;
+pub(crate) use audio_state::start_audio_source_at_seconds_for_resources;
 pub use audio_state::{
     AudioBackendRes, AudioState, AudioSubsystem, EditorAudioCacheRes, RuntimeAudioPreloadRes,
     RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
@@ -84,27 +90,36 @@ pub use plugins::{
     register_state_command_pipeline, run_state_schedule_in_world, setup_state_app,
 };
 pub use render::resources::{
-    RenderConfigRes, RenderFrameInputRes, RenderResizeRequest, RenderUniformUploadRes,
+    RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
+    RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
+    RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
+    RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
+    RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
+    RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
+    RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
+    RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
     RenderUniformsRes,
 };
-pub use runtime::{EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
+pub use runtime::{BlockVisualEffect, EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
     AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-    AuthSubmitSignInRequest, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
-    EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-    GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuStateRes,
-    PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
+    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+    GameplayResetRes, GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes,
+    MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
-pub use ui_snapshot::{UiStateData, UiStateRes, UiStateSnapshot};
+pub use ui_snapshot::{UiStateData, UiStateRes, UiStateView};
 
 use eg_game::{GameCheckpointState, GameState};
 use eg_mesh::MeshGeometry;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
+#[cfg(test)]
+use eg_types::EditorMode;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, EditorInputState, EditorMode, LevelObject,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorInputState, LevelObject,
     LevelPreviewCameraMetadata, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
     SpawnMetadata,
 };
@@ -220,7 +235,7 @@ pub struct State {
     menu: MenuSubsystem,
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
-    render_resources: StateRenderResources,
+    render_resources: Option<StateRenderResources>,
     gameplay_world_needs_seed: bool,
 }
 
@@ -230,7 +245,27 @@ pub struct StateRenderResources {
     surface_host: Option<eg_platform::state_host::SurfaceHost>,
 }
 
+impl StateRenderResources {
+    /// Move the platform render resources into their App-owned wrappers.
+    pub fn into_parts(
+        self,
+    ) -> (
+        eg_render::GpuContext,
+        eg_render::SceneMeshes,
+        Option<eg_platform::state_host::SurfaceHost>,
+    ) {
+        (self.gpu, self.meshes, self.surface_host)
+    }
+}
+
 impl State {
+    /// Transfer the native/web render resources to the App world.
+    pub fn take_render_resources(&mut self) -> StateRenderResources {
+        self.render_resources
+            .take()
+            .expect("State render resources were already moved to the App")
+    }
+
     /// Returns a reference to the wgpu device for GPU operations.
     pub fn device(&self) -> &wgpu::Device {
         &self.render_gpu().device
@@ -243,22 +278,38 @@ impl State {
 
     /// Returns the GPU render context for render-owned helpers.
     pub fn render_gpu(&self) -> &eg_render::GpuContext {
-        &self.render_resources.gpu
+        &self
+            .render_resources
+            .as_ref()
+            .expect("State render resources are App-owned in production")
+            .gpu
     }
 
     /// Returns mutable GPU render context for render-owned helpers.
     pub fn render_gpu_mut(&mut self) -> &mut eg_render::GpuContext {
-        &mut self.render_resources.gpu
+        &mut self
+            .render_resources
+            .as_mut()
+            .expect("State render resources are App-owned in production")
+            .gpu
     }
 
     /// Returns the scene mesh storage for render-owned helpers.
     pub fn render_meshes(&self) -> &eg_render::SceneMeshes {
-        &self.render_resources.meshes
+        &self
+            .render_resources
+            .as_ref()
+            .expect("State render resources are App-owned in production")
+            .meshes
     }
 
     /// Returns mutable scene mesh storage for render-owned helpers.
     pub fn render_meshes_mut(&mut self) -> &mut eg_render::SceneMeshes {
-        &mut self.render_resources.meshes
+        &mut self
+            .render_resources
+            .as_mut()
+            .expect("State render resources are App-owned in production")
+            .meshes
     }
 
     /// Mutates scene mesh storage while also reading the wgpu device.
@@ -267,7 +318,14 @@ impl State {
         f: impl FnOnce(&wgpu::Device, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
         let device = self.render_gpu().device.clone();
-        f(&device, &mut self.render_resources.meshes)
+        f(
+            &device,
+            &mut self
+                .render_resources
+                .as_mut()
+                .expect("State render resources are App-owned in production")
+                .meshes,
+        )
     }
 
     /// Mutates scene mesh storage while also reading the wgpu queue.
@@ -276,12 +334,23 @@ impl State {
         f: impl FnOnce(&wgpu::Queue, &mut eg_render::SceneMeshes) -> T,
     ) -> T {
         let queue = self.render_gpu().queue.clone();
-        f(&queue, &mut self.render_resources.meshes)
+        f(
+            &queue,
+            &mut self
+                .render_resources
+                .as_mut()
+                .expect("State render resources are App-owned in production")
+                .meshes,
+        )
     }
 
     /// Returns the optional platform surface host.
     pub fn surface_host(&self) -> Option<&eg_platform::state_host::SurfaceHost> {
-        self.render_resources.surface_host.as_ref()
+        self.render_resources
+            .as_ref()
+            .expect("State render resources are App-owned in production")
+            .surface_host
+            .as_ref()
     }
 
     /// Returns a reference to the native window (desktop only).
@@ -298,6 +367,7 @@ impl State {
     /// to capture the `Copy` values needed by the mirror closure.
     /// Phase 4b moves the snapshot computation into a Bevy system
     /// and reads from the world resources directly.
+    #[cfg(test)]
     fn compute_frame_input_snapshot(&self) -> eg_render::RenderFrameInput {
         eg_render::RenderFrameInput {
             phase: self.phase,
@@ -526,6 +596,7 @@ impl State {
 
     /// Mirror a direct App-world phase carve-out into the compatibility
     /// shell while phase ownership is still split.
+    #[cfg(test)]
     pub fn set_phase_from_app(&mut self, phase: AppPhase) {
         self.phase = phase;
     }
@@ -566,6 +637,7 @@ impl State {
     ///
     /// Processes left and right mouse button presses/releases, updating editor state
     /// and triggering selection or interaction logic as appropriate.
+    #[cfg(test)]
     pub fn handle_mouse_button(&mut self, button: u32, pressed: bool) {
         match button {
             0 => {
@@ -599,6 +671,7 @@ impl State {
     /// Updates the editor pointer position and processes the click based on the current
     /// editor mode (Place or Select), potentially starting block placement, gizmo drag,
     /// or selection operations.
+    #[cfg(test)]
     pub fn handle_primary_click(&mut self, x: f64, y: f64) {
         let previous_pointer = self.editor.input.pointer_screen;
         let pointer_moved = previous_pointer.is_none_or(|pointer| {
@@ -667,6 +740,7 @@ impl State {
     ///
     /// Updates editor interactions such as gizmo dragging, selection dragging,
     /// or marquee selection if the left mouse button is held down in editor mode.
+    #[cfg(test)]
     pub fn handle_pointer_moved(&mut self, x: f64, y: f64) {
         let mut handled = false;
         if self.editor.left_mouse_down() && self.is_editor() {
