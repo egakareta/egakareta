@@ -11,15 +11,11 @@
 //! `events::snap`, `events::editor_mode::handle_set_block_id`, and
 //! `events::session`): the per-message handlers in this file mutate
 //! `EditorTimingRes.0` directly instead of staging a legacy
-//! `EditorCommand`. The legacy `State.editor.timing.*` fields are synced
-//! from the resource by
-//! `Runtime::sync_app_editor_timing_state` before any dispatch in the
-//! same frame.
+//! `EditorCommand`.
 //!
 //! The carve-out covers `timing_points` and `timing_selected_index`.
-//! The bpm-tap fields are carved out in `events::bpm` (separate
-//! handlers but the same shared `EditorTimingRes` resource + the same
-//! change-guarded `sync_app_editor_timing_state` helper).
+//! The bpm-tap fields are carved out in `events::bpm` and share the same
+//! authoritative `EditorTimingRes` resource.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;

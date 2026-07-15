@@ -14,12 +14,6 @@
 //! calculation as the legacy `State::editor_bpm_tap` /
 //! `editor_bpm_tap_reset` paths.
 //!
-//! `Runtime::sync_app_editor_timing_state` propagates the
-//! resource values back to the legacy `State.editor.timing` fields
-//! each frame so any code path that still reads the legacy fields
-//! (mesh rebuilds, render extraction, UI snapshot) sees the new
-//! values.
-
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
@@ -40,10 +34,6 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 // Carve-out dispatch systems: handlers mutate `EditorTimingRes` directly
 // so the App world is the authoritative store for the bpm-tap state.
-// The legacy `State.editor.timing` fields are refreshed by
-// `Runtime::sync_app_editor_timing_state` before any dispatch in the
-// same frame.
-//
 // The bpm-tap calculation runs in the App world: the handler reads
 // wall-clock time, appends to the tap-times list, recomputes the
 // running BPM (60 / average diff), and truncates the list to the

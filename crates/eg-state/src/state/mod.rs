@@ -84,6 +84,7 @@ pub use history::EditorHistoryState;
 pub use input_bridge::{
     PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
 };
+pub use lifecycle::StateAppBootstrap;
 pub use perf::PerfState;
 pub use plugins::{
     EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
@@ -214,18 +215,14 @@ pub struct StateSchedule;
 #[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderExtractSchedule;
 
-/// The central state structure that manages all subsystems of the game engine.
-/// It contains subsystems for rendering, gameplay, editor, audio, session, and menu,
-/// and handles the overall application phase and frame runtime.
+/// Legacy GPU-backed compatibility fixture retained for tests that still call
+/// stateful helper methods directly.
 ///
-/// Phase 7 moved the parallel ECS `World` out of [`State`] and into Runtime's
-/// `bevy_app::App`. Legacy subsystem fields remain authoritative during the
-/// compatibility window; per-frame bridges install mirror data into the App
-/// world before [`StateSchedule`] runs.
+/// Production native and WASM startup use [`StateAppBootstrap`] and never
+/// construct this type. App-world resources and schedules are authoritative.
 ///
-/// REFACTOR POINT(full-bevy): the legacy subsystem fields are removed in
-/// the full-Bevy migration; all state lives in the World and `State` becomes
-/// a thin alias over `bevy_app::App`.
+/// REFACTOR POINT(full-bevy): migrate the remaining legacy tests to `TestApp`
+/// or App-owned render fixtures, then delete `State` and its subsystem shells.
 pub struct State {
     auth: AuthSubsystem,
     gameplay: GameplaySubsystem,
@@ -259,13 +256,6 @@ impl StateRenderResources {
 }
 
 impl State {
-    /// Transfer the native/web render resources to the App world.
-    pub fn take_render_resources(&mut self) -> StateRenderResources {
-        self.render_resources
-            .take()
-            .expect("State render resources were already moved to the App")
-    }
-
     /// Returns a reference to the wgpu device for GPU operations.
     pub fn device(&self) -> &wgpu::Device {
         &self.render_gpu().device
@@ -592,13 +582,6 @@ impl State {
     /// Returns the legacy compatibility shell's current app phase.
     pub fn app_phase_value(&self) -> AppPhase {
         self.phase
-    }
-
-    /// Mirror a direct App-world phase carve-out into the compatibility
-    /// shell while phase ownership is still split.
-    #[cfg(test)]
-    pub fn set_phase_from_app(&mut self, phase: AppPhase) {
-        self.phase = phase;
     }
 
     /// Returns true when a real gameplay session is paused.

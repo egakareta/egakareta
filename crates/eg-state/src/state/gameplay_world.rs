@@ -27,8 +27,8 @@ use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
     AppPhaseRes, AudioBackendRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
-    FrameTimeRes, GameplayResetRes, GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes,
-    SessionStateRes, State,
+    FrameTimeRes, GameplayResetRes, GameplayResetSeed, GameplaySubsystem, MenuStateRes,
+    RuntimeAudioPreloadRes, SessionStateRes, State,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -41,57 +41,7 @@ impl State {
     /// construction or a lifecycle transition. Subsequent active-play frames
     /// do not call this method; `GameplaySchedule` owns the simulation.
     pub fn seed_app_gameplay_world(&mut self, world: &mut World) {
-        let game = &self.gameplay.state;
-        let objects = game.objects.clone();
-        let position = game.position;
-        let direction = game.direction;
-        let speed = game.speed;
-        let vertical_velocity = game.vertical_velocity;
-        let is_grounded = game.is_grounded;
-        let trail_segments = game.trail_segments.clone();
-        let progress = game.level_progress();
-        let pending_turns = self
-            .gameplay
-            .pending_turn_inputs
-            .iter()
-            .map(|input| TimedTurnInput {
-                at_seconds: input.time_seconds,
-                kind: TurnInputKind::TurnRight,
-            })
-            .collect::<Vec<_>>();
-        let death_sfx_played = self.gameplay.death_sfx_played;
-
-        replace_app_gameplay_world(
-            world,
-            GameplayWorldSeed {
-                objects,
-                position,
-                direction,
-                speed,
-                vertical_velocity,
-                is_grounded,
-                trail_segments,
-                elapsed_seconds: game.elapsed_seconds,
-                level_duration_seconds: game.level_duration_seconds,
-                started: game.started,
-                game_over: game.game_over,
-                level_complete: game.level_complete,
-                completion_hold_seconds: game.completion_hold_seconds,
-                progress,
-                pending_turns,
-                death_sfx_played,
-            },
-        );
-    }
-
-    /// Refresh only the compatibility `GameState` fields from the App-world
-    /// gameplay entities/resources. No App-world value is overwritten.
-    #[cfg(test)]
-    pub fn sync_gameplay_from_app_world(&mut self, world: &mut World) {
-        self.gameplay.state.sync_from_external_world(world);
-        if world.resource::<DeathSfxFlag>().0 {
-            self.gameplay.death_sfx_played = false;
-        }
+        seed_app_gameplay_world_from_subsystem(world, &self.gameplay);
     }
 
     pub fn mark_app_gameplay_world_for_legacy_seed(&mut self) {
@@ -104,6 +54,43 @@ impl State {
             self.gameplay_world_needs_seed = false;
         }
     }
+}
+
+pub(super) fn seed_app_gameplay_world_from_subsystem(
+    world: &mut World,
+    gameplay: &GameplaySubsystem,
+) {
+    let game = &gameplay.state;
+    let pending_turns = gameplay
+        .pending_turn_inputs
+        .iter()
+        .map(|input| TimedTurnInput {
+            at_seconds: input.time_seconds,
+            kind: TurnInputKind::TurnRight,
+        })
+        .collect::<Vec<_>>();
+
+    replace_app_gameplay_world(
+        world,
+        GameplayWorldSeed {
+            objects: game.objects.clone(),
+            position: game.position,
+            direction: game.direction,
+            speed: game.speed,
+            vertical_velocity: game.vertical_velocity,
+            is_grounded: game.is_grounded,
+            trail_segments: game.trail_segments.clone(),
+            elapsed_seconds: game.elapsed_seconds,
+            level_duration_seconds: game.level_duration_seconds,
+            started: game.started,
+            game_over: game.game_over,
+            level_complete: game.level_complete,
+            completion_hold_seconds: game.completion_hold_seconds,
+            progress: game.level_progress(),
+            pending_turns,
+            death_sfx_played: gameplay.death_sfx_played,
+        },
+    );
 }
 
 /// Advance the App-owned gameplay simulation after command handlers have

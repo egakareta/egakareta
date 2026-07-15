@@ -180,9 +180,7 @@ fn snap_selected_blocks_to_grid(
         ];
     }
 
-    if changed {
-        resources.objects.object_mutation_pending = true;
-    }
+    if changed {}
     changed
 }
 
@@ -450,7 +448,6 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_>) -> bool {
     resources.input.0.selected_block_index = created_trigger_indices.first().copied();
     resources.input.0.selected_block_indices = created_trigger_indices;
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
-    resources.objects.object_mutation_pending = true;
     true
 }
 

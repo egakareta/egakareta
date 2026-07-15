@@ -30,7 +30,10 @@ use crate::platform::input_mapping::{
 use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
 use eg_state::commands::InputEvent;
+#[cfg(test)]
 use eg_state::state::State;
+#[cfg(not(test))]
+use eg_state::state::StateAppBootstrap;
 use eg_types::GameCursor;
 
 // REFACTOR POINT(full-bevy): replace this custom winit `ApplicationHandler`
@@ -337,8 +340,12 @@ impl ApplicationHandler for App {
                 .create_window(window_attributes)
                 .expect("Failed to create window");
 
-            let state = pollster::block_on(State::new_native(Arc::new(window)));
-            let runtime = Runtime::new(state);
+            #[cfg(not(test))]
+            let runtime = Runtime::from_bootstrap(pollster::block_on(
+                StateAppBootstrap::new_native(Arc::new(window)),
+            ));
+            #[cfg(test)]
+            let runtime = Runtime::new(pollster::block_on(State::new_native(Arc::new(window))));
             let Some(window) = runtime.window() else {
                 log::error!("Native runtime missing window handle after initialization");
                 return;
@@ -433,11 +440,9 @@ impl ApplicationHandler for App {
             egui_state.on_window_event(window, &event).consumed
         };
         let pointer_over_egui = runtime.egui_context().is_pointer_over_egui();
-        let pointer_over_editor_ui = self.last_cursor_pos.is_some_and(|position| {
-            runtime
-                .state
-                .editor_pointer_over_ui_input(position.x, position.y)
-        });
+        let pointer_over_editor_ui = self
+            .last_cursor_pos
+            .is_some_and(|position| runtime.editor_pointer_over_ui_input(position.x, position.y));
         let ui_wants_pointer = pointer_over_egui || pointer_over_editor_ui;
 
         match event {
@@ -567,6 +572,7 @@ impl ApplicationHandler for App {
 #[cfg(test)]
 mod tests {
     use super::{App, TouchPointEvent};
+    use crate::platform::runtime::Runtime;
     use eg_state::commands::InputEvent;
     use eg_state::state::State;
     use eg_types::GameCursor;
@@ -1204,13 +1210,24 @@ pub async fn run_game() -> Result<(), JsValue> {
         "display:block;width:100vw;height:100vh;touch-action:none;",
     )?;
 
-    let state = State::new(
-        canvas.clone(),
-        launch_backend_query_param("graphics"),
-        launch_backend_query_param("audio"),
-    )
-    .await;
-    let runtime = Runtime::new(state);
+    #[cfg(not(test))]
+    let runtime = Runtime::from_bootstrap(
+        StateAppBootstrap::new(
+            canvas.clone(),
+            launch_backend_query_param("graphics"),
+            launch_backend_query_param("audio"),
+        )
+        .await,
+    );
+    #[cfg(test)]
+    let runtime = Runtime::new(
+        State::new(
+            canvas.clone(),
+            launch_backend_query_param("graphics"),
+            launch_backend_query_param("audio"),
+        )
+        .await,
+    );
 
     let event_loop = EventLoop::builder().build().unwrap();
     event_loop.set_control_flow(ControlFlow::Wait);

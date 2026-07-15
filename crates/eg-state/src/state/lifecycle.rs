@@ -10,6 +10,7 @@ use super::{
     AudioState, AudioSubsystem, AuthSubsystem, EditorConfigState, EditorSubsystem,
     GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
 };
+use bevy_ecs::world::World;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use glam::Mat4;
 #[cfg(any(test, feature = "test-support"))]
@@ -306,20 +307,44 @@ impl From<&GpuContext> for TestGpuFixture {
     }
 }
 
-/// Build the render resources owned directly by [`State`].
-fn build_state_render_resources(
-    gpu: GpuContext,
-    surface_host: Option<SurfaceHost>,
-    meshes: SceneMeshes,
-) -> super::StateRenderResources {
-    super::StateRenderResources {
-        gpu,
-        meshes,
-        surface_host,
+/// Transient result of the shared GPU/platform initializer.
+struct StateInitialization {
+    auth: AuthSubsystem,
+    gameplay: GameplaySubsystem,
+    editor: EditorSubsystem,
+    audio: AudioSubsystem,
+    session: SessionSubsystem,
+    menu: MenuSubsystem,
+    phase: AppPhase,
+    frame_runtime: FrameRuntimeState,
+    render_resources: super::StateRenderResources,
+}
+
+impl StateInitialization {
+    fn into_state(self) -> State {
+        State {
+            auth: self.auth,
+            gameplay: self.gameplay,
+            editor: self.editor,
+            audio: self.audio,
+            session: self.session,
+            menu: self.menu,
+            phase: self.phase,
+            frame_runtime: self.frame_runtime,
+            render_resources: Some(self.render_resources),
+            gameplay_world_needs_seed: false,
+        }
     }
 }
 
-impl State {
+/// One-time production bootstrap that installs authoritative resources directly
+/// into the Bevy App world without constructing the legacy `State` shell.
+///
+/// REFACTOR POINT(full-bevy): replace this custom wgpu/platform bootstrap with
+/// Bevy renderer, window, asset, task, and audio plugins.
+pub struct StateAppBootstrap(StateInitialization);
+
+impl StateAppBootstrap {
     #[cfg(target_arch = "wasm32")]
     pub async fn new(
         canvas: WasmCanvas,
@@ -339,16 +364,185 @@ impl State {
             .unwrap_or_else(wgpu::Backends::all);
         let (surface_host, instance, surface, size) =
             SurfaceHost::create_for_wasm(canvas, wasm_backends);
-        Self::new_common(
-            instance,
-            Some(surface_host),
-            Some(surface),
-            size,
-            graphics_backend_override,
-            audio_backend_override,
+        Self(
+            StateInitialization::new_common(
+                instance,
+                Some(surface_host),
+                Some(surface),
+                size,
+                graphics_backend_override,
+                audio_backend_override,
+            )
+            .await
+            .expect("Failed to initialize state: No compatible GPU adapter found"),
         )
-        .await
-        .expect("Failed to initialize state: No compatible GPU adapter found")
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn new_native(window: NativeWindow) -> Self {
+        let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
+        Self(
+            StateInitialization::new_common(
+                instance,
+                Some(surface_host),
+                Some(surface),
+                size,
+                None,
+                None,
+            )
+            .await
+            .expect("Failed to initialize state: No compatible GPU adapter found"),
+        )
+    }
+
+    pub fn install(self, world: &mut World) {
+        let StateInitialization {
+            auth,
+            gameplay,
+            editor,
+            audio,
+            session,
+            menu,
+            phase,
+            frame_runtime,
+            render_resources,
+        } = self.0;
+
+        super::async_bridge::install_async_bridge_from_state_arc(
+            world,
+            std::sync::Arc::clone(&auth.receiver),
+            std::sync::Arc::clone(&audio.state.editor.audio_import_channel.1),
+            std::sync::Arc::clone(&audio.state.editor.waveform_load_channel.1),
+            std::sync::Arc::clone(&audio.state.runtime_preload.preload_channel.1),
+            std::sync::Arc::clone(&session.editor_level_import_channel.1),
+        );
+        world.insert_resource(super::LevelImportSenderRes::new(
+            session.editor_level_import_channel.0.clone(),
+        ));
+        world.insert_resource(super::AudioImportSenderRes::new(
+            audio.state.editor.audio_import_channel.0.clone(),
+        ));
+        world.insert_resource(audio.state.editor.cache.clone());
+        world.insert_resource(audio.state.runtime_preload.cache.clone());
+        world.insert_resource(super::RuntimeAudioPreloadSenderRes(
+            audio.state.runtime_preload.preload_channel.0.clone(),
+        ));
+        world.insert_resource(audio.state.runtime.clone());
+        world.insert_resource(super::WaveformLoadSenderRes(
+            audio.state.editor.waveform_load_channel.0.clone(),
+        ));
+
+        let (render_gpu, render_meshes, render_surface_host) = render_resources.into_parts();
+        world.insert_resource(super::RenderConfigRes::from_gpu(&render_gpu));
+        world.insert_non_send(super::RenderUniformUploadRes::from_gpu(&render_gpu));
+        world.insert_non_send(super::RenderGpuRes(render_gpu));
+        world.insert_non_send(super::RenderMeshesRes(render_meshes));
+        world.insert_non_send(super::RenderSurfaceHostRes(render_surface_host));
+
+        super::gameplay_world::seed_app_gameplay_world_from_subsystem(world, &gameplay);
+        world.insert_resource(super::MenuPreviewObjectsRes {
+            objects: gameplay.state.objects.clone(),
+        });
+        world.insert_resource(super::AppPhaseRes::new(phase));
+        world.insert_resource(super::MenuStateRes::new(menu.state));
+        world.insert_resource(auth.state);
+
+        world.insert_resource(super::EditorConfigRes(editor.config.clone()));
+        world.insert_resource(super::EditorInputRes(editor.input.clone()));
+        world.insert_resource(super::EditorObjectsRes {
+            objects: editor.objects.clone(),
+        });
+        world.insert_resource(super::EditorTimingRes(editor.timing.clone()));
+
+        let mut timeline = super::EditorTimelineRes::default();
+        timeline.0.clock.time_seconds = editor.timeline.clock.time_seconds;
+        timeline.0.clock.duration_seconds = editor.timeline.clock.duration_seconds;
+        timeline.0.preview.position = editor.timeline.preview.position;
+        timeline.0.preview.direction = editor.timeline.preview.direction;
+        timeline.0.taps.tap_times = editor.timeline.taps.tap_times.clone();
+        timeline.0.taps.tap_indicator_positions =
+            editor.timeline.taps.tap_indicator_positions.clone();
+        timeline.0.taps.selected_index = editor.timeline.taps.selected_index;
+        timeline.0.playback.playing = editor.timeline.playback.playing;
+        timeline.0.playback.pending_seek_time_seconds =
+            editor.timeline.playback.pending_seek_time_seconds;
+        timeline.0.playback.seek_resync_cooldown_seconds =
+            editor.timeline.playback.seek_resync_cooldown_seconds;
+        world.insert_resource(timeline);
+
+        let mut runtime = super::EditorRuntimeRes::default();
+        runtime.0.interaction.last_mode = editor.runtime.interaction.last_mode;
+        runtime.0.interaction.clipboard = editor.runtime.interaction.clipboard.clone();
+        world.insert_resource(runtime);
+        world.insert_resource(super::EditorHistoryRes(editor.runtime.history.clone()));
+        world.insert_resource(super::EditorSpawnRes(editor.spawn.clone()));
+        world.insert_resource(super::EditorCameraRes(editor.camera.clone()));
+        world.insert_resource(super::EditorTriggerRes(super::EditorTriggerState {
+            selected_index: editor.triggers.selected_index,
+        }));
+
+        let practice_mode_enabled = phase == AppPhase::Playing
+            && !session.playtesting_editor
+            && session.practice_mode_enabled;
+        world.insert_resource(super::SessionStateRes {
+            editor_level_name: session.editor_level_name,
+            editor_music_metadata: session.editor_music_metadata,
+            editor_creator_metadata: session.editor_creator_metadata,
+            editor_sky_color: session.editor_sky_color,
+            editor_menu_preview_camera: session.editor_menu_preview_camera,
+            editor_show_metadata: session.editor_show_metadata,
+            editor_show_place_window: session.editor_show_place_window,
+            editor_show_settings: session.editor_show_settings,
+            editor_settings_section: session.editor_settings_section,
+            editor_keybind_capture_action: session.editor_keybind_capture_action,
+            settings_restart_required: session.settings_restart_required,
+            graphics_backend_locked: session.graphics_backend_locked,
+            audio_backend_locked: session.audio_backend_locked,
+            available_graphics_backends: session.available_graphics_backends,
+            available_audio_backends: session.available_audio_backends,
+            app_settings: session.app_settings,
+            playing_level_name: session.playing_level_name,
+            playtesting_editor: session.playtesting_editor,
+            game_paused: session.game_paused,
+            playtest_audio_start_seconds: session.playtest_audio_start_seconds,
+            playing_sky_color: session.playing_sky_color,
+            playing_trigger_base_objects: session.playing_trigger_base_objects,
+            practice_mode_enabled,
+            practice_checkpoints: session.practice_checkpoints,
+            audio_stop_pending: false,
+        });
+        world.insert_resource(super::FrameTimeRes {
+            last_frame: frame_runtime.editor.last_frame,
+            delta_seconds: frame_runtime.editor.delta_seconds,
+            global_time_seconds: frame_runtime.global_time_seconds,
+            fps_smoothed: 0.0,
+        });
+    }
+}
+
+fn build_state_render_resources(
+    gpu: GpuContext,
+    surface_host: Option<SurfaceHost>,
+    meshes: SceneMeshes,
+) -> super::StateRenderResources {
+    super::StateRenderResources {
+        gpu,
+        meshes,
+        surface_host,
+    }
+}
+
+impl State {
+    #[cfg(target_arch = "wasm32")]
+    pub async fn new(
+        canvas: WasmCanvas,
+        graphics_backend_override: Option<String>,
+        audio_backend_override: Option<String>,
+    ) -> Self {
+        StateAppBootstrap::new(canvas, graphics_backend_override, audio_backend_override)
+            .await
+            .0
+            .into_state()
     }
 
     /// Creates a new `State` instance for native platforms.
@@ -357,19 +551,8 @@ impl State {
     /// `NativeWindow` and configures the default application state.
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn new_native(window: NativeWindow) -> State {
-        let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
-        Self::new_common(
-            instance,
-            Some(surface_host),
-            Some(surface),
-            size,
-            None,
-            None,
-        )
-        .await
-        .expect("Failed to initialize state: No compatible GPU adapter found")
+        StateAppBootstrap::new_native(window).await.0.into_state()
     }
-
     #[cfg(any(test, feature = "test-support"))]
     pub async fn try_new_test() -> Option<State> {
         let fixture = Self::shared_test_gpu_fixture()?;
@@ -404,7 +587,7 @@ impl State {
                             ..wgpu::InstanceDescriptor::new_without_display_handle()
                         });
 
-                        if let Some(state) = Self::new_common(
+                        if let Some(initialization) = StateInitialization::new_common(
                             instance,
                             None,
                             None,
@@ -417,6 +600,7 @@ impl State {
                         )
                         .await
                         {
+                            let state = initialization.into_state();
                             let fixture = TestGpuFixture::from(state.render_gpu());
                             return Some(fixture);
                         }
@@ -670,15 +854,17 @@ impl State {
             gameplay_world_needs_seed: false,
         }
     }
+}
 
-    pub async fn new_common(
+impl StateInitialization {
+    async fn new_common(
         instance: wgpu::Instance,
         surface_host: Option<SurfaceHost>,
         surface: Option<wgpu::Surface<'static>>,
         size: PhysicalSize<u32>,
         graphics_backend_override: Option<String>,
         audio_backend_override: Option<String>,
-    ) -> Option<State> {
+    ) -> Option<StateInitialization> {
         let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -1434,8 +1620,8 @@ impl State {
 
         let now = web_time::Instant::now();
 
-        Some(Self {
-            render_resources: Some(build_state_render_resources(
+        Some(StateInitialization {
+            render_resources: build_state_render_resources(
                 GpuContext {
                     surface,
                     adapter_info,
@@ -1501,7 +1687,7 @@ impl State {
                     editor_hitbox_visualization: MeshSlot::Empty,
                     camera_arrow: MeshSlot::Empty,
                 },
-            )),
+            ),
             auth: AuthSubsystem::new(auth_session, true),
             gameplay: GameplaySubsystem {
                 state: game,
@@ -1565,7 +1751,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            gameplay_world_needs_seed: false,
         })
     }
 }

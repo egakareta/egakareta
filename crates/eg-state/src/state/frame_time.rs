@@ -24,11 +24,4 @@ impl State {
             fps_smoothed: 0.0,
         }
     }
-
-    #[cfg(test)]
-    pub fn apply_frame_time_resource(&mut self, frame_time: &FrameTimeRes) {
-        self.frame_runtime.editor.last_frame = frame_time.last_frame;
-        self.frame_runtime.editor.delta_seconds = frame_time.delta_seconds;
-        self.frame_runtime.global_time_seconds = frame_time.global_time_seconds;
-    }
 }

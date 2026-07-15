@@ -359,11 +359,6 @@ impl State {
         });
     }
 
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn gameplay_position_for_test(&self) -> [f32; 3] {
-        self.gameplay.state.position
-    }
-
     /// Test-only setter for the editor tap arrays and selected tap.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_editor_tap_state_for_test(

@@ -129,9 +129,7 @@ fn commit_editor(resources: &mut PointerResources<'_>, mut editor: EditorSubsyst
     resources.config.0 = editor.config;
     resources.objects.objects = editor.objects;
     resources.timeline.0 = std::mem::take(&mut editor.timeline);
-    if objects_changed {
-        resources.objects.object_mutation_pending = true;
-    }
+    if objects_changed {}
     resources.runtime.0.interaction = editor.runtime.interaction;
     resources.history.0 = editor.runtime.history.clone();
     resources.runtime.0.history = editor.runtime.history;

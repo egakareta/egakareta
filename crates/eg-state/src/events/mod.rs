@@ -1170,10 +1170,6 @@ mod tests {
         let objects = world.resource::<crate::state::EditorObjectsRes>();
         assert_eq!(objects.objects.len(), 1);
         assert_eq!(objects.objects[0].position, [2.0, 0.0, 3.0]);
-        assert!(
-            objects.object_mutation_pending,
-            "Editor TurnRight must mark object sync pending"
-        );
         let input = &world.resource::<crate::state::EditorInputRes>().0;
         assert_eq!(input.selected_block_index, Some(0));
         assert_eq!(input.selected_block_indices, vec![0]);
@@ -1601,11 +1597,6 @@ mod tests {
         );
         assert!(
             world
-                .resource::<crate::state::EditorObjectsRes>()
-                .history_restore_pending
-        );
-        assert!(
-            world
                 .resource::<crate::state::EditorHistoryRes>()
                 .0
                 .undo
@@ -1682,11 +1673,6 @@ mod tests {
         let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
         assert_eq!(objects.len(), 1);
         assert_eq!(objects[0].id, "kept");
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending
-        );
         assert_eq!(
             world
                 .resource::<crate::state::EditorHistoryRes>()
@@ -1798,11 +1784,6 @@ mod tests {
         assert_eq!(object.rotation, [4.0, 5.0, 6.0]);
         assert_eq!(object.color_tint, [0.0, 0.5, 1.0]);
         assert_eq!(object.block_id, eg_blocks::BlockId::new("core/lava"));
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending
-        );
         assert_eq!(
             world
                 .resource::<crate::state::EditorHistoryRes>()
@@ -1856,11 +1837,6 @@ mod tests {
             world.resource::<crate::state::EditorInputRes>().0.cursor,
             [0.0, 0.0, 1.0],
             "block snap must move the cursor to the primary selected block"
-        );
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending
         );
         assert_eq!(
             world
@@ -2121,11 +2097,6 @@ mod tests {
             Some(3)
         );
         assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending
-        );
-        assert!(
             !world
                 .resource::<crate::state::SessionStateRes>()
                 .editor_show_place_window
@@ -2156,25 +2127,64 @@ mod tests {
     }
 
     #[test]
-    fn schedule_drains_set_snap_to_grid_into_editor_command() {
-        // `SetSnapToGrid` is a carve-out: the handler mutates
-        // `EditorConfigRes` directly. Assert the resource is updated
-        // and no legacy command is staged.
+    fn set_snap_to_grid_updates_settings_and_resnaps_selected_object() {
         let mut world = build_event_world();
         world
-            .resource_mut::<crate::state::EditorConfigRes>()
-            .0
-            .snap_to_grid = true;
-        world.write_message(SetSnapToGrid(false));
+            .resource_mut::<crate::state::AppPhaseRes>()
+            .set(AppPhase::Editor);
+        {
+            let mut config = world.resource_mut::<crate::state::EditorConfigRes>();
+            config.0.snap_to_grid = false;
+            config.0.snap_step = 0.5;
+        }
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .app_settings
+            .editor_snap_to_grid = false;
+        world
+            .resource_mut::<crate::state::EditorObjectsRes>()
+            .objects = vec![LevelObject {
+            position: [0.26, 0.2, 0.74],
+            size: [0.2, 0.7, 0.76],
+            ..LevelObject::default()
+        }];
+        {
+            let mut input = world.resource_mut::<crate::state::EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+
+        world.write_message(SetSnapToGrid(true));
         world.run_schedule(crate::state::StateSchedule);
+
         assert!(
-            !world
+            world
                 .resource::<crate::state::EditorConfigRes>()
                 .0
                 .snap_to_grid
         );
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .app_settings
+                .editor_snap_to_grid
+        );
+        let object = &world.resource::<crate::state::EditorObjectsRes>().objects[0];
+        assert_eq!(object.position, [0.5, 0.0, 0.5]);
+        assert_eq!(object.size, [0.5, 0.5, 1.0]);
+        assert_eq!(
+            world.resource::<crate::state::EditorInputRes>().0.cursor,
+            object.position
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorHistoryRes>()
+                .0
+                .undo
+                .len(),
+            1
+        );
     }
-
     #[test]
     fn multiple_turn_right_messages_are_handled_without_legacy_request() {
         let mut world = build_event_world();
@@ -3258,12 +3268,6 @@ mod tests {
         assert_eq!(camera.target_position, [12.0, 4.5, -7.0]);
         approx::assert_abs_diff_eq!(camera.yaw, 0.9, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(camera.pitch, 0.3, epsilon = 1e-6);
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending,
-            "AddCameraTrigger must request runtime object/presentation sync"
-        );
         assert_eq!(
             world
                 .resource::<crate::state::EditorHistoryRes>()
@@ -3321,11 +3325,6 @@ mod tests {
         let camera = trigger.camera.as_ref().expect("camera payload");
         assert_eq!(camera.mode, eg_types::CameraMode::Follow);
         assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending
-        );
     }
 
     #[test]
@@ -3575,12 +3574,6 @@ mod tests {
                 .selected_index,
             None
         );
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .object_mutation_pending,
-            "Escape block-selection clearing must mark selection sync pending"
-        );
     }
 
     #[test]
@@ -3678,15 +3671,8 @@ mod tests {
 
     // --- Phase 3.13 / Editor-mode carve-out test ---
     //
-    // The `SetEditorMode` handler in `events::editor_mode` writes
-    // `EditorInputRes.0.mode` directly. The legacy
-    // `State.editor.input.mode` is synced from the resource by
-    // `Runtime::sync_app_editor_input_state` (which the misc
-    // carve-out also extends). The legacy `set_editor_mode` has
-    // heavy side effects (rebuilds vertices, marks dirty flags);
-    // the change guard in the runtime keeps those to one
-    // notification per real user-driven change.
-
+    // The handler writes the authoritative `EditorInputRes.0.mode`
+    // directly; no legacy command or Runtime mirror participates.
     /// `SetEditorMode` is a carve-out: the handler mutates
     /// `EditorInputRes.0.mode` directly. Pin the resource is
     /// updated and no legacy command is queued.
@@ -3783,7 +3769,13 @@ mod tests {
             second
         );
 
-        // No legacy command is staged across the whole test.
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .recent_block_ids,
+            vec![second, first]
+        );
     }
 
     /// `PickSelectedBlock` is a carve-out: the handler reads the
@@ -3825,6 +3817,14 @@ mod tests {
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Place
+        );
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorConfigRes>()
+                .0
+                .recent_block_ids
+                .first(),
+            Some(&picked)
         );
     }
 

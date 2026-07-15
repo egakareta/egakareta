@@ -285,7 +285,6 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
     resources.session.audio_stop_pending = false;
 
     resources.objects.objects = objects.clone();
-    resources.objects.object_mutation_pending = true;
     resources.trigger.0.selected_index = None;
     queue_runtime_audio_preload(
         &resources.runtime_preload,
@@ -354,8 +353,6 @@ fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
         resources.input.0.hovered_block_index = Some(placed_index);
         resources.input.0.mode = EditorMode::Scale;
     }
-
-    resources.objects.object_mutation_pending = true;
 }
 
 fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_>) {

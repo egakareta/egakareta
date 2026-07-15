@@ -454,7 +454,7 @@ pub fn handle_reset_keybinds(
     }
 }
 
-fn persist_app_settings(settings: &AppSettings) {
+pub(crate) fn persist_app_settings(settings: &AppSettings) {
     let settings = settings.clone();
     eg_platform::task::spawn_background(async move {
         if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {

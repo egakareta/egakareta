@@ -55,26 +55,10 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `SetEditorMode` mutates App-world state directly (same pattern as
-// `events::snap`, `events::bpm`, and `events::misc`): the handler mutates
-// `EditorInputRes.0.mode` directly, and the legacy
-// `State.editor.input.mode` is synced from the resource by
-// `Runtime::sync_app_editor_input_state` before any dispatch in the
-// same frame.
-//
-// The legacy `set_editor_mode` has heavy side effects (rebuilds
-// gizmo/hover/selection outline vertices, marks
-// `EditorDirtyFlags::tap_timeline_changed()`). The change guard in
-// the runtime ensures those side effects fire only on real
-// user-driven changes. The legacy dispatch path
-// (`EditorCommand::SetMode`) goes through `dispatch_editor` which
-// also clears `editor.timeline.taps.selected_index` on
-// Tapping→other transitions and calls
-// `refresh_editor_tapping_preview_on_mode_entry` on
-// other→Tapping transitions. The sync helper invokes
-// `set_editor_mode` (the same setter used by
-// `set_editor_playback_effective_mode` after a mode change), so
-// the side effects fire through the same path.
+// `SetEditorMode` writes the authoritative editor mode directly. App-world
+// interaction, UI, and render extraction consume `EditorInputRes`; legacy
+// `State::set_editor_mode` remains only for isolated State compatibility paths.
+
 pub fn handle_set_editor_mode(
     mut events: MessageReader<SetEditorMode>,
     mut input: ResMut<EditorInputRes>,
@@ -84,16 +68,14 @@ pub fn handle_set_editor_mode(
     }
 }
 
-// `SetBlockId` mutates `EditorConfigRes.0.selected_block_id` directly,
-// and the legacy `State.editor.config.selected_block_id` is synced from
-// the resource by `Runtime::sync_app_editor_config_state` before any
-// dispatch in the same frame.
+// Block-id selection is fully App-world owned. Real changes also update the
+// most-recently-used block list consumed by `SelectRecentBlock`.
 pub fn handle_set_block_id(
     mut events: MessageReader<SetBlockId>,
     mut config: ResMut<EditorConfigRes>,
 ) {
     for event in events.read() {
-        config.0.selected_block_id = event.0.clone();
+        set_selected_block_id(&mut config, event.0.clone());
     }
 }
 
@@ -101,15 +83,8 @@ pub fn handle_set_block_id(
 // `recent_block_ids` list from `EditorConfigRes`, picks the indexed
 // (placeable) entry, and writes the result directly to
 // `EditorConfigRes.0.selected_block_id` + `EditorInputRes.0.mode`.
-// The legacy `select_recent_block` is a no-op outside the editor
-// phase and also gates on placeable; the App-world handler mirrors
-// the placeable filter via `eg_blocks::BlockDefinition::get` so
-// the carve-out matches the legacy behavior. The change-guarded
-// syncs in `Runtime` (config + input) propagate the values to the
-// legacy `State.editor.config.selected_block_id` and
-// `State.editor.input.mode` fields; their setters handle the
-// heavy side effects (recent-blocks list, vertex rebuilds,
-// dirty flags) once per real user-driven change.
+// The placeable filter matches the legacy behavior. Selecting a different
+// entry promotes it to the front of the App-owned recent-block list.
 pub fn handle_select_recent_block(
     mut events: MessageReader<SelectRecentBlock>,
     mut config: ResMut<EditorConfigRes>,
@@ -124,18 +99,14 @@ pub fn handle_select_recent_block(
             .cloned()
             .collect();
         if let Some(id) = placeable_ids.get(event.0) {
-            config.0.selected_block_id = id.clone();
+            set_selected_block_id(&mut config, id.clone());
             input.0.mode = eg_types::EditorMode::Place;
         }
     }
 }
 
-// `PickSelectedBlock` is a carve-out: the handler reads the current
-// block selection from `EditorInputRes` / `EditorObjectsRes`, rejects
-// non-placeable block ids, then writes the picked id and effective
-// Place mode directly to App-world resources. Runtime's config/input/
-// timeline syncs propagate those changes to legacy State once per
-// frame while `PickBlockAt` remains on the legacy screen-picking path.
+// `PickSelectedBlock` reads App-owned selection, rejects non-placeable block
+// ids, and updates the selected id, recent list, and effective Place mode.
 pub fn handle_pick_selected_block(
     mut events: MessageReader<PickSelectedBlock>,
     phase: Res<AppPhaseRes>,
@@ -216,7 +187,7 @@ fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<
         &mut resources.runtime,
         &resources.timeline,
     );
-    resources.config.0.selected_block_id = block_id;
+    set_selected_block_id(&mut resources.config, block_id);
     true
 }
 
@@ -264,7 +235,16 @@ fn pick_selected_block_for_place(
     }
 
     set_effective_place_mode(input, runtime, timeline);
-    config.0.selected_block_id = block_id;
+    set_selected_block_id(config, block_id);
+    true
+}
+
+fn set_selected_block_id(config: &mut EditorConfigRes, block_id: BlockId) -> bool {
+    if config.0.selected_block_id == block_id {
+        return false;
+    }
+    config.0.selected_block_id = block_id.clone();
+    config.0.remember_recent_block_id(block_id);
     true
 }
 

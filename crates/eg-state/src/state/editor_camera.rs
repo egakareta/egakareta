@@ -39,11 +39,7 @@ pub struct EditorCameraState {
     pub transition: Option<CameraTransition>,
 }
 
-// Manual `Clone` impl because `EditorCameraState` contains an
-// `Option<CameraTransition>` and we want the whole struct to be
-// `Clone` for the Phase 3.11 camera carve-out (the
-// `Runtime::sync_app_editor_camera_state` helper clones the
-// resource to feed the legacy setter).
+// Manual `Clone` keeps camera resources and transition fixtures independently copyable.
 impl Clone for EditorCameraState {
     fn clone(&self) -> Self {
         Self {

@@ -13,17 +13,11 @@
 //! this file mutate App-world resources directly instead of staging a
 //! legacy `EditorCommand`.
 //!
-//! - `AdjustZoom` / `SetCameraOrientation` mutate
-//!   `EditorCameraRes.0` (the editor camera pan + yaw + pitch +
-//!   transition state). The legacy `State.editor.camera` field is
-//!   synced from the resource by
-//!   `Runtime::sync_app_editor_camera_state` before any dispatch in
-//!   the same frame.
+//! - `AdjustZoom` / `SetCameraOrientation` mutate the authoritative
+//!   `EditorCameraRes.0` camera and transition state directly.
 //!
-//! - `SetTriggerSelected` mutates `EditorTriggerRes.0.selected_index`.
-//!   The legacy `State.editor.triggers.selected_index` field is
-//!   synced from the resource by
-//!   `Runtime::sync_app_editor_trigger_state`.
+//! - `SetTriggerSelected` mutates the authoritative
+//!   `EditorTriggerRes.0.selected_index` directly.
 //!
 //! - `AddCameraTrigger` / `AddCameraFollowTrigger` append generated
 //!   camera trigger objects to `EditorObjectsRes`, record
@@ -151,23 +145,12 @@ pub fn handle_set_camera_orientation(
     }
 }
 
-/// Set the selected trigger index. Mirror of
-/// `EditorSubsystem::set_trigger_selected` (no-op if the index is
-/// out of range, i.e. >= the number of trigger objects).
+/// Set the authoritative App-world selected trigger index.
 pub fn handle_set_trigger_selected(
     mut events: MessageReader<SetTriggerSelected>,
     mut trigger: ResMut<EditorTriggerRes>,
 ) {
     for event in events.read() {
-        // Filter the index to `None` if it's out of range. The
-        // legacy `set_trigger_selected` does this against the
-        // current `editor.trigger_objects().len()`; the carve-out
-        // cannot query the legacy objects store directly, so it
-        // trusts the caller to send a valid index. The legacy
-        // sync in `Runtime::sync_app_editor_trigger_state` will
-        // write the resource value back to the legacy field;
-        // out-of-range values will be silently clamped on the
-        // next call.
         trigger.0.selected_index = event.0;
     }
 }
@@ -221,7 +204,6 @@ fn add_camera_trigger(resources: &mut CameraResources<'_>) -> bool {
     .with_generated_id(&resources.objects.objects);
     resources.objects.objects.push(trigger_object);
     sync_trigger_selection_from_objects(resources);
-    resources.objects.object_mutation_pending = true;
     true
 }
 
@@ -258,7 +240,6 @@ fn add_camera_follow_trigger(resources: &mut CameraResources<'_>) -> bool {
 
     resources.objects.objects.push(trigger_object);
     sync_trigger_selection_from_objects(resources);
-    resources.objects.object_mutation_pending = true;
     true
 }
 

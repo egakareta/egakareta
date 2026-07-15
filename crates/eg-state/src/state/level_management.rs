@@ -630,12 +630,12 @@ impl State {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn menu_selected_level_index(&self) -> usize {
         self.menu.state.selected_level
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_menu_selected_level_index(&mut self, selected_level: usize) {
         self.menu.state.selected_level = selected_level;
     }

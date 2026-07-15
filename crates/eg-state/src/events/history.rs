@@ -120,7 +120,6 @@ fn apply_history_snapshot_to_resources(
     resources: &mut HistoryResources<'_>,
 ) {
     resources.objects.objects = snapshot.objects;
-    resources.objects.history_restore_pending = true;
 
     resources.input.0.selected_block_index = snapshot.selected_block_index;
     resources.input.0.selected_block_indices = snapshot.selected_block_indices;

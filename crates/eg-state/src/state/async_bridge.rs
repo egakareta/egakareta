@@ -704,8 +704,6 @@ pub(crate) fn apply_imported_level_to_world(
     {
         let mut objects = world.resource_mut::<EditorObjectsRes>();
         objects.objects = init.objects;
-        objects.history_restore_pending = false;
-        objects.object_mutation_pending = true;
     }
     {
         let mut input = world.resource_mut::<EditorInputRes>();
@@ -1088,7 +1086,6 @@ mod tests {
         let objects = world.resource::<EditorObjectsRes>();
         assert_eq!(objects.objects.len(), 1);
         assert_eq!(objects.objects[0].position, [6.0, 2.0, 1.0]);
-        assert!(objects.object_mutation_pending);
         assert_eq!(world.resource::<EditorSpawnRes>().0, metadata.spawn);
         let timeline = &world.resource::<EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.2, 0.8]);

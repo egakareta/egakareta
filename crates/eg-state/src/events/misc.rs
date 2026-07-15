@@ -14,8 +14,8 @@ use bevy_ecs::system::SystemParam;
 
 use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
-    MenuStateRes, PerfRes, SessionStateRes,
+    AppPhaseRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes,
+    SessionStateRes,
 };
 
 /// Toggle editor hitbox visualization.
@@ -45,12 +45,10 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
-// `ToggleHitboxVisualization` mutates App-world state directly (same pattern
-// as `events::snap`, `events::bpm`, and `events::timing`): the handler mutates
-// `EditorInputRes.0.show_hitbox_visualization` directly, and the
-// legacy `State.editor.input.show_hitbox_visualization` is synced from
-// the resource by `Runtime::sync_app_editor_input_state` before any
-// dispatch in the same frame.
+// `ToggleHitboxVisualization` writes the authoritative App-world input state.
+// Render extraction reads this resource directly, so no legacy dirty-bit or
+// Runtime synchronization is required.
+
 pub fn handle_toggle_hitbox_visualization(
     mut events: MessageReader<ToggleHitboxVisualization>,
     mut input: ResMut<EditorInputRes>,
@@ -111,11 +109,8 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
                 continue;
             }
             eg_types::AppPhase::Editor => {
-                if clear_editor_selection_for_escape(
-                    &mut resources.input,
-                    &mut resources.objects,
-                    &mut resources.timeline,
-                ) {
+                if clear_editor_selection_for_escape(&mut resources.input, &mut resources.timeline)
+                {
                     continue;
                 }
 
@@ -157,7 +152,6 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
 pub struct EscapeResources<'w> {
     phase: ResMut<'w, AppPhaseRes>,
     input: ResMut<'w, EditorInputRes>,
-    objects: ResMut<'w, EditorObjectsRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
     session: ResMut<'w, SessionStateRes>,
@@ -166,7 +160,6 @@ pub struct EscapeResources<'w> {
 
 fn clear_editor_selection_for_escape(
     input: &mut EditorInputRes,
-    objects: &mut EditorObjectsRes,
     timeline: &mut EditorTimelineRes,
 ) -> bool {
     let had_block_selection = input.0.selected_block_index.is_some()
@@ -178,7 +171,6 @@ fn clear_editor_selection_for_escape(
         input.0.selected_block_index = None;
         input.0.selected_block_indices.clear();
         input.0.hovered_block_index = None;
-        objects.object_mutation_pending = true;
     }
 
     if had_tap_selection {

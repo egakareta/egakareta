@@ -764,13 +764,7 @@ impl State {
         self.editor.snap_rotation_step_degrees()
     }
 
-    /// Snapshot the editor config into an [`super::EditorConfigRes`] so
-    /// the App world can be seeded from the legacy `State` at
-    /// construction time. This keeps the resource in sync with
-    /// user-loaded `app_settings` (snap config, selected block id,
-    /// recent blocks) so the per-frame change-guarded
-    /// `sync_app_editor_config_state` only fires on real user-driven
-    /// changes, not on the first frame.
+    /// Snapshot editor config for one-time compatibility test App seeding.
     pub fn editor_config_resource(&self) -> super::EditorConfigRes {
         super::EditorConfigRes(self.editor.config.clone())
     }
@@ -788,8 +782,6 @@ impl State {
     pub fn editor_objects_resource(&self) -> super::EditorObjectsRes {
         super::EditorObjectsRes {
             objects: self.editor.objects.clone(),
-            history_restore_pending: false,
-            object_mutation_pending: false,
         }
     }
 
@@ -817,23 +809,6 @@ impl State {
         self.editor.sync_primary_selection_from_indices();
     }
 
-    /// Rebuild legacy editor presentation after an App-world history restore.
-    pub fn sync_editor_scene_after_history_restore(&mut self) {
-        self.sync_editor_objects();
-        self.rebuild_editor_cursor_vertices();
-        self.rebuild_spawn_marker_vertices();
-    }
-
-    /// Rebuild legacy editor presentation after an App-world object mutation.
-    pub fn sync_editor_scene_after_app_object_mutation(&mut self) {
-        self.sync_editor_objects();
-        self.sync_editor_camera_follow_trigger_object_poses();
-        self.rebuild_editor_cursor_vertices();
-        self.rebuild_editor_gizmo_vertices();
-        self.rebuild_editor_selection_outline_vertices();
-        self.mark_editor_dirty(EditorDirtyFlags::trigger_markers_changed());
-    }
-
     pub fn editor_history_resource(&self) -> super::EditorHistoryRes {
         super::EditorHistoryRes(self.editor.runtime.history.clone())
     }
@@ -843,14 +818,7 @@ impl State {
         self.editor.runtime.history = history;
     }
 
-    /// Snapshot the editor timing state into an
-    /// [`super::EditorTimingRes`] so the App world can be seeded from
-    /// the legacy `State` at construction time. Used for the bpm-tap
-    /// carve-out (see `events::bpm`): the bpm_tap_times and
-    /// bpm_tap_result fields live on `EditorTimingRes`, and
-    /// `Runtime::new` seeds the resource from the legacy state so
-    /// the change-guarded `sync_app_editor_timing_state` is a no-op
-    /// on the first frame for unchanged fields.
+    /// Snapshot legacy timing data for compatibility test App construction.
     pub fn editor_timing_resource(&self) -> super::EditorTimingRes {
         super::EditorTimingRes(self.editor.timing.clone())
     }
@@ -881,6 +849,7 @@ impl State {
         timeline
     }
 
+    /// Snapshot legacy editor interaction data for compatibility test construction.
     pub fn editor_runtime_resource(&self) -> super::EditorRuntimeRes {
         let mut runtime = super::EditorRuntimeRes::default();
         runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
@@ -929,34 +898,10 @@ impl State {
         }
     }
 
-    /// Forward scheduled App dirty flags to the legacy mesh presenter.
-    pub fn merge_editor_dirty_flags(&mut self, dirty: EditorDirtyFlags) {
-        self.editor.mark_dirty(dirty);
-    }
-
-    pub fn editor_clipboard(&self) -> Option<&super::EditorClipboard> {
-        self.editor.runtime.interaction.clipboard.as_ref()
-    }
-
-    pub fn set_editor_clipboard_from_app(&mut self, clipboard: Option<super::EditorClipboard>) {
-        self.editor.runtime.interaction.clipboard = clipboard;
-    }
-
-    /// Snapshot the simple UI-window fields of the legacy
-    /// `State.session` into a [`super::SessionStateRes`] so the App
-    /// world can be seeded from the legacy state at construction
-    /// time. Used for the session carve-out (see `events::session`):
-    /// the `editor_show_metadata`, `editor_show_settings`,
-    /// `editor_settings_section`, and `editor_keybind_capture_action`
-    /// fields are written to the resource directly by their Bevy
-    /// handlers, and `Runtime::new` seeds the resource from the
-    /// legacy state so the change-guarded
-    /// `sync_app_session_state` is a no-op on the first frame for
-    /// unchanged fields.
-    ///
-    /// Also seeds `playtesting_editor`, `game_paused`, and
-    /// `practice_mode_enabled` so the App world starts from the
-    /// current compatibility-state values at construction time.
+    /// Snapshot the complete legacy session into the authoritative
+    /// [`super::SessionStateRes`] used by production App systems and UI.
+    /// Runtime seeds this once during construction; production frames no
+    /// longer mirror session fields from `State`.
     pub fn session_state_resource(&self) -> super::SessionStateRes {
         super::SessionStateRes {
             editor_level_name: self.session.editor_level_name.clone(),
@@ -972,8 +917,14 @@ impl State {
             app_settings: self.session.app_settings.clone(),
             settings_restart_required: self.session.settings_restart_required,
             graphics_backend_locked: self.session.graphics_backend_locked,
+            audio_backend_locked: self.session.audio_backend_locked,
+            available_graphics_backends: self.session.available_graphics_backends.clone(),
+            available_audio_backends: self.session.available_audio_backends.clone(),
+            playing_level_name: self.session.playing_level_name.clone(),
             playtesting_editor: self.session.playtesting_editor,
             game_paused: self.session.game_paused,
+            playtest_audio_start_seconds: self.session.playtest_audio_start_seconds,
+            playing_sky_color: self.session.playing_sky_color,
             playing_trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
             practice_mode_enabled: self.is_practice_mode_enabled(),
             practice_checkpoints: self.session.practice_checkpoints.clone(),
@@ -1175,15 +1126,6 @@ impl State {
     /// Returns the unique identifier of the currently selected block type in the editor.
     pub fn editor_selected_block_id(&self) -> &BlockId {
         &self.editor.config.selected_block_id
-    }
-
-    /// Returns the recent-blocks list (most-recently-used first). The
-    /// list is updated as a side effect of `set_editor_block_id`; used
-    /// by the carve-out sync tests to confirm the legacy setter (and
-    /// its recent-blocks side effect) actually fires on a user-driven
-    /// change.
-    pub fn editor_recent_block_ids(&self) -> &[BlockId] {
-        &self.editor.config.recent_block_ids
     }
 
     /// Returns whether the editor timeline is currently playing.
@@ -1607,28 +1549,14 @@ impl State {
         self.editor.input.show_hitbox_visualization
     }
 
-    /// Read-only accessor for the editor hitbox visualization toggle.
-    /// Mirrors the legacy `editor.input.show_hitbox_visualization`
-    /// field. Exposed in non-test builds because the Phase 3.12
-    /// misc carve-out syncs the value from
-    /// `EditorInputRes.0.show_hitbox_visualization` into this field
-    /// (see `Runtime::sync_app_editor_input_state`).
-    pub fn editor_hitbox_visualization(&self) -> bool {
-        self.editor.input.show_hitbox_visualization
-    }
-
-    /// Read-only accessor for the editor cursor position. The Phase
-    /// 3.27 navigation carve-out moves this through
-    /// `EditorInputRes.0.cursor` and the runtime bridge syncs it back
-    /// here until cursor mesh rebuilds move fully into App-world
-    /// systems.
+    /// Read the legacy cursor for State-only compatibility and one-time
+    /// Runtime test seeding. Live application input is owned by
+    /// `EditorInputRes`.
     pub fn editor_cursor_position(&self) -> [f32; 3] {
         self.editor.input.cursor
     }
 
-    /// Setter for the editor cursor position. This preserves the
-    /// legacy side effect from `move_editor_cursor`: rebuilding the
-    /// cursor mesh when the App-world cursor resource changes.
+    /// Set the cursor for legacy State operations and compatibility fixtures.
     pub fn set_editor_cursor_position(&mut self, cursor: [f32; 3]) {
         if self.phase != AppPhase::Editor || self.editor.input.cursor == cursor {
             return;
@@ -1638,19 +1566,8 @@ impl State {
         self.rebuild_editor_cursor_vertices();
     }
 
-    /// Setter for the editor hitbox visualization toggle. The Phase
-    /// 3.12 misc carve-out syncs the App-world resource into this
-    /// field via `Runtime::sync_app_editor_input_state`; the change
-    /// guard in the runtime ensures the side effect (marking
-    /// `EditorDirtyFlags::hitbox_visualization_changed()`) fires
-    /// only on real user-driven changes.
-    pub fn set_editor_hitbox_visualization(&mut self, enabled: bool) {
-        self.editor.input.show_hitbox_visualization = enabled;
-        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
-    }
-
     /// Test-only accessor for the raw `session.practice_mode_enabled` flag.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn practice_mode_enabled_value(&self) -> bool {
         self.session.practice_mode_enabled
     }
@@ -1677,15 +1594,6 @@ impl State {
     /// calls this when that resource changes from running to paused.
     pub fn pause_game_from_playing(&mut self) {
         self.pause_game();
-    }
-
-    pub fn toggle_editor_hitbox_visualization(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        self.editor.input.show_hitbox_visualization = !self.editor.input.show_hitbox_visualization;
-        self.mark_editor_dirty(EditorDirtyFlags::hitbox_visualization_changed());
     }
 
     pub fn editor_selected_trigger_index(&self) -> Option<usize> {
@@ -1765,30 +1673,18 @@ impl State {
         self.editor.bpm_tap_result()
     }
 
-    /// Replace the legacy bpm-tap times and recomputed result directly.
-    /// Used by the carve-out sync from `EditorTimingRes` (see
-    /// `events::bpm` and `Runtime::sync_app_editor_timing_state`).
-    /// The legacy `editor.bpm_tap`/`editor.bpm_tap_reset` paths
-    /// recompute from wall-clock time, so the sync writes the
-    /// precomputed values instead of re-running the calculation.
+    /// Set legacy bpm-tap data for state-level tests and compatibility fixtures.
     pub fn set_editor_bpm_tap_state(&mut self, tap_times: Vec<f64>, tap_result: Option<f32>) {
         self.editor.timing.bpm_tap_times = tap_times;
         self.editor.timing.bpm_tap_result = tap_result;
     }
 
-    /// Read-only view of the current bpm-tap times (used by tests and
-    /// the carve-out sync guard to detect a diff).
+    /// Read-only view of legacy bpm-tap times for state-level tests.
     pub fn editor_bpm_tap_times(&self) -> &[f64] {
         &self.editor.timing.bpm_tap_times
     }
 
-    /// Replace the timing-point list and the selected index directly.
-    /// Used by the carve-out sync from `EditorTimingRes` (see
-    /// `events::timing` and `Runtime::sync_app_editor_timing_state`).
-    /// The legacy `editor_add_timing_point` /
-    /// `editor_update_timing_point_time` / ... paths record history
-    /// each call; the sync writes the precomputed list in one shot
-    /// (the carve-out skips history, matching the bpm-tap pattern).
+    /// Set legacy timing-point data for state-level tests and compatibility fixtures.
     pub fn set_editor_timing_state(
         &mut self,
         timing_points: Vec<eg_types::TimingPoint>,
@@ -1850,113 +1746,18 @@ impl State {
         self.editor.bpm_tap_reset();
     }
 
-    // --- Spawn + placement-preview carve-out accessors / setters ---
-
-    /// Read-only view of the current spawn position.
-    pub fn editor_spawn_position(&self) -> [f32; 3] {
-        self.editor.spawn.position
-    }
-
-    /// Read-only view of the current spawn direction.
-    pub fn editor_spawn_direction(&self) -> eg_types::Direction {
-        self.editor.spawn.direction
-    }
-
-    /// Snapshot the legacy `State.editor.spawn` into an
-    /// [`super::EditorSpawnRes`] so the App world can be seeded from
-    /// the legacy state at construction time. Used for the spawn
-    /// carve-out (see `events::spawn`): the `SetSpawnHere` and
-    /// `RotateSpawnDirection` messages write to the resource
-    /// directly, and `Runtime::new` seeds the resource from the
-    /// legacy state so the change-guarded
-    /// `sync_app_editor_spawn_state` is a no-op on the first frame
-    /// for unchanged fields.
+    /// Snapshot legacy spawn metadata for compatibility test App construction.
     pub fn editor_spawn_resource(&self) -> super::EditorSpawnRes {
         super::EditorSpawnRes(self.editor.spawn.clone())
     }
 
-    /// Replace the legacy `State.editor.spawn` directly. Used by the
-    /// carve-out sync from `EditorSpawnRes` (see `events::spawn` and
-    /// `Runtime::sync_app_editor_spawn_state`). Mirrors
-    /// `set_editor_bpm_tap_state` / `set_editor_timing_state`: the
-    /// legacy `editor_set_spawn_here` /
-    /// `editor_rotate_spawn_direction` paths record history each
-    /// call; the sync writes the precomputed spawn state in one shot
-    /// (the carve-out skips history, matching the bpm-tap pattern).
-    pub fn set_editor_spawn_state(&mut self, spawn: eg_types::SpawnMetadata) {
-        self.editor.spawn = spawn;
-    }
-
-    // --- Placement-preview rotation carve-out accessors / setter ---
-
-    /// Read-only view of the current block-placement preview
-    /// rotation (degrees). The `[1]` index is the yaw
-    /// (`RotatePlacementPreview` cycles it in 90-degree
-    /// increments). The legacy `state.editor.config.selected_block_rotation_degrees`
-    /// is mirrored from `EditorConfigRes.0.selected_block_rotation_degrees`
-    /// by `Runtime::sync_app_editor_config_state` (Phase 3.10
-    /// carve-out: the `RotatePlacementPreview` handler in
-    /// `events::spawn` mutates the resource directly).
-    pub fn editor_selected_block_rotation_degrees(&self) -> [f32; 3] {
-        self.editor.config.selected_block_rotation_degrees
-    }
-
-    /// Replace the block-placement preview rotation directly. Used
-    /// by the carve-out sync from `EditorConfigRes` (see
-    /// `events::spawn::handle_rotate_placement_preview` and
-    /// `Runtime::sync_app_editor_config_state`).
-    pub fn set_editor_selected_block_rotation_degrees(&mut self, degrees: [f32; 3]) {
-        self.editor.config.selected_block_rotation_degrees = degrees;
-    }
-
-    // --- Camera + trigger-selected carve-out accessors / setters ---
-
-    /// Snapshot the legacy `State.editor.camera` into an
-    /// [`super::EditorCameraRes`] so the App world can be seeded
-    /// from the legacy state at construction time. Used for the
-    /// camera carve-out (see `events::camera`): the `AdjustZoom`
-    /// and `SetCameraOrientation` messages write to the resource
-    /// directly, and `Runtime::new` seeds the resource from the
-    /// legacy state so the change-guarded
-    /// `sync_app_editor_camera_state` is a no-op on the first
-    /// frame for unchanged fields.
+    /// Snapshot legacy camera data for compatibility test App construction.
     pub fn editor_camera_resource(&self) -> super::EditorCameraRes {
         super::EditorCameraRes(self.editor.camera.clone())
     }
 
-    /// Read-only view of the current editor camera pan.
-    pub fn editor_camera_pan(&self) -> [f32; 2] {
-        self.editor.camera.editor_pan
-    }
-
-    /// Read-only view of the current editor camera target Z.
-    pub fn editor_camera_target_z(&self) -> f32 {
-        self.editor.camera.editor_target_z
-    }
-
-    /// Read-only view of the current editor camera yaw (radians).
-    pub fn editor_camera_yaw(&self) -> f32 {
-        self.editor.camera.editor_yaw
-    }
-
-    /// Read-only view of the current editor camera pitch (radians).
-    pub fn editor_camera_pitch(&self) -> f32 {
-        self.editor.camera.editor_pitch
-    }
-
-    /// Replace the legacy `State.editor.camera` directly. Used by
-    /// the carve-out sync from `EditorCameraRes` (see
-    /// `events::camera` and
-    /// `Runtime::sync_app_editor_camera_state`). Mirrors
-    /// `set_editor_bpm_tap_state` / `set_editor_timing_state`:
-    /// the legacy `adjust_editor_zoom` /
-    /// `set_editor_camera_orientation` paths record history each
-    /// call; the sync writes the precomputed camera state in one
-    /// shot (the carve-out skips history, matching the bpm-tap
-    /// pattern). The sync also skips the `EditorDirtyFlags`
-    /// `camera_changed()` mark — the legacy render code reads
-    /// from the resource directly via the Phase 4b mirror, so
-    /// the dirty bit is no longer needed.
+    /// Set a non-default legacy camera fixture before compatibility App construction.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_editor_camera_state(
         &mut self,
         camera: crate::state::editor_camera::EditorCameraState,
@@ -1964,28 +1765,11 @@ impl State {
         self.editor.camera = camera;
     }
 
-    /// Snapshot the legacy `State.editor.triggers` into an
-    /// [`super::EditorTriggerRes`] so the App world can be seeded
-    /// from the legacy state at construction time. Used for the
-    /// trigger-selected carve-out (see
-    /// `events::camera::handle_set_trigger_selected`).
+    /// Snapshot legacy trigger selection for compatibility test App construction.
     pub fn editor_trigger_resource(&self) -> super::EditorTriggerRes {
         super::EditorTriggerRes(crate::state::editor_triggers::EditorTriggerState {
             selected_index: self.editor.triggers.selected_index,
         })
-    }
-
-    /// Read-only view of the current selected trigger index.
-    pub fn editor_selected_trigger_index_value(&self) -> Option<usize> {
-        self.editor.triggers.selected_index
-    }
-
-    /// Replace the legacy `State.editor.triggers.selected_index`
-    /// directly. Used by the carve-out sync from `EditorTriggerRes`
-    /// (see `events::camera` and
-    /// `Runtime::sync_app_editor_trigger_state`).
-    pub fn set_editor_trigger_selected_index(&mut self, index: Option<usize>) {
-        self.editor.triggers.selected_index = index;
     }
 
     /// Number of camera/transform trigger objects currently in the

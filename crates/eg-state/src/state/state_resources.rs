@@ -311,21 +311,17 @@ pub struct BlockEffectsRes {
 #[derive(Resource, Default)]
 pub struct EditorInputRes(pub eg_types::EditorInputState);
 
-/// `EditorSubsystem.objects` mirrored as a resource. This is the ordered
-/// authored-object list used by editor export, selection, history, and render
-/// mesh rebuilds while object ownership is migrating into the App world.
+/// Authoritative App-world ordered editor object list.
 #[derive(Resource, Default, Clone)]
 pub struct EditorObjectsRes {
     pub objects: Vec<LevelObject>,
-    pub history_restore_pending: bool,
-    pub object_mutation_pending: bool,
 }
 
 /// `EditorConfigState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorConfigRes(pub EditorConfigState);
 
-/// `EditorCameraState` mirrored as a resource.
+/// Authoritative App-world editor camera and transition state.
 #[derive(Resource, Default)]
 pub struct EditorCameraRes(pub EditorCameraState);
 
@@ -341,30 +337,15 @@ pub struct EditorTimelineRes(pub EditorTimelineState);
 #[derive(Resource, Default)]
 pub struct EditorTimingRes(pub EditorTimingState);
 
-/// `EditorSubsystem.spawn: SpawnMetadata` mirrored as a resource.
-/// Default value is `position = [0, 0, 0], direction = Forward`,
-/// matching the in-place default that `EditorSubsystem` provides
-/// when constructed through `Default::default()`. The legacy field
-/// is seeded from this resource at `Runtime::new` via the
-/// `set_editor_spawn_state` setter, and the resource is the
-/// authoritative value of the editor spawn state during the
-/// Phase 3.10 compatibility window.
+/// Authoritative App-world editor spawn metadata.
 ///
-/// Phase 3.10 carve-out: the `SetSpawnHere` and
-/// `RotateSpawnDirection` messages in `events::spawn` write to
-/// this resource directly instead of staging a legacy
-/// `EditorCommand`. The `Runtime::sync_app_editor_spawn_state`
-/// helper propagates the resource back to the legacy
-/// `State.editor.spawn` field with a change guard, so the legacy
-/// `editor_set_spawn_here` / `editor_rotate_spawn_direction` paths
-/// remain reachable from non-message call sites.
+/// Compatibility test construction seeds this resource once from the legacy
+/// editor fixture. `SetSpawnHere` and `RotateSpawnDirection` then mutate it
+/// directly without copying values back into `State`.
 #[derive(Resource, Default)]
 pub struct EditorSpawnRes(pub SpawnMetadata);
 
-/// `EditorRuntimeState` (dirty flags, history, interaction, gizmo) mirrored
-/// as a resource. Only the default-constructible subset is exposed for
-/// Phase 2a; the `FrameRuntimeState` mirror (which contains a
-/// `web_time::Instant`) is added in Phase 2b.
+/// Authoritative App-world editor dirty flags and interaction runtime.
 #[derive(Resource, Default)]
 pub struct EditorRuntimeRes(pub EditorRuntimeState);
 

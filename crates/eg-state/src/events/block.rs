@@ -149,7 +149,6 @@ fn remove_selected_or_topmost(resources: &mut BlockResources<'_>) -> bool {
         }
         clear_block_selection(&mut resources.input.0);
         sync_trigger_selection_from_objects(resources);
-        mark_object_mutation(resources);
         return true;
     }
 
@@ -165,7 +164,6 @@ fn remove_selected_or_topmost(resources: &mut BlockResources<'_>) -> bool {
     );
     if remove_topmost_block_at_cursor(&mut resources.objects.objects, cursor) {
         sync_trigger_selection_from_objects(resources);
-        mark_object_mutation(resources);
         return true;
     }
     false
@@ -233,7 +231,6 @@ fn paste_from_clipboard(resources: &mut BlockResources<'_>) -> bool {
     normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
     sync_trigger_selection_from_objects(resources);
-    mark_object_mutation(resources);
     true
 }
 
@@ -276,7 +273,6 @@ fn duplicate_selected(resources: &mut BlockResources<'_>) -> bool {
     normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
     sync_trigger_selection_from_objects(resources);
-    mark_object_mutation(resources);
     true
 }
 
@@ -337,7 +333,6 @@ fn update_selected_block(resources: &mut BlockResources<'_>, updated: &LevelObje
 
     resources.input.0.cursor = [position[0], position[1].max(0.0), position[2]];
     sync_trigger_selection_from_objects(resources);
-    mark_object_mutation(resources);
     true
 }
 
@@ -401,10 +396,6 @@ fn sync_trigger_selection_from_objects(resources: &mut BlockResources<'_>) {
         .0
         .selected_index
         .filter(|index| *index < trigger_count);
-}
-
-fn mark_object_mutation(resources: &mut BlockResources<'_>) {
-    resources.objects.object_mutation_pending = true;
 }
 
 fn record_history_state(resources: &mut BlockResources<'_>) {

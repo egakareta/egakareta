@@ -13,19 +13,11 @@
 //! App-world resources directly instead of staging a legacy
 //! `EditorCommand`.
 //!
-//! - `SetSpawnHere` / `RotateSpawnDirection` mutate
-//!   `EditorSpawnRes.0` (the spawn position + direction). The legacy
-//!   `State.editor.spawn` field is synced from the resource by
-//!   `Runtime::sync_app_editor_spawn_state` before any dispatch in
-//!   the same frame.
+//! - `SetSpawnHere` / `RotateSpawnDirection` mutate the authoritative
+//!   `EditorSpawnRes.0` spawn position and direction directly.
 //!
-//! - `RotatePlacementPreview` mutates
-//!   `EditorConfigRes.0.selected_block_rotation_degrees[1]` (the
-//!   block-placement preview yaw). The legacy
-//!   `State.editor.config.selected_block_rotation_degrees` field is
-//!   synced from the resource by
-//!   `Runtime::sync_app_editor_config_state` (the existing
-//!   change-guarded sync).
+//! - `RotatePlacementPreview` mutates the authoritative
+//!   `EditorConfigRes.0.selected_block_rotation_degrees[1]` placement yaw.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
