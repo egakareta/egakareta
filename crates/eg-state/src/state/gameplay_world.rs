@@ -28,33 +28,13 @@ use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 use super::{
     AppPhaseRes, AudioBackendRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
     FrameTimeRes, GameplayResetRes, GameplayResetSeed, GameplaySubsystem, MenuStateRes,
-    RuntimeAudioPreloadRes, SessionStateRes, State,
+    RuntimeAudioPreloadRes, SessionStateRes,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/dead.mp3"
 ));
-
-impl State {
-    /// Seed the App-world gameplay entities/resources from the legacy state at
-    /// construction or a lifecycle transition. Subsequent active-play frames
-    /// do not call this method; `GameplaySchedule` owns the simulation.
-    pub fn seed_app_gameplay_world(&mut self, world: &mut World) {
-        seed_app_gameplay_world_from_subsystem(world, &self.gameplay);
-    }
-
-    pub fn mark_app_gameplay_world_for_legacy_seed(&mut self) {
-        self.gameplay_world_needs_seed = true;
-    }
-
-    pub fn sync_app_gameplay_world_if_needed(&mut self, world: &mut World) {
-        if self.gameplay_world_needs_seed {
-            self.seed_app_gameplay_world(world);
-            self.gameplay_world_needs_seed = false;
-        }
-    }
-}
 
 pub(super) fn seed_app_gameplay_world_from_subsystem(
     world: &mut World,
@@ -94,7 +74,7 @@ pub(super) fn seed_app_gameplay_world_from_subsystem(
 }
 
 /// Advance the App-owned gameplay simulation after command handlers have
-/// captured this frame's intents. The compatibility `State::update` path is
+/// captured this frame's intents. The scheduled App-world frame path is
 /// intentionally not involved in this schedule call.
 pub fn run_app_gameplay_schedule(world: &mut World) {
     let should_run = world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
@@ -110,7 +90,7 @@ pub fn run_app_gameplay_schedule(world: &mut World) {
 
 /// Apply the terminal gameplay transition after the App-owned simulation has
 /// completed its hold timer. This removes the phase/session decision from the
-/// compatibility `State::update` path while keeping the legacy renderer fed
+/// scheduled App-world path while feeding the custom renderer
 /// through the existing Runtime resource mirrors.
 pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     let (playtesting_editor, level_name, progress) = {

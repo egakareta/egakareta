@@ -74,6 +74,22 @@ impl TestApp {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
+
+        app.insert_resource(super::MenuStateRes::new(eg_types::MenuState {
+            selected_level: 0,
+            levels: eg_level::builtin_level_names(),
+            preview_level_index: None,
+            preview_sky_color: eg_types::LevelMetadata::default().sky_color,
+            preview_camera_position: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        }));
+        let gameplay = super::GameplaySubsystem {
+            state: eg_game::GameState::new(),
+            pending_turn_inputs: std::collections::VecDeque::new(),
+            death_sfx_played: false,
+        };
+        super::gameplay_world::seed_app_gameplay_world_from_subsystem(app.world_mut(), &gameplay);
+
         Self { app }
     }
 
@@ -94,6 +110,10 @@ impl TestApp {
         &mut self.app
     }
 
+    /// Consume the harness and return its configured Bevy App.
+    pub fn into_app(self) -> App {
+        self.app
+    }
     /// Read-only access to the `World`.
     pub fn world(&self) -> &World {
         self.app.world()
@@ -162,9 +182,11 @@ mod tests {
     use crate::state::{
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes, UiStateRes,
+        FrameTimeRes, MenuStateRes, PerfRes, RenderExtractSchedule, RenderTrailVerticesRes,
+        SessionStateRes, UiStateRes,
     };
-    use eg_types::{AppPhase, MenuState};
+    use eg_game::TimelineSimulationRuntime;
+    use eg_types::{AppPhase, Direction, EditorMode, MenuState};
 
     #[test]
     fn test_app_minimal_seeds_state_plugin_resources() {
@@ -296,6 +318,74 @@ mod tests {
         assert_eq!(
             app.world().resource::<AppPhaseRes>().previous_app_phase,
             AppPhase::Playing,
+        );
+    }
+    #[test]
+    fn test_app_state_schedule_stops_editor_playback_without_audio() {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Null;
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .last_mode = Some(EditorMode::Place);
+
+        let playback_runtime =
+            TimelineSimulationRuntime::new([0.0, 2.0, 0.0], Direction::Forward, &[], &[]);
+        {
+            let mut timeline = app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.time_seconds = 2.0;
+            timeline.0.clock.duration_seconds = 10.0;
+            timeline.0.playback.playing = true;
+            timeline.0.playback.runtime = Some(playback_runtime);
+            timeline.0.playback.pending_seek_time_seconds = Some(2.0);
+            timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+        }
+
+        assert!(app.run_state_schedule());
+
+        let timeline = &app.world().resource::<EditorTimelineRes>().0;
+        assert!(!timeline.playback.playing);
+        assert!(timeline.playback.runtime.is_none());
+        assert!(timeline.playback.pending_seek_time_seconds.is_none());
+        assert_eq!(
+            app.world().resource::<EditorInputRes>().0.mode,
+            EditorMode::Place
+        );
+    }
+
+    #[test]
+    fn test_app_render_extract_builds_editor_playback_trail() {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
+
+        let mut playback_runtime =
+            TimelineSimulationRuntime::new([0.0, 2.0, 0.0], Direction::Forward, &[], &[]);
+        playback_runtime.advance_to(0.65);
+        {
+            let mut timeline = app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.time_seconds = 0.65;
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.playback.playing = true;
+            timeline.0.playback.runtime = Some(playback_runtime);
+        }
+
+        assert!(
+            app.world_mut()
+                .try_run_schedule(RenderExtractSchedule)
+                .is_ok()
+        );
+        assert!(
+            !app.world()
+                .resource::<RenderTrailVerticesRes>()
+                .0
+                .is_empty()
         );
     }
 }

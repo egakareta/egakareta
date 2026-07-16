@@ -7,7 +7,7 @@
 */
 #[cfg(any(test, feature = "test-support"))]
 use super::PracticeCheckpoint;
-use super::{AppPhaseRes, EditorSubsystem, State};
+use super::{EditorSubsystem, State};
 use eg_game::GameState;
 use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
@@ -214,10 +214,6 @@ impl EditorSubsystem {
 }
 
 impl State {
-    pub fn app_phase_resource(&self) -> AppPhaseRes {
-        AppPhaseRes::new(self.phase)
-    }
-
     pub(super) fn clear_editor_pan_keys(&mut self) {
         self.editor.clear_pan_keys();
     }
@@ -244,7 +240,6 @@ impl State {
         level_name: Option<String>,
         playtesting_editor: bool,
     ) {
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.phase = AppPhase::Playing;
         self.session.playtesting_editor = playtesting_editor;
         self.session.game_paused = false;
@@ -262,7 +257,6 @@ impl State {
     }
 
     pub(super) fn enter_editor_phase(&mut self, level_name: String) {
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.phase = AppPhase::Editor;
         self.session.editor_level_name = Some(level_name);
         self.session.editor_creator_metadata = eg_types::BasicLevelMetadata::default();
@@ -306,11 +300,6 @@ impl State {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_phase_for_test(&mut self, phase: AppPhase) {
         self.phase = phase;
-    }
-
-    /// Mirror the App-owned playtest flag into the compatibility session.
-    pub fn set_playtesting_editor_from_app(&mut self, playtesting_editor: bool) {
-        self.session.playtesting_editor = playtesting_editor;
     }
 
     /// Test-only setter for `session.playtesting_editor`.
@@ -387,7 +376,6 @@ impl State {
     }
 
     pub(super) fn enter_menu_phase(&mut self) {
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.session.playtesting_editor = false;
         self.session.game_paused = false;
         self.session.playtest_audio_start_seconds = None;
@@ -416,7 +404,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::EditorSubsystem;
     use eg_types::LevelObject;
 
     fn block(position: [f32; 3]) -> LevelObject {
@@ -432,22 +420,22 @@ mod tests {
 
     #[tokio::test]
     async fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
-        let mut state = State::new_test().await;
-        state.editor.objects = vec![
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             block([0.0, 0.0, 0.0]),
             block([1.0, 0.0, 0.0]),
             block([2.0, 0.0, 0.0]),
         ];
-        state.editor.input.selected_block_index = Some(1);
-        state.editor.input.selected_block_indices = vec![2, 99, 2];
-        state.editor.input.hovered_block_index = Some(42);
-        state.editor.selected_mask_cache = Some(vec![false, true, true]);
+        editor.input.selected_block_index = Some(1);
+        editor.input.selected_block_indices = vec![2, 99, 2];
+        editor.input.hovered_block_index = Some(42);
+        editor.selected_mask_cache = Some(vec![false, true, true]);
 
-        state.editor.normalize_block_selection();
+        editor.normalize_block_selection();
 
-        assert_eq!(state.editor.input.selected_block_index, Some(1));
-        assert_eq!(state.editor.input.selected_block_indices, vec![1, 2]);
-        assert_eq!(state.editor.input.hovered_block_index, None);
-        assert!(state.editor.selected_mask_cache.is_none());
+        assert_eq!(editor.input.selected_block_index, Some(1));
+        assert_eq!(editor.input.selected_block_indices, vec![1, 2]);
+        assert_eq!(editor.input.hovered_block_index, None);
+        assert!(editor.selected_mask_cache.is_none());
     }
 }

@@ -213,7 +213,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
 #[cfg(test)]
 mod tests {
     use super::show_timing_mode_bottom_panel;
-    use crate::test_utils::editor_ui_snapshot;
+    use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
     use eg_state::state::UiStateView;
     use eg_types::LevelObject;
@@ -227,7 +227,7 @@ mod tests {
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
     ) -> UiStateView<'a> {
-        let mut view = editor_ui_snapshot(app_settings, music_metadata);
+        let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.timeline_time_seconds = 2.5;

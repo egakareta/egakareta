@@ -570,7 +570,7 @@ mod tests {
         block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
         show_place_block_properties_window, show_selected_block_properties_window,
     };
-    use crate::test_utils::editor_ui_snapshot;
+    use crate::test_utils::editor_ui_view;
     use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
@@ -583,7 +583,7 @@ mod tests {
         music_metadata: &'a MusicMetadata,
         mode: EditorMode,
     ) -> eg_state::state::UiStateView<'a> {
-        let mut view = editor_ui_snapshot(app_settings, music_metadata);
+        let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
         view.level_name = Some("Compose Test");

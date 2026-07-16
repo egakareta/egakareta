@@ -51,10 +51,6 @@ impl AuthSubsystem {
 }
 
 impl State {
-    pub fn take_auth_state_resource(&mut self) -> AuthStateRes {
-        std::mem::take(&mut self.auth.state)
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_auth_state_for_test(
         &mut self,

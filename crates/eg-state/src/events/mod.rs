@@ -4056,20 +4056,10 @@ mod tests {
         );
     }
 
-    // --- Phase 3.15 / Navigation carve-out test ---
+    // --- App-owned navigation tests ---
     //
-    // `GameSetPracticeMode` is a carve-out: its handler in
-    // `events::navigation` mutates
-    // `SessionStateRes.practice_mode_enabled` directly instead
-    // of staging a legacy `AppCommand`. The change-guarded
-    // runtime sync (`Runtime::sync_app_session_state`) invokes
-    // the legacy `set_practice_mode_enabled` setter (which has
-    // heavy side effects: clear practice checkpoints, rebuild
-    // checkpoint vertices, restart level, resume game) only on
-    // real user-driven changes. The schedule-level test pins
-    // the resource write + the absence of any staged legacy
-    // command; the runtime tests in `eg-app` pin the full
-    // message → resource → sync → legacy state pipeline.
+    // `GameSetPracticeMode` mutates the App-owned session and queues the
+    // App-owned gameplay reset needed when practice mode is disabled.
 
     use crate::events::navigation::{GameResume, GameSetPracticeMode, NextLevel, PrevLevel};
     use crate::events::timeline::{

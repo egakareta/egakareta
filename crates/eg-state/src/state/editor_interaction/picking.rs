@@ -837,97 +837,80 @@ impl EditorSubsystem {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::State;
+    use super::super::super::EditorSubsystem;
     use eg_blocks::BlockId;
     use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use glam::{Vec2, Vec3};
 
-    #[tokio::test]
-    async fn ray_intersect_rotated_block_hits_and_misses() {
-        let state = State::new_test().await;
+    #[test]
+    fn ray_intersect_rotated_block_hits_and_misses() {
+        let editor = EditorSubsystem::default();
         let block = LevelObject {
             rotation: [0.0, 45.0, 0.0],
             ..LevelObject::default()
         };
 
-        let hit =
-            state
-                .editor
-                .ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &block);
+        let hit = editor.ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &block);
         assert!(hit.is_some());
 
-        let miss =
-            state
-                .editor
-                .ray_intersect_rotated_block(Vec3::new(5.0, 5.0, -5.0), Vec3::Z, &block);
+        let miss = editor.ray_intersect_rotated_block(Vec3::new(5.0, 5.0, -5.0), Vec3::Z, &block);
         assert!(miss.is_none());
     }
 
-    #[tokio::test]
-    async fn ray_intersect_rotated_block_uses_json_hitboxes() {
-        let state = State::new_test().await;
+    #[test]
+    fn ray_intersect_rotated_block_uses_json_hitboxes() {
+        let editor = EditorSubsystem::default();
         let fence = LevelObject::new("core/wooden_fence");
 
         let rail_hit =
-            state
-                .editor
-                .ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &fence);
+            editor.ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &fence);
         assert!(rail_hit.is_some());
 
         let gap_miss =
-            state
-                .editor
-                .ray_intersect_rotated_block(Vec3::new(0.2, 0.5, -5.0), Vec3::Z, &fence);
+            editor.ray_intersect_rotated_block(Vec3::new(0.2, 0.5, -5.0), Vec3::Z, &fence);
         assert!(gap_miss.is_none());
     }
 
-    #[tokio::test]
-    async fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
-        let state = State::new_test().await;
+    #[test]
+    fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
+        let editor = EditorSubsystem::default();
         let camera_trigger = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
 
         let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
         let ray_dir = -Vec3::Y;
 
         assert!(
-            state
-                .editor
+            editor
                 .ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger)
                 .is_none()
         );
         assert!(
-            state
-                .editor
+            editor
                 .ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger)
                 .is_some()
         );
     }
 
-    #[tokio::test]
-    async fn pick_from_screen_rejects_invalid_viewport() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn pick_from_screen_rejects_invalid_viewport() {
+        let mut editor = EditorSubsystem::default();
 
-        let pick = state
-            .editor
-            .pick_from_screen(0.0, 0.0, Vec2::new(0.0, 720.0));
+        let pick = editor.pick_from_screen(0.0, 0.0, Vec2::new(0.0, 720.0));
         assert!(pick.is_none());
 
-        let pick = state
-            .editor
-            .pick_from_screen(0.0, 0.0, Vec2::new(1280.0, 0.0));
+        let pick = editor.pick_from_screen(0.0, 0.0, Vec2::new(1280.0, 0.0));
         assert!(pick.is_none());
     }
 
-    #[tokio::test]
-    async fn pick_from_screen_center_prefers_block_hit() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn pick_from_screen_center_prefers_block_hit() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.objects.clear();
-        state.editor.objects.push(LevelObject::default());
+        editor.objects.clear();
+        editor.objects.push(LevelObject::default());
 
         let viewport = Vec2::new(1280.0, 720.0);
-        let pick = state
-            .editor
+        let pick = editor
             .pick_from_screen(
                 (viewport.x * 0.5) as f64,
                 (viewport.y * 0.5) as f64,
@@ -939,63 +922,63 @@ mod tests {
         assert!(pick.cursor[1] >= 0.0);
     }
 
-    #[tokio::test]
-    async fn cursor_from_ray_hit_centers_footprint_when_snap_disabled() {
-        let mut state = State::new_test().await;
-        state.editor.config.snap_to_grid = false;
+    #[test]
+    fn cursor_from_ray_hit_centers_footprint_when_snap_disabled() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = false;
 
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
 
-        let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 0.734, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.51, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[2], 5.178, epsilon = 1e-4);
     }
 
-    #[tokio::test]
-    async fn cursor_from_ray_hit_preserves_unit_snap_flooring() {
-        let mut state = State::new_test().await;
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 1.0;
+    #[test]
+    fn cursor_from_ray_hit_preserves_unit_snap_flooring() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
 
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
 
-        let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 1.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[2], 5.0, epsilon = 1e-4);
     }
 
-    #[tokio::test]
-    async fn cursor_from_ray_hit_centers_footprint_before_subunit_snap() {
-        let mut state = State::new_test().await;
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 0.25;
+    #[test]
+    fn cursor_from_ray_hit_centers_footprint_before_subunit_snap() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 0.25;
 
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
 
-        let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 0.5, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.5, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[2], 5.0, epsilon = 1e-4);
     }
 
-    #[tokio::test]
-    async fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
-        let mut state = State::new_test().await;
-        state.editor.config.snap_to_grid = false;
-        state.editor.config.selected_block_id = BlockId::new("core/speedportal");
+    #[test]
+    fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = false;
+        editor.config.selected_block_id = BlockId::new("core/speedportal");
 
         let hit = Vec3::new(4.0, 0.25, 9.0);
         let normal = Vec3::Y;
 
-        let cursor = state.editor.cursor_from_ray_hit(hit, normal);
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 3.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.26, epsilon = 1e-4);

@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use super::State;
+use super::{EditorTimingState, State};
 use eg_audio::service::{
     AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformResult,
 };
@@ -398,6 +398,44 @@ impl Default for AudioState {
     }
 }
 
+pub(crate) fn load_waveform_for_level_resources(
+    level_name: String,
+    editor_cache: &EditorAudioCacheRes,
+    runtime_preload: &RuntimeAudioPreloadRes,
+    timing: &mut EditorTimingState,
+    sender: Sender<WaveformResult>,
+) {
+    let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
+
+    if let Some(entry) = editor_cache.waveform(&source_key) {
+        timing.waveform_samples = entry.samples;
+        timing.waveform_sample_rate = entry.sample_rate;
+        timing.waveform_window_size = entry.window_size;
+        timing.waveform_loading = !entry.complete;
+        timing.waveform_complete = entry.complete;
+        if entry.complete {
+            editor_cache.clear_loading_source_if(&source_key);
+        }
+        return;
+    }
+
+    if editor_cache.loading_source().as_deref() == Some(source_key.as_str()) {
+        return;
+    }
+
+    editor_cache.set_loading_source(Some(source_key.clone()));
+    timing.waveform_samples.clear();
+    timing.waveform_sample_rate = 0;
+    timing.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
+    timing.waveform_loading = true;
+    timing.waveform_complete = false;
+
+    let cached_bytes = editor_cache
+        .bytes_for_level_audio(&level_name)
+        .or_else(|| runtime_preload.bytes(&source_key));
+    eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
+}
+
 impl State {
     pub fn preload_runtime_audio(&mut self, level_name: &str, audio_source: &str) {
         self.audio
@@ -492,49 +530,14 @@ impl State {
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
-        let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
-
-        if let Some(entry) = self.audio.state.editor.cache.waveform(&source_key) {
-            self.editor.timing.waveform_samples = entry.samples.clone();
-            self.editor.timing.waveform_sample_rate = entry.sample_rate;
-            self.editor.timing.waveform_window_size = entry.window_size;
-            self.editor.timing.waveform_loading = !entry.complete;
-            self.editor.timing.waveform_complete = entry.complete;
-            if entry.complete {
-                self.audio
-                    .state
-                    .editor
-                    .cache
-                    .clear_loading_source_if(&source_key);
-            }
-            return;
-        }
-
-        if self.audio.state.editor.cache.loading_source().as_deref() == Some(source_key.as_str()) {
-            return;
-        }
-
-        self.audio
-            .state
-            .editor
-            .cache
-            .set_loading_source(Some(source_key.clone()));
-        self.editor.timing.waveform_samples.clear();
-        self.editor.timing.waveform_sample_rate = 0;
-        self.editor.timing.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
-        self.editor.timing.waveform_loading = true;
-        self.editor.timing.waveform_complete = false;
-
-        let cached_bytes = self
-            .audio
-            .state
-            .editor
-            .cache
-            .bytes_for_level_audio(&level_name)
-            .or_else(|| self.audio.state.runtime_preload.cache.bytes(&source_key));
         let sender = self.audio.state.editor.waveform_load_channel.0.clone();
-
-        eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
+        load_waveform_for_level_resources(
+            level_name,
+            &self.audio.state.editor.cache,
+            &self.audio.state.runtime_preload.cache,
+            &mut self.editor.timing,
+            sender,
+        );
     }
 }
 
@@ -555,16 +558,11 @@ pub(crate) fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCa
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioState, WaveformCacheEntry};
-    use crate::state::State;
+    use super::{
+        AudioState, EditorTimingState, WaveformCacheEntry, load_waveform_for_level_resources,
+    };
     use eg_audio::audio::runtime_asset_source_key;
     use std::collections::HashMap;
-
-    async fn new_editor_state() -> State {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("Test Level".to_string());
-        state
-    }
 
     #[test]
     fn queues_runtime_audio_preload_by_level_and_source() {
@@ -608,13 +606,13 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn load_waveform_for_current_audio_prefers_cache_and_short_circuits_inflight_requests() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
+    #[test]
+    fn waveform_load_prefers_cache_and_short_circuits_inflight_requests() {
+        let audio = AudioState::new(HashMap::new());
+        let mut timing = EditorTimingState::default();
         let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
 
-        state.audio.state.editor.cache.insert_waveform(
+        audio.editor.cache.insert_waveform(
             source_key.clone(),
             WaveformCacheEntry {
                 samples: vec![0.3, 0.9],
@@ -623,51 +621,62 @@ mod tests {
                 complete: true,
             },
         );
-        state
-            .audio
-            .state
+        audio
             .editor
             .cache
             .set_loading_source(Some("other:key".to_string()));
-        state.load_waveform_for_current_audio();
-        assert_eq!(state.editor.timing.waveform_samples, vec![0.3, 0.9]);
-        assert_eq!(state.editor.timing.waveform_sample_rate, 32_000);
+        load_waveform_for_level_resources(
+            "Test Level".to_string(),
+            &audio.editor.cache,
+            &audio.runtime_preload.cache,
+            &mut timing,
+            audio.editor.waveform_load_channel.0.clone(),
+        );
+        assert_eq!(timing.waveform_samples, vec![0.3, 0.9]);
+        assert_eq!(timing.waveform_sample_rate, 32_000);
         assert_eq!(
-            state.audio.state.editor.cache.loading_source(),
+            audio.editor.cache.loading_source(),
             Some("other:key".to_string())
         );
 
-        state.audio.state.editor.cache.remove_waveform(&source_key);
-        state.editor.timing.waveform_samples = vec![7.0];
-        state.editor.timing.waveform_sample_rate = 7;
-        state
-            .audio
-            .state
+        audio.editor.cache.remove_waveform(&source_key);
+        timing.waveform_samples = vec![7.0];
+        timing.waveform_sample_rate = 7;
+        audio
             .editor
             .cache
             .set_loading_source(Some(source_key.clone()));
-        state.load_waveform_for_current_audio();
-        assert_eq!(state.editor.timing.waveform_samples, vec![7.0]);
-        assert_eq!(state.editor.timing.waveform_sample_rate, 7);
+        load_waveform_for_level_resources(
+            "Test Level".to_string(),
+            &audio.editor.cache,
+            &audio.runtime_preload.cache,
+            &mut timing,
+            audio.editor.waveform_load_channel.0.clone(),
+        );
+        assert_eq!(timing.waveform_samples, vec![7.0]);
+        assert_eq!(timing.waveform_sample_rate, 7);
     }
 
-    #[tokio::test]
-    async fn load_waveform_for_current_audio_marks_loading_and_clears_timing_when_uncached() {
-        let mut state = new_editor_state().await;
-        state.session.editor_level_name = Some("Test Level".to_string());
-
+    #[test]
+    fn uncached_waveform_load_marks_loading_and_clears_timing() {
+        let audio = AudioState::new(HashMap::new());
+        let mut timing = EditorTimingState {
+            waveform_samples: vec![1.0, 2.0],
+            waveform_sample_rate: 11_025,
+            ..EditorTimingState::default()
+        };
         let source_key = runtime_asset_source_key("Test Level", "audio.mp3");
-        state.editor.timing.waveform_samples = vec![1.0, 2.0];
-        state.editor.timing.waveform_sample_rate = 11_025;
-        state.audio.state.editor.cache.set_loading_source(None);
 
-        state.load_waveform_for_current_audio();
-
-        assert!(state.editor.timing.waveform_samples.is_empty());
-        assert_eq!(state.editor.timing.waveform_sample_rate, 0);
-        assert_eq!(
-            state.audio.state.editor.cache.loading_source(),
-            Some(source_key.clone())
+        load_waveform_for_level_resources(
+            "Test Level".to_string(),
+            &audio.editor.cache,
+            &audio.runtime_preload.cache,
+            &mut timing,
+            audio.editor.waveform_load_channel.0.clone(),
         );
+
+        assert!(timing.waveform_samples.is_empty());
+        assert_eq!(timing.waveform_sample_rate, 0);
+        assert_eq!(audio.editor.cache.loading_source(), Some(source_key));
     }
 }

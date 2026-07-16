@@ -5,37 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-pub mod block_icon;
 pub mod draw;
 pub mod plugin;
 pub mod resources;
 
-use eg_render::MeshSlot;
-
-use eg_types::PhysicalSize;
-
+#[cfg(test)]
 use super::State;
-
-impl State {
-    pub fn surface_width(&self) -> u32 {
-        self.render_gpu().surface_width()
-    }
-
-    pub fn surface_height(&self) -> u32 {
-        self.render_gpu().surface_height()
-    }
-
-    pub fn handle_surface_lost(&mut self) {
-        let size = self.current_render_size();
-        self.resize_surface(size);
-    }
-
-    pub fn current_render_size(&self) -> PhysicalSize<u32> {
-        self.surface_host()
-            .map(|h| h.current_size())
-            .unwrap_or(self.render_gpu().size)
-    }
-}
 
 #[cfg(test)]
 impl Drop for State {

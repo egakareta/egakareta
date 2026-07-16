@@ -12,6 +12,7 @@ use glam::Vec3;
 
 use super::{EditorDirtyFlags, EditorSubsystem, State};
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
+#[cfg(test)]
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 use eg_game::trigger_transformed_objects_at_time;
@@ -22,20 +23,26 @@ use eg_mesh::{
     build_block_geometry_for_object, build_block_geometry_from_refs,
     build_block_geometry_from_refs_at_time, build_chunked_block_mesh,
     build_chunked_block_mesh_at_time, build_chunked_block_mesh_from_refs,
-    build_chunked_block_mesh_from_refs_at_time, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
+    build_chunked_block_mesh_from_refs_at_time, build_editor_cursor_vertices,
+    build_editor_gizmo_vertices, build_editor_hover_outline_vertices,
     build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
     build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
-    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
 };
 #[cfg(test)]
-use eg_mesh::{TransformTriggerMarker, build_transform_trigger_marker_vertices};
+use eg_mesh::{
+    TransformTriggerMarker, build_colored_tap_indicator_vertices,
+    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
+    build_transform_trigger_marker_vertices,
+};
 use eg_render::EditorOutlineInstance;
 use eg_types::{
     AppPhase, Direction, EditorMode, EditorPlaceMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
-    TimingPoint, TriggerTarget,
+    TriggerTarget,
 };
+
+#[cfg(test)]
+use eg_types::TimingPoint;
 
 const SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD: usize = 700;
 const MAX_EXPANDED_SELECTED_BLOCK_OBJECTS: usize = 100_000;
@@ -1277,6 +1284,7 @@ impl State {
         self.render_meshes_mut().blocks.clear();
     }
 
+    #[cfg(test)]
     pub(super) fn rebuild_tap_indicator_vertices(&mut self) {
         puffin::profile_scope!("TapIndicatorMesh");
         let effective_mode = self.editor_effective_mode_for_playback();
@@ -1460,6 +1468,7 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
         && (left[2] - right[2]).abs() < 0.001
 }
 
+#[cfg(test)]
 fn tap_division_marker_indicators(
     tap_times: &[f32],
     tap_positions: &[[f32; 3]],
@@ -1477,6 +1486,7 @@ fn tap_division_marker_indicators(
         .collect()
 }
 
+#[cfg(test)]
 fn tap_indicator_color(
     index: usize,
     hovered_tap_index: Option<usize>,

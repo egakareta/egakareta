@@ -71,13 +71,7 @@ pub fn handle_toggle_perf_overlay(
     }
 }
 
-// `TogglePlaceWindow` is a carve-out: the handler mutates
-// `SessionStateRes.editor_show_place_window` directly. The legacy
-// `State.session.editor_show_place_window` is synced from the
-// resource by `Runtime::sync_app_session_state` (which already
-// handles the other carved-out session fields) before any dispatch
-// in the same frame. The change-guarded sync avoids re-running
-// other session-related side effects on every frame.
+// `TogglePlaceWindow` mutates the authoritative App-owned session directly.
 pub fn handle_toggle_place_window(
     mut events: MessageReader<TogglePlaceWindow>,
     mut session: ResMut<SessionStateRes>,

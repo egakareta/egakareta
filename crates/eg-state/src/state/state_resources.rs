@@ -94,7 +94,7 @@ impl Default for AppPhaseRes {
 // Frame timing
 // ---------------------------------------------------------------------------
 
-/// Manual frame timing resource used while `State::update` is being
+/// App-owned frame timing resource used by scheduled systems after the legacy callback was
 /// decomposed into scheduled systems.
 ///
 /// REFACTOR POINT(full-bevy): replace `FrameTimeRes` with `bevy_time`

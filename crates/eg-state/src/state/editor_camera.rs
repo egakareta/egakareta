@@ -377,6 +377,21 @@ impl EditorSubsystem {
         )
     }
 
+    pub(crate) fn evaluate_camera_track(
+        &self,
+        time_seconds: f32,
+        live_follow_target: Vec3,
+        is_game_active: bool,
+    ) -> CameraViewSample {
+        evaluate_camera_track_for_objects(
+            &self.camera,
+            &self.objects,
+            time_seconds,
+            live_follow_target,
+            is_game_active,
+        )
+    }
+
     pub fn capture_current_camera_trigger(&self, time_seconds: f32) -> LevelObject {
         let camera = CameraTrigger {
             mode: CameraMode::Static,
@@ -448,25 +463,10 @@ impl State {
         self.editor.camera_offset()
     }
 
-    fn evaluate_camera_track(
-        &self,
-        time_seconds: f32,
-        live_follow_target: Vec3,
-        is_game_active: bool,
-    ) -> CameraViewSample {
-        evaluate_camera_track_for_objects(
-            &self.editor.camera,
-            &self.editor.objects,
-            time_seconds,
-            live_follow_target,
-            is_game_active,
-        )
-    }
-
     #[cfg(test)]
     pub(super) fn playing_camera_view(&self) -> (Vec3, Vec3) {
         let target = Vec3::from_array(self.gameplay.state.position);
-        let sample = self.evaluate_camera_track(
+        let sample = self.editor.evaluate_camera_track(
             self.gameplay.state.elapsed_seconds,
             target,
             self.gameplay.state.started && !self.gameplay.state.game_over,
@@ -476,29 +476,12 @@ impl State {
 
     pub fn editor_preview_camera_view(&self) -> ([f32; 3], [f32; 3]) {
         let target = Vec3::from_array(self.editor.timeline.preview.position);
-        let sample =
-            self.evaluate_camera_track(self.editor.timeline.clock.time_seconds, target, true);
+        let sample = self.editor.evaluate_camera_track(
+            self.editor.timeline.clock.time_seconds,
+            target,
+            true,
+        );
         (sample.eye.to_array(), sample.target.to_array())
-    }
-
-    /// Adjusts the zoom level of the editor camera by moving its position.
-    pub fn adjust_editor_zoom(&mut self, delta: f32) {
-        if self.phase == AppPhase::Editor {
-            self.editor.adjust_zoom(delta);
-            self.editor
-                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-        }
-    }
-
-    /// Pans the editor camera based on screen-space input.
-    ///
-    /// This is typically called in response to mouse dragging or touch gestures.
-    pub fn pan_editor_camera_by_input(&mut self, screen_x: f32, screen_y: f32) {
-        if self.phase == AppPhase::Editor {
-            self.editor.pan_by_input(screen_x, screen_y);
-            self.editor
-                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-        }
     }
 
     /// Moves the editor cursor one unit up in the grid.
@@ -519,12 +502,12 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::{
-        CameraViewSample, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, MIN_PLAYING_PITCH, State,
-        eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
+        CameraViewSample, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorSubsystem,
+        MIN_PLAYING_PITCH, eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         live_follow_sample_for_camera, offset_from_rotation_pitch,
         playing_camera_offset_for_angles,
     };
-    use eg_types::{AppPhase, CAMERA_TRIGGER_BLOCK_ID, LevelObject};
+    use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use eg_types::{CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget};
     use glam::Vec3;
 
@@ -617,14 +600,12 @@ mod tests {
         }
     }
 
-    async fn new_editor_state() -> State {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("Test Level".to_string());
-        state
+    fn new_editor() -> EditorSubsystem {
+        EditorSubsystem::default()
     }
 
-    #[tokio::test]
-    async fn eased_alpha_clamps_bounds_for_all_curves() {
+    #[test]
+    fn eased_alpha_clamps_bounds_for_all_curves() {
         for easing in [
             EasingDirection::Linear,
             EasingDirection::EaseIn,
@@ -636,15 +617,15 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn ease_in_out_alpha_is_symmetric() {
+    #[test]
+    fn ease_in_out_alpha_is_symmetric() {
         let first_half = eased_alpha(EasingDirection::EaseInOut, 0.25);
         let second_half = eased_alpha(EasingDirection::EaseInOut, 0.75);
         assert!((first_half - (1.0 - second_half)).abs() <= 1e-6);
     }
 
-    #[tokio::test]
-    async fn interpolate_camera_samples_lerps_eye_and_target() {
+    #[test]
+    fn interpolate_camera_samples_lerps_eye_and_target() {
         let start = CameraViewSample {
             eye: Vec3::new(0.0, 0.0, 0.0),
             target: Vec3::new(1.0, 1.0, 1.0),
@@ -658,14 +639,14 @@ mod tests {
         assert_eq!(mid.target, Vec3::new(2.5, 3.0, 3.5));
     }
 
-    #[tokio::test]
-    async fn resolve_live_follow_sample_uses_default_angles_when_game_is_active() {
-        let mut state = new_editor_state().await;
-        state.editor.camera.playing_rotation = 1.2;
-        state.editor.camera.playing_pitch = -0.8;
+    #[test]
+    fn resolve_live_follow_sample_uses_default_angles_when_game_is_active() {
+        let mut editor = new_editor();
+        editor.camera.playing_rotation = 1.2;
+        editor.camera.playing_pitch = -0.8;
 
         let target = Vec3::new(2.0, 3.0, 4.0);
-        let sample = live_follow_sample_for_camera(&state.editor.camera, target, true);
+        let sample = live_follow_sample_for_camera(&editor.camera, target, true);
         let expected_eye =
             target + playing_camera_offset_for_angles(DEFAULT_CAMERA_YAW, DEFAULT_CAMERA_PITCH);
 
@@ -673,43 +654,40 @@ mod tests {
         assert_vec3_close(sample.eye, expected_eye);
     }
 
-    #[tokio::test]
-    async fn resolve_live_follow_sample_clamps_pitch_when_not_active() {
-        let mut state = new_editor_state().await;
-        state.editor.camera.playing_rotation = 0.35;
-        state.editor.camera.playing_pitch = -5.0;
+    #[test]
+    fn resolve_live_follow_sample_clamps_pitch_when_not_active() {
+        let mut editor = new_editor();
+        editor.camera.playing_rotation = 0.35;
+        editor.camera.playing_pitch = -5.0;
 
         let target = Vec3::new(1.0, 0.5, -2.0);
-        let sample = live_follow_sample_for_camera(&state.editor.camera, target, false);
+        let sample = live_follow_sample_for_camera(&editor.camera, target, false);
         let expected_eye = target
-            + playing_camera_offset_for_angles(
-                state.editor.camera.playing_rotation,
-                MIN_PLAYING_PITCH,
-            );
+            + playing_camera_offset_for_angles(editor.camera.playing_rotation, MIN_PLAYING_PITCH);
 
         assert_vec3_close(sample.target, target);
         assert_vec3_close(sample.eye, expected_eye);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_without_triggers_returns_live_follow() {
-        let mut state = new_editor_state().await;
-        state.editor.objects.clear();
-        state.editor.camera.playing_rotation = 0.6;
-        state.editor.camera.playing_pitch = 0.4;
+    #[test]
+    fn evaluate_camera_track_without_triggers_returns_live_follow() {
+        let mut editor = new_editor();
+        editor.objects.clear();
+        editor.camera.playing_rotation = 0.6;
+        editor.camera.playing_pitch = 0.4;
 
         let target = Vec3::new(2.5, 1.0, -0.5);
-        let expected = live_follow_sample_for_camera(&state.editor.camera, target, false);
-        let sample = state.evaluate_camera_track(3.0, target, false);
+        let expected = live_follow_sample_for_camera(&editor.camera, target, false);
+        let sample = editor.evaluate_camera_track(3.0, target, false);
 
         assert_vec3_close(sample.eye, expected.eye);
         assert_vec3_close(sample.target, expected.target);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_interpolates_into_first_trigger_window() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![static_trigger(
+    #[test]
+    fn evaluate_camera_track_interpolates_into_first_trigger_window() {
+        let mut editor = new_editor();
+        editor.objects = vec![static_trigger(
             5.0,
             [10.0, 1.0, -2.0],
             0.8,
@@ -720,7 +698,7 @@ mod tests {
         )];
 
         let live_target = Vec3::new(0.0, 0.0, 0.0);
-        let live = live_follow_sample_for_camera(&state.editor.camera, live_target, false);
+        let live = live_follow_sample_for_camera(&editor.camera, live_target, false);
         let trigger_target = Vec3::new(10.0, 1.0, -2.0);
         let end = CameraViewSample {
             eye: trigger_target + editor_camera_offset_for_pose(0.8, 0.3),
@@ -728,15 +706,15 @@ mod tests {
         };
         let expected = interpolate_camera_samples(live, end, 0.5);
 
-        let sample = state.evaluate_camera_track(4.0, live_target, false);
+        let sample = editor.evaluate_camera_track(4.0, live_target, false);
         assert_vec3_close(sample.eye, expected.eye);
         assert_vec3_close(sample.target, expected.target);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_between_follow_segments_uses_follow_orbit() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![
+    #[test]
+    fn evaluate_camera_track_between_follow_segments_uses_follow_orbit() {
+        let mut editor = new_editor();
+        editor.objects = vec![
             follow_trigger(2.0, 1.0, false),
             follow_trigger(4.0, 1.0, false),
         ];
@@ -751,29 +729,29 @@ mod tests {
                 ),
             target,
         };
-        let sample = state.evaluate_camera_track(3.0, target, false);
+        let sample = editor.evaluate_camera_track(3.0, target, false);
 
         assert_vec3_close(sample.eye, expected.eye);
         assert_vec3_close(sample.target, expected.target);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_uses_custom_follow_orbit() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![follow_trigger_with_orbit(0.0, 1.0, false, 12.0, 0.25, 0.35)];
+    #[test]
+    fn evaluate_camera_track_uses_custom_follow_orbit() {
+        let mut editor = new_editor();
+        editor.objects = vec![follow_trigger_with_orbit(0.0, 1.0, false, 12.0, 0.25, 0.35)];
 
         let target = Vec3::new(4.0, 1.0, -2.0);
-        let sample = state.evaluate_camera_track(1.0, target, false);
+        let sample = editor.evaluate_camera_track(1.0, target, false);
         let expected_eye = target + offset_from_rotation_pitch(0.25, 0.35, 12.0);
 
         assert_vec3_close(sample.eye, expected_eye);
         assert_vec3_close(sample.target, target);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![
+    #[test]
+    fn evaluate_camera_track_between_static_triggers_handles_pre_and_active_transition() {
+        let mut editor = new_editor();
+        editor.objects = vec![
             static_trigger(
                 2.0,
                 [0.0, 0.0, 0.0],
@@ -804,11 +782,11 @@ mod tests {
             target: Vec3::new(6.0, 1.0, -3.0),
         };
 
-        let pre_transition = state.evaluate_camera_track(4.0, live_target, false);
+        let pre_transition = editor.evaluate_camera_track(4.0, live_target, false);
         assert_vec3_close(pre_transition.eye, previous_sample.eye);
         assert_vec3_close(pre_transition.target, previous_sample.target);
 
-        let active = state.evaluate_camera_track(5.5, live_target, false);
+        let active = editor.evaluate_camera_track(5.5, live_target, false);
         let expected = interpolate_camera_samples(
             previous_sample,
             next_sample,
@@ -818,10 +796,10 @@ mod tests {
         assert_vec3_close(active.target, expected.target);
     }
 
-    #[tokio::test]
-    async fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![static_trigger(
+    #[test]
+    fn evaluate_camera_track_after_last_trigger_uses_last_sample() {
+        let mut editor = new_editor();
+        editor.objects = vec![static_trigger(
             1.0,
             [4.0, 2.0, 1.0],
             0.3,
@@ -831,7 +809,7 @@ mod tests {
             EasingDirection::Linear,
         )];
 
-        let sample = state.evaluate_camera_track(50.0, Vec3::ZERO, false);
+        let sample = editor.evaluate_camera_track(50.0, Vec3::ZERO, false);
         let expected_target = Vec3::new(4.0, 2.0, 1.0);
         let expected_eye = expected_target + editor_camera_offset_for_pose(0.3, 0.5);
 
@@ -839,15 +817,15 @@ mod tests {
         assert_vec3_close(sample.target, expected_target);
     }
 
-    #[tokio::test]
-    async fn capture_current_camera_trigger_uses_editor_pose() {
-        let mut state = new_editor_state().await;
-        state.editor.camera.editor_pan = [12.0, -7.0];
-        state.editor.camera.editor_target_z = 4.5;
-        state.editor.camera.editor_yaw = 0.9;
-        state.editor.camera.editor_pitch = 0.3;
+    #[test]
+    fn capture_current_camera_trigger_uses_editor_pose() {
+        let mut editor = new_editor();
+        editor.camera.editor_pan = [12.0, -7.0];
+        editor.camera.editor_target_z = 4.5;
+        editor.camera.editor_yaw = 0.9;
+        editor.camera.editor_pitch = 0.3;
 
-        let trigger_object = state.editor.capture_current_camera_trigger(8.0);
+        let trigger_object = editor.capture_current_camera_trigger(8.0);
         let trigger = trigger_object.trigger.expect("camera trigger payload");
         assert_eq!(trigger.time_seconds, 8.0);
         let camera = trigger.camera.expect("camera payload");
@@ -857,33 +835,5 @@ mod tests {
         assert_eq!(camera.pitch, 0.3);
         assert_eq!(camera.transition_interval_seconds, 1.0);
         assert!(!camera.use_full_segment_transition);
-    }
-
-    #[tokio::test]
-    async fn state_camera_orientation_api_only_applies_in_editor_phase() {
-        let mut state = State::new_test().await;
-        let original_pan = state.editor.camera.editor_pan;
-        let original_target_z = state.editor.camera.editor_target_z;
-
-        state.phase = AppPhase::Menu;
-        state.adjust_editor_zoom(3.0);
-        state.pan_editor_camera_by_input(2.0, -1.0);
-
-        assert_eq!(state.editor.camera.editor_pan, original_pan);
-        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-
-        state.enter_editor_phase("Test Level".to_string());
-        let before_pan = state.editor.camera.editor_pan;
-        let before_target_z = state.editor.camera.editor_target_z;
-        state.pan_editor_camera_by_input(2.0, -1.0);
-
-        assert_ne!(state.editor.camera.editor_pan, before_pan);
-        assert_eq!(state.editor.camera.editor_target_z, before_target_z);
-
-        let before_zoom_pan = state.editor.camera.editor_pan;
-        let before_zoom_target_z = state.editor.camera.editor_target_z;
-        state.adjust_editor_zoom(2.0);
-        assert_ne!(state.editor.camera.editor_pan, before_zoom_pan);
-        assert_ne!(state.editor.camera.editor_target_z, before_zoom_target_z);
     }
 }

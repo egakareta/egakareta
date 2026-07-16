@@ -212,3 +212,82 @@ fn cached_editor_trail_segments(
 
     segments
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed;
+    use eg_types::{LevelObject, SpawnMetadata};
+
+    #[test]
+    fn recent_segments_keep_latest_points_with_bound() {
+        let segments = vec![
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            vec![[3.0, 0.0, 0.0], [4.0, 0.0, 0.0]],
+            vec![[5.0, 0.0, 0.0], [6.0, 0.0, 0.0], [7.0, 0.0, 0.0]],
+        ];
+
+        let selected = recent_trail_segments(&segments, 4);
+        let total_points: usize = selected.iter().map(|(_, points)| points.len()).sum();
+
+        assert_eq!(total_points, 4);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0], (1, &segments[1][1..]));
+        assert_eq!(selected[1], (2, &segments[2][..]));
+    }
+
+    #[test]
+    fn playback_trail_includes_airborne_head_segment() {
+        let grounded =
+            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
+        assert!(build_editor_playback_trail_vertices(&grounded).is_empty());
+
+        let support = [LevelObject {
+            position: [0.0, 2.0, 0.0],
+            ..LevelObject::default()
+        }];
+        let mut airborne =
+            TimelineSimulationRuntime::new([0.0, 3.0, 0.0], Direction::Forward, &support, &[]);
+        airborne.advance_to(1.0 / eg_game::BASE_PLAYER_SPEED + 0.01);
+
+        assert!(!airborne.is_grounded());
+        assert!(!build_editor_playback_trail_vertices(&airborne).is_empty());
+    }
+
+    #[test]
+    fn scrub_trail_uses_sparse_trail_cache() {
+        let mut timeline = EditorTimelineState::default();
+        timeline.snapshot_cache_step_seconds = 1.0 / 240.0;
+        timeline.trail_point_cache = vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]];
+        timeline.trail_segment_start_cache = vec![0];
+        timeline.snapshot_cache = (0..=2_000)
+            .map(|index| EditorTimelineSnapshot {
+                position: [index as f32 * 0.1, 0.0, 0.0],
+                direction: Direction::Forward,
+                is_grounded: true,
+                game_over: false,
+                trail_segment_count: 1,
+                trail_point_count: 2,
+            })
+            .collect();
+
+        let vertices = build_editor_scrub_trail_vertices(&timeline, 2_000.0 / 240.0);
+        assert!(vertices.len() < 120);
+    }
+
+    #[test]
+    fn fresh_cache_draws_grounded_scrub_trail() {
+        let mut timeline = EditorTimelineState::default();
+        timeline.clock.duration_seconds = 2.0;
+        timeline.simulation_revision = 1;
+        let spawn = SpawnMetadata {
+            position: [0.0, 0.0, 0.0],
+            direction: Direction::Forward,
+        };
+
+        rebuild_editor_timeline_snapshot_cache_if_needed(&mut timeline, &[], &spawn);
+        let vertices = build_editor_scrub_trail_vertices(&timeline, 0.5);
+
+        assert!(!timeline.trail_point_cache.is_empty());
+        assert!(!vertices.is_empty());
+    }
+}

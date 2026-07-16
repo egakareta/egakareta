@@ -534,7 +534,7 @@ fn editor_objects_for_render(
 
 /// Extract time-dependent gameplay block batches from App-owned gameplay
 /// entities. This is the scheduled replacement for the animated-block branch
-/// in `State::update`.
+/// in the former legacy frame callback.
 pub(crate) fn extract_playing_block_meshes_system(
     phase: Res<AppPhaseRes>,
     session: Res<SessionStateRes>,
@@ -619,7 +619,7 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
 
 /// Extract the editor static and selected block meshes from App-owned editor
 /// resources. This is the scheduled replacement for the editor block rebuild
-/// branches in `State::update`.
+/// branches in the former legacy frame callback.
 pub(crate) fn extract_editor_block_meshes_system(
     phase: Res<AppPhaseRes>,
     input: Res<EditorInputRes>,
@@ -1660,7 +1660,7 @@ pub(crate) fn upload_render_uniforms_system(
 }
 
 /// Update the scheduled color-space POD uniform from App-world frame
-/// timing. The compatibility `State::update` path consumes this value
+/// timing. The scheduled render path consumes this value
 /// to upload the GPU buffer until render presentation moves fully into
 /// systems.
 pub fn update_color_space_uniform_system(
@@ -1671,7 +1671,7 @@ pub fn update_color_space_uniform_system(
 }
 
 /// Upload the scheduled color-space POD value before presentation. This is
-/// the first GPU side effect removed from `State::update`; the compatibility
+/// the first GPU side effect moved into the App schedule; the custom
 /// shell only records that the scheduled upload already happened so direct
 /// legacy callers still retain their fallback behavior.
 pub fn upload_color_space_uniform_system(
@@ -1702,7 +1702,6 @@ pub fn apply_resize_surface_system(
     }
     config.width = size.width;
     config.height = size.height;
-    request.mark_applied(size);
 
     if let Some(surface_host) = surface_host
         && let Some(host) = surface_host.0.as_ref()
@@ -2095,12 +2094,7 @@ mod tests {
             !world.resource::<RenderResizeRequest>().pending,
             "resize request must be consumed even in bare render test worlds"
         );
-        let applied = world
-            .resource_mut::<RenderResizeRequest>()
-            .take_applied_size()
-            .expect("scheduled resize must publish the accepted size");
-        assert_eq!(applied.width, 320);
-        assert_eq!(applied.height, 240);
+
         assert_eq!(
             *world.resource::<RenderConfigRes>(),
             RenderConfigRes {
@@ -2109,5 +2103,36 @@ mod tests {
                 apply_gamma_correction: false,
             }
         );
+    }
+    #[test]
+    fn editor_render_objects_apply_transform_triggers_without_mutating_authored_objects() {
+        let authored = LevelObject {
+            id: "object_0_0_0".to_string(),
+            ..LevelObject::default()
+        };
+        let trigger = LevelObject {
+            position: [2.0, 0.0, 0.0],
+            trigger: Some(eg_types::TimedTrigger {
+                time_seconds: 0.0,
+                duration_seconds: 0.0,
+                easing: eg_types::EasingDirection::Linear,
+                target: eg_types::TriggerTarget::Objects {
+                    object_ids: vec![authored.id.clone()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+        };
+        let objects = EditorObjectsRes {
+            objects: vec![authored.clone()],
+        };
+        let mut timeline = EditorTimelineRes::default();
+        timeline.0.clock.time_seconds = 0.5;
+
+        let rendered = editor_objects_for_render(&objects, &timeline, &[trigger]);
+
+        assert_eq!(rendered[0].position, [2.0, 0.0, 0.0]);
+        assert_eq!(objects.objects[0].position, authored.position);
     }
 }

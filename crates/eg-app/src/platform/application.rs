@@ -30,9 +30,6 @@ use crate::platform::input_mapping::{
 use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
 use eg_state::commands::InputEvent;
-#[cfg(test)]
-use eg_state::state::State;
-#[cfg(not(test))]
 use eg_state::state::StateAppBootstrap;
 use eg_types::GameCursor;
 
@@ -340,12 +337,9 @@ impl ApplicationHandler for App {
                 .create_window(window_attributes)
                 .expect("Failed to create window");
 
-            #[cfg(not(test))]
             let runtime = Runtime::from_bootstrap(pollster::block_on(
                 StateAppBootstrap::new_native(Arc::new(window)),
             ));
-            #[cfg(test)]
-            let runtime = Runtime::new(pollster::block_on(State::new_native(Arc::new(window))));
             let Some(window) = runtime.window() else {
                 log::error!("Native runtime missing window handle after initialization");
                 return;
@@ -574,7 +568,6 @@ mod tests {
     use super::{App, TouchPointEvent};
     use crate::platform::runtime::Runtime;
     use eg_state::commands::InputEvent;
-    use eg_state::state::State;
     use eg_types::GameCursor;
     use std::collections::HashMap;
     use winit::{dpi::PhysicalPosition, event::TouchPhase};
@@ -603,10 +596,9 @@ mod tests {
         assert!(App::native_window_icon().is_some());
     }
 
-    #[tokio::test]
-    async fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
-        let state = State::new_test().await;
-        let runtime = Runtime::new(state);
+    #[test]
+    fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
+        let runtime = Runtime::new_test();
 
         assert!(App::system_cursor_visible_for_frame(&runtime, false));
         assert!(App::system_cursor_visible_for_frame(&runtime, true));
@@ -1210,18 +1202,8 @@ pub async fn run_game() -> Result<(), JsValue> {
         "display:block;width:100vw;height:100vh;touch-action:none;",
     )?;
 
-    #[cfg(not(test))]
     let runtime = Runtime::from_bootstrap(
         StateAppBootstrap::new(
-            canvas.clone(),
-            launch_backend_query_param("graphics"),
-            launch_backend_query_param("audio"),
-        )
-        .await,
-    );
-    #[cfg(test)]
-    let runtime = Runtime::new(
-        State::new(
             canvas.clone(),
             launch_backend_query_param("graphics"),
             launch_backend_query_param("audio"),

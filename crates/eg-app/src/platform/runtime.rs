@@ -13,6 +13,7 @@ use crate::{
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
 use bevy_app::App;
+#[cfg(not(test))]
 use bevy_ecs::world::World;
 #[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
@@ -20,10 +21,6 @@ use eg_state::state::AppPhaseRes;
 use eg_state::state::AudioBackendRes;
 
 use eg_state::state::EditorInputRes;
-#[cfg(test)]
-use eg_state::state::EditorRuntimeRes;
-#[cfg(test)]
-use eg_state::state::EditorTimelineRes;
 use eg_state::state::RenderConfigRes;
 #[cfg(not(test))]
 use eg_state::state::RenderEguiRes;
@@ -31,14 +28,13 @@ use eg_state::state::RenderEguiRes;
 use eg_state::state::RenderGpuRes;
 use eg_state::state::RenderSurfaceHostRes;
 use eg_state::state::SessionStateRes;
-#[cfg(test)]
-use eg_state::state::State;
-#[cfg(not(test))]
 use eg_state::state::StateAppBootstrap;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
 use eg_state::state::run_state_schedule_in_world;
 use eg_state::state::setup_state_app;
+#[cfg(test)]
+use eg_state::state::test_support::TestApp;
 #[cfg(not(test))]
 use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
 use eg_ui::{register_ui_resources_world, sync_egui_context};
@@ -185,74 +181,84 @@ fn run_egui_ui_system(world: &mut World) {
 ///
 /// The App world is the production command/schedule driver. The egui context,
 /// renderer, menu textures, block-icon cache, and all state resources are
-/// installed directly by `StateAppBootstrap`; production never constructs
-/// legacy `State`. Tests retain `State` only for compatibility assertions.
+/// installed directly by StateAppBootstrap. Tests use App-native TestApp
+/// fixtures, and Runtime owns only the App.
 ///
 /// REFACTOR POINT(full-bevy): when full Bevy lands, the custom bootstrap and
 /// winit loop are replaced by Bevy plugins and the Bevy app runner.
 pub struct Runtime {
-    #[cfg(test)]
-    pub state: State,
     pub app: App,
 }
 
 impl Runtime {
-    #[cfg(not(test))]
     pub fn from_bootstrap(bootstrap: StateAppBootstrap) -> Self {
         let egui_ctx = egui::Context::default();
-        let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert(
-            "sora".to_owned(),
-            std::sync::Arc::new(egui::FontData::from_static(SORA_TTF)),
-        );
-        fonts.font_data.insert(
-            "sora_thin".to_owned(),
-            std::sync::Arc::new(
-                egui::FontData::from_static(SORA_TTF).tweak(egui::FontTweak {
-                    coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
-                    ..Default::default()
-                }),
-            ),
-        );
-        fonts
-            .families
-            .entry(egui::FontFamily::Name("sora_thin".into()))
-            .or_default()
-            .insert(0, "sora_thin".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Proportional)
-            .or_default()
-            .insert(0, "sora".to_owned());
-        fonts
-            .families
-            .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .insert(0, "sora".to_owned());
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-        egui_ctx.set_fonts(fonts);
+        #[cfg(not(test))]
+        {
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "sora".to_owned(),
+                std::sync::Arc::new(egui::FontData::from_static(SORA_TTF)),
+            );
+            fonts.font_data.insert(
+                "sora_thin".to_owned(),
+                std::sync::Arc::new(
+                    egui::FontData::from_static(SORA_TTF).tweak(egui::FontTweak {
+                        coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
+                        ..Default::default()
+                    }),
+                ),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Name("sora_thin".into()))
+                .or_default()
+                .insert(0, "sora_thin".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "sora".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .insert(0, "sora".to_owned());
+            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            egui_ctx.set_fonts(fonts);
+        }
 
+        #[cfg(not(test))]
         let menu_textures = load_menu_textures(&egui_ctx);
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
         register_ui_resources_world(app.world_mut());
+        #[cfg(not(test))]
         app.add_systems(bevy_app::Update, run_egui_ui_system);
         bootstrap.install(app.world_mut());
 
-        let egui_renderer = {
-            let gpu = app.world().non_send::<RenderGpuRes>();
-            egui_wgpu::Renderer::new(
-                &gpu.0.device,
-                gpu.0.config.format,
-                egui_wgpu::RendererOptions::default(),
-            )
-        };
-        app.insert_non_send(RenderEguiRes::new(egui_renderer));
+        #[cfg(not(test))]
+        {
+            let egui_renderer = {
+                let gpu = app.world().non_send::<RenderGpuRes>();
+                egui_wgpu::Renderer::new(
+                    &gpu.0.device,
+                    gpu.0.config.format,
+                    egui_wgpu::RendererOptions::default(),
+                )
+            };
+            app.insert_non_send(RenderEguiRes::new(egui_renderer));
+            app.insert_non_send(EguiFrameResources {
+                egui_ctx,
+                menu_textures,
+                block_icon_cache: BlockIconCache::new(),
+            });
+        }
+        #[cfg(test)]
         app.insert_non_send(EguiFrameResources {
             egui_ctx,
-            menu_textures,
-            block_icon_cache: BlockIconCache::new(),
+            _presentation: (),
         });
 
         let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
@@ -261,108 +267,23 @@ impl Runtime {
     }
 
     #[cfg(test)]
-    pub fn new(mut state: State) -> Self {
+    pub fn new_test() -> Self {
+        Self::from_test_app(TestApp::minimal())
+    }
+
+    #[cfg(test)]
+    pub fn from_test_app(test_app: TestApp) -> Self {
         let egui_ctx = egui::Context::default();
-
-        let render_config = RenderConfigRes::from_gpu(state.render_gpu());
-
-        // Build the Bevy `App` with the eg-state plugin graph. The
-        // App owns the single ECS `World`; presentation resources are
-        // inserted as non-send resources because they retain local GPU
-        // handles.
-        let mut app = App::new();
-        setup_state_app(&mut app);
-        register_state_command_pipeline(app.world_mut());
+        let mut app = test_app.into_app();
         register_ui_resources_world(app.world_mut());
-        app.insert_resource(render_config);
         app.insert_non_send(EguiFrameResources {
             egui_ctx,
             _presentation: (),
         });
-
-        // Seed `AppPhaseRes` from the legacy `State.phase`.
-        // `StatePlugins` default this resource to Menu, but tests and
-        // transition paths can construct Runtime from an already-Editor
-        // or already-Playing legacy state. Handlers that are phase
-        // guarded (for example menu-preview camera capture) need the
-        // App-world phase to match on the first frame.
-        app.world_mut().insert_resource(state.app_phase_resource());
-        app.world_mut().insert_resource(state.menu_state_resource());
-        app.world_mut()
-            .insert_resource(state.menu_preview_objects_resource());
-        let auth_state = state.take_auth_state_resource();
-        app.world_mut().insert_resource(auth_state);
-
-        // Seed `EditorConfigRes` once from the compatibility fixture.
-        app.world_mut()
-            .insert_resource(state.editor_config_resource());
-
-        // Seed `EditorInputRes` from the legacy `State` so direct
-        // input handlers (including the Phase 3.27 editor
-        // next/previous cursor movement carve-out) start from the same
-        // cursor/mode/modifier state as the compatibility path.
-        app.world_mut()
-            .insert_resource(state.editor_input_resource());
-        app.world_mut()
-            .insert_resource(state.editor_objects_resource());
-
-        // Seed `EditorTimingRes` once for compatibility test construction.
-        app.world_mut()
-            .insert_resource(state.editor_timing_resource());
-
-        // Seed `EditorTimelineRes` from the legacy `State` for the
-        // timeline carve-outs (see `events::timeline`). Without
-        // seeding, the change-guarded `sync_app_editor_timeline_state`
-        // would see a default-vs-legacy diff on the first frame and
-        // clobber user timeline position/duration or tap selection.
-        app.world_mut()
-            .insert_resource(state.editor_timeline_resource());
-        app.world_mut()
-            .insert_resource(state.editor_runtime_resource());
-        app.world_mut()
-            .insert_resource(state.editor_history_resource());
-
-        // Seed the carved-out `SessionStateRes` fields from the
-        // legacy `State.session` (see `events::session`). The
-        // carved-out fields (`editor_show_metadata`,
-        // `editor_show_settings`, `editor_settings_section`,
-        // `editor_keybind_capture_action`) are written to the
-        // resource directly by their Bevy handlers; the
-        // change-guarded `sync_app_session_state` would otherwise
-        // see a default-vs-legacy diff on the first frame and
-        // clobber any user-driven UI-window state. Seeding once
-        // at construction makes the first frame a no-op for
-        // unchanged fields.
-        app.world_mut()
-            .insert_resource(state.session_state_resource());
-
-        // Seed `EditorSpawnRes` once for compatibility test construction.
-        app.world_mut()
-            .insert_resource(state.editor_spawn_resource());
-
-        // Seed `EditorCameraRes` once for compatibility test construction.
-        app.world_mut()
-            .insert_resource(state.editor_camera_resource());
-
-        // Seed `EditorTriggerRes` from the legacy
-        // `State.editor.triggers` for the trigger-selected carve-out
-        // (see `events::camera::handle_set_trigger_selected`).
-        app.world_mut()
-            .insert_resource(state.editor_trigger_resource());
-
-        app.world_mut().insert_resource(state.frame_time_resource());
         let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
         app.world_mut().insert_resource(ui_state_resource);
-        state.seed_app_gameplay_world(app.world_mut());
-        state.install_async_channel_resources(app.world_mut());
-
-        Self {
-            #[cfg(test)]
-            state,
-            app,
-        }
+        Self { app }
     }
-
     pub fn ensure_audio_device(&self) {
         self.app
             .world()
@@ -400,6 +321,7 @@ impl Runtime {
                 && point_y <= rect[3] as f64
         })
     }
+
     /// Return the native window retained by the App-owned surface host.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn window(&self) -> Option<&eg_platform::state_host::NativeWindow> {
@@ -409,13 +331,9 @@ impl Runtime {
         }
     }
 
-    /// Drive one frame through the App-owned presentation resources while
-    /// routing UI-originated messages through Bevy's `App` world.
+    /// Drive one frame through the App-owned presentation resources.
     pub fn run_app_frame(&mut self, raw_input: egui::RawInput) -> egui::FullOutput {
         let app = &mut self.app;
-        #[cfg(test)]
-        let state = &mut self.state;
-
         let egui_ctx = app
             .world()
             .non_send::<EguiFrameResources>()
@@ -430,8 +348,6 @@ impl Runtime {
             app.world_mut().insert_non_send(EguiRawInputRes(raw_input));
             app.update();
         }
-        // Runtime unit tests exercise message routing and schedules. UI layout,
-        // texture upload, and GPU rendering have focused coverage in their crates.
         #[cfg(test)]
         let full_output = {
             let output = egui_ctx.run_ui(raw_input, |_| {});
@@ -453,14 +369,7 @@ impl Runtime {
             input.0.ui_input_pixels_per_point = 1.0;
         }
 
-        #[cfg(test)]
-        state.sync_app_gameplay_world_if_needed(app.world_mut());
         run_state_schedule_in_world(app.world_mut());
-        #[cfg(test)]
-        {
-            Self::sync_app_editor_timeline_state(state, app.world_mut());
-            Self::sync_app_session_state(state, app.world_mut());
-        }
         #[cfg(not(test))]
         {
             let mut render = app.world_mut().non_send_mut::<RenderEguiRes>();
@@ -468,8 +377,6 @@ impl Runtime {
                 render.renderer.free_texture(id);
             }
         }
-        #[cfg(test)]
-        Self::refresh_session_mirror_from_legacy(state, app.world_mut());
         full_output
     }
 
@@ -482,213 +389,14 @@ impl Runtime {
             .clone()
     }
 
-    #[cfg(test)]
-    fn refresh_session_mirror_from_legacy(state: &State, world: &mut World) {
-        world.insert_resource(state.editor_timeline_resource());
-        let session = state.session_state_resource();
-        let mut app_session = world.resource_mut::<SessionStateRes>();
-        app_session.playtesting_editor = session.playtesting_editor;
-        app_session.game_paused = session.game_paused;
-    }
-
-    /// Sync the legacy `State.editor.timeline` clock + tap state from
-    /// the App-world `EditorTimelineRes`. The carved-out fields are
-    /// `clock.time_seconds` (`ShiftTimeline`, `SetTimelineTime`),
-    /// `clock.duration_seconds` (`SetTimelineDuration`), and
-    /// `taps.selected_index` (`SetSelectedTap`) plus the tap arrays for
-    /// direct tap-array handlers such as `ClearTaps` and
-    /// `SetSelectedTapTime` from `events::timeline`.
-    ///
-    /// The sync is change-guarded so a no-op frame does not re-invoke
-    /// the legacy setters. Tap-array sync copies legacy's final
-    /// derived tap indicators and cursor back into App resources
-    /// because editor objects/spawn-derived preview side effects still
-    /// live on `State` during this compatibility slice. The resource
-    /// is seeded at `Runtime::new` from the legacy state, so the first
-    /// frame after construction is a no-op for unchanged fields.
-    #[cfg(test)]
-    fn sync_app_editor_timeline_state(state: &mut State, world: &mut World) {
-        let (
-            duration_seconds,
-            time_seconds,
-            tap_times,
-            tap_indicator_positions,
-            selected_index,
-            tap_cursor_override,
-            preview_position,
-            preview_direction,
-            playback_playing,
-            playback_last_mode,
-            pending_seek_time_seconds,
-            seek_resync_cooldown_seconds,
-        ) = {
-            let timeline = &world.resource::<EditorTimelineRes>().0;
-            let runtime = world.resource::<EditorRuntimeRes>();
-            (
-                timeline.clock.duration_seconds,
-                timeline.clock.time_seconds,
-                timeline.taps.tap_times.clone(),
-                timeline.taps.tap_indicator_positions.clone(),
-                timeline.taps.selected_index,
-                timeline.tap_cursor_override,
-                timeline.preview.position,
-                timeline.preview.direction,
-                timeline.playback.playing,
-                runtime.0.interaction.last_mode,
-                timeline.playback.pending_seek_time_seconds,
-                timeline.playback.seek_resync_cooldown_seconds,
-            )
-        };
-        let mut tap_state_changed = false;
-        let mut selection_changed = false;
-        if state.editor_tap_times() != tap_times.as_slice()
-            || state.editor_tap_indicator_positions() != tap_indicator_positions.as_slice()
-        {
-            state.set_editor_tap_state_with_cursor_override(
-                tap_times,
-                tap_indicator_positions,
-                selected_index,
-                tap_cursor_override,
-            );
-            tap_state_changed = true;
-        }
-        if state.editor_selected_tap_index_value() != selected_index {
-            state.set_editor_selected_tap_index(selected_index);
-            selection_changed = true;
-        }
-        state.sync_editor_timeline_playback_from_app(
-            duration_seconds,
-            time_seconds,
-            preview_position,
-            preview_direction,
-            playback_playing,
-            pending_seek_time_seconds,
-            seek_resync_cooldown_seconds,
-            playback_last_mode,
-        );
-        if tap_state_changed {
-            let mut timeline = world.resource_mut::<EditorTimelineRes>();
-            timeline.0.taps.tap_times = state.editor_tap_times().to_vec();
-            timeline.0.taps.tap_indicator_positions =
-                state.editor_tap_indicator_positions().to_vec();
-            timeline.0.taps.selected_index = state.editor_selected_tap_index_value();
-            timeline.0.tap_cursor_override = None;
-        }
-        if tap_state_changed || selection_changed {
-            world.resource_mut::<EditorInputRes>().0.cursor = state.editor_cursor_position();
-        }
-    }
-
-    /// Sync the legacy `State.session` simple UI-window fields from
-    /// the App-world `SessionStateRes`. The carved-out fields
-    /// (`editor_level_name`, `editor_music_metadata`,
-    /// `editor_menu_preview_camera`,
-    /// `editor_show_metadata`, `editor_show_settings`,
-    /// `editor_settings_section`, `editor_keybind_capture_action`,
-    /// `editor_show_place_window`, `game_paused`,
-    /// `editor_creator_metadata`, `editor_sky_color`) are written to
-    /// the resource directly by their Bevy handlers in
-    /// `events::session` (and by `events::misc` /
-    /// `events::navigation`). The sync is
-    /// change-guarded so a no-op frame does not re-invoke the legacy
-    /// setters. The resource is seeded at `Runtime::new` from the
-    /// legacy state, so the first frame after construction is a no-op
-    /// for unchanged fields.
-    #[cfg(test)]
-    fn sync_app_session_state(state: &mut State, world: &mut World) {
-        {
-            let session = world.resource::<SessionStateRes>();
-            // Phase 3.22: `RenameLevel` mutates
-            // `SessionStateRes.editor_level_name` directly. The legacy
-            // setter only stores `Some(name)`, matching the message
-            // payload shape; loading/import paths still own clearing or
-            // replacing the whole editor session.
-            if state.editor_level_name().as_ref() != session.editor_level_name.as_ref()
-                && let Some(level_name) = &session.editor_level_name
-            {
-                state.set_editor_level_name(level_name.clone());
-            }
-            // Phase 3.22: `UpdateMusic` mutates
-            // `SessionStateRes.editor_music_metadata` directly. The
-            // legacy setter is a pure session-field write; audio import
-            // and waveform side effects stay on their existing legacy
-            // commands for now.
-            if state.editor_music_metadata() != &session.editor_music_metadata {
-                state.set_editor_music_metadata(session.editor_music_metadata.clone());
-            }
-            // Phase 3.25: menu-preview camera messages mutate
-            // `SessionStateRes.editor_menu_preview_camera` directly.
-            // The capture handler computes the camera pose from
-            // `EditorCameraRes`; the legacy side is now a pure metadata
-            // copy for UI/export compatibility.
-            if state.editor_menu_preview_camera() != session.editor_menu_preview_camera.as_ref() {
-                state.set_editor_menu_preview_camera(session.editor_menu_preview_camera.clone());
-            }
-            if state.editor_show_metadata() != session.editor_show_metadata {
-                state.set_editor_show_metadata(session.editor_show_metadata);
-            }
-            if state.editor_show_settings() != session.editor_show_settings {
-                state.set_editor_show_settings(session.editor_show_settings);
-            }
-            if state.editor_settings_section() != session.editor_settings_section {
-                state.set_editor_settings_section(session.editor_settings_section);
-            }
-            if state.editor_keybind_capture_action()
-                != session.editor_keybind_capture_action.as_ref()
-            {
-                state.set_editor_keybind_capture_action(
-                    session.editor_keybind_capture_action.clone(),
-                );
-            }
-            // Phase 3.12: the `TogglePlaceWindow` handler in
-            // `events::misc` mutates
-            // `SessionStateRes.editor_show_place_window` directly. The
-            // legacy setter has no side effects, so this is the simplest
-            // case in the carve-out family — pure field write with a
-            // change guard.
-            if state.editor_show_place_window() != session.editor_show_place_window {
-                state.set_editor_show_place_window(session.editor_show_place_window);
-            }
-            #[cfg(test)]
-            {
-                if state.session_state_resource().playtesting_editor != session.playtesting_editor {
-                    state.set_playtesting_editor_from_app(session.playtesting_editor);
-                }
-                if !state.game_paused_value() && session.game_paused {
-                    state.pause_game_from_playing();
-                } else if state.game_paused_value() && !session.game_paused {
-                    state.resume_game_from_pause();
-                }
-            }
-            // Phase 3.21: `UpdateCreatorMetadata` mutates
-            // `SessionStateRes.editor_creator_metadata` directly. The
-            // legacy setter is a pure session-field write, so the sync is
-            // a simple change-guarded compatibility copy until export/UI
-            // metadata reads move fully into the App world.
-            if state.editor_creator_metadata() != &session.editor_creator_metadata {
-                state.set_editor_creator_metadata(session.editor_creator_metadata.clone());
-            }
-            // Phase 3.20: `UpdateSkyColor` mutates
-            // `SessionStateRes.editor_sky_color` directly. Use the
-            // legacy setter as the compatibility point so clamping stays
-            // identical while legacy render/UI paths still read
-            // `State.session.editor_sky_color`.
-            if state.editor_sky_color() != session.editor_sky_color {
-                state.set_editor_sky_color(session.editor_sky_color);
-            }
-        }
-    }
-
     /// Queue platform input in the App world for scheduled processing.
     pub fn process_input_event(&mut self, event: eg_state::commands::InputEvent) {
         enqueue_platform_input(self.app.world_mut(), event);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eg_state::state::State;
     use eg_state::state::{
         AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
         AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
@@ -698,16 +406,44 @@ mod tests {
     };
     use eg_ui::EguiContextRes;
 
-    #[tokio::test]
-    async fn test_runtime_new() {
-        let state = State::new_test().await;
-        let runtime = Runtime::new(state);
+    fn runtime_in_phase(phase: eg_types::AppPhase) -> Runtime {
+        let mut runtime = Runtime::new_test();
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(phase);
+        runtime
+    }
+
+    fn runtime_in_playing(playtesting_editor: bool, game_paused: bool) -> Runtime {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Playing);
+        let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
+        session.playtesting_editor = playtesting_editor;
+        session.game_paused = game_paused;
+        drop(session);
+        runtime
+    }
+
+    fn runtime_in_editor(level_name: &str) -> Runtime {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_level_name = Some(level_name.to_string());
+        runtime
+    }
+
+    #[test]
+    fn test_runtime_new() {
+        let runtime = Runtime::new_test();
 
         // Verify the egui context was initialized
         let ctx = runtime.egui_context();
         assert!(ctx.pixels_per_point() > 0.0);
 
-        // Verify the state was correctly moved into the runtime
+        // Verify the fixture was installed into the App world.
         assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
     }
 
@@ -724,10 +460,9 @@ mod tests {
     /// resource that `StatePlugins` is responsible for registering.
     /// `AppPhaseRes` defaults to `AppPhase::Menu`; gameplay, editor,
     /// session, and render resources are installed by their plugins.
-    #[tokio::test]
-    async fn runtime_app_has_state_plugin_resources() {
-        let state = State::new_test().await;
-        let runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_has_state_plugin_resources() {
+        let runtime = Runtime::new_test();
 
         let world = runtime.app.world();
         assert!(
@@ -817,10 +552,9 @@ mod tests {
     /// `World::add_schedule`. Pin the schedule is reachable from
     /// the App so the future 7-1 sub-phase can move the
     /// `State::tick_state` invocation here.
-    #[tokio::test]
-    async fn runtime_app_registers_state_schedule() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_registers_state_schedule() {
+        let mut runtime = Runtime::new_test();
 
         // The schedule is named `StateSchedule` (defined in
         // `eg_state::state::sets`). Reaching it via the
@@ -838,10 +572,9 @@ mod tests {
     /// the App's World. This is the first single-source cut: gameplay
     /// resources and systems exist on the App, not only in the legacy
     /// `GameState` wrapper path.
-    #[tokio::test]
-    async fn runtime_app_registers_gameplay_schedule() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_registers_gameplay_schedule() {
+        let mut runtime = Runtime::new_test();
 
         let result = runtime
             .app
@@ -855,10 +588,9 @@ mod tests {
 
     /// `Runtime::run_app_frame` is safe to call and produces normal
     /// egui output while driving the App first.
-    #[tokio::test]
-    async fn runtime_run_app_frame_returns_output() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_run_app_frame_returns_output() {
+        let mut runtime = Runtime::new_test();
 
         let output = runtime.run_app_frame(egui::RawInput::default());
         assert!(output.pixels_per_point > 0.0);
@@ -868,10 +600,9 @@ mod tests {
     /// App's World before the frame update. This gives Bevy UI systems
     /// an App-world anchor while the compatibility renderer still owns
     /// actual egui painting.
-    #[tokio::test]
-    async fn runtime_run_app_frame_syncs_egui_context_to_app_world() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_run_app_frame_syncs_egui_context_to_app_world() {
+        let mut runtime = Runtime::new_test();
 
         assert!(
             runtime.app.world().resource::<EguiContextRes>().0.is_none(),
@@ -892,12 +623,13 @@ mod tests {
 
     /// Platform input now enters the App world; the state schedule driver
     /// drains it into resources/messages during the next frame.
-    #[tokio::test]
-    async fn runtime_process_input_event_queues_app_world_input() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-        let initial_width = runtime.state.surface_width();
-        let initial_height = runtime.state.surface_height();
+    #[test]
+    fn runtime_process_input_event_queues_app_world_input() {
+        let mut runtime = Runtime::new_test();
+        let (initial_width, initial_height) = {
+            let config = runtime.app.world().resource::<RenderConfigRes>();
+            (config.width, config.height)
+        };
         let initial_queue_len = runtime.app.world().resource::<PlatformInputQueue>().len();
 
         runtime.process_input_event(eg_state::commands::InputEvent::Resize {
@@ -914,23 +646,24 @@ mod tests {
                 height: 360
             })
         ));
-        assert_eq!(runtime.state.surface_width(), initial_width);
-        assert_eq!(runtime.state.surface_height(), initial_height);
+        let config = runtime.app.world().resource::<RenderConfigRes>();
+        assert_eq!(config.width, initial_width);
+        assert_eq!(config.height, initial_height);
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(runtime.state.surface_width(), 640);
-        assert_eq!(runtime.state.surface_height(), 360);
+        let config = runtime.app.world().resource::<RenderConfigRes>();
+        assert_eq!(config.width, 640);
+        assert_eq!(config.height, 360);
     }
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,
     /// then explicitly runs the eg-state `StateSchedule` on the App's
     /// World before syncing typed request resources and scheduled frame
     /// timing back through the remaining compatibility shell.
-    #[tokio::test]
-    async fn runtime_run_app_frame_updates_app_state_schedule() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_run_app_frame_updates_app_state_schedule() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
@@ -959,10 +692,9 @@ mod tests {
     /// Plain `app.update()` no longer drives the mirror `StateSchedule`.
     /// Runtime owns that order so command draining stays visible in one
     /// frame-driver method.
-    #[tokio::test]
-    async fn runtime_app_update_does_not_run_state_schedule_directly() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_update_does_not_run_state_schedule_directly() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
@@ -980,11 +712,15 @@ mod tests {
     /// `Runtime::run_app_frame` drains App-world messages and applies
     /// the recovered legacy command to `State` during the compatibility
     /// window. UI commands enter through this path before legacy dispatch.
-    #[tokio::test]
-    async fn runtime_run_app_frame_dispatches_app_world_commands() {
-        let mut state = State::new_test().await;
-        state.set_menu_levels_for_test(vec!["Runtime Command Test".to_string()]);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_run_app_frame_dispatches_app_world_commands() {
+        let mut runtime = Runtime::new_test();
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<MenuStateRes>()
+            .0
+            .levels = vec!["Runtime Command Test".to_string()];
 
         runtime
             .app
@@ -998,13 +734,15 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_resize_surface_request_is_consumed_by_state_schedule() {
+    #[test]
+    fn runtime_resize_surface_request_is_consumed_by_state_schedule() {
         use eg_state::events::auth::ResizeSurface;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-        let initial_size = runtime.state.current_render_size();
+        let mut runtime = Runtime::new_test();
+        let initial_size = {
+            let config = runtime.app.world().resource::<RenderConfigRes>();
+            eg_types::PhysicalSize::new(config.width, config.height)
+        };
         let new_size = eg_types::PhysicalSize::new(
             initial_size.width.saturating_add(17).max(1),
             initial_size.height.saturating_add(11).max(1),
@@ -1016,13 +754,13 @@ mod tests {
         });
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let applied_size = runtime.state.current_render_size();
+        let config = runtime.app.world().resource::<RenderConfigRes>();
         assert_eq!(
-            applied_size.width, new_size.width,
+            config.width, new_size.width,
             "StateSchedule resize system must apply App-world resize width"
         );
         assert_eq!(
-            applied_size.height, new_size.height,
+            config.height, new_size.height,
             "StateSchedule resize system must apply App-world resize height"
         );
         let resize = runtime.app.world().resource::<RenderResizeRequest>();
@@ -1032,12 +770,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_copy_latest_perf_frame_request_is_consumed_by_state_schedule() {
+    #[test]
+    fn runtime_copy_latest_perf_frame_request_is_consumed_by_state_schedule() {
         use eg_state::events::auth::CopyLatestPerfFrame;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(CopyLatestPerfFrame);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1054,12 +791,11 @@ mod tests {
     /// consumes the request into `AuthStateRes`, and Runtime mirrors
     /// that resource back to legacy `State` without a dedicated auth
     /// request sync.
-    #[tokio::test]
-    async fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
+    #[test]
+    fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
         use eg_state::events::auth::AuthSubmitSignIn;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(AuthSubmitSignIn);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1073,12 +809,11 @@ mod tests {
 
     /// `AuthSignOut` follows the same App-world auth request path as
     /// `AuthSubmitSignIn`.
-    #[tokio::test]
-    async fn runtime_carve_out_auth_sign_out_consumes_request() {
+    #[test]
+    fn runtime_carve_out_auth_sign_out_consumes_request() {
         use eg_state::events::auth::AuthSignOut;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(AuthSignOut);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1094,12 +829,11 @@ mod tests {
     /// as `AuthSubmitSignIn`. The platform open may no-op in test
     /// builds; the assertion pins that the scheduled auth system
     /// consumed the request.
-    #[tokio::test]
-    async fn runtime_carve_out_auth_open_signup_consumes_request() {
+    #[test]
+    fn runtime_carve_out_auth_open_signup_consumes_request() {
         use eg_state::events::auth::AuthOpenSignup;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(AuthOpenSignup);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1111,23 +845,16 @@ mod tests {
         );
     }
 
-    /// Auth state is App-world authoritative after `Runtime::new` seeds
-    /// `AuthStateRes`. A stale compatibility `State` value must not affect
-    /// the resource after construction.
-    #[tokio::test]
-    async fn runtime_auth_state_resource_remains_authoritative() {
-        let mut state = State::new_test().await;
-        state.set_auth_state_for_test(None, false, Some("legacy".to_string()));
-        let mut runtime = Runtime::new(state);
+    /// Auth state remains App-world authoritative after construction.
+    #[test]
+    fn runtime_auth_state_resource_remains_authoritative() {
+        let mut runtime = Runtime::new_test();
 
         {
             let mut auth = runtime.app.world_mut().resource_mut::<AuthStateRes>();
             auth.pending = true;
             auth.message = Some("app".to_string());
         }
-        runtime
-            .state
-            .set_auth_state_for_test(None, false, Some("legacy-stale".to_string()));
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -1152,13 +879,9 @@ mod tests {
 
     /// Active real gameplay quit-to-menu is applied by App resources; the
     /// runtime only consumes the one-shot audio compatibility intent.
-    #[tokio::test]
-    async fn runtime_direct_game_quit_to_menu_updates_app_phase() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_direct_game_quit_to_menu_updates_app_phase() {
+        let mut runtime = runtime_in_playing(false, false);
 
         runtime.app.world_mut().write_message(GameQuitToMenu);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1177,13 +900,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_toggle_editor_from_editor_returns_to_menu_without_request() {
+    #[test]
+    fn runtime_toggle_editor_from_editor_returns_to_menu_without_request() {
         use eg_state::events::navigation::ToggleEditor;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("ToggleEditorMenu");
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("ToggleEditorMenu");
 
         runtime.app.world_mut().write_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1202,12 +923,11 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_toggle_editor_from_menu_enters_app_owned_editor() {
+    #[test]
+    fn runtime_toggle_editor_from_menu_enters_app_owned_editor() {
         use eg_state::events::navigation::ToggleEditor;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1243,10 +963,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_from_menu_starts_app_owned_gameplay() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_from_menu_starts_app_owned_gameplay() {
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(GameTurnRight);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1274,13 +993,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_starts_unstarted_app_gameplay_without_request() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_starts_unstarted_app_gameplay_without_request() {
+        let mut runtime = runtime_in_playing(false, false);
 
         runtime
             .app
@@ -1293,14 +1008,18 @@ mod tests {
         assert!(runtime.app.world().resource::<eg_game::GameClock>().started);
     }
 
-    #[tokio::test]
-    async fn runtime_playtest_enters_app_owned_gameplay_world() {
+    #[test]
+    fn runtime_playtest_enters_app_owned_gameplay_world() {
         use eg_state::events::timeline::Playtest;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("RuntimePlaytest");
-        state.set_editor_timeline_duration_seconds(5.0);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("RuntimePlaytest");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
 
         runtime.app.world_mut().write_message(Playtest);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1337,18 +1056,13 @@ mod tests {
             player_exists,
             "Playtest must seed an App-world player entity"
         );
-        assert!(runtime.state.session_state_resource().playtesting_editor);
     }
 
     /// Real gameplay restart is applied by the App-world gameplay reset
     /// system and does not fall back to Runtime's legacy request consumer.
-    #[tokio::test]
-    async fn runtime_direct_game_restart_resets_app_gameplay() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_direct_game_restart_resets_app_gameplay() {
+        let mut runtime = runtime_in_playing(false, false);
 
         {
             let world = runtime.app.world_mut();
@@ -1382,14 +1096,19 @@ mod tests {
     /// `GameRemovePracticeCheckpoint` mutates the App-world checkpoint list
     /// directly, then uses the one-shot compatibility sync only to rebuild
     /// the legacy presentation mesh.
-    #[tokio::test]
-    async fn runtime_carve_out_game_remove_practice_checkpoint_syncs_direct_resource() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_session_practice_mode_enabled_for_test(true);
-        state.add_practice_checkpoint_for_test();
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_game_remove_practice_checkpoint_syncs_direct_resource() {
+        let mut runtime = runtime_in_playing(false, false);
+        {
+            let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
+            session.practice_mode_enabled = true;
+            session
+                .practice_checkpoints
+                .push(eg_state::state::PracticeCheckpoint {
+                    gameplay: eg_game::GameState::new().checkpoint_state(),
+                    trigger_base_objects: None,
+                });
+        }
 
         runtime
             .app
@@ -1419,10 +1138,9 @@ mod tests {
 
     /// `Runtime` keeps App-world setup from mutating legacy State before
     /// the frame driver explicitly applies queued commands.
-    #[tokio::test]
-    async fn runtime_app_world_setup_does_not_mutate_state() {
-        let state = State::new_test().await;
-        let runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_world_setup_does_not_mutate_state() {
+        let runtime = Runtime::new_test();
 
         // The App's World has the plugin resources.
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
@@ -1434,10 +1152,9 @@ mod tests {
     }
 
     /// The production frame path advances the App-world gameplay entities.
-    #[tokio::test]
-    async fn runtime_gameplay_schedule_owns_active_player_motion() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_gameplay_schedule_owns_active_player_motion() {
+        let mut runtime = Runtime::new_test();
 
         {
             let world = runtime.app.world_mut();
@@ -1483,13 +1200,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_completed_real_gameplay_returns_to_app_menu() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_completed_real_gameplay_returns_to_app_menu() {
+        let mut runtime = runtime_in_playing(false, false);
 
         {
             let world = runtime.app.world_mut();
@@ -1524,13 +1237,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_game_over_side_effects_are_app_owned() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_game_over_side_effects_are_app_owned() {
+        let mut runtime = runtime_in_playing(false, false);
 
         {
             let world = runtime.app.world_mut();
@@ -1564,13 +1273,9 @@ mod tests {
         assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
     }
 
-    #[tokio::test]
-    async fn runtime_game_over_practice_respawn_is_app_owned() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_game_over_practice_respawn_is_app_owned() {
+        let mut runtime = runtime_in_playing(false, false);
 
         let checkpoint =
             eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
@@ -1615,14 +1320,18 @@ mod tests {
         assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
     }
 
-    #[tokio::test]
-    async fn runtime_completed_playtest_returns_to_app_editor() {
+    #[test]
+    fn runtime_completed_playtest_returns_to_app_editor() {
         use eg_state::events::timeline::Playtest;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("RuntimePlaytestComplete");
-        state.set_editor_timeline_duration_seconds(5.0);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("RuntimePlaytestComplete");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
 
         runtime.app.world_mut().write_message(Playtest);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1658,10 +1367,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_active_turn_right_is_consumed_by_app_gameplay() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_active_turn_right_is_consumed_by_app_gameplay() {
+        let mut runtime = Runtime::new_test();
 
         {
             let world = runtime.app.world_mut();
@@ -1702,13 +1410,12 @@ mod tests {
 
     use eg_state::events::snap::{SetSnapStep, SetSnapToGrid};
 
-    #[tokio::test]
-    async fn runtime_config_messages_mutate_authoritative_app_resources() {
+    #[test]
+    fn runtime_config_messages_mutate_authoritative_app_resources() {
         use eg_blocks::BlockId;
         use eg_state::events::editor_mode::SetBlockId;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
         let selected = BlockId::new("core/lava");
 
         runtime.app.world_mut().write_message(SetSnapToGrid(false));
@@ -1746,12 +1453,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_seeded_editor_config_survives_no_op_frame() {
-        let mut state = State::new_test().await;
-        state.set_editor_snap_to_grid(false);
-        state.set_editor_snap_step(0.25);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_seeded_editor_config_survives_no_op_frame() {
+        let mut runtime = Runtime::new_test();
+        {
+            let mut config = runtime.app.world_mut().resource_mut::<EditorConfigRes>();
+            config.0.snap_to_grid = false;
+            config.0.snap_step = 0.25;
+        }
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -1759,13 +1468,16 @@ mod tests {
         assert!(!config.snap_to_grid);
         assert_eq!(config.snap_step, 0.25);
     }
-    #[tokio::test]
-    async fn runtime_carve_out_block_copy_and_remove_propagate_to_legacy_state() {
+    #[test]
+    fn runtime_carve_out_block_copy_and_remove_propagate_to_legacy_state() {
         use eg_state::events::block::{CopyBlock, RemoveBlock};
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("BlockRuntimeCarveOut");
-        state.set_editor_objects_from_app(vec![
+        let mut runtime = runtime_in_editor("BlockRuntimeCarveOut");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![
             eg_types::LevelObject {
                 id: "removed".to_string(),
                 position: [0.0, 0.0, 0.0],
@@ -1776,9 +1488,13 @@ mod tests {
                 position: [2.0, 0.0, 0.0],
                 ..eg_types::LevelObject::default()
             },
-        ]);
-        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
-        let mut runtime = Runtime::new(state);
+        ];
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.hovered_block_index = Some(0);
+        }
 
         runtime.app.world_mut().write_message(CopyBlock);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1829,21 +1545,38 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_add_transform_trigger_propagates_to_legacy_state() {
+    #[test]
+    fn runtime_add_transform_trigger_mutates_app_resources() {
         use eg_state::events::selection::AddTransformTrigger;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("SelectionRuntimeCarveOut");
-        state.set_editor_show_place_window(true);
-        state.set_editor_timeline_time_seconds(2.5);
-        state.set_editor_objects_from_app(vec![eg_types::LevelObject {
+        let mut runtime = runtime_in_editor("SelectionRuntimeCarveOut");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 2.5;
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![eg_types::LevelObject {
             id: "object_0".to_string(),
             position: [0.0, 0.0, 0.0],
             ..eg_types::LevelObject::default()
-        }]);
-        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
-        let mut runtime = Runtime::new(state);
+        }];
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.hovered_block_index = Some(0);
+        }
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_show_place_window = true;
 
         runtime.app.world_mut().write_message(AddTransformTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1880,8 +1613,12 @@ mod tests {
             }
         );
         assert!(
-            !runtime.state.editor_show_place_window(),
-            "selection handler must sync the App-world place-window close to legacy State"
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .editor_show_place_window,
+            "selection handler must close the App-owned place window"
         );
         assert_eq!(
             runtime
@@ -1895,15 +1632,25 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_add_camera_trigger_propagates_to_legacy_state() {
+    #[test]
+    fn runtime_carve_out_add_camera_trigger_propagates_to_legacy_state() {
         use eg_state::events::camera::AddCameraTrigger;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("CameraTriggerRuntimeCarveOut");
-        state.set_editor_timeline_time_seconds(2.5);
-        state.set_editor_camera_pose_for_test([12.0, -7.0], 4.5, 0.9, 0.3);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("CameraTriggerRuntimeCarveOut");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .clock
+            .time_seconds = 2.5;
+        {
+            let mut camera = runtime.app.world_mut().resource_mut::<EditorCameraRes>();
+            camera.0.editor_pan = [12.0, -7.0];
+            camera.0.editor_target_z = 4.5;
+            camera.0.editor_yaw = 0.9;
+            camera.0.editor_pitch = 0.3;
+        }
 
         runtime.app.world_mut().write_message(AddCameraTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1945,14 +1692,22 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_snap_selection_to_grid_propagates_block_snap() {
+    #[test]
+    fn runtime_carve_out_snap_selection_to_grid_propagates_block_snap() {
         use eg_state::events::selection::SnapSelectionToGrid;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("SelectionSnapBlocks");
-        state.set_editor_snap_step(1.0);
-        state.set_editor_objects_from_app(vec![
+        let mut runtime = runtime_in_editor("SelectionSnapBlocks");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorConfigRes>()
+            .0
+            .snap_step = 1.0;
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![
             eg_types::LevelObject {
                 id: "first".to_string(),
                 position: [0.2, 0.0, 0.7],
@@ -1963,9 +1718,13 @@ mod tests {
                 position: [3.1, 0.0, 3.6],
                 ..eg_types::LevelObject::default()
             },
-        ]);
-        state.set_editor_block_selection_from_app(Some(0), vec![0, 1], Some(0));
-        let mut runtime = Runtime::new(state);
+        ];
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0, 1];
+            input.0.hovered_block_index = Some(0);
+        }
 
         runtime.app.world_mut().write_message(SnapSelectionToGrid);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1992,35 +1751,43 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_snap_selection_to_grid_propagates_tap_snap() {
+    #[test]
+    fn runtime_carve_out_snap_selection_to_grid_propagates_tap_snap() {
         use eg_state::events::selection::SnapSelectionToGrid;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("SelectionSnapTap");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_snap_step(1.0);
-        state.set_editor_timeline_duration_seconds(8.0);
-        state.set_editor_timeline_time_seconds(1.5);
-        state.set_editor_tap_state_for_test(
-            vec![0.5, 1.5],
-            vec![[0.0, 0.0, 0.0], [1.2, 0.0, 1.7]],
-            Some(1),
-        );
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("SelectionSnapTap");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .mode = eg_types::EditorMode::Tapping;
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorConfigRes>()
+            .0
+            .snap_step = 1.0;
+        {
+            let mut timeline = runtime.app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 8.0;
+            timeline.0.clock.time_seconds = 1.5;
+            timeline.0.taps.tap_times = vec![0.5, 1.5];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.2, 0.0, 1.7]];
+            timeline.0.taps.selected_index = Some(1);
+        }
 
         runtime.app.world_mut().write_message(SnapSelectionToGrid);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let selected_index = runtime
-            .state
-            .editor_selected_tap_index_value()
+            .app
+            .world()
+            .resource::<EditorTimelineRes>()
+            .0
+            .taps
+            .selected_index
             .expect("selected tap after snap");
-        assert_eq!(
-            runtime.state.editor_tap_indicator_positions()[selected_index],
-            [1.0, 0.0, 2.0],
-            "legacy refresh must preserve the snapped tap indicator"
-        );
         assert_eq!(
             runtime
                 .app
@@ -2030,28 +1797,35 @@ mod tests {
                 .taps
                 .tap_indicator_positions[selected_index],
             [1.0, 0.0, 2.0],
-            "runtime sync must copy the snapped indicator back into the App world"
+            "the authoritative timeline must preserve the snapped tap indicator"
         );
         assert_eq!(
             runtime.app.world().resource::<EditorInputRes>().0.cursor,
             [1.0, 0.0, 2.0],
-            "runtime sync must keep the App cursor on the snapped selected tap"
+            "the App cursor must remain on the snapped selected tap"
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_focus_camera_target_propagates_to_legacy_state() {
+    #[test]
+    fn runtime_carve_out_focus_camera_target_propagates_to_legacy_state() {
         use eg_state::events::selection::FocusCameraTarget;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("SelectionFocusCamera");
-        state.set_editor_objects_from_app(vec![eg_types::LevelObject {
+        let mut runtime = runtime_in_editor("SelectionFocusCamera");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![eg_types::LevelObject {
             position: [10.0, 2.0, 30.0],
             size: [2.0, 4.0, 6.0],
             ..eg_types::LevelObject::default()
-        }]);
-        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
-        let mut runtime = Runtime::new(state);
+        }];
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.hovered_block_index = Some(0);
+        }
 
         runtime.app.world_mut().write_message(FocusCameraTarget);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -2071,10 +1845,9 @@ mod tests {
     /// `EditorTimingRes.0.bpm_tap_times`, and the per-frame sync
     /// propagates the value to the legacy `State.editor.timing`
     /// fields.
-    #[tokio::test]
-    async fn runtime_carve_out_bpm_tap_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_bpm_tap_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         // Reset to a known empty state for the assertion.
         runtime
@@ -2126,10 +1899,9 @@ mod tests {
     /// `BpmTapReset` is a carve-out: writing the message clears the
     /// resource's tap history and the sync propagates the cleared
     /// list to the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_bpm_tap_reset_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_bpm_tap_reset_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         // Pre-populate both sides with a fake tap history.
         let mut res = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
@@ -2186,10 +1958,9 @@ mod tests {
     /// No-op frame: when no `BpmTap`/`BpmTapReset` message is
     /// written and the resource matches the legacy state, the
     /// sync must not re-invoke the legacy setter.
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_bpm_tap() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_no_op_frame_does_not_resync_bpm_tap() {
+        let mut runtime = Runtime::new_test();
 
         // Seed both sides with a known tap history.
         let times = vec![1.0_f64, 2.0, 3.0];
@@ -2248,9 +2019,9 @@ mod tests {
     /// does not clobber an in-flight tap history on the first
     /// frame. Same pattern as the snap / block-id first-frame
     /// clobber regressions.
-    #[tokio::test]
-    async fn runtime_seeds_editor_timing_res_from_legacy_state_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn runtime_seeds_editor_timing_res_from_legacy_state_no_first_frame_clobber() {
+        let mut runtime = Runtime::new_test();
         // User-driven tap history + computed result. The default
         // resource is empty (`bpm_tap_times = []`,
         // `bpm_tap_result = None`); without seeding, the change-
@@ -2258,9 +2029,11 @@ mod tests {
         // back to defaults on the first frame.
         let times = vec![10.0_f64, 11.0, 12.0];
         let result = Some(60.0_f32);
-        state.set_editor_bpm_tap_state(times.clone(), result);
-
-        let mut runtime = Runtime::new(state);
+        {
+            let mut timing = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
+            timing.0.bpm_tap_times = times.clone();
+            timing.0.bpm_tap_result = result;
+        }
 
         // Seeding: the resource must reflect the legacy user value,
         // not the `EditorTimingState` default.
@@ -2313,1030 +2086,61 @@ mod tests {
         );
     }
 
-    // --- Phase 3.8 / Session carve-out tests ---
-    //
-    // The session event handlers in `eg_state::events::session`
-    // write directly to `SessionStateRes.editor_level_name`,
-    // `editor_music_metadata`, `editor_menu_preview_camera`,
-    // `editor_show_metadata`,
-    // `editor_show_settings`, `editor_settings_section`,
-    // `editor_keybind_capture_action`, and
-    // `app_settings.ui_scale_multiplier` / `keybinds`,
-    // `editor_creator_metadata`, and `editor_sky_color`.
-    // `Runtime::run_app_frame` then calls `sync_app_session_state`
-    // to copy the resource to the legacy `State.session` fields
-    // before any dispatch.
+    // --- App-owned session resource tests ---
 
-    use eg_state::events::session::{
-        CaptureMenuPreviewCamera, ClearKeybindSlot, RenameLevel, ResetKeybind, ResetKeybinds,
-        SetGraphicsBackend, SetKeybind, SetKeybindCapture, SetSettingsSection, SetShowMetadata,
-        SetShowSettings, SetUiScaleMultiplier, ToggleSettings, UpdateCreatorMetadata, UpdateMusic,
-        UpdateSkyColor, UseAutoMenuPreviewCamera,
-    };
-    use eg_types::{
-        BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
-        SettingsSection, default_essential_keybinds,
-    };
+    use eg_state::events::session::{RenameLevel, SetShowMetadata, UpdateSkyColor};
 
-    #[tokio::test]
-    async fn runtime_carve_out_rename_level_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_level_name("BeforeRename".to_string());
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_session_messages_mutate_authoritative_app_resource() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
             .world_mut()
-            .write_message(RenameLevel("AfterRename".to_string()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_level_name
-                .as_deref(),
-            Some("AfterRename"),
-            "RenameLevel handler must mutate SessionStateRes.editor_level_name"
-        );
-        assert_eq!(
-            runtime.state.editor_level_name().as_deref(),
-            Some("AfterRename"),
-            "sync_app_session_state must propagate editor_level_name to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_update_music_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_music_metadata(MusicMetadata::default());
-        let mut runtime = Runtime::new(state);
-        let metadata = MusicMetadata {
-            title: Some("Runtime Track".to_string()),
-            author: Some("App World".to_string()),
-        };
-
+            .write_message(RenameLevel("AppSession".to_string()));
+        runtime.app.world_mut().write_message(SetShowMetadata(true));
         runtime
             .app
             .world_mut()
-            .write_message(UpdateMusic(metadata.clone()));
+            .write_message(UpdateSkyColor([2.0, -1.0, 0.5]));
+
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            &runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_music_metadata,
-            &metadata,
-            "UpdateMusic handler must mutate SessionStateRes.editor_music_metadata"
-        );
-        assert_eq!(
-            runtime.state.editor_music_metadata(),
-            &metadata,
-            "sync_app_session_state must propagate editor_music_metadata to legacy state"
-        );
+        let session = runtime.app.world().resource::<SessionStateRes>();
+        assert_eq!(session.editor_level_name.as_deref(), Some("AppSession"));
+        assert!(session.editor_show_metadata);
+        assert_eq!(session.editor_sky_color, [1.0, 0.0, 0.5]);
+
+        let _ = runtime.run_app_frame(egui::RawInput::default());
+
+        let session = runtime.app.world().resource::<SessionStateRes>();
+        assert_eq!(session.editor_level_name.as_deref(), Some("AppSession"));
+        assert!(session.editor_show_metadata);
+        assert_eq!(session.editor_sky_color, [1.0, 0.0, 0.5]);
     }
 
-    #[tokio::test]
-    async fn runtime_name_and_music_resource_is_not_clobbered_by_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_level_name("LegacyName".to_string());
-        let metadata = MusicMetadata {
-            title: Some("Legacy Track".to_string()),
-            author: Some("Legacy Artist".to_string()),
-        };
-        state.set_editor_music_metadata(metadata.clone());
-        let mut runtime = Runtime::new(state);
-
+    #[test]
+    fn runtime_seeds_session_resource_once_without_frame_mirror() {
+        let mut runtime = Runtime::new_test();
         {
             let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
-            session.editor_level_name = Some("StaleName".to_string());
-            session.editor_music_metadata = MusicMetadata::default();
+            session.editor_level_name = Some("SeededSession".to_string());
+            session.editor_show_metadata = true;
+            session.editor_sky_color = [0.25, 0.5, 0.75];
         }
 
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime.state.editor_level_name().as_deref(),
-            Some("StaleName")
-        );
-        assert_eq!(
-            runtime.state.editor_music_metadata(),
-            &MusicMetadata::default()
-        );
         let session = runtime.app.world().resource::<SessionStateRes>();
-        assert_eq!(session.editor_level_name.as_deref(), Some("StaleName"));
-        assert_eq!(
-            &session.editor_music_metadata,
-            &MusicMetadata::default(),
-            "stale legacy name/music must not clobber SessionStateRes"
-        );
-    }
+        assert_eq!(session.editor_level_name.as_deref(), Some("SeededSession"));
+        assert!(session.editor_show_metadata);
+        assert_eq!(session.editor_sky_color, [0.25, 0.5, 0.75]);
 
-    /// Writing a `SetShowMetadata(true)` message reaches the App
-    /// world, mutates `SessionStateRes.editor_show_metadata`, and
-    /// the per-frame sync propagates the value to the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_set_show_metadata_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        // Reset the resource to a known value so we can detect the
-        // mutation. The seeded value reflects the legacy state's
-        // default (`editor_show_metadata = false`).
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_show_metadata = false;
-
-        runtime.app.world_mut().write_message(SetShowMetadata(true));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_show_metadata,
-            "SetShowMetadata handler must mutate SessionStateRes.editor_show_metadata"
-        );
-        assert!(
-            runtime.state.editor_show_metadata(),
-            "sync_app_session_state must propagate editor_show_metadata to legacy state"
-        );
-    }
-
-    /// `SetShowSettings` carve-out: same pattern as
-    /// `SetShowMetadata`.
-    #[tokio::test]
-    async fn runtime_carve_out_set_show_settings_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_show_settings = false;
-        runtime.state.set_editor_show_settings(false);
-
-        runtime.app.world_mut().write_message(SetShowSettings(true));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(runtime.state.editor_show_settings());
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_show_settings
-        );
-    }
-
-    /// `ToggleSettings` flips the resource value; the sync
-    /// propagates the new value to the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_toggle_settings_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        let initial = runtime
-            .app
-            .world()
-            .resource::<SessionStateRes>()
-            .editor_show_settings;
-        runtime.state.set_editor_show_settings(initial);
-
-        runtime.app.world_mut().write_message(ToggleSettings);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let expected = !initial;
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_show_settings,
-            expected,
-            "ToggleSettings must flip SessionStateRes.editor_show_settings"
-        );
-        assert_eq!(
-            runtime.state.editor_show_settings(),
-            expected,
-            "sync_app_session_state must propagate toggled editor_show_settings to legacy state"
-        );
-    }
-
-    /// `SetSettingsSection` propagates a non-default `SettingsSection`
-    /// value to the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_set_settings_section_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_settings_section = SettingsSection::Backends;
-        runtime
-            .state
-            .set_editor_settings_section(SettingsSection::Backends);
-
-        let new_section = SettingsSection::Keybinds;
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetSettingsSection(new_section));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_settings_section,
-            new_section
-        );
-        assert_eq!(runtime.state.editor_settings_section(), new_section);
-    }
-
-    /// `SetKeybindCapture` propagates a `Some((String, usize))` to
-    /// the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_set_keybind_capture_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_keybind_capture_action = None;
-        runtime.state.set_editor_keybind_capture_action(None);
-
-        let capture = Some(("editor.place".to_string(), 0));
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetKeybindCapture(capture.clone()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_keybind_capture_action,
-            capture
-        );
-        assert_eq!(
-            runtime.state.editor_keybind_capture_action(),
-            Some(&("editor.place".to_string(), 0))
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_set_ui_scale_multiplier_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_ui_scale_multiplier(1.0);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetUiScaleMultiplier(8.0));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .ui_scale_multiplier,
-            3.0,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_set_graphics_backend_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_preferred_graphics_backend("Auto".to_string());
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetGraphicsBackend("ManualBackend".to_string()));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let session = runtime.app.world().resource::<SessionStateRes>();
-        assert_eq!(session.app_settings.graphics_backend, "ManualBackend");
-        assert!(
-            session.settings_restart_required,
-            "SetGraphicsBackend handler must mark restart required in SessionStateRes"
-        );
+        assert_eq!(session.editor_level_name.as_deref(), Some("SeededSession"));
+        assert!(session.editor_show_metadata);
+        assert_eq!(session.editor_sky_color, [0.25, 0.5, 0.75]);
     }
-
-    #[tokio::test]
-    async fn runtime_set_graphics_backend_respects_app_lock() {
-        let mut state = State::new_test().await;
-        state.set_preferred_graphics_backend("LockedBackend".to_string());
-        state.set_graphics_backend_locked_for_test(true);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetGraphicsBackend("IgnoredBackend".to_string()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let session = runtime.app.world().resource::<SessionStateRes>();
-        assert_eq!(session.app_settings.graphics_backend, "LockedBackend");
-    }
-
-    #[tokio::test]
-    async fn runtime_set_keybind_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_keybind_for_action(
-            "copy".to_string(),
-            0,
-            KeyChord::new("c", true, false, false),
-        );
-        let mut runtime = Runtime::new(state);
-        let chord = KeyChord::new("k", true, false, false);
-
-        runtime.app.world_mut().write_message(SetKeybind {
-            action: "copy".to_string(),
-            slot: 0,
-            chord: chord.clone(),
-        });
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let session = runtime.app.world().resource::<SessionStateRes>();
-        assert!(
-            session
-                .app_settings
-                .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == chord),
-            "SetKeybind handler must mutate SessionStateRes.app_settings.keybinds"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_clear_keybind_slot_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_keybind_for_action(
-            "copy".to_string(),
-            0,
-            KeyChord::new("k", true, false, false),
-        );
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(ClearKeybindSlot {
-            action: "copy".to_string(),
-            slot: 0,
-        });
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .keybinds_for_action("copy")
-                .is_empty(),
-            "ClearKeybindSlot handler must mutate SessionStateRes.app_settings.keybinds"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_reset_keybind_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_keybind_for_action(
-            "copy".to_string(),
-            0,
-            KeyChord::new("k", true, false, false),
-        );
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(ResetKeybind("copy".to_string()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let expected_defaults: Vec<_> = default_essential_keybinds()
-            .into_iter()
-            .filter(|binding| binding.action == "copy")
-            .collect();
-        let resource_actual: Vec<_> = runtime
-            .app
-            .world()
-            .resource::<SessionStateRes>()
-            .app_settings
-            .keybinds
-            .iter()
-            .filter(|binding| binding.action == "copy")
-            .cloned()
-            .collect();
-        assert_eq!(resource_actual, expected_defaults);
-    }
-
-    #[tokio::test]
-    async fn runtime_reset_keybinds_updates_app_resource() {
-        let mut state = State::new_test().await;
-        state.set_keybind_for_action(
-            "copy".to_string(),
-            0,
-            KeyChord::new("k", true, false, false),
-        );
-        let custom = KeybindBinding {
-            action: "custom.action".to_string(),
-            chord: KeyChord::new("x", false, false, false),
-        };
-        let mut custom_keybinds = state.app_settings().keybinds.clone();
-        custom_keybinds.push(custom.clone());
-        state.set_app_settings_keybinds(custom_keybinds);
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(ResetKeybinds);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let session = runtime.app.world().resource::<SessionStateRes>();
-        assert!(session.app_settings.keybinds.contains(&custom));
-        for default_binding in default_essential_keybinds() {
-            assert!(session.app_settings.keybinds.contains(&default_binding));
-        }
-    }
-
-    #[tokio::test]
-    async fn runtime_app_keybinds_remain_authoritative_without_legacy_sync() {
-        let mut state = State::new_test().await;
-        let chord = KeyChord::new("k", true, false, false);
-        state.set_keybind_for_action("copy".to_string(), 0, chord.clone());
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .app_settings
-            .keybinds
-            .clear();
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(
-            runtime
-                .state
-                .app_settings()
-                .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == chord),
-            "legacy bootstrap settings must remain untouched after construction"
-        );
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .keybinds_for_action("copy")
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_app_graphics_backend_remains_authoritative_without_legacy_sync() {
-        let mut state = State::new_test().await;
-        state.set_preferred_graphics_backend("LegacyBackend".to_string());
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .app_settings
-            .graphics_backend = "AppBackend".to_string();
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime.state.app_settings().graphics_backend,
-            "LegacyBackend",
-            "legacy bootstrap settings must remain untouched after construction"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .graphics_backend,
-            "AppBackend",
-            "App-owned graphics backend must not be overwritten by legacy State"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_app_ui_scale_remains_authoritative_without_legacy_sync() {
-        let mut state = State::new_test().await;
-        state.set_ui_scale_multiplier(1.75);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .app_settings
-            .ui_scale_multiplier = 1.0;
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime.state.app_settings().ui_scale_multiplier,
-            1.75,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .ui_scale_multiplier,
-            1.0,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_update_creator_metadata_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_creator_metadata(BasicLevelMetadata::default());
-        let mut runtime = Runtime::new(state);
-        let metadata = BasicLevelMetadata {
-            name: "Runtime Metadata".to_string(),
-            creator: Some("codex".to_string()),
-            description: Some("direct session metadata".to_string()),
-            stars: 7.5,
-            tags: vec!["ecs".to_string(), "session".to_string()],
-        };
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(UpdateCreatorMetadata(metadata.clone()));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            &runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_creator_metadata,
-            &metadata,
-            "UpdateCreatorMetadata handler must mutate SessionStateRes.editor_creator_metadata"
-        );
-        assert_eq!(
-            runtime.state.editor_creator_metadata(),
-            &metadata,
-            "sync_app_session_state must propagate editor_creator_metadata to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_creator_metadata_resource_is_not_clobbered_by_legacy_state() {
-        let mut state = State::new_test().await;
-        let metadata = BasicLevelMetadata {
-            name: "Legacy Metadata".to_string(),
-            creator: Some("legacy".to_string()),
-            description: Some("survives stale app resource".to_string()),
-            stars: 5.5,
-            tags: vec!["legacy".to_string()],
-        };
-        state.set_editor_creator_metadata(metadata.clone());
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_creator_metadata = BasicLevelMetadata::default();
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime.state.editor_creator_metadata(),
-            &BasicLevelMetadata::default()
-        );
-        assert_eq!(
-            &runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_creator_metadata,
-            &BasicLevelMetadata::default(),
-            "stale legacy creator metadata must not clobber SessionStateRes"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_update_sky_color_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_sky_color([0.0, 0.0, 0.0]);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(UpdateSkyColor([-1.0, 0.5, 2.0]));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_sky_color,
-            [0.0, 0.5, 1.0],
-            "UpdateSkyColor handler must clamp and mutate SessionStateRes.editor_sky_color"
-        );
-        assert_eq!(
-            runtime.state.editor_sky_color(),
-            [0.0, 0.5, 1.0],
-            "sync_app_session_state must propagate editor_sky_color to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_sky_color_resource_is_not_clobbered_by_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_editor_sky_color([0.25, 0.5, 0.75]);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_sky_color = [0.0, 0.0, 0.0];
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(runtime.state.editor_sky_color(), [0.0, 0.0, 0.0]);
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_sky_color,
-            [0.0, 0.0, 0.0],
-            "stale legacy sky color must not clobber SessionStateRes"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_capture_menu_preview_camera_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("PreviewCameraCapture");
-        state.set_editor_camera_pose_for_test(
-            [2.0, -4.0],
-            3.0,
-            30.0f32.to_radians(),
-            40.0f32.to_radians(),
-        );
-        let mut runtime = Runtime::new(state);
-        let expected = {
-            let camera = &runtime
-                .app
-                .world()
-                .resource::<eg_state::state::EditorCameraRes>()
-                .0;
-            let target = camera.editor_camera_target();
-            LevelPreviewCameraMetadata {
-                position: (target + camera.editor_camera_offset()).to_array(),
-                target: target.to_array(),
-            }
-        };
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(CaptureMenuPreviewCamera);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_menu_preview_camera,
-            Some(expected.clone()),
-            "CaptureMenuPreviewCamera handler must mutate SessionStateRes.editor_menu_preview_camera"
-        );
-        assert_eq!(
-            runtime.state.editor_menu_preview_camera(),
-            Some(&expected),
-            "sync_app_session_state must propagate menu preview camera to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_use_auto_menu_preview_camera_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("PreviewCameraClear");
-        state.set_editor_menu_preview_camera(Some(LevelPreviewCameraMetadata {
-            position: [9.0, 8.0, 7.0],
-            target: [6.0, 5.0, 4.0],
-        }));
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(UseAutoMenuPreviewCamera);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_menu_preview_camera,
-            None,
-            "UseAutoMenuPreviewCamera handler must clear SessionStateRes.editor_menu_preview_camera"
-        );
-        assert_eq!(
-            runtime.state.editor_menu_preview_camera(),
-            None,
-            "sync_app_session_state must propagate cleared menu preview camera to legacy state"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_menu_preview_camera_resource_is_not_clobbered_by_legacy_state() {
-        let mut state = State::new_test().await;
-        let manual = LevelPreviewCameraMetadata {
-            position: [9.0, 8.0, 7.0],
-            target: [6.0, 5.0, 4.0],
-        };
-        state.set_editor_menu_preview_camera(Some(manual.clone()));
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_menu_preview_camera = None;
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(runtime.state.editor_menu_preview_camera(), None);
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_menu_preview_camera,
-            None,
-            "stale legacy menu preview camera must not clobber SessionStateRes"
-        );
-    }
-
-    /// Regression: `SessionStateRes` (carved-out fields) must be
-    /// seeded from the legacy `State` at `Runtime::new` so the
-    /// change-guarded session sync does not clobber a user-driven
-    /// UI-window state on the first frame.
-    #[tokio::test]
-    async fn runtime_seeds_session_state_res_from_legacy_state_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
-        // User-driven UI-window state. The default resource has
-        // `editor_show_metadata = false`, `editor_show_settings =
-        // false`, `editor_settings_section = Backends`,
-        // `editor_keybind_capture_action = None`. We flip one of
-        // them to a non-default value so the first-frame sync
-        // would clobber it without the seeding fix.
-        state.set_editor_show_metadata(true);
-        state.set_editor_show_settings(true);
-        state.set_editor_settings_section(SettingsSection::Keybinds);
-        state.set_editor_keybind_capture_action(Some(("editor.place".into(), 0)));
-        state.set_ui_scale_multiplier(1.75);
-        state.set_preferred_graphics_backend("SeededBackend".to_string());
-        let seeded_chord = KeyChord::new("k", true, false, false);
-        state.set_keybind_for_action("copy".to_string(), 0, seeded_chord.clone());
-        state.set_editor_level_name("SeededLevel".to_string());
-        let music_metadata = MusicMetadata {
-            title: Some("Seeded Track".to_string()),
-            author: Some("Seeded Artist".to_string()),
-        };
-        state.set_editor_music_metadata(music_metadata.clone());
-        let creator_metadata = BasicLevelMetadata {
-            name: "Seeded Metadata".to_string(),
-            creator: Some("seed".to_string()),
-            description: Some("session resource seed".to_string()),
-            stars: 8.0,
-            tags: vec!["seed".to_string(), "session".to_string()],
-        };
-        state.set_editor_creator_metadata(creator_metadata.clone());
-        state.set_editor_sky_color([0.25, 0.5, 0.75]);
-        let menu_preview_camera = LevelPreviewCameraMetadata {
-            position: [9.0, 8.0, 7.0],
-            target: [6.0, 5.0, 4.0],
-        };
-        state.set_editor_menu_preview_camera(Some(menu_preview_camera.clone()));
-
-        let mut runtime = Runtime::new(state);
-
-        // Seeding: the resource must reflect the legacy user
-        // values, not the `SessionStateRes` default.
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_show_metadata,
-            "SessionStateRes.editor_show_metadata must be seeded from legacy State"
-        );
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_show_settings,
-            "SessionStateRes.editor_show_settings must be seeded from legacy State"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_settings_section,
-            SettingsSection::Keybinds,
-            "SessionStateRes.editor_settings_section must be seeded from legacy State"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_keybind_capture_action,
-            Some(("editor.place".to_string(), 0))
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .ui_scale_multiplier,
-            1.75,
-            epsilon = 1e-6
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_sky_color,
-            [0.25, 0.5, 0.75],
-            "SessionStateRes.editor_sky_color must be seeded from legacy State"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_menu_preview_camera,
-            Some(menu_preview_camera.clone()),
-            "SessionStateRes.editor_menu_preview_camera must be seeded from legacy State"
-        );
-        assert_eq!(
-            &runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_creator_metadata,
-            &creator_metadata,
-            "SessionStateRes.editor_creator_metadata must be seeded from legacy State"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_level_name
-                .as_deref(),
-            Some("SeededLevel"),
-            "SessionStateRes.editor_level_name must be seeded from legacy State"
-        );
-        assert_eq!(
-            &runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .editor_music_metadata,
-            &music_metadata,
-            "SessionStateRes.editor_music_metadata must be seeded from legacy State"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .graphics_backend,
-            "SeededBackend",
-            "SessionStateRes.app_settings.graphics_backend must be seeded from legacy State"
-        );
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .settings_restart_required,
-            "SessionStateRes.settings_restart_required must be seeded from legacy State"
-        );
-        assert!(
-            runtime
-                .app
-                .world()
-                .resource::<SessionStateRes>()
-                .app_settings
-                .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == seeded_chord),
-            "SessionStateRes.app_settings.keybinds must be seeded from legacy State"
-        );
-
-        // Run a frame with no session message. The change-guarded
-        // sync must see no diff and must NOT invoke the legacy
-        // setters, so the user values survive the first frame.
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert!(runtime.state.editor_show_metadata());
-        assert!(runtime.state.editor_show_settings());
-        assert_eq!(
-            runtime.state.editor_settings_section(),
-            SettingsSection::Keybinds
-        );
-        assert_eq!(
-            runtime.state.editor_keybind_capture_action(),
-            Some(&("editor.place".to_string(), 0))
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.app_settings().ui_scale_multiplier,
-            1.75,
-            epsilon = 1e-6
-        );
-        assert_eq!(
-            runtime.state.editor_sky_color(),
-            [0.25, 0.5, 0.75],
-            "first-frame sync must not clobber user editor_sky_color"
-        );
-        assert_eq!(
-            runtime.state.editor_menu_preview_camera(),
-            Some(&menu_preview_camera),
-            "first-frame sync must not clobber user editor_menu_preview_camera"
-        );
-        assert_eq!(
-            runtime.state.editor_creator_metadata(),
-            &creator_metadata,
-            "first-frame sync must not clobber user editor_creator_metadata"
-        );
-        assert_eq!(
-            runtime.state.editor_level_name().as_deref(),
-            Some("SeededLevel"),
-            "first-frame sync must not clobber user editor_level_name"
-        );
-        assert_eq!(
-            runtime.state.editor_music_metadata(),
-            &music_metadata,
-            "first-frame sync must not clobber user editor_music_metadata"
-        );
-        assert_eq!(
-            runtime.state.app_settings().graphics_backend,
-            "SeededBackend",
-            "first-frame sync must not clobber user graphics_backend"
-        );
-        assert!(
-            runtime
-                .state
-                .app_settings()
-                .keybinds_for_action("copy")
-                .iter()
-                .any(|candidate| **candidate == seeded_chord),
-            "first-frame sync must not clobber user keybinds"
-        );
-    }
-
     // ---- Phase 3.9 timing carve-out tests ----
     //
     // All 6 `events::timing::*` messages are carve-outs that mutate
@@ -3352,13 +2156,12 @@ mod tests {
     /// `AddTimingPoint` end-to-end: the message reaches the App world,
     /// mutates `EditorTimingRes.0.timing_points`, and the per-frame
     /// sync propagates the new list to the legacy `State.editor.timing`.
-    #[tokio::test]
-    async fn runtime_carve_out_add_timing_point_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_add_timing_point_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         // Precondition: empty list on both sides (the seed is empty for
-        // a fresh State::new_test).
+        // the App-native fixture).
         assert!(
             runtime
                 .app
@@ -3429,10 +2232,9 @@ mod tests {
 
     /// `RemoveTimingPoint` end-to-end: list shrinks via the resource,
     /// the legacy state mirrors it after the sync.
-    #[tokio::test]
-    async fn runtime_carve_out_remove_timing_point_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_remove_timing_point_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         // Pre-populate both sides with a single timing point so we can
         // remove it through the Bevy path.
@@ -3476,10 +2278,9 @@ mod tests {
     /// `SetTimingPointTime` end-to-end: the timestamp update flows
     /// through the resource and the legacy state picks it up via the
     /// change-guarded sync.
-    #[tokio::test]
-    async fn runtime_carve_out_set_timing_point_time_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_set_timing_point_time_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
             time_seconds: 0.0,
@@ -3527,10 +2328,9 @@ mod tests {
 
     /// `SetTimingPointBpm` end-to-end: BPM update propagates with
     /// the >= 1.0 clamp.
-    #[tokio::test]
-    async fn runtime_carve_out_set_timing_point_bpm_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_set_timing_point_bpm_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
             time_seconds: 0.0,
@@ -3567,10 +2367,9 @@ mod tests {
 
     /// `SetTimingPointTimeSignature` end-to-end: the time-signature
     /// fields update on both sides.
-    #[tokio::test]
-    async fn runtime_carve_out_set_timing_point_time_signature_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_set_timing_point_time_signature_propagates_to_legacy_state() {
+        let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
             time_seconds: 0.0,
@@ -3620,11 +2419,10 @@ mod tests {
     }
 
     /// `SetTimingSelected` end-to-end: the selected-index update
-    /// propagates to the legacy state.
-    #[tokio::test]
-    async fn runtime_carve_out_set_timing_selected_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    /// SetTimingSelected updates the authoritative App selection.
+    #[test]
+    fn runtime_carve_out_set_timing_selected_mutates_app_resource() {
+        let mut runtime = Runtime::new_test();
 
         // Initial: None on both sides.
         assert_eq!(
@@ -3676,10 +2474,9 @@ mod tests {
     /// resource matches the legacy state (the seeded invariant), the
     /// sync must not re-invoke `set_editor_timing_state`. Pin the
     /// list length stays the same.
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_timing() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_no_op_frame_preserves_app_timing() {
+        let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
             time_seconds: 0.0,
@@ -3750,15 +2547,10 @@ mod tests {
         );
     }
 
-    /// Regression: `EditorTimingRes` is seeded from the legacy
-    /// `State` at `Runtime::new` (this is what the bpm-tap carve-out
-    /// added). The new timing-points fields ride on the same
-    /// resource, so the same seeding covers them: a non-default
-    /// list on the legacy state at construction time must survive
-    /// the first frame even when no timing message is written.
-    #[tokio::test]
-    async fn runtime_seeds_editor_timing_res_for_timing_points_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
+    /// App-initialized timing points remain authoritative across a no-op frame.
+    #[test]
+    fn runtime_preserves_initialized_editor_timing_points() {
+        let mut runtime = Runtime::new_test();
         let user_points = vec![
             eg_types::TimingPoint {
                 time_seconds: 0.0,
@@ -3773,615 +2565,92 @@ mod tests {
                 time_signature_denominator: 4,
             },
         ];
-        state.set_editor_timing_state(user_points.clone(), Some(1));
-        let mut runtime = Runtime::new(state);
+        {
+            let mut timing = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
+            timing.0.timing_points = user_points.clone();
+            timing.0.timing_selected_index = Some(1);
+        }
 
-        // Seeding: the resource reflects the legacy user value.
-        let seeded = &runtime.app.world().resource::<EditorTimingRes>().0;
-        assert_eq!(seeded.timing_points.len(), 2);
-        assert_eq!(seeded.timing_points[0].bpm, 140.0);
-        assert_eq!(seeded.timing_points[1].bpm, 160.0);
-        assert_eq!(seeded.timing_selected_index, Some(1));
-
-        // No-op frame: the change-guarded sync sees no diff and
-        // does not clobber the user value.
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .timing_points
-                .as_slice()
-                .len(),
-            2
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .timing_selected_index,
-            Some(1)
-        );
+        let timing = &runtime.app.world().resource::<EditorTimingRes>().0;
+        assert_eq!(timing.timing_points, user_points);
+        assert_eq!(timing.timing_selected_index, Some(1));
     }
+    // ---- App-owned editor timeline tests ----
 
-    // ---- Phase 3.16 timeline setting carve-out tests ----
-    //
-    // The pure timeline-setting messages in `events::timeline`
-    // (`ShiftTimeline`, `SetTimelineTime`, `SetTimelineDuration`,
-    // `SetPlaybackSpeed`, `SetWaveformZoom`, `SetWaveformScroll`)
-    // now write directly to `EditorTimelineRes` / `EditorTimingRes`.
-    // The runtime tests below pin the end-to-end path:
-    // message → App-world resource → legacy State field.
+    use eg_state::events::timeline::{ClearTaps, SetTimelineTime};
 
-    use eg_state::events::timeline::{
-        AddTap, ClearTaps, RemoveTap, RemoveTapAt, SetPlaybackSpeed, SetSelectedTap,
-        SetSelectedTapTime, SetTimelineDuration, SetTimelineTime, SetWaveformScroll,
-        SetWaveformZoom, ShiftTimeline, ToggleTimelinePlayback,
-    };
-
-    #[tokio::test]
-    async fn runtime_carve_out_shift_timeline_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorTimelineRes>()
-            .0
-            .clock
-            .duration_seconds = 4.0;
-        runtime.state.set_editor_timeline_duration_seconds(4.0);
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorTimelineRes>()
-            .0
-            .clock
-            .time_seconds = 1.0;
-        runtime.state.set_editor_timeline_time_seconds(1.0);
-
-        runtime.app.world_mut().write_message(ShiftTimeline(1.5));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .clock
-                .time_seconds,
-            2.5,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            2.5,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_timeline_time_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorTimelineRes>()
-            .0
-            .clock
-            .duration_seconds = 3.0;
-        runtime.state.set_editor_timeline_duration_seconds(3.0);
-
-        runtime.app.world_mut().write_message(SetTimelineTime(1.25));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .clock
-                .time_seconds,
-            1.25,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            1.25,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_timeline_duration_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorTimelineRes>()
-            .0
-            .clock
-            .duration_seconds = 8.0;
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorTimelineRes>()
-            .0
-            .clock
-            .time_seconds = 6.0;
-        runtime.state.set_editor_timeline_duration_seconds(8.0);
-        runtime.state.set_editor_timeline_time_seconds(6.0);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetTimelineDuration(2.0));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_duration_seconds(),
-            2.0,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            2.0,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_selected_tap_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineSelection");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_tap_state_for_test(
-            vec![0.25, 1.0],
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
-            None,
-        );
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_timeline_messages_mutate_authoritative_app_resource() {
+        let mut runtime = runtime_in_editor("TimelineAppAuthority");
         runtime
             .app
             .world_mut()
             .resource_mut::<EditorInputRes>()
             .0
             .mode = eg_types::EditorMode::Tapping;
+        {
+            let mut timeline = runtime.app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.taps.tap_times = vec![0.25, 1.0];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]];
+            timeline.0.taps.selected_index = Some(1);
+        }
 
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetSelectedTap(Some(1)));
+        runtime.app.world_mut().write_message(SetTimelineTime(1.5));
         let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
+        approx::assert_abs_diff_eq!(
             runtime
                 .app
                 .world()
                 .resource::<EditorTimelineRes>()
                 .0
-                .taps
-                .selected_index,
-            Some(1)
-        );
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), Some(1));
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_selected_tap_time_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineTapTime");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_timeline_duration_seconds(2.0);
-        state.set_editor_timeline_time_seconds(1.0);
-        state.set_editor_tap_state_for_test(
-            vec![0.25, 1.0, 1.5],
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [2.0, 0.0, 2.0]],
-            Some(1),
-        );
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetSelectedTapTime(1.75));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
-        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5, 1.75]);
-        assert_eq!(
-            timeline.taps.tap_indicator_positions,
-            runtime.state.editor_tap_indicator_positions(),
-            "runtime sync must copy legacy's final derived tap indicators back into the App world"
-        );
-        assert_eq!(timeline.taps.selected_index, Some(2));
-        approx::assert_abs_diff_eq!(timeline.clock.time_seconds, 1.75, epsilon = 1e-6);
-        assert_eq!(
-            runtime.app.world().resource::<EditorInputRes>().0.cursor,
-            timeline.taps.tap_indicator_positions[2],
-            "selected-tap retiming must leave the App cursor on the authoritative indicator"
-        );
-
-        assert_eq!(runtime.state.editor_tap_times(), &[0.25, 1.5, 1.75]);
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), Some(2));
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            1.75,
+                .clock
+                .time_seconds,
+            1.5,
             epsilon = 1e-6
         );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_toggle_timeline_playback_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelinePlayback");
-        state.set_editor_mode(eg_types::EditorMode::Timing);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .write_message(ToggleTimelinePlayback);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .playback
-                .playing,
-            runtime.state.editor_is_playing(),
-            "post-frame mirror must keep App playback state converged after legacy update"
-        );
-        assert_eq!(
-            runtime.app.world().resource::<EditorInputRes>().0.mode,
-            eg_types::EditorMode::Timing
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .last_mode,
-            runtime.state.editor_playback_last_mode()
-        );
-
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .playback
-                .playing,
-            runtime.state.editor_is_playing(),
-            "a no-message frame must not resurrect stale App playback state"
-        );
-        assert_eq!(
-            runtime.app.world().resource::<EditorInputRes>().0.mode,
-            eg_types::EditorMode::Timing
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .last_mode,
-            runtime.state.editor_playback_last_mode()
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_add_tap_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineAddTap");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_timeline_duration_seconds(2.0);
-        state.set_editor_timeline_time_seconds(1.0);
-        state.set_editor_tap_state_for_test(
-            vec![0.25, 1.5],
-            vec![[0.0, 0.0, 0.0], [2.0, 0.0, 2.0]],
-            None,
-        );
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(AddTap);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
-        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.0, 1.5]);
-        assert_eq!(timeline.taps.selected_index, Some(1));
-        assert_eq!(runtime.state.editor_tap_times(), &[0.25, 1.0, 1.5]);
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), Some(1));
-        assert_eq!(
-            timeline.taps.tap_indicator_positions,
-            runtime.state.editor_tap_indicator_positions(),
-            "runtime sync must copy legacy's final derived tap indicators back into the App world"
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_remove_tap_messages_propagate_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineRemoveTap");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_timeline_duration_seconds(2.0);
-        state.set_editor_timeline_time_seconds(1.0);
-        state.set_editor_tap_state_for_test(
-            vec![0.25, 1.0, 1.5],
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0], [2.0, 0.0, 2.0]],
-            Some(2),
-        );
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(RemoveTap);
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
-        assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5]);
-        assert_eq!(timeline.taps.selected_index, Some(1));
-        assert_eq!(runtime.state.editor_tap_times(), &[0.25, 1.5]);
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), Some(1));
-        assert_eq!(
-            timeline.taps.tap_indicator_positions,
-            runtime.state.editor_tap_indicator_positions(),
-            "runtime sync must copy legacy's final derived tap indicators back into the App world"
-        );
-
-        runtime.app.world_mut().write_message(RemoveTapAt(1.5));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
-        assert_eq!(timeline.taps.tap_times, vec![0.25]);
-        assert_eq!(timeline.taps.selected_index, None);
-        assert_eq!(runtime.state.editor_tap_times(), &[0.25]);
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), None);
-        assert_eq!(
-            timeline.taps.tap_indicator_positions,
-            runtime.state.editor_tap_indicator_positions()
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_clear_taps_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineClearTaps");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_tap_state_for_test(
-            vec![0.25, 1.0],
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
-            Some(1),
-        );
-        let mut runtime = Runtime::new(state);
 
         runtime.app.world_mut().write_message(ClearTaps);
         let _ = runtime.run_app_frame(egui::RawInput::default());
-
         let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
         assert!(timeline.taps.tap_times.is_empty());
         assert!(timeline.taps.tap_indicator_positions.is_empty());
         assert_eq!(timeline.taps.selected_index, None);
-        assert!(runtime.state.editor_tap_times().is_empty());
-        assert!(runtime.state.editor_tap_indicator_positions().is_empty());
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), None);
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_playback_speed_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(SetPlaybackSpeed(1.5));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .playback_speed,
-            1.5,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .playback_speed,
-            1.5,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_set_waveform_zoom_and_scroll_propagate_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
-
-        runtime.app.world_mut().write_message(SetWaveformZoom(3.5));
-        runtime
-            .app
-            .world_mut()
-            .write_message(SetWaveformScroll(1.25));
-        let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .waveform_zoom,
-            3.5,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .waveform_scroll,
-            1.25,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_timeline_settings() {
-        let mut state = State::new_test().await;
-        state.set_editor_timeline_duration_seconds(5.0);
-        state.set_editor_timeline_time_seconds(1.0);
-        state.set_editor_playback_speed(1.5);
-        state.set_editor_waveform_zoom(2.5);
-        state.set_editor_waveform_scroll(0.75);
-        let mut runtime = Runtime::new(state);
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
-
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_duration_seconds(),
-            5.0,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            1.0,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .playback_speed,
-            1.5,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .waveform_zoom,
-            2.5,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimingRes>()
-                .0
-                .waveform_scroll,
-            0.75,
-            epsilon = 1e-6
-        );
-    }
-
-    #[tokio::test]
-    async fn runtime_seeds_editor_timeline_res_from_legacy_state_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("TimelineSeed");
-        state.set_editor_mode(eg_types::EditorMode::Tapping);
-        state.set_editor_timeline_duration_seconds(6.0);
-        state.set_editor_timeline_time_seconds(2.5);
-        state.set_editor_tap_state_for_test(
-            vec![0.5, 1.5],
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
-            Some(1),
-        );
-        let mut runtime = Runtime::new(state);
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .mode = eg_types::EditorMode::Tapping;
-
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .clock
-                .duration_seconds,
-            6.0,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .clock
-                .time_seconds,
-            2.5,
-            epsilon = 1e-6
-        );
-        assert_eq!(
+        assert!(
             runtime
                 .app
                 .world()
                 .resource::<EditorTimelineRes>()
                 .0
                 .taps
-                .tap_times,
-            vec![0.5, 1.5]
+                .tap_times
+                .is_empty()
         );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorTimelineRes>()
-                .0
-                .taps
-                .selected_index,
-            Some(1)
-        );
+    }
+    #[test]
+    fn runtime_initialized_timeline_survives_no_op_frame() {
+        let mut runtime = runtime_in_editor("TimelineSeed");
+        {
+            let mut timeline = runtime.app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 6.0;
+            timeline.0.clock.time_seconds = 2.5;
+            timeline.0.taps.tap_times = vec![0.5, 1.5];
+            timeline.0.taps.tap_indicator_positions = vec![[0.0, 0.0, 0.0], [1.0, 0.0, 1.0]];
+            timeline.0.taps.selected_index = Some(1);
+        }
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_duration_seconds(),
-            6.0,
-            epsilon = 1e-6
-        );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            2.5,
-            epsilon = 1e-6
-        );
-        assert_eq!(runtime.state.editor_selected_tap_index_value(), Some(1));
+        let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
+        approx::assert_abs_diff_eq!(timeline.clock.duration_seconds, 6.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(timeline.clock.time_seconds, 2.5, epsilon = 1e-6);
+        assert_eq!(timeline.taps.tap_times, vec![0.5, 1.5]);
+        assert_eq!(timeline.taps.selected_index, Some(1));
     }
-
     // ---- Phase 3.10 spawn carve-out tests ----
     //
     // All three spawn messages mutate authoritative App-world resources.
@@ -4392,10 +2661,9 @@ mod tests {
     use eg_types::Direction;
 
     /// `SetSpawnHere` writes the current editor cursor to `EditorSpawnRes`.
-    #[tokio::test]
-    async fn runtime_set_spawn_here_mutates_app_resource() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_set_spawn_here_mutates_app_resource() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
@@ -4413,10 +2681,9 @@ mod tests {
     }
 
     /// `RotateSpawnDirection` updates the authoritative App-world direction.
-    #[tokio::test]
-    async fn runtime_rotate_spawn_direction_mutates_app_resource() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_rotate_spawn_direction_mutates_app_resource() {
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(RotateSpawnDirection);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -4427,10 +2694,9 @@ mod tests {
         );
     }
     /// `RotatePlacementPreview` updates the authoritative placement yaw.
-    #[tokio::test]
-    async fn runtime_rotate_placement_preview_mutates_app_config() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_rotate_placement_preview_mutates_app_config() {
+        let mut runtime = Runtime::new_test();
 
         // Initial yaw 0.0 on both sides.
         runtime
@@ -4460,10 +2726,9 @@ mod tests {
     }
 
     /// A frame without spawn messages preserves the App-owned spawn resource.
-    #[tokio::test]
-    async fn runtime_spawn_resource_survives_no_op_frame() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_spawn_resource_survives_no_op_frame() {
+        let mut runtime = Runtime::new_test();
         runtime
             .app
             .world_mut()
@@ -4479,19 +2744,17 @@ mod tests {
         assert_eq!(spawn.direction, Direction::Right);
     }
 
-    /// Compatibility construction seeds `EditorSpawnRes` once from legacy editor data.
-    #[tokio::test]
-    async fn runtime_seeds_editor_spawn_res_from_legacy_editor_operations() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Editor);
-        state.set_editor_cursor_position([5.0, 10.0, 15.0]);
-        state.editor_set_spawn_here();
-        state.editor_rotate_spawn_direction();
-        let mut runtime = Runtime::new(state);
-
-        let spawn = &runtime.app.world().resource::<EditorSpawnRes>().0;
-        assert_eq!(spawn.position, [5.0, 10.0, 15.0]);
-        assert_eq!(spawn.direction, Direction::Right);
+    /// App-initialized spawn metadata remains authoritative across a no-op frame.
+    #[test]
+    fn runtime_preserves_initialized_editor_spawn_resource() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
+        runtime
+            .app
+            .world_mut()
+            .insert_resource(EditorSpawnRes(eg_types::SpawnMetadata {
+                position: [5.0, 10.0, 15.0],
+                direction: Direction::Right,
+            }));
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -4499,17 +2762,15 @@ mod tests {
         assert_eq!(spawn.position, [5.0, 10.0, 15.0]);
         assert_eq!(spawn.direction, Direction::Right);
     }
-
     // ---- Phase 3.11 App-owned camera and trigger-selection tests ----
     //
     // Camera and trigger messages mutate authoritative App-world resources.
 
     use eg_state::events::camera::{AdjustZoom, SetCameraOrientation, SetTriggerSelected};
 
-    #[tokio::test]
-    async fn runtime_adjust_zoom_mutates_app_camera() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_adjust_zoom_mutates_app_camera() {
+        let mut runtime = Runtime::new_test();
         let (initial_pan, initial_z) = {
             let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
             (camera.editor_pan, camera.editor_target_z)
@@ -4525,10 +2786,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_set_camera_orientation_mutates_app_camera() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_set_camera_orientation_mutates_app_camera() {
+        let mut runtime = Runtime::new_test();
         let new_yaw = 1.5_f32;
         let new_pitch = 0.4_f32;
 
@@ -4544,10 +2804,9 @@ mod tests {
         approx::assert_abs_diff_eq!(camera.editor_pitch, new_pitch, epsilon = 1e-6);
     }
 
-    #[tokio::test]
-    async fn runtime_set_trigger_selected_mutates_app_resource() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_set_trigger_selected_mutates_app_resource() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
@@ -4566,10 +2825,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_app_camera_survives_no_op_frame() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_camera_survives_no_op_frame() {
+        let mut runtime = Runtime::new_test();
         let initial = {
             let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
             (
@@ -4589,11 +2847,9 @@ mod tests {
         approx::assert_abs_diff_eq!(camera.editor_pitch, initial.3, epsilon = 1e-6);
     }
 
-    #[tokio::test]
-    async fn runtime_editor_camera_pan_runs_in_app_schedule() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("CameraPanSchedule");
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_editor_camera_pan_runs_in_app_schedule() {
+        let mut runtime = runtime_in_editor("CameraPanSchedule");
         let initial_pan = runtime
             .app
             .world()
@@ -4620,11 +2876,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_editor_camera_transition_runs_in_app_schedule() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("CameraTransitionSchedule");
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_editor_camera_transition_runs_in_app_schedule() {
+        let mut runtime = runtime_in_editor("CameraTransitionSchedule");
         runtime
             .app
             .world_mut()
@@ -4641,12 +2895,12 @@ mod tests {
         assert!(camera.editor_pitch < 0.5);
     }
 
-    #[tokio::test]
-    async fn runtime_seeds_app_camera_once_and_preserves_app_trigger_res() {
+    #[test]
+    fn runtime_initialized_app_camera_and_trigger_survive_frame() {
         use eg_state::state::EditorCameraState;
 
-        let mut state = State::new_test().await;
-        state.set_editor_camera_state(EditorCameraState {
+        let mut runtime = Runtime::new_test();
+        runtime.app.world_mut().resource_mut::<EditorCameraRes>().0 = EditorCameraState {
             editor_pan: [10.0, 20.0],
             editor_target_z: 30.0,
             editor_yaw: 1.0,
@@ -4654,8 +2908,7 @@ mod tests {
             playing_rotation: 0.0,
             playing_pitch: 0.0,
             transition: None,
-        });
-        let mut runtime = Runtime::new(state);
+        };
         runtime
             .app
             .world_mut()
@@ -4691,8 +2944,8 @@ mod tests {
     /// test near the editor-object carve-outs pins the end-to-end
     /// path into the legacy `State` object store while that store
     /// still owns presentation side effects.
-    #[tokio::test]
-    async fn runtime_add_camera_trigger_carve_out_note() {
+    #[test]
+    fn runtime_add_camera_trigger_carve_out_note() {
         // This placeholder remains as a compact pointer to the
         // runtime-level AddCameraTrigger/AddCameraFollowTrigger
         // coverage near the editor-object carve-outs above.
@@ -4701,17 +2954,15 @@ mod tests {
     // --- Phase 3.12 / Misc carve-out tests ---
     //
     // The `misc` event handlers write directly to App-world resources where
-    // ownership has moved; Escape is split between direct editor-local
-    // branches and the remaining legacy request. The end-to-end tests below
-    // exercise message → App-world resource → legacy State propagation.
+    // ownership has moved. The end-to-end tests below exercise direct
+    // message-to-resource mutation.
 
     use eg_state::events::misc::{ToggleHitboxVisualization, TogglePlaceWindow};
 
     /// The hitbox toggle mutates the authoritative App input resource.
-    #[tokio::test]
-    async fn runtime_toggle_hitbox_visualization_mutates_app_input() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_toggle_hitbox_visualization_mutates_app_input() {
+        let mut runtime = Runtime::new_test();
         runtime
             .app
             .world_mut()
@@ -4737,10 +2988,9 @@ mod tests {
 
     /// A no-message frame must preserve App-owned input instead of
     /// refreshing it from the legacy compatibility shell.
-    #[tokio::test]
-    async fn runtime_no_op_frame_preserves_app_hitbox_visualization() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_no_op_frame_preserves_app_hitbox_visualization() {
+        let mut runtime = Runtime::new_test();
         runtime
             .app
             .world_mut()
@@ -4760,29 +3010,12 @@ mod tests {
         );
     }
 
-    // --- Phase 3.15 / Navigation carve-out tests ---
-    //
-    // The `GameSetPracticeMode` handler in
-    // `events::navigation` writes directly to
-    // `SessionStateRes.practice_mode_enabled`. The change-guarded
-    // sync in `Runtime::sync_app_session_state` invokes the
-    // legacy `set_practice_mode_enabled` setter (which has
-    // heavy side effects: clear practice checkpoints, rebuild
-    // checkpoint vertices, restart level, resume game) only on
-    // real user-driven changes. The legacy setter is phase-
-    // guarded (no-op outside `AppPhase::Playing`), so the
-    // tests below drive the legacy state into the Playing
-    // phase before each write.
-
+    // --- App-owned navigation tests ---
     use eg_state::events::navigation::{GameResume, GameSetPracticeMode};
 
-    #[tokio::test]
-    async fn runtime_carve_out_game_resume_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(true);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_game_resume_mutates_app_session() {
+        let mut runtime = runtime_in_playing(false, true);
 
         assert!(
             runtime
@@ -4790,7 +3023,7 @@ mod tests {
                 .world()
                 .resource::<SessionStateRes>()
                 .game_paused,
-            "SessionStateRes.game_paused must be seeded from legacy State"
+            "SessionStateRes.game_paused must retain App fixture initialization"
         );
 
         runtime.app.world_mut().write_message(GameResume);
@@ -4804,20 +3037,16 @@ mod tests {
                 .game_paused,
             "GameResume handler must clear SessionStateRes.game_paused"
         );
-        assert!(
-            !runtime.state.game_paused_value(),
-            "sync_app_session_state must resume the legacy State"
-        );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_next_level_in_menu_propagates_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Menu);
-        state
-            .set_menu_levels_for_test(vec!["RuntimeMenuA".to_string(), "RuntimeMenuB".to_string()]);
-        state.set_menu_selected_level_index(0);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_next_level_in_menu_mutates_app_resource() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Menu);
+        {
+            let mut menu = runtime.app.world_mut().resource_mut::<MenuStateRes>();
+            menu.0.levels = vec!["RuntimeMenuA".to_string(), "RuntimeMenuB".to_string()];
+            menu.0.selected_level = 0;
+        }
 
         eg_ui::write_ui_command(
             runtime.app.world_mut(),
@@ -4843,18 +3072,24 @@ mod tests {
                 .0
                 .selected_level,
             1,
-            "sync_app_menu_state must propagate selected_level to legacy State"
+            "MenuStateRes remains authoritative after navigation"
         );
     }
 
-    #[tokio::test]
-    async fn runtime_carve_out_next_level_in_editor_propagates_cursor_to_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Editor);
-        state.set_editor_snap_to_grid(true);
-        state.set_editor_snap_step(0.25);
-        state.set_editor_cursor_position([0.0, 0.0, 0.0]);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_next_level_in_editor_mutates_app_cursor() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
+        {
+            let mut config = runtime.app.world_mut().resource_mut::<EditorConfigRes>();
+            config.0.snap_to_grid = true;
+            config.0.snap_step = 0.25;
+        }
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .cursor = [0.0, 0.0, 0.0];
 
         eg_ui::write_ui_command(
             runtime.app.world_mut(),
@@ -4869,13 +3104,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_in_editor_places_block_without_request_sync() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Editor);
-        state.set_editor_mode(eg_types::EditorMode::Place);
-        state.set_editor_cursor_position([2.0, 0.0, 3.0]);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_in_editor_places_block_without_request_sync() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.mode = eg_types::EditorMode::Place;
+            input.0.cursor = [2.0, 0.0, 3.0];
+        }
 
         eg_ui::write_ui_command(
             runtime.app.world_mut(),
@@ -4903,11 +3139,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_in_game_over_returns_to_menu_without_request_sync() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::GameOver);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_in_game_over_returns_to_menu_without_request_sync() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::GameOver);
 
         eg_ui::write_ui_command(
             runtime.app.world_mut(),
@@ -4926,13 +3160,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_in_non_practice_game_over_resets_app_gameplay() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_in_non_practice_game_over_resets_app_gameplay() {
+        let mut runtime = runtime_in_playing(false, false);
 
         {
             let world = runtime.app.world_mut();
@@ -4951,13 +3181,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_respawns_from_app_practice_checkpoint() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_respawns_from_app_practice_checkpoint() {
+        let mut runtime = runtime_in_playing(false, false);
 
         let checkpoint =
             eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
@@ -5015,13 +3241,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_restarts_practice_without_checkpoint_in_app_world() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_restarts_practice_without_checkpoint_in_app_world() {
+        let mut runtime = runtime_in_playing(false, false);
 
         {
             let world = runtime.app.world_mut();
@@ -5050,13 +3272,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_turn_right_in_paused_gameplay_is_a_request_free_noop() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(true);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_turn_right_in_paused_gameplay_is_a_request_free_noop() {
+        let mut runtime = runtime_in_playing(false, true);
 
         eg_ui::write_ui_command(
             runtime.app.world_mut(),
@@ -5077,27 +3295,16 @@ mod tests {
                 .game_paused,
             "paused gameplay TurnRight must preserve the App-world pause flag"
         );
-        assert!(
-            runtime.state.game_paused_value(),
-            "paused gameplay TurnRight must preserve the legacy pause state"
-        );
     }
 
-    #[tokio::test]
-    async fn runtime_menu_state_resource_is_not_clobbered_by_legacy_state() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Menu);
-        state
-            .set_menu_levels_for_test(vec!["RuntimeMenuA".to_string(), "RuntimeMenuB".to_string()]);
-        state.set_menu_selected_level_index(1);
-        let mut runtime = Runtime::new(state);
-
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<MenuStateRes>()
-            .0
-            .selected_level = 0;
+    #[test]
+    fn runtime_menu_state_resource_survives_no_op_frame() {
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Menu);
+        {
+            let mut menu = runtime.app.world_mut().resource_mut::<MenuStateRes>();
+            menu.0.levels = vec!["RuntimeMenuA".to_string(), "RuntimeMenuB".to_string()];
+            menu.0.selected_level = 0;
+        }
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -5109,7 +3316,7 @@ mod tests {
                 .0
                 .selected_level,
             0,
-            "sync_app_menu_state must mirror App-world menu selection to legacy State"
+            "a no-op frame must preserve App-world menu selection"
         );
         assert_eq!(
             runtime
@@ -5119,17 +3326,13 @@ mod tests {
                 .0
                 .selected_level,
             0,
-            "stale legacy menu selection must not clobber MenuStateRes"
+            "MenuStateRes remains authoritative across frames"
         );
     }
 
-    #[tokio::test]
-    async fn runtime_app_resume_state_overrides_stale_legacy_pause() {
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(true);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_app_resume_state_remains_authoritative() {
+        let mut runtime = runtime_in_playing(false, true);
 
         runtime
             .app
@@ -5139,7 +3342,6 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert!(!runtime.state.game_paused_value());
         assert!(
             !runtime
                 .app
@@ -5152,15 +3354,9 @@ mod tests {
 
     /// Writing a `GameSetPracticeMode(true)` message reaches the
     /// App world and mutates `SessionStateRes.practice_mode_enabled`.
-    #[tokio::test]
-    async fn runtime_carve_out_game_set_practice_mode_mutates_app_resource() {
-        let mut state = State::new_test().await;
-        // Force the legacy state into `AppPhase::Playing` so the
-        // phase-guarded legacy setter is a no-op-free.
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_session_practice_mode_enabled_for_test(false);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_game_set_practice_mode_mutates_app_resource() {
+        let mut runtime = runtime_in_playing(false, false);
 
         runtime
             .app
@@ -5185,26 +3381,21 @@ mod tests {
                 .practice_mode_enabled,
             "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
         );
-        // No legacy command was staged (carve-out).
     }
 
     /// No-op frame for practice mode preserves the seeded App-world value.
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_practice_mode() {
-        let mut state = State::new_test().await;
-        // Seed the legacy state to a known value. The
-        // resource is seeded from the legacy state at
-        // Runtime::new, so the first frame is a true no-op.
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_session_practice_mode_enabled_for_test(true);
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_no_op_frame_preserves_practice_mode() {
+        let mut runtime = runtime_in_playing(false, false);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .practice_mode_enabled = true;
 
-        // Run a frame with no message. The handler does not
-        // run, so the resource stays at the seeded value.
+        // With no message, the App resource stays at the seeded value.
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        // The App resource keeps the user value.
         assert!(
             runtime
                 .app
@@ -5212,67 +3403,52 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .practice_mode_enabled
         );
-        assert!(runtime.state.practice_mode_enabled_value());
     }
 
-    /// Regression: `SessionStateRes.practice_mode_enabled` must
-    /// be seeded from the legacy `State` at `Runtime::new` so
-    /// the change-guarded sync does not clobber a user-enabled
-    /// practice mode on the first frame. Same first-frame
-    /// clobber pattern as the snap / bpm / timing / spawn /
-    /// camera / trigger / perf carve-outs.
-    #[tokio::test]
-    async fn runtime_seeds_practice_mode_from_legacy_state_no_first_frame_clobber() {
-        let mut state = State::new_test().await;
-        // User-enabled practice mode. The default resource
-        // value is `false`; without seeding, the first-frame
-        // sync would see a diff and clobber the user value
-        // back to `false` (and the legacy setter would call
-        // `restart_level` + `resume_game` — both heavy).
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_session_practice_mode_enabled_for_test(true);
-        let mut runtime = Runtime::new(state);
+    /// App-native construction preserves explicitly initialized practice state.
+    #[test]
+    fn runtime_initialized_practice_mode_survives_first_frame() {
+        let mut runtime = runtime_in_playing(false, false);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<SessionStateRes>()
+            .practice_mode_enabled = true;
 
-        // Seeding: the resource must reflect the legacy user
-        // value, not the `SessionStateRes` default.
+        // The App resource reflects the authoritative initialization.
         assert!(
             runtime
                 .app
                 .world()
                 .resource::<SessionStateRes>()
                 .practice_mode_enabled,
-            "SessionStateRes.practice_mode_enabled must be seeded from legacy State at Runtime::new"
+            "SessionStateRes.practice_mode_enabled must retain App initialization"
         );
 
-        // Run a frame with no GameSetPracticeMode message.
-        // The change-guarded sync must see no diff and must
-        // NOT invoke the legacy setter, so the user value
-        // survives the first frame.
+        // A frame without a message preserves App-owned state.
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
-            runtime.state.practice_mode_enabled_value(),
-            "first-frame sync must not clobber user practice_mode_enabled setting"
+            runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .practice_mode_enabled,
+            "the seeded App-owned practice mode must survive a no-op frame"
         );
     }
 
-    /// Writing a `TogglePlaceWindow` message reaches the App
-    /// world, mutates `SessionStateRes.editor_show_place_window`,
-    /// and the per-frame sync propagates the value to the legacy
-    /// `State.session.editor_show_place_window`.
-    #[tokio::test]
-    async fn runtime_carve_out_toggle_place_window_propagates_to_legacy_state() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    /// Writing a `TogglePlaceWindow` message mutates the App-owned session.
+    #[test]
+    fn runtime_toggle_place_window_mutates_app_session() {
+        let mut runtime = Runtime::new_test();
 
-        // Reset both sides to a known value.
+        // Reset the authoritative resource to a known value.
         runtime
             .app
             .world_mut()
             .resource_mut::<SessionStateRes>()
             .editor_show_place_window = false;
-        runtime.state.set_editor_show_place_window(false);
 
         runtime.app.world_mut().write_message(TogglePlaceWindow);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5285,32 +3461,22 @@ mod tests {
                 .editor_show_place_window,
             "TogglePlaceWindow handler must mutate SessionStateRes"
         );
-        assert!(
-            runtime.state.editor_show_place_window(),
-            "sync_app_session_state must propagate editor_show_place_window to legacy state"
-        );
     }
 
-    /// No-op frame: when the place-window field matches the
-    /// legacy state, the sync must not re-invoke the legacy
-    /// setter.
-    #[tokio::test]
-    async fn runtime_carve_out_no_op_frame_does_not_resync_place_window() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    /// A no-op frame preserves the App-owned place-window field.
+    #[test]
+    fn runtime_no_op_frame_preserves_place_window() {
+        let mut runtime = Runtime::new_test();
 
         runtime
             .app
             .world_mut()
             .resource_mut::<SessionStateRes>()
             .editor_show_place_window = true;
-        runtime.state.set_editor_show_place_window(true);
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        // No message -> handler does not run -> resource unchanged.
-        // Sync sees no diff -> setter not invoked.
-        assert!(runtime.state.editor_show_place_window());
+        // No message means the resource remains unchanged.
         assert!(
             runtime
                 .app
@@ -5322,12 +3488,11 @@ mod tests {
 
     /// `Escape` in the menu is an App-owned no-op and does not use a legacy
     /// Runtime request consumer.
-    #[tokio::test]
-    async fn runtime_escape_in_menu_is_app_owned_noop() {
+    #[test]
+    fn runtime_escape_in_menu_is_app_owned_noop() {
         use eg_state::events::misc::Escape;
 
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+        let mut runtime = Runtime::new_test();
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5335,15 +3500,11 @@ mod tests {
         assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
     }
 
-    #[tokio::test]
-    async fn runtime_escape_in_real_gameplay_pauses_without_request_sync() {
+    #[test]
+    fn runtime_escape_in_real_gameplay_pauses_without_request_sync() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(false);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_playing(false, false);
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5356,10 +3517,7 @@ mod tests {
                 .game_paused,
             "real-gameplay Escape must pause through SessionStateRes"
         );
-        assert!(
-            runtime.state.game_paused_value(),
-            "sync_app_session_state must apply the legacy pause side effects"
-        );
+
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -5371,21 +3529,13 @@ mod tests {
                 .game_paused,
             "real-gameplay Escape must toggle pause back off"
         );
-        assert!(
-            !runtime.state.game_paused_value(),
-            "sync_app_session_state must apply the legacy resume side effects"
-        );
     }
 
-    #[tokio::test]
-    async fn runtime_escape_in_playtest_returns_to_editor_without_request() {
+    #[test]
+    fn runtime_escape_in_playtest_returns_to_editor_without_request() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Playing);
-        state.set_playtesting_editor_for_test(true);
-        state.set_game_paused_for_test(false);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_playing(true, false);
 
         assert!(
             runtime
@@ -5400,7 +3550,11 @@ mod tests {
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
-            !runtime.state.game_paused_value(),
+            !runtime
+                .app
+                .world()
+                .resource::<SessionStateRes>()
+                .game_paused,
             "playtest Escape must not toggle the real-game pause flag"
         );
         assert_eq!(
@@ -5419,15 +3573,22 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_escape_with_editor_selection_clears_without_request_sync() {
+    #[test]
+    fn runtime_escape_with_editor_selection_clears_without_request_sync() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.set_phase_for_test(eg_types::AppPhase::Editor);
-        state.set_editor_objects_from_app(vec![eg_types::LevelObject::default()]);
-        state.set_editor_block_selection_from_app(Some(0), vec![0], Some(0));
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorObjectsRes>()
+            .objects = vec![eg_types::LevelObject::default()];
+        {
+            let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+            input.0.hovered_block_index = Some(0);
+        }
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5438,40 +3599,54 @@ mod tests {
         assert_eq!(input.hovered_block_index, None);
     }
 
-    #[tokio::test]
-    async fn runtime_escape_with_editor_playback_stops_without_request_sync() {
+    #[test]
+    fn runtime_escape_with_editor_playback_stops_without_request_sync() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("EscapePlayback");
-        state.set_editor_mode(eg_types::EditorMode::Timing);
-        state.set_editor_timeline_playback_active(true, Some(eg_types::EditorMode::Timing));
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("EscapePlayback");
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .mode = eg_types::EditorMode::Null;
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .last_mode = Some(eg_types::EditorMode::Timing);
+        runtime
+            .app
+            .world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .playback
+            .playing = true;
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
         assert!(!timeline.playback.playing);
-        assert!(
-            !runtime.state.editor_is_playing(),
-            "Escape playback stop must sync back to legacy playback state"
-        );
+
         assert_eq!(
             runtime.app.world().resource::<EditorInputRes>().0.mode,
             eg_types::EditorMode::Timing
         );
     }
 
-    #[tokio::test]
-    async fn runtime_escape_with_editor_timeline_time_resets_without_request_sync() {
+    #[test]
+    fn runtime_escape_with_editor_timeline_time_resets_without_request_sync() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("EscapeTimelineReset");
-        state.set_editor_timeline_duration_seconds(4.0);
-        state.set_editor_timeline_time_seconds(2.5);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("EscapeTimelineReset");
+        {
+            let mut timeline = runtime.app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.clock.time_seconds = 2.5;
+        }
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5487,21 +3662,13 @@ mod tests {
             0.0,
             epsilon = 1e-6
         );
-        approx::assert_abs_diff_eq!(
-            runtime.state.editor_timeline_time_seconds(),
-            0.0,
-            epsilon = 1e-6
-        );
     }
 
-    #[tokio::test]
-    async fn runtime_escape_at_editor_origin_returns_to_menu_without_request() {
+    #[test]
+    fn runtime_escape_at_editor_origin_returns_to_menu_without_request() {
         use eg_state::events::misc::Escape;
 
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("EscapeEditorMenu");
-        state.set_editor_timeline_time_seconds(0.0);
-        let mut runtime = Runtime::new(state);
+        let mut runtime = runtime_in_editor("EscapeEditorMenu");
 
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -5522,10 +3689,9 @@ mod tests {
 
     /// `Escape` is a no-op on a no-message frame. Pin the change
     /// guard: stale requests don't accumulate across frames.
-    #[tokio::test]
-    async fn runtime_carve_out_escape_no_message_frame_is_noop() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_carve_out_escape_no_message_frame_is_noop() {
+        let mut runtime = Runtime::new_test();
         let _ = runtime.run_app_frame(egui::RawInput::default());
     }
 
@@ -5533,10 +3699,9 @@ mod tests {
 
     use eg_state::events::editor_mode::SetEditorMode;
 
-    #[tokio::test]
-    async fn runtime_set_editor_mode_mutates_app_input() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_set_editor_mode_mutates_app_input() {
+        let mut runtime = Runtime::new_test();
         runtime
             .app
             .world_mut()
@@ -5556,10 +3721,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn runtime_no_op_frame_preserves_app_editor_mode() {
-        let state = State::new_test().await;
-        let mut runtime = Runtime::new(state);
+    #[test]
+    fn runtime_no_op_frame_preserves_app_editor_mode() {
+        let mut runtime = Runtime::new_test();
         runtime
             .app
             .world_mut()

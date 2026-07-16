@@ -17,7 +17,7 @@ use glam::{Mat4, Vec3, Vec4};
 use wgpu::TextureViewDescriptor;
 
 use super::super::State;
-use super::MeshSlot;
+use eg_render::MeshSlot;
 use eg_render::RenderSurfaceError;
 use eg_types::AppPhase;
 
@@ -209,93 +209,6 @@ impl State {
         })
     }
 
-    /// Renders the `egui` user interface over the current frame.
-    ///
-    /// This should be called after the main scene rendering to ensure the UI
-    /// appears on top. It handles updating `egui` buffers and executing the
-    /// render pass.
-    #[cfg(test)]
-    pub fn render_egui(
-        &mut self,
-        renderer: &mut EguiRenderer,
-        paint_jobs: &[egui::ClippedPrimitive],
-        screen_descriptor: &ScreenDescriptor,
-    ) -> Result<(), RenderSurfaceError> {
-        let frame_input = self.compute_frame_input_snapshot();
-        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
-        self.with_render_context(|context| {
-            context.render_egui_with_frame_input(
-                renderer,
-                paint_jobs,
-                screen_descriptor,
-                frame_input,
-                camera_view_projection,
-            )
-        })
-    }
-
-    /// Render egui using the App-owned frame-input resource.
-    #[cfg(test)]
-    pub fn render_egui_with_frame_input(
-        &mut self,
-        renderer: &mut EguiRenderer,
-        paint_jobs: &[egui::ClippedPrimitive],
-        screen_descriptor: &ScreenDescriptor,
-        frame_input: RenderFrameInput,
-        camera_view_projection: [[f32; 4]; 4],
-    ) -> Result<(), RenderSurfaceError> {
-        let frame_input = frame_input;
-        let camera_view_projection = camera_view_projection;
-        self.with_render_context(|context| {
-            context.render_egui_with_frame_input(
-                renderer,
-                paint_jobs,
-                screen_descriptor,
-                frame_input,
-                camera_view_projection,
-            )
-        })
-    }
-
-    /// Creates a new `EguiRenderer` configured for the current GPU device and surface format.
-    #[cfg(test)]
-    pub fn create_egui_renderer(&self) -> EguiRenderer {
-        EguiRenderer::new(
-            &self.render_gpu().device,
-            self.render_gpu().config.format,
-            egui_wgpu::RendererOptions::default(),
-        )
-    }
-
-    /// Performs a full render of the current application state.
-    ///
-    /// This method clears the surface and draws the active scene (Menu, Editor, or Gameplay).
-    #[cfg(test)]
-    pub fn render(&mut self) -> Result<(), RenderSurfaceError> {
-        puffin::profile_scope!("RenderFrame");
-        self.render_with_overlay(|_, _, _, _| {})
-    }
-
-    /// Renders the current scene with an additional custom overlay pass.
-    ///
-    /// The `overlay` closure is provided with the GPU device, queue, current texture view,
-    /// and a command encoder to perform additional drawing operations.
-    #[cfg(test)]
-    pub fn render_with_overlay<F>(&mut self, overlay: F) -> Result<(), RenderSurfaceError>
-    where
-        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
-    {
-        let frame_input = self.compute_frame_input_snapshot();
-        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
-        self.with_render_context(|context| {
-            context.render_with_overlay_and_frame_input(
-                frame_input,
-                camera_view_projection,
-                overlay,
-            )
-        })
-    }
-
     #[cfg(test)]
     pub fn render_to_view<F>(
         &mut self,
@@ -316,12 +229,6 @@ impl State {
                 overlay,
             )
         });
-    }
-
-    #[cfg(test)]
-    pub fn recreate_surface(&mut self) {
-        let size = self.current_render_size();
-        self.resize_surface(size);
     }
 }
 
@@ -1385,43 +1292,6 @@ mod tests {
             current_surface_output(wgpu::CurrentSurfaceTexture::Validation),
             Err(RenderSurfaceError::Validation)
         ));
-    }
-
-    #[tokio::test]
-    async fn render_paths_are_safe_when_surface_is_absent() {
-        let mut state = State::new_test().await;
-
-        assert!(state.render().is_ok());
-
-        let overlay_called = Cell::new(false);
-        let render_result = state.render_with_overlay(|_, _, _, _| {
-            overlay_called.set(true);
-        });
-
-        assert!(render_result.is_ok());
-        assert!(
-            !overlay_called.get(),
-            "overlay should not run when there is no surface"
-        );
-
-        let before = (state.surface_width(), state.surface_height());
-        state.recreate_surface();
-        let after = (state.surface_width(), state.surface_height());
-        assert_eq!(before, after);
-    }
-
-    #[tokio::test]
-    async fn render_egui_returns_ok_when_surface_is_absent() {
-        let mut state = State::new_test().await;
-        let mut renderer = state.create_egui_renderer();
-        let paint_jobs: Vec<egui::ClippedPrimitive> = Vec::new();
-        let screen_descriptor = ScreenDescriptor {
-            size_in_pixels: [state.surface_width(), state.surface_height()],
-            pixels_per_point: 1.0,
-        };
-
-        let result = state.render_egui(&mut renderer, &paint_jobs, &screen_descriptor);
-        assert!(result.is_ok());
     }
 
     #[tokio::test]

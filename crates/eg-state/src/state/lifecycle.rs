@@ -321,6 +321,7 @@ struct StateInitialization {
 }
 
 impl StateInitialization {
+    #[cfg(any(test, feature = "test-support"))]
     fn into_state(self) -> State {
         State {
             auth: self.auth,
@@ -330,9 +331,7 @@ impl StateInitialization {
             session: self.session,
             menu: self.menu,
             phase: self.phase,
-            frame_runtime: self.frame_runtime,
             render_resources: Some(self.render_resources),
-            gameplay_world_needs_seed: false,
         }
     }
 }
@@ -533,26 +532,6 @@ fn build_state_render_resources(
 }
 
 impl State {
-    #[cfg(target_arch = "wasm32")]
-    pub async fn new(
-        canvas: WasmCanvas,
-        graphics_backend_override: Option<String>,
-        audio_backend_override: Option<String>,
-    ) -> Self {
-        StateAppBootstrap::new(canvas, graphics_backend_override, audio_backend_override)
-            .await
-            .0
-            .into_state()
-    }
-
-    /// Creates a new `State` instance for native platforms.
-    ///
-    /// This initializes the GPU surface, adapter, and device using the provided
-    /// `NativeWindow` and configures the default application state.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new_native(window: NativeWindow) -> State {
-        StateAppBootstrap::new_native(window).await.0.into_state()
-    }
     #[cfg(any(test, feature = "test-support"))]
     pub async fn try_new_test() -> Option<State> {
         let fixture = Self::shared_test_gpu_fixture()?;
@@ -712,8 +691,6 @@ impl State {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let now = web_time::Instant::now();
-
         Self {
             render_resources: Some(build_state_render_resources(
                 GpuContext {
@@ -796,13 +773,6 @@ impl State {
             },
             phase: AppPhase::Menu,
             menu: MenuSubsystem { state: menu },
-            frame_runtime: FrameRuntimeState {
-                editor: EditorFrameState {
-                    last_frame: now,
-                    delta_seconds: 0.0,
-                },
-                global_time_seconds: 0.0,
-            },
             audio: AudioSubsystem { state: audio_state },
             session: SessionSubsystem {
                 editor_level_name: None,
@@ -851,7 +821,6 @@ impl State {
                 },
                 ..EditorSubsystem::default()
             },
-            gameplay_world_needs_seed: false,
         }
     }
 }

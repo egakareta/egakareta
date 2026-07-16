@@ -2235,7 +2235,7 @@ mod tests {
     fn show_editor_ui_returns_early_when_not_in_editor() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.is_editor = false;
         view.is_menu = true;
 
@@ -2246,7 +2246,7 @@ mod tests {
     fn show_perf_overlay_renders_outside_editor() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.is_editor = false;
         view.is_menu = true;
         view.perf_overlay_enabled = true;
@@ -2269,7 +2269,7 @@ mod tests {
     fn show_editor_ui_renders_marquee_selection() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.mode = EditorMode::Select;
         view.marquee_selection_rect_screen = Some(([10.0, 10.0], [100.0, 100.0], false));
 
@@ -2280,7 +2280,7 @@ mod tests {
     fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.mode = EditorMode::Timing;
         view.show_settings = true;
         view.settings_section = SettingsSection::Backends;
@@ -2309,7 +2309,7 @@ mod test_utils {
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
-    pub fn editor_ui_snapshot<'a>(
+    pub fn editor_ui_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
     ) -> UiStateView<'a> {

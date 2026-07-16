@@ -878,29 +878,6 @@ impl State {
         true
     }
 
-    pub(super) fn editor_set_selected_tap_index(&mut self, selected_index: Option<usize>) -> bool {
-        if self.phase != AppPhase::Editor
-            || self.editor_effective_mode_for_playback() != EditorMode::Tapping
-        {
-            return false;
-        }
-
-        let old_selected_index = self.editor.timeline.taps.selected_index;
-        self.editor.set_selected_tap_index(selected_index);
-        let next_selected_index = self.editor.timeline.taps.selected_index;
-
-        if old_selected_index == next_selected_index {
-            return false;
-        }
-
-        if let Some((_, _, selected_position)) = self.editor.selected_tap() {
-            self.editor.input.cursor = selected_position;
-            self.rebuild_editor_cursor_vertices();
-        }
-        self.rebuild_tap_indicator_vertices();
-        true
-    }
-
     pub fn set_editor_timeline_playback_active(
         &mut self,
         playing: bool,
@@ -926,6 +903,7 @@ impl State {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn toggle_editor_timeline_playback(&mut self) {
         if self.phase != AppPhase::Editor {
             return;
@@ -1029,7 +1007,6 @@ impl State {
             return;
         }
 
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
         self.session.game_paused = false;
@@ -1104,7 +1081,6 @@ impl State {
     /// This stops any active gameplay audio and restores the editor state if the
     /// session originated from the editor.
     pub fn back_to_menu(&mut self) {
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.editor.timeline.playback.playing = false;
         self.editor.timeline.playback.runtime = None;
         self.stop_audio();
@@ -1167,21 +1143,14 @@ impl State {
         self.set_editor_block_id(block_id);
         true
     }
-
-    /// Whether any blocks are currently selected in the editor.
-    pub(super) fn has_block_selection(&self) -> bool {
-        !self.editor.selected_indices_normalized().is_empty()
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::EditorSubsystem;
     use eg_editor_domain::derive_tap_indicator_positions;
     use eg_game::TimelineSimulationRuntime;
-    use eg_types::{
-        AppPhase, Direction, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
-    };
+    use eg_types::{Direction, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint};
     use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn test_block(position: [f32; 3]) -> LevelObject {
@@ -1208,49 +1177,46 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn remove_block_undo_redo_sequence_restores_and_reapplies() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
+    #[test]
+    fn remove_block_undo_redo_sequence_restores_and_reapplies() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
 
-        state.editor_remove_block();
-        assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        editor.remove_selected();
+        assert_eq!(editor.objects.len(), 1);
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, 0.0]);
 
-        state.editor_undo();
-        assert_eq!(state.editor.objects.len(), 2);
-        assert_eq!(state.editor.objects[0].position, [0.0, 0.0, 0.0]);
-        assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 0.0]);
+        editor.undo();
+        assert_eq!(editor.objects.len(), 2);
+        assert_eq!(editor.objects[0].position, [0.0, 0.0, 0.0]);
+        assert_eq!(editor.objects[1].position, [2.0, 0.0, 0.0]);
 
-        state.editor_redo();
-        assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.objects[0].position, [2.0, 0.0, 0.0]);
+        editor.redo();
+        assert_eq!(editor.objects.len(), 1);
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, 0.0]);
     }
 
-    #[tokio::test]
-    async fn remove_block_dereferences_deleted_transform_trigger_target() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![
+    #[test]
+    fn remove_block_dereferences_deleted_transform_trigger_target() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             test_block([0.0, 0.0, 0.0]),
             test_block([2.0, 0.0, 0.0]),
             test_block([4.0, 0.0, 0.0]),
         ];
-        state
-            .editor
+        editor
             .objects
             .push(test_transform_trigger(vec!["object_2"]));
-        state.editor.input.selected_block_index = Some(1);
-        state.editor.input.selected_block_indices = vec![1];
+        editor.input.selected_block_index = Some(1);
+        editor.input.selected_block_indices = vec![1];
 
-        state.editor_remove_block();
+        editor.remove_selected();
 
-        assert_eq!(state.editor.objects.len(), 3);
-        assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        let triggers = state.editor.trigger_objects();
+        assert_eq!(editor.objects.len(), 3);
+        assert_eq!(editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        let triggers = editor.trigger_objects();
         let trigger = triggers
             .first()
             .and_then(|object| object.trigger.as_ref())
@@ -1263,26 +1229,24 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn remove_block_remaps_transform_trigger_targets_after_deleted_block() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![
+    #[test]
+    fn remove_block_remaps_transform_trigger_targets_after_deleted_block() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             test_block([0.0, 0.0, 0.0]),
             test_block([2.0, 0.0, 0.0]),
             test_block([4.0, 0.0, 0.0]),
         ];
-        state
-            .editor
+        editor
             .objects
             .push(test_transform_trigger(vec!["object_4"]));
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
 
-        state.editor_remove_block();
+        editor.remove_selected();
 
-        assert_eq!(state.editor.objects[1].position, [4.0, 0.0, 0.0]);
-        let triggers = state.editor.trigger_objects();
+        assert_eq!(editor.objects[1].position, [4.0, 0.0, 0.0]);
+        let triggers = editor.trigger_objects();
         let trigger = triggers
             .first()
             .and_then(|object| object.trigger.as_ref())
@@ -1295,116 +1259,92 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn remove_block_is_ignored_in_tapping_mode() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
-
-        state.editor_remove_block();
-
-        assert_eq!(state.editor.objects.len(), 2);
-        assert_eq!(state.editor.objects[0].position, [0.0, 0.0, 0.0]);
-        assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 0.0]);
-    }
-
-    #[tokio::test]
-    async fn spawn_set_and_rotate_support_two_step_undo_redo() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.objects.clear();
-        state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = Direction::Forward;
-        state.editor.timeline.taps.tap_times = vec![1.0 / eg_game::BASE_PLAYER_SPEED];
-        state.editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
-            state.editor.spawn.position,
-            state.editor.spawn.direction,
-            &state.editor.timeline.taps.tap_times,
-            &state.editor.objects,
+    #[test]
+    fn spawn_set_and_rotate_support_two_step_undo_redo() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects.clear();
+        editor.spawn.position = [0.0, 0.0, 0.0];
+        editor.spawn.direction = Direction::Forward;
+        editor.timeline.taps.tap_times = vec![1.0 / eg_game::BASE_PLAYER_SPEED];
+        editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.timeline.taps.tap_times,
+            &editor.objects,
         );
-        state.editor.input.cursor = [4.0, 1.0, 3.0];
+        editor.input.cursor = [4.0, 1.0, 3.0];
 
-        state.editor_set_spawn_here();
-        assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
-        state.editor_rotate_spawn_direction();
-        assert_eq!(state.editor.spawn.direction, Direction::Right);
+        editor.record_history_state();
+        editor.set_spawn_here();
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
+        editor.record_history_state();
+        editor.rotate_spawn_direction();
+        assert_eq!(editor.spawn.direction, Direction::Right);
 
-        state.editor_undo();
-        assert_eq!(state.editor.spawn.direction, Direction::Forward);
-        assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
+        editor.undo();
+        assert_eq!(editor.spawn.direction, Direction::Forward);
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
 
-        state.editor_undo();
-        assert_eq!(state.editor.spawn.direction, Direction::Forward);
-        assert_eq!(state.editor.spawn.position, [0.0, 0.0, 0.0]);
+        editor.undo();
+        assert_eq!(editor.spawn.direction, Direction::Forward);
+        assert_eq!(editor.spawn.position, [0.0, 0.0, 0.0]);
 
-        state.editor_redo();
-        assert_eq!(state.editor.spawn.position, [4.0, 1.0, 3.0]);
-        state.editor_redo();
-        assert_eq!(state.editor.spawn.direction, Direction::Right);
+        editor.redo();
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
+        editor.redo();
+        assert_eq!(editor.spawn.direction, Direction::Right);
 
         let expected_indicators = derive_tap_indicator_positions(
-            state.editor.spawn.position,
-            state.editor.spawn.direction,
-            &state.editor.timeline.taps.tap_times,
-            &state.editor.objects,
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.timeline.taps.tap_times,
+            &editor.objects,
         );
         assert_eq!(
-            state.editor.timeline.taps.tap_indicator_positions,
+            editor.timeline.taps.tap_indicator_positions,
             expected_indicators
         );
     }
 
-    #[tokio::test]
-    async fn toggle_tap_at_cursor_adds_then_removes_indicator() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.timeline.clock.time_seconds = 2.0;
-        state.editor.input.cursor = [1.0, 0.0, 2.0];
-        state.editor.timeline.preview.position = [1.5, 0.0, 2.5];
+    #[test]
+    fn toggle_tap_at_cursor_adds_then_removes_indicator() {
+        let mut editor = EditorSubsystem::default();
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.timeline.clock.time_seconds = 2.0;
+        editor.input.cursor = [1.0, 0.0, 2.0];
+        editor.timeline.preview.position = [1.5, 0.0, 2.5];
 
-        let (added_time, added) = state.editor.toggle_tap_at_cursor();
+        let (added_time, added) = editor.toggle_tap_at_cursor();
         assert!(added);
         assert!(added_time.is_some());
-        assert_eq!(state.editor.timeline.taps.tap_times.len(), 1);
-        assert_eq!(state.editor.timeline.taps.tap_indicator_positions.len(), 1);
+        assert_eq!(editor.timeline.taps.tap_times.len(), 1);
+        assert_eq!(editor.timeline.taps.tap_indicator_positions.len(), 1);
 
-        let (removed_time, added_again) = state.editor.toggle_tap_at_cursor();
+        let (removed_time, added_again) = editor.toggle_tap_at_cursor();
         assert!(!added_again);
         assert!(removed_time.is_some());
-        assert!(state.editor.timeline.taps.tap_times.is_empty());
-        assert!(
-            state
-                .editor
-                .timeline
-                .taps
-                .tap_indicator_positions
-                .is_empty()
-        );
+        assert!(editor.timeline.taps.tap_times.is_empty());
+        assert!(editor.timeline.taps.tap_indicator_positions.is_empty());
     }
 
-    #[tokio::test]
-    async fn toggle_tap_after_death_uses_reachable_timeline_time() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.timeline.clock.time_seconds = 3.0;
-        state.editor.objects = vec![test_block([0.0, 0.0, 4.0])];
-        state.editor.input.cursor = [0.0, 0.0, 3.0];
+    #[test]
+    fn toggle_tap_after_death_uses_reachable_timeline_time() {
+        let mut editor = EditorSubsystem::default();
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.timeline.clock.time_seconds = 3.0;
+        editor.objects = vec![test_block([0.0, 0.0, 4.0])];
+        editor.input.cursor = [0.0, 0.0, 3.0];
 
         let mut runtime = TimelineSimulationRuntime::new(
-            state.editor.spawn.position,
-            state.editor.spawn.direction,
-            &state.editor.objects,
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.objects,
             &[],
         );
-        runtime.advance_to(state.editor.timeline.clock.time_seconds);
-        state.editor.timeline.preview.position = runtime.position();
+        runtime.advance_to(editor.timeline.clock.time_seconds);
+        editor.timeline.preview.position = runtime.position();
 
-        let (added_time, added) = state.editor.toggle_tap_at_cursor();
+        let (added_time, added) = editor.toggle_tap_at_cursor();
 
         assert!(added);
         let added_time = added_time.expect("tap should be added");
@@ -1418,183 +1358,103 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn nudge_and_remove_selected_cover_selected_and_cursor_fallback_paths() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
-        state.editor.input.selected_block_indices = vec![0, 1];
-        state.editor.input.selected_block_index = Some(0);
+    #[test]
+    fn nudge_and_remove_selected_cover_selected_and_cursor_fallback_paths() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.input.selected_block_index = Some(0);
 
-        assert!(state.editor.nudge_selected(2.0, -1.0));
-        assert_eq!(state.editor.objects[0].position, [2.0, 0.0, -1.0]);
-        assert_eq!(state.editor.objects[1].position, [5.0, 0.0, 2.0]);
+        assert!(editor.nudge_selected(2.0, -1.0));
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, -1.0]);
+        assert_eq!(editor.objects[1].position, [5.0, 0.0, 2.0]);
 
-        state.editor.input.selected_block_indices.clear();
-        state.editor.input.selected_block_index = None;
-        assert!(!state.editor.nudge_selected(1.0, 1.0));
+        editor.input.selected_block_indices.clear();
+        editor.input.selected_block_index = None;
+        assert!(!editor.nudge_selected(1.0, 1.0));
 
-        state.editor.input.cursor = [2.0, 0.0, -1.0];
-        assert!(state.editor.remove_selected());
-        assert_eq!(state.editor.objects.len(), 1);
+        editor.input.cursor = [2.0, 0.0, -1.0];
+        assert!(editor.remove_selected());
+        assert_eq!(editor.objects.len(), 1);
 
-        state.editor.input.cursor = [999.0, 0.0, 999.0];
-        assert!(!state.editor.remove_selected());
+        editor.input.cursor = [999.0, 0.0, 999.0];
+        assert!(!editor.remove_selected());
     }
 
-    #[tokio::test]
-    async fn snap_selection_to_grid_snaps_all_selected_blocks_to_configured_step() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.config.snap_step = 0.5;
-        state.editor.objects = vec![
+    #[test]
+    fn snap_selection_to_grid_snaps_all_selected_blocks_to_configured_step() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_step = 0.5;
+        editor.objects = vec![
             test_block([0.24, 0.26, -0.74]),
             test_block([1.76, 0.0, 2.24]),
             test_block([9.1, 0.0, 9.1]),
         ];
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0, 1];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0, 1];
 
-        assert!(state.editor_snap_selection_to_grid());
+        assert!(editor.snap_selected_blocks_to_grid());
 
-        assert_eq!(state.editor.objects[0].position, [0.0, 0.5, -0.5]);
-        assert_eq!(state.editor.objects[1].position, [2.0, 0.0, 2.0]);
-        assert_eq!(state.editor.objects[2].position, [9.1, 0.0, 9.1]);
-        assert_eq!(state.editor.input.cursor, [0.0, 0.5, -0.5]);
+        assert_eq!(editor.objects[0].position, [0.0, 0.5, -0.5]);
+        assert_eq!(editor.objects[1].position, [2.0, 0.0, 2.0]);
+        assert_eq!(editor.objects[2].position, [9.1, 0.0, 9.1]);
+        assert_eq!(editor.input.cursor, [0.0, 0.5, -0.5]);
     }
 
-    #[tokio::test]
-    async fn g_key_snaps_selected_tap_to_configured_grid_step() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.config.snap_step = 1.0;
-        state.editor.timeline.clock.duration_seconds = 4.0;
-        state.editor.timeline.clock.time_seconds = 0.2;
-        state.editor.timeline.taps.tap_times = vec![0.2];
-        state.editor.timeline.taps.tap_indicator_positions = vec![[0.24, 0.0, 1.76]];
-        state.editor.timeline.taps.selected_index = Some(0);
+    #[test]
+    fn move_cursor_uses_snap_configuration() {
+        let mut editor = EditorSubsystem::default();
+        editor.input.cursor = [0.0, 0.0, 0.0];
 
-        assert!(state.editor_snap_selection_to_grid());
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 0.25;
+        editor.move_cursor(2, -1);
+        assert_eq!(editor.input.cursor, [0.5, 0.0, -0.25]);
 
-        assert_eq!(
-            state.editor.timeline.taps.tap_indicator_positions[0],
-            [0.0, 0.0, 2.0]
-        );
-        assert!(
-            (state.editor.timeline.taps.tap_times[0] - 0.25).abs() < 0.001,
-            "snap should recalculate the tap time, got {}",
-            state.editor.timeline.taps.tap_times[0]
-        );
-        assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
-        assert_eq!(state.editor.input.cursor, [0.0, 0.0, 2.0]);
-        assert!(
-            (state.editor.timeline.clock.time_seconds - state.editor.timeline.taps.tap_times[0])
-                .abs()
-                < 0.001
-        );
-        let recalculated_positions = derive_tap_indicator_positions(
-            state.editor.spawn.position,
-            state.editor.spawn.direction,
-            &state.editor.timeline.taps.tap_times,
-            &state.editor.objects,
-        );
-        assert_eq!(recalculated_positions.len(), 1);
-        assert!((recalculated_positions[0][0] - 0.0).abs() < 0.001);
-        assert!((recalculated_positions[0][1] - 0.0).abs() < 0.001);
-        assert!((recalculated_positions[0][2] - 2.0).abs() < 0.001);
+        editor.config.snap_to_grid = false;
+        editor.move_cursor(1, 1);
+        assert_eq!(editor.input.cursor, [1.5, 0.0, 0.75]);
     }
 
-    #[tokio::test]
-    async fn selected_tap_time_input_updates_time_and_preserves_selection() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.timeline.clock.duration_seconds = 4.0;
-        state.editor.timeline.clock.time_seconds = 1.5;
-        state.editor.timeline.taps.tap_times = vec![0.5, 1.5, 2.5];
-        state.editor.timeline.taps.tap_indicator_positions =
-            vec![[0.0, 0.0, 4.0], [8.0, 0.0, 4.0], [8.0, 0.0, 12.0]];
-        state.editor.timeline.taps.selected_index = Some(1);
+    #[test]
+    fn tapping_path_cursor_snaps_only_along_movement_axis() {
+        let mut forward_editor = EditorSubsystem::default();
+        forward_editor.input.mode = EditorMode::Tapping;
+        forward_editor.spawn.position = [1.0, 0.0, 0.0];
+        forward_editor.spawn.direction = Direction::Forward;
+        forward_editor.config.snap_to_grid = true;
+        forward_editor.config.snap_step = 2.0;
+        forward_editor.timeline.clock.duration_seconds = 4.0;
+        forward_editor.set_timeline_time_seconds(0.4);
 
-        assert!(state.editor_set_selected_tap_time(0.25));
-
-        assert_eq!(state.editor.timeline.taps.tap_times, vec![0.25, 0.5, 2.5]);
-        assert_eq!(state.editor.timeline.taps.selected_index, Some(0));
-        assert!(
-            (state.editor.timeline.clock.time_seconds - state.editor.timeline.taps.tap_times[0])
-                .abs()
-                < 0.001
-        );
-
-        let selected_tap = state.editor.selected_tap().expect("selected tap");
-        assert_eq!(selected_tap.0, 0);
-        assert!((selected_tap.1 - 0.25).abs() < 0.001);
-        assert_eq!(state.editor.input.cursor, selected_tap.2);
-    }
-
-    #[tokio::test]
-    async fn move_cursor_uses_snap_configuration() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.cursor = [0.0, 0.0, 0.0];
-
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 0.25;
-        state.editor.move_cursor(2, -1);
-        assert_eq!(state.editor.input.cursor, [0.5, 0.0, -0.25]);
-
-        state.editor.config.snap_to_grid = false;
-        state.editor.move_cursor(1, 1);
-        assert_eq!(state.editor.input.cursor, [1.5, 0.0, 0.75]);
-    }
-
-    #[tokio::test]
-    async fn tapping_path_cursor_snaps_only_along_movement_axis() {
-        let mut forward_state = State::new_test().await;
-        forward_state.phase = AppPhase::Editor;
-        forward_state.editor.input.mode = EditorMode::Tapping;
-        forward_state.editor.spawn.position = [1.0, 0.0, 0.0];
-        forward_state.editor.spawn.direction = Direction::Forward;
-        forward_state.editor.config.snap_to_grid = true;
-        forward_state.editor.config.snap_step = 2.0;
-        forward_state.editor.timeline.clock.duration_seconds = 4.0;
-        forward_state.set_editor_timeline_time_seconds(0.4);
-
-        let forward_cursor = forward_state
-            .editor
-            .tap_path_cursor_near_world([4.5, 0.0, 3.4]);
+        let forward_cursor = forward_editor.tap_path_cursor_near_world([4.5, 0.0, 3.4]);
         assert_eq!(forward_cursor[0], 1.0);
         assert_eq!(forward_cursor[2], 2.0);
 
-        let mut right_state = State::new_test().await;
-        right_state.phase = AppPhase::Editor;
-        right_state.editor.input.mode = EditorMode::Tapping;
-        right_state.editor.spawn.position = [0.0, 0.0, 1.0];
-        right_state.editor.spawn.direction = Direction::Right;
-        right_state.editor.config.snap_to_grid = true;
-        right_state.editor.config.snap_step = 2.0;
-        right_state.editor.timeline.clock.duration_seconds = 4.0;
-        right_state.set_editor_timeline_time_seconds(0.4);
+        let mut right_editor = EditorSubsystem::default();
+        right_editor.input.mode = EditorMode::Tapping;
+        right_editor.spawn.position = [0.0, 0.0, 1.0];
+        right_editor.spawn.direction = Direction::Right;
+        right_editor.config.snap_to_grid = true;
+        right_editor.config.snap_step = 2.0;
+        right_editor.timeline.clock.duration_seconds = 4.0;
+        right_editor.set_timeline_time_seconds(0.4);
 
-        let right_cursor = right_state
-            .editor
-            .tap_path_cursor_near_world([3.4, 0.0, 4.5]);
+        let right_cursor = right_editor.tap_path_cursor_near_world([3.4, 0.0, 4.5]);
         assert_eq!(right_cursor[0], 2.0);
         assert_eq!(right_cursor[2], 1.0);
     }
 
-    #[tokio::test]
-    async fn tapping_path_cursor_splits_turn_samples_without_diagonal_drift() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 1.0;
-        state.editor.timeline.clock.duration_seconds = 2.0;
-        state.editor.timeline.snapshot_cache_step_seconds = 1.0;
-        state.editor.timeline.snapshot_cache_revision = state.editor.timeline.simulation_revision;
-        state.editor.timeline.snapshot_cache = vec![
+    #[test]
+    fn tapping_path_cursor_splits_turn_samples_without_diagonal_drift() {
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
+        editor.timeline.clock.duration_seconds = 2.0;
+        editor.timeline.snapshot_cache_step_seconds = 1.0;
+        editor.timeline.snapshot_cache_revision = editor.timeline.simulation_revision;
+        editor.timeline.snapshot_cache = vec![
             crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [1.44, 0.0, 1.5],
                 direction: Direction::Right,
@@ -1613,27 +1473,26 @@ mod tests {
             },
         ];
 
-        let cursor = state.editor.tap_path_cursor_near_world([1.5, 0.0, 1.55]);
+        let cursor = editor.tap_path_cursor_near_world([1.5, 0.0, 1.55]);
 
         assert_eq!(cursor[0], 1.0);
         assert_eq!(cursor[2], 1.0);
     }
 
-    #[tokio::test]
-    async fn timing_division_previews_include_distant_timeline_times() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.timeline.clock.duration_seconds = 60.0;
-        state.editor.timeline.clock.time_seconds = 0.0;
-        state.editor.timing.timing_points = vec![TimingPoint {
+    #[test]
+    fn timing_division_previews_include_distant_timeline_times() {
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.timeline.clock.duration_seconds = 60.0;
+        editor.timeline.clock.time_seconds = 0.0;
+        editor.timing.timing_points = vec![TimingPoint {
             time_seconds: 0.0,
             bpm: 120.0,
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         }];
 
-        let previews = state.editor.timing_division_tap_previews();
+        let previews = editor.timing_division_tap_previews();
 
         assert!(previews.iter().any(|preview| {
             (preview.time_seconds - 45.0).abs() <= 0.001
@@ -1641,18 +1500,17 @@ mod tests {
         }));
     }
 
-    #[tokio::test]
-    async fn toggle_tap_at_cursor_can_add_distant_cached_path_tap() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 1.0;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.set_editor_timeline_time_seconds(0.1);
-        state.editor.input.cursor = [0.0, 0.0, 32.0];
+    #[test]
+    fn toggle_tap_at_cursor_can_add_distant_cached_path_tap() {
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.set_timeline_time_seconds(0.1);
+        editor.input.cursor = [0.0, 0.0, 32.0];
 
-        let (added_time, added) = state.editor.toggle_tap_at_cursor();
+        let (added_time, added) = editor.toggle_tap_at_cursor();
 
         assert!(added);
         let added_time = added_time.expect("tap should be added");
@@ -1660,43 +1518,10 @@ mod tests {
             (added_time - 4.0).abs() < 0.02,
             "expected distant tap near 4.0s, got {added_time}"
         );
-        assert_eq!(state.editor.timeline.taps.tap_times, vec![added_time]);
+        assert_eq!(editor.timeline.taps.tap_times, vec![added_time]);
         assert_eq!(
-            state.editor.timeline.taps.tap_indicator_positions,
+            editor.timeline.taps.tap_indicator_positions,
             vec![[0.0, 0.0, 32.0]]
         );
-    }
-
-    #[tokio::test]
-    async fn editor_shift_timeline_time_clamps_and_ignores_non_editor_phase() {
-        let mut state = State::new_test().await;
-        state.editor.timeline.clock.time_seconds = 1.0;
-        state.editor.timeline.clock.duration_seconds = 2.0;
-
-        state.phase = AppPhase::Menu;
-        state.editor_shift_timeline_time(0.75);
-        assert_eq!(state.editor.timeline.clock.time_seconds, 1.0);
-
-        state.phase = AppPhase::Editor;
-        state.editor_shift_timeline_time(5.0);
-        assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
-        state.editor_shift_timeline_time(-10.0);
-        assert_eq!(state.editor.timeline.clock.time_seconds, 0.0);
-    }
-
-    #[tokio::test]
-    async fn toggle_timeline_playback_switches_modes_and_restores_previous_mode() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("PlaybackModeToggle".to_string());
-        state.editor.set_mode(EditorMode::Place);
-        state.editor.timeline.playback.playing = false;
-
-        state.toggle_editor_timeline_playback();
-        assert!(state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.input.mode, EditorMode::Null);
-
-        state.toggle_editor_timeline_playback();
-        assert!(!state.editor.timeline.playback.playing);
-        assert_eq!(state.editor.input.mode, EditorMode::Place);
     }
 }

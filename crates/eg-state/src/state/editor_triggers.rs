@@ -242,7 +242,6 @@ impl EditorSubsystem {
 #[cfg(test)]
 mod tests {
     use super::EditorSubsystem;
-    use crate::state::State;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
         TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
@@ -331,14 +330,8 @@ mod tests {
         }
     }
 
-    async fn new_editor_state() -> State {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("Test Level".to_string());
-        state
-    }
-
-    #[tokio::test]
-    async fn camera_track_trigger_detection_matches_camera_target_and_action() {
+    #[test]
+    fn camera_track_trigger_detection_matches_camera_target_and_action() {
         let pose = camera_pose_trigger(0.0).trigger.unwrap();
         let follow = camera_follow_trigger(1.0).trigger.unwrap();
         let object = object_move_timed_trigger(2.0);
@@ -348,39 +341,39 @@ mod tests {
         assert!(!EditorSubsystem::is_camera_track_trigger(&object));
     }
 
-    #[tokio::test]
-    async fn trigger_objects_are_sorted_trigger_objects() {
-        let mut state = new_editor_state().await;
+    #[test]
+    fn trigger_objects_are_sorted_trigger_objects() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.objects = vec![
+        editor.objects = vec![
             test_block(99.0),
             camera_pose_trigger(2.0),
             object_move_trigger(0.5),
             camera_follow_trigger(1.0),
         ];
 
-        let triggers = state.editor.trigger_objects();
+        let triggers = editor.trigger_objects();
         assert_eq!(triggers.len(), 3);
         assert_eq!(triggers[0].id, "transform_0.5");
         assert_eq!(triggers[1].id, "camera_follow_1");
         assert_eq!(triggers[2].id, "camera_pose_2");
     }
 
-    #[tokio::test]
-    async fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![
+    #[test]
+    fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             camera_pose_trigger(0.5),
             object_move_trigger(0.75),
             camera_follow_trigger(1.0),
         ];
 
-        state.editor.set_trigger_selected(Some(99));
-        assert_eq!(state.editor.selected_trigger_index(), None);
-        state.editor.set_trigger_selected(Some(2));
-        assert_eq!(state.editor.selected_trigger_index(), Some(2));
+        editor.set_trigger_selected(Some(99));
+        assert_eq!(editor.selected_trigger_index(), None);
+        editor.set_trigger_selected(Some(2));
+        assert_eq!(editor.selected_trigger_index(), Some(2));
 
-        let markers = state.editor.camera_trigger_markers();
+        let markers = editor.camera_trigger_markers();
         assert_eq!(markers.len(), 2);
         assert_eq!(markers[0].0, 0);
         assert_eq!(markers[1].0, 2);
@@ -388,45 +381,45 @@ mod tests {
         assert_eq!(markers[1].1.mode, CameraMode::Follow);
     }
 
-    #[tokio::test]
-    async fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
-        let mut state = new_editor_state().await;
+    #[test]
+    fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.objects = vec![camera_pose_trigger(0.0)];
-        assert!(!state.editor.has_object_transform_triggers());
+        editor.objects = vec![camera_pose_trigger(0.0)];
+        assert!(!editor.has_object_transform_triggers());
 
-        state.editor.objects.push(object_move_trigger(1.0));
-        assert!(state.editor.has_object_transform_triggers());
+        editor.objects.push(object_move_trigger(1.0));
+        assert!(editor.has_object_transform_triggers());
     }
 
-    #[tokio::test]
-    async fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = vec![object_move_trigger(0.0)];
+    #[test]
+    fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![object_move_trigger(0.0)];
 
-        state.editor.objects[0].position = [9.0, 8.0, 7.0];
-        state.editor.objects[0].size = [2.0, 3.0, 4.0];
-        state.editor.objects[0].rotation = [10.0, 20.0, 30.0];
+        editor.objects[0].position = [9.0, 8.0, 7.0];
+        editor.objects[0].size = [2.0, 3.0, 4.0];
+        editor.objects[0].rotation = [10.0, 20.0, 30.0];
 
-        let trigger_object = state.editor.trigger_objects().remove(0);
+        let trigger_object = editor.trigger_objects().remove(0);
         assert_eq!(trigger_object.position, [9.0, 8.0, 7.0]);
         assert_eq!(trigger_object.rotation, [10.0, 20.0, 30.0]);
         assert_eq!(trigger_object.size, [2.0, 3.0, 4.0]);
     }
 
-    #[tokio::test]
-    async fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
-        let mut state = new_editor_state().await;
-        state.editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
-        state.editor.objects.push(camera_pose_trigger(1.0));
-        state.editor.objects.push(test_block(10_001.0));
+    #[test]
+    fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
+        editor.objects.push(camera_pose_trigger(1.0));
+        editor.objects.push(test_block(10_001.0));
 
-        assert_eq!(state.editor.trigger_objects().len(), 1);
-        assert!(state.editor.has_camera_timeline_triggers());
+        assert_eq!(editor.trigger_objects().len(), 1);
+        assert!(editor.has_camera_timeline_triggers());
 
-        state.editor.sync_objects();
+        editor.sync_objects();
 
-        assert_eq!(state.editor.trigger_objects().len(), 1);
-        assert!(state.editor.has_camera_timeline_triggers());
+        assert_eq!(editor.trigger_objects().len(), 1);
+        assert!(editor.has_camera_timeline_triggers());
     }
 }

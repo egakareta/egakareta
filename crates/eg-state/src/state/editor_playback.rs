@@ -14,6 +14,7 @@ use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TriggerTarget};
 
 use super::audio_state::start_audio_source_at_seconds_for_resources;
+use super::editor_timeline::EditorTimelineState;
 use super::runtime::BlockVisualEffect;
 use super::{
     AppPhaseRes, AudioBackendRes, EditorAudioCacheRes, EditorDirtyFlags, EditorInputRes,
@@ -54,16 +55,7 @@ pub(crate) fn update_editor_timeline_playback_system(
     let mode = effective_playback_mode(&input, &runtime_state, &timeline);
     let simulate_preview = mode != EditorMode::Timing;
 
-    if let Some(target_time) = timeline.0.playback.pending_seek_time_seconds {
-        let cooldown =
-            (timeline.0.playback.seek_resync_cooldown_seconds - frame_time.delta_seconds).max(0.0);
-        timeline.0.playback.seek_resync_cooldown_seconds = cooldown;
-        if cooldown > 0.0 {
-            return;
-        }
-
-        timeline.0.playback.pending_seek_time_seconds = None;
-        timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+    if let Some(target_time) = take_ready_pending_seek(&mut timeline.0, frame_time.delta_seconds) {
         audio.stop();
         let start_seconds =
             rebuild_playback_runtime(mode, target_time, &objects.objects, &spawn.0, &mut timeline);
@@ -127,6 +119,25 @@ pub(crate) fn update_editor_timeline_playback_system(
     }
 }
 
+fn take_ready_pending_seek(
+    timeline: &mut EditorTimelineState,
+    frame_delta_seconds: f32,
+) -> Option<f32> {
+    let Some(target_time) = timeline.playback.pending_seek_time_seconds else {
+        timeline.playback.seek_resync_cooldown_seconds = 0.0;
+        return None;
+    };
+
+    let cooldown = (timeline.playback.seek_resync_cooldown_seconds - frame_delta_seconds).max(0.0);
+    timeline.playback.seek_resync_cooldown_seconds = cooldown;
+    if cooldown > 0.0 {
+        return None;
+    }
+
+    timeline.playback.pending_seek_time_seconds = None;
+    timeline.playback.seek_resync_cooldown_seconds = 0.0;
+    Some(target_time)
+}
 fn effective_playback_mode(
     input: &EditorInputRes,
     runtime: &EditorRuntimeRes,
@@ -315,4 +326,32 @@ fn stop_editor_playback(
             .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
     }
     audio.stop();
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_seek_without_target_resets_cooldown() {
+        let mut timeline = EditorTimelineState::default();
+        timeline.playback.seek_resync_cooldown_seconds = 0.75;
+
+        assert_eq!(take_ready_pending_seek(&mut timeline, 0.1), None);
+        assert_eq!(timeline.playback.seek_resync_cooldown_seconds, 0.0);
+    }
+
+    #[test]
+    fn pending_seek_waits_for_cooldown_then_returns_target() {
+        let mut timeline = EditorTimelineState::default();
+        timeline.playback.pending_seek_time_seconds = Some(2.0);
+        timeline.playback.seek_resync_cooldown_seconds = 0.2;
+
+        assert_eq!(take_ready_pending_seek(&mut timeline, 0.05), None);
+        assert_eq!(timeline.playback.pending_seek_time_seconds, Some(2.0));
+        assert!(timeline.playback.seek_resync_cooldown_seconds > 0.0);
+
+        assert_eq!(take_ready_pending_seek(&mut timeline, 1.0), Some(2.0));
+        assert_eq!(timeline.playback.pending_seek_time_seconds, None);
+        assert_eq!(timeline.playback.seek_resync_cooldown_seconds, 0.0);
+    }
 }

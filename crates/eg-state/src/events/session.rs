@@ -47,6 +47,7 @@ use crate::state::{
     EditorAudioCacheRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes,
     EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
     RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
+    load_waveform_for_level_resources,
 };
 
 /// Load a level from a builtin resource name.
@@ -200,42 +201,17 @@ pub fn handle_load_level(world: &mut World) {
 }
 
 fn load_waveform_for_level(world: &mut World, level_name: String) {
-    let source_key = eg_audio::audio::runtime_asset_source_key(&level_name, "audio.mp3");
     let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
-
-    if let Some(entry) = editor_cache.waveform(&source_key) {
-        let mut timing = world.resource_mut::<EditorTimingRes>();
-        timing.0.waveform_samples = entry.samples;
-        timing.0.waveform_sample_rate = entry.sample_rate;
-        timing.0.waveform_window_size = entry.window_size;
-        timing.0.waveform_loading = !entry.complete;
-        timing.0.waveform_complete = entry.complete;
-        if entry.complete {
-            editor_cache.clear_loading_source_if(&source_key);
-        }
-        return;
-    }
-
-    if editor_cache.loading_source().as_deref() == Some(source_key.as_str()) {
-        return;
-    }
-
-    editor_cache.set_loading_source(Some(source_key.clone()));
-    {
-        let mut timing = world.resource_mut::<EditorTimingRes>();
-        timing.0.waveform_samples.clear();
-        timing.0.waveform_sample_rate = 0;
-        timing.0.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
-        timing.0.waveform_loading = true;
-        timing.0.waveform_complete = false;
-    }
-    let cached_bytes = editor_cache.bytes_for_level_audio(&level_name).or_else(|| {
-        world
-            .resource::<RuntimeAudioPreloadRes>()
-            .bytes(&source_key)
-    });
+    let runtime_preload = world.resource::<RuntimeAudioPreloadRes>().clone();
     let sender = world.resource::<WaveformLoadSenderRes>().0.clone();
-    eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
+    let mut timing = world.resource_mut::<EditorTimingRes>();
+    load_waveform_for_level_resources(
+        level_name,
+        &editor_cache,
+        &runtime_preload,
+        &mut timing.0,
+        sender,
+    );
 }
 
 pub fn handle_rename_level(

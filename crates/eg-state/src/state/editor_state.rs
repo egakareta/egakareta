@@ -11,8 +11,7 @@ use eg_editor_domain::{
     add_tap_with_indicator, clear_taps_with_indicators, interpolate_timeline_sample_positions,
     remove_tap_with_indicator, snap_cell_to_step, snap_component_to_step,
 };
-use eg_game::TimelineSimulationRuntime;
-use eg_types::{AppPhase, Direction, EditorMode, GameCursor, LevelObject, TimingPoint};
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TimingPoint};
 use eg_types::{
     CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
     TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
@@ -587,6 +586,79 @@ impl EditorSubsystem {
         self.timing.bpm_tap_times.clear();
         self.timing.bpm_tap_result = None;
     }
+
+    pub fn add_transform_trigger(&mut self) -> bool {
+        if self.timeline.playback.playing {
+            return false;
+        }
+
+        let selected_objects = self
+            .selected_indices_normalized()
+            .into_iter()
+            .filter_map(|index| {
+                let object = self.objects.get(index)?;
+                if object.trigger.is_some() {
+                    return None;
+                }
+                let object_id = (!object.id.is_empty()).then(|| object.id.clone())?;
+                Some((object_id, object.clone()))
+            })
+            .collect::<Vec<_>>();
+
+        if selected_objects.is_empty() {
+            return false;
+        }
+
+        self.record_history_state();
+        self.runtime.interaction.gizmo_drag = None;
+        self.runtime.interaction.block_drag = None;
+        let time_seconds = self.timeline.clock.time_seconds.max(0.0);
+
+        let replaced_object_ids = selected_objects
+            .iter()
+            .map(|(object_id, _)| object_id.clone())
+            .collect::<Vec<_>>();
+        remove_replaced_transform_trigger_targets(
+            &mut self.objects,
+            time_seconds,
+            &replaced_object_ids,
+        );
+        self.sync_trigger_selection_from_objects();
+
+        let mut created_trigger_indices = Vec::with_capacity(selected_objects.len());
+        for (object_id, object) in selected_objects {
+            let object_index = self.objects.len();
+            let trigger_object = LevelObject {
+                position: object.position,
+                rotation: object.rotation,
+                size: object.size,
+                block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
+                trigger: Some(TimedTrigger {
+                    time_seconds,
+                    duration_seconds: 1.0,
+                    easing: EasingDirection::EaseInOut,
+                    target: TriggerTarget::Objects {
+                        object_ids: vec![object_id],
+                    },
+                    transform: true,
+                    ..TimedTrigger::default()
+                }),
+                ..LevelObject::default()
+            }
+            .with_generated_id(&self.objects);
+            self.objects.push(trigger_object);
+            self.sync_trigger_selection_from_objects();
+            created_trigger_indices.push(object_index);
+        }
+
+        self.replace_block_selection(created_trigger_indices);
+        self.input.hovered_block_index = self.input.selected_block_index;
+        self.sync_primary_selection_from_indices();
+        let mut dirty = EditorDirtyFlags::trigger_object_added();
+        dirty.rebuild_selection_overlays = true;
+        self.mark_dirty(dirty);
+        true
+    }
 }
 
 impl State {
@@ -664,65 +736,6 @@ impl State {
         self.editor.mode()
     }
 
-    /// Read-only view of the current selected tap index. Used by the
-    /// Phase 3.17 timeline-selection carve-out sync guard.
-    pub fn editor_selected_tap_index_value(&self) -> Option<usize> {
-        self.editor.timeline.taps.selected_index
-    }
-
-    /// Setter for the selected tap index. The Phase 3.17
-    /// timeline-selection carve-out syncs
-    /// `EditorTimelineRes.0.taps.selected_index` into this field via
-    /// `Runtime::sync_app_editor_timeline_state`.
-    pub fn set_editor_selected_tap_index(&mut self, selected_index: Option<usize>) {
-        self.editor_set_selected_tap_index(selected_index);
-    }
-
-    /// Sync tap arrays from the App-world timeline resource into the
-    /// legacy editor state. This is the temporary compatibility point
-    /// for direct tap-array handlers while history, preview caches, and
-    /// mesh rebuilds still live on `State`.
-    pub fn set_editor_tap_state(
-        &mut self,
-        tap_times: Vec<f32>,
-        tap_indicator_positions: Vec<[f32; 3]>,
-        selected_index: Option<usize>,
-    ) {
-        self.set_editor_tap_state_with_cursor_override(
-            tap_times,
-            tap_indicator_positions,
-            selected_index,
-            None,
-        );
-    }
-
-    pub fn set_editor_tap_state_with_cursor_override(
-        &mut self,
-        tap_times: Vec<f32>,
-        tap_indicator_positions: Vec<[f32; 3]>,
-        selected_index: Option<usize>,
-        cursor_override: Option<[f32; 3]>,
-    ) {
-        if self.editor.timeline.taps.tap_times == tap_times
-            && self.editor.timeline.taps.tap_indicator_positions == tap_indicator_positions
-            && self.editor.timeline.taps.selected_index == selected_index
-            && cursor_override.is_none()
-        {
-            return;
-        }
-
-        self.record_editor_history_state();
-        self.editor.timeline.taps.tap_times = tap_times;
-        self.editor.timeline.taps.tap_indicator_positions = tap_indicator_positions;
-        self.editor.set_selected_tap_index(selected_index);
-        self.editor.invalidate_samples();
-        self.refresh_editor_after_tap_change(cursor_override);
-        if let Some((_, _, selected_position)) = self.editor.selected_tap() {
-            self.editor.input.cursor = selected_position;
-            self.rebuild_editor_cursor_vertices();
-        }
-    }
-
     pub fn set_editor_ui_input_blocking_rects(
         &mut self,
         rects: Vec<[f32; 4]>,
@@ -740,14 +753,6 @@ impl State {
         self.phase == AppPhase::Editor && self.editor.pointer_over_ui_input(x, y)
     }
 
-    pub fn game_cursor(&self, _pointer_over_egui: bool) -> GameCursor {
-        if self.phase == AppPhase::Playing && !self.is_game_paused() {
-            return GameCursor::Hidden;
-        }
-
-        GameCursor::Default
-    }
-
     pub fn editor_snap_to_grid(&self) -> bool {
         self.editor.snap_to_grid()
     }
@@ -762,27 +767,6 @@ impl State {
 
     pub fn editor_snap_rotation_step_degrees(&self) -> f32 {
         self.editor.snap_rotation_step_degrees()
-    }
-
-    /// Snapshot editor config for one-time compatibility test App seeding.
-    pub fn editor_config_resource(&self) -> super::EditorConfigRes {
-        super::EditorConfigRes(self.editor.config.clone())
-    }
-
-    /// Snapshot the editor input state into an [`super::EditorInputRes`] so
-    /// App-world handlers that mutate input fields start from the same
-    /// cursor/mode/modifier state as the legacy `State`.
-    pub fn editor_input_resource(&self) -> super::EditorInputRes {
-        super::EditorInputRes(self.editor.input.clone())
-    }
-
-    /// Snapshot the ordered editor object list into an [`super::EditorObjectsRes`]
-    /// so App-world history handlers can apply undo/redo snapshots without
-    /// staging legacy editor commands.
-    pub fn editor_objects_resource(&self) -> super::EditorObjectsRes {
-        super::EditorObjectsRes {
-            objects: self.editor.objects.clone(),
-        }
     }
 
     /// Read-only view of the ordered editor object list mirrored by
@@ -809,127 +793,9 @@ impl State {
         self.editor.sync_primary_selection_from_indices();
     }
 
-    pub fn editor_history_resource(&self) -> super::EditorHistoryRes {
-        super::EditorHistoryRes(self.editor.runtime.history.clone())
-    }
-
     #[cfg(test)]
     pub fn set_editor_history_state(&mut self, history: super::EditorHistoryState) {
         self.editor.runtime.history = history;
-    }
-
-    /// Snapshot legacy timing data for compatibility test App construction.
-    pub fn editor_timing_resource(&self) -> super::EditorTimingRes {
-        super::EditorTimingRes(self.editor.timing.clone())
-    }
-
-    /// Snapshot the editor timeline state into an
-    /// [`super::EditorTimelineRes`] so the App world can be seeded from
-    /// the legacy `State` at construction time. Used for the timeline
-    /// setting carve-out (see `events::timeline`): the timeline clock
-    /// fields live on `EditorTimelineRes`, and `Runtime::new` seeds the
-    /// resource from the legacy state so the change-guarded
-    /// `sync_app_editor_timeline_state` is a no-op on the first frame
-    /// for unchanged fields.
-    pub fn editor_timeline_resource(&self) -> super::EditorTimelineRes {
-        let mut timeline = super::EditorTimelineRes::default();
-        timeline.0.clock.time_seconds = self.editor.timeline.clock.time_seconds;
-        timeline.0.clock.duration_seconds = self.editor.timeline.clock.duration_seconds;
-        timeline.0.preview.position = self.editor.timeline.preview.position;
-        timeline.0.preview.direction = self.editor.timeline.preview.direction;
-        timeline.0.taps.tap_times = self.editor.timeline.taps.tap_times.clone();
-        timeline.0.taps.tap_indicator_positions =
-            self.editor.timeline.taps.tap_indicator_positions.clone();
-        timeline.0.taps.selected_index = self.editor.timeline.taps.selected_index;
-        timeline.0.playback.playing = self.editor.timeline.playback.playing;
-        timeline.0.playback.pending_seek_time_seconds =
-            self.editor.timeline.playback.pending_seek_time_seconds;
-        timeline.0.playback.seek_resync_cooldown_seconds =
-            self.editor.timeline.playback.seek_resync_cooldown_seconds;
-        timeline
-    }
-
-    /// Snapshot legacy editor interaction data for compatibility test construction.
-    pub fn editor_runtime_resource(&self) -> super::EditorRuntimeRes {
-        let mut runtime = super::EditorRuntimeRes::default();
-        runtime.0.interaction.last_mode = self.editor.runtime.interaction.last_mode;
-        runtime.0.interaction.clipboard = self.editor.runtime.interaction.clipboard.clone();
-        runtime
-    }
-
-    /// Mirror App-owned timeline playback into the compatibility presentation
-    /// state without invoking legacy setters or starting/stopping audio.
-    pub fn sync_editor_timeline_playback_from_app(
-        &mut self,
-        duration_seconds: f32,
-        time_seconds: f32,
-        preview_position: [f32; 3],
-        preview_direction: Direction,
-        playing: bool,
-        pending_seek_time_seconds: Option<f32>,
-        seek_resync_cooldown_seconds: f32,
-        last_mode: Option<EditorMode>,
-    ) {
-        self.editor.timeline.clock.duration_seconds = duration_seconds;
-        self.editor.timeline.clock.time_seconds = time_seconds;
-        self.editor.timeline.preview.position = preview_position;
-        self.editor.timeline.preview.direction = preview_direction;
-        self.editor.timeline.playback.playing = playing;
-        self.editor.timeline.playback.pending_seek_time_seconds = pending_seek_time_seconds;
-        self.editor.timeline.playback.seek_resync_cooldown_seconds = seek_resync_cooldown_seconds;
-        self.editor.runtime.interaction.last_mode = last_mode;
-
-        if playing {
-            self.editor.input.mode = EditorMode::Null;
-            if last_mode == Some(EditorMode::Timing) {
-                self.editor.timeline.playback.runtime = None;
-            } else {
-                let mut runtime = TimelineSimulationRuntime::new(
-                    self.editor.spawn.position,
-                    self.editor.spawn.direction,
-                    &self.editor.objects,
-                    &self.editor.timeline.taps.tap_times,
-                );
-                runtime.advance_to(time_seconds);
-                self.editor.timeline.playback.runtime = Some(runtime);
-            }
-        } else {
-            self.editor.timeline.playback.runtime = None;
-        }
-    }
-
-    /// Snapshot the complete legacy session into the authoritative
-    /// [`super::SessionStateRes`] used by production App systems and UI.
-    /// Runtime seeds this once during construction; production frames no
-    /// longer mirror session fields from `State`.
-    pub fn session_state_resource(&self) -> super::SessionStateRes {
-        super::SessionStateRes {
-            editor_level_name: self.session.editor_level_name.clone(),
-            editor_music_metadata: self.session.editor_music_metadata.clone(),
-            editor_creator_metadata: self.session.editor_creator_metadata.clone(),
-            editor_sky_color: self.session.editor_sky_color,
-            editor_menu_preview_camera: self.session.editor_menu_preview_camera.clone(),
-            editor_show_metadata: self.session.editor_show_metadata,
-            editor_show_place_window: self.session.editor_show_place_window,
-            editor_show_settings: self.session.editor_show_settings,
-            editor_settings_section: self.session.editor_settings_section,
-            editor_keybind_capture_action: self.session.editor_keybind_capture_action.clone(),
-            app_settings: self.session.app_settings.clone(),
-            settings_restart_required: self.session.settings_restart_required,
-            graphics_backend_locked: self.session.graphics_backend_locked,
-            audio_backend_locked: self.session.audio_backend_locked,
-            available_graphics_backends: self.session.available_graphics_backends.clone(),
-            available_audio_backends: self.session.available_audio_backends.clone(),
-            playing_level_name: self.session.playing_level_name.clone(),
-            playtesting_editor: self.session.playtesting_editor,
-            game_paused: self.session.game_paused,
-            playtest_audio_start_seconds: self.session.playtest_audio_start_seconds,
-            playing_sky_color: self.session.playing_sky_color,
-            playing_trigger_base_objects: self.session.playing_trigger_base_objects.clone(),
-            practice_mode_enabled: self.is_practice_mode_enabled(),
-            practice_checkpoints: self.session.practice_checkpoints.clone(),
-            ..Default::default()
-        }
     }
 
     pub fn set_editor_snap_to_grid(&mut self, snap: bool) {
@@ -1454,84 +1320,17 @@ impl State {
     }
 
     pub fn add_editor_transform_trigger(&mut self) -> bool {
-        if self.phase != AppPhase::Editor || self.editor.timeline.playback.playing {
+        if self.phase != AppPhase::Editor || !self.editor.add_transform_trigger() {
             return false;
         }
 
-        let selected_objects = self
-            .selected_block_indices_normalized()
-            .into_iter()
-            .filter_map(|index| {
-                let object = self.editor.objects.get(index)?;
-                if object.trigger.is_some() {
-                    return None;
-                }
-                let object_id = (!object.id.is_empty()).then(|| object.id.clone())?;
-                Some((object_id, object.clone()))
-            })
-            .collect::<Vec<_>>();
-
-        if selected_objects.is_empty() {
-            return false;
-        }
-
-        self.record_editor_history_state();
-        self.editor.runtime.interaction.gizmo_drag = None;
-        self.editor.runtime.interaction.block_drag = None;
         self.session.editor_show_place_window = false;
-        let time_seconds = self.editor.timeline.clock.time_seconds.max(0.0);
-
-        let replaced_object_ids = selected_objects
-            .iter()
-            .map(|(object_id, _)| object_id.clone())
-            .collect::<Vec<_>>();
-        remove_replaced_transform_trigger_targets(
-            &mut self.editor.objects,
-            time_seconds,
-            &replaced_object_ids,
-        );
-        self.editor.sync_trigger_selection_from_objects();
-
-        let mut created_trigger_indices = Vec::with_capacity(selected_objects.len());
-        for (object_id, object) in selected_objects {
-            let object_index = self.editor.objects.len();
-            let trigger_object = LevelObject {
-                position: object.position,
-                rotation: object.rotation,
-                size: object.size,
-                block_id: BlockId::new(TRANSFORM_TRIGGER_BLOCK_ID),
-                trigger: Some(TimedTrigger {
-                    time_seconds,
-                    duration_seconds: 1.0,
-                    easing: EasingDirection::EaseInOut,
-                    target: TriggerTarget::Objects {
-                        object_ids: vec![object_id],
-                    },
-                    transform: true,
-                    ..TimedTrigger::default()
-                }),
-                ..LevelObject::default()
-            }
-            .with_generated_id(&self.editor.objects);
-            self.editor.objects.push(trigger_object);
-            self.editor.sync_trigger_selection_from_objects();
-            created_trigger_indices.push(object_index);
-        }
-
-        self.editor.replace_block_selection(created_trigger_indices);
-        self.editor.input.hovered_block_index = self.editor.input.selected_block_index;
-        self.sync_primary_selection_from_indices();
         self.sync_editor_objects();
         self.rebuild_editor_cursor_vertices();
         self.rebuild_editor_gizmo_vertices();
         self.rebuild_editor_selection_outline_vertices();
-        let mut dirty = EditorDirtyFlags::trigger_object_added();
-        dirty.rebuild_selection_overlays = true;
-        self.mark_editor_dirty(dirty);
-
         true
     }
-
     pub fn editor_timeline_preview(&self) -> ([f32; 3], Direction) {
         self.editor.timeline_preview()
     }
@@ -1564,36 +1363,6 @@ impl State {
 
         self.editor.input.cursor = cursor;
         self.rebuild_editor_cursor_vertices();
-    }
-
-    /// Test-only accessor for the raw `session.practice_mode_enabled` flag.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn practice_mode_enabled_value(&self) -> bool {
-        self.session.practice_mode_enabled
-    }
-
-    /// Read-only accessor for the raw `session.game_paused` flag.
-    /// Exposed so the Phase 3.18 `GameResume` carve-out can compare
-    /// the App-world pause resource with the legacy session field
-    /// without the phase-aware guard in `is_game_paused()`.
-    pub fn game_paused_value(&self) -> bool {
-        self.session.game_paused
-    }
-
-    /// Resume real gameplay through the existing legacy side-effect
-    /// path. The App-world `GameResume` handler only clears
-    /// `SessionStateRes.game_paused`; `Runtime::sync_app_session_state`
-    /// calls this when that resource changes from paused to resumed.
-    pub fn resume_game_from_pause(&mut self) {
-        self.resume_game();
-    }
-
-    /// Pause real gameplay through the existing legacy side-effect path.
-    /// The App-world Escape handler only sets
-    /// `SessionStateRes.game_paused`; `Runtime::sync_app_session_state`
-    /// calls this when that resource changes from running to paused.
-    pub fn pause_game_from_playing(&mut self) {
-        self.pause_game();
     }
 
     pub fn editor_selected_trigger_index(&self) -> Option<usize> {
@@ -1746,16 +1515,6 @@ impl State {
         self.editor.bpm_tap_reset();
     }
 
-    /// Snapshot legacy spawn metadata for compatibility test App construction.
-    pub fn editor_spawn_resource(&self) -> super::EditorSpawnRes {
-        super::EditorSpawnRes(self.editor.spawn.clone())
-    }
-
-    /// Snapshot legacy camera data for compatibility test App construction.
-    pub fn editor_camera_resource(&self) -> super::EditorCameraRes {
-        super::EditorCameraRes(self.editor.camera.clone())
-    }
-
     /// Set a non-default legacy camera fixture before compatibility App construction.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_editor_camera_state(
@@ -1763,13 +1522,6 @@ impl State {
         camera: crate::state::editor_camera::EditorCameraState,
     ) {
         self.editor.camera = camera;
-    }
-
-    /// Snapshot legacy trigger selection for compatibility test App construction.
-    pub fn editor_trigger_resource(&self) -> super::EditorTriggerRes {
-        super::EditorTriggerRes(crate::state::editor_triggers::EditorTriggerState {
-            selected_index: self.editor.triggers.selected_index,
-        })
     }
 
     /// Number of camera/transform trigger objects currently in the
@@ -1784,13 +1536,13 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::State;
+    use super::EditorSubsystem;
     use eg_blocks::BlockId;
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
-        AppPhase, Direction, EasingDirection, EditorMode, GameCursor, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+        Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger, TriggerTarget,
     };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
@@ -1837,51 +1589,49 @@ mod tests {
         transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_ignores_trigger_block_selection() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_ignores_trigger_block_selection() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
-        state.editor.sync_trigger_selection_from_objects();
-        state.editor.input.selected_block_indices = vec![0];
-        state.editor.input.selected_block_index = Some(0);
+        editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
+        editor.sync_trigger_selection_from_objects();
+        editor.input.selected_block_indices = vec![0];
+        editor.input.selected_block_index = Some(0);
 
-        assert!(!state.add_editor_transform_trigger());
-        assert_eq!(state.editor.objects.len(), 1);
-        assert_eq!(state.editor.trigger_objects().len(), 1);
+        assert!(!editor.add_transform_trigger());
+        assert_eq!(editor.objects.len(), 1);
+        assert_eq!(editor.trigger_objects().len(), 1);
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_creates_selected_markers_for_selected_blocks() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_creates_selected_markers_for_selected_blocks() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.time_seconds = 2.5;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.objects = vec![
+        editor.timeline.clock.time_seconds = 2.5;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        state.editor.input.selected_block_indices = vec![0, 1];
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.mode = EditorMode::Rotate;
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.input.selected_block_index = Some(0);
+        editor.input.mode = EditorMode::Rotate;
 
-        assert!(state.add_editor_transform_trigger());
-        assert_eq!(state.editor.input.mode, EditorMode::Rotate);
-        assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_object_pose(&state.editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects.len(), 4);
-        assert_eq!(state.editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        assert_object_pose(&state.editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects[2].rotation, [0.0, 0.0, 0.0]);
-        assert_eq!(state.editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        assert_object_pose(&state.editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.objects[3].rotation, [0.0, 0.0, 0.0]);
-        assert_eq!(state.editor.input.selected_block_index, Some(2));
-        assert_eq!(state.editor.input.selected_block_indices, vec![2, 3]);
+        assert!(editor.add_transform_trigger());
+        assert_eq!(editor.input.mode, EditorMode::Rotate);
+        assert_object_pose(&editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_object_pose(&editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(editor.objects.len(), 4);
+        assert_eq!(editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(editor.objects[2].rotation, [0.0, 0.0, 0.0]);
+        assert_eq!(editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(editor.objects[3].rotation, [0.0, 0.0, 0.0]);
+        assert_eq!(editor.input.selected_block_index, Some(2));
+        assert_eq!(editor.input.selected_block_indices, vec![2, 3]);
 
-        let mut triggers = state.editor.trigger_objects();
+        let mut triggers = editor.trigger_objects();
         triggers.sort_by_key(|object| match &object.trigger.as_ref().unwrap().target {
             TriggerTarget::Objects { object_ids } => object_ids[0].clone(),
             TriggerTarget::Camera => String::new(),
@@ -1909,31 +1659,30 @@ mod tests {
         assert_eq!(triggers[1].rotation, [0.0, 0.0, 0.0]);
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_targets_block_after_existing_trigger_object() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_targets_block_after_existing_trigger_object() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.time_seconds = 2.5;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.objects = vec![
+        editor.timeline.clock.time_seconds = 2.5;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             transform_trigger_object(1.0, vec!["object_0"]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        state.editor.sync_trigger_selection_from_objects();
-        state.editor.input.selected_block_indices = vec![2];
-        state.editor.input.selected_block_index = Some(2);
+        editor.sync_trigger_selection_from_objects();
+        editor.input.selected_block_indices = vec![2];
+        editor.input.selected_block_index = Some(2);
 
-        assert!(state.add_editor_transform_trigger());
+        assert!(editor.add_transform_trigger());
 
-        assert_eq!(state.editor.objects.len(), 4);
-        assert_object_pose(&state.editor.objects[2], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.input.selected_block_index, Some(3));
-        assert_eq!(state.editor.input.selected_block_indices, vec![3]);
+        assert_eq!(editor.objects.len(), 4);
+        assert_object_pose(&editor.objects[2], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(editor.input.selected_block_index, Some(3));
+        assert_eq!(editor.input.selected_block_indices, vec![3]);
 
         let mut found_retargeted_capture = false;
-        for trigger_object in &state.editor.trigger_objects() {
+        for trigger_object in &editor.trigger_objects() {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -1953,32 +1702,30 @@ mod tests {
         assert!(found_retargeted_capture);
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.time_seconds = 2.5;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.objects = vec![
+        editor.timeline.clock.time_seconds = 2.5;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        state
-            .editor
+        editor
             .objects
             .push(transform_trigger(2.5, vec!["object_0"], [8.0, 0.0, 0.0]));
-        state.editor.objects[2].position = [12.0, 1.0, 3.0];
-        state.editor.objects[2].size = [2.0, 3.0, 4.0];
-        state.editor.objects[2].rotation = [10.0, 20.0, 30.0];
-        state.editor.input.selected_block_indices = vec![1];
-        state.editor.input.selected_block_index = Some(1);
+        editor.objects[2].position = [12.0, 1.0, 3.0];
+        editor.objects[2].size = [2.0, 3.0, 4.0];
+        editor.objects[2].rotation = [10.0, 20.0, 30.0];
+        editor.input.selected_block_indices = vec![1];
+        editor.input.selected_block_index = Some(1);
 
-        assert!(state.add_editor_transform_trigger());
+        assert!(editor.add_transform_trigger());
 
-        assert_object_pose(&state.editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
-        assert_eq!(state.editor.objects[2].rotation, [10.0, 20.0, 30.0]);
-        let triggers = state.editor.trigger_objects();
+        assert_object_pose(&editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
+        assert_eq!(editor.objects[2].rotation, [10.0, 20.0, 30.0]);
+        let triggers = editor.trigger_objects();
         let existing_trigger_object = triggers
             .iter()
             .find(|object| match &object.trigger.as_ref().unwrap().target {
@@ -1991,28 +1738,27 @@ mod tests {
         assert_eq!(existing_trigger_object.size, [2.0, 3.0, 4.0]);
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_overrides_existing_same_time_object_triggers() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_overrides_existing_same_time_object_triggers() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.time_seconds = 2.5;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.objects = vec![
+        editor.timeline.clock.time_seconds = 2.5;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
             test_level_object([8.0, 0.0, 0.0]),
         ];
-        state.editor.input.selected_block_indices = vec![0, 1];
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.objects.extend(vec![
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.input.selected_block_index = Some(0);
+        editor.objects.extend(vec![
             transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_8"], [30.0, 0.0, 0.0]),
             transform_trigger(4.0, vec!["object_0"], [40.0, 0.0, 0.0]),
         ]);
 
-        assert!(state.add_editor_transform_trigger());
+        assert!(editor.add_transform_trigger());
 
         let mut object_zero_same_time_count = 0;
         let mut object_one_same_time_count = 0;
@@ -2020,7 +1766,7 @@ mod tests {
         let mut retained_object_two_standalone = false;
         let mut retained_different_time_object_zero = false;
 
-        for trigger_object in &state.editor.trigger_objects() {
+        for trigger_object in &editor.trigger_objects() {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -2067,27 +1813,25 @@ mod tests {
         assert!(retained_different_time_object_zero);
     }
 
-    #[tokio::test]
-    async fn add_transform_trigger_preserves_replaced_trigger_with_no_sources() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn add_transform_trigger_preserves_replaced_trigger_with_no_sources() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.time_seconds = 2.5;
-        state.editor.timeline.clock.duration_seconds = 8.0;
-        state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        state.editor.input.selected_block_indices = vec![0];
-        state.editor.input.selected_block_index = Some(0);
-        state
-            .editor
+        editor.timeline.clock.time_seconds = 2.5;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+        editor.input.selected_block_indices = vec![0];
+        editor.input.selected_block_index = Some(0);
+        editor
             .objects
             .push(transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]));
 
-        assert!(state.add_editor_transform_trigger());
+        assert!(editor.add_transform_trigger());
 
         let mut found_target_only_trigger = false;
         let mut found_replacement_trigger = false;
 
-        for trigger_object in &state.editor.trigger_objects() {
+        for trigger_object in &editor.trigger_objects() {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -2114,76 +1858,31 @@ mod tests {
         assert!(found_replacement_trigger);
     }
 
-    #[tokio::test]
-    async fn transform_trigger_keybind_creates_selected_trigger_block() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn transform_trigger_keybind_creates_selected_trigger_block() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
-        state.editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        state.editor.input.selected_block_indices = vec![0];
-        state.editor.input.selected_block_index = Some(0);
+        editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
+        editor.input.selected_block_indices = vec![0];
+        editor.input.selected_block_index = Some(0);
 
-        assert!(state.add_editor_transform_trigger());
-        assert_object_pose(&state.editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(state.editor.trigger_objects().len(), 1);
-        assert_eq!(state.editor.input.selected_block_indices, vec![1]);
-        assert_eq!(state.editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert!(editor.add_transform_trigger());
+        assert_object_pose(&editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(editor.trigger_objects().len(), 1);
+        assert_eq!(editor.input.selected_block_indices, vec![1]);
+        assert_eq!(editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
     }
 
-    #[tokio::test]
-    async fn game_cursor_is_hidden_while_playing_or_playtesting() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
+        let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Playing;
-        state.session.playtesting_editor = false;
-        state.session.game_paused = false;
-        assert_eq!(state.game_cursor(false), GameCursor::Hidden);
-        assert_eq!(state.game_cursor(true), GameCursor::Hidden);
-
-        state.session.playtesting_editor = true;
-        assert_eq!(state.game_cursor(false), GameCursor::Hidden);
-        assert_eq!(state.game_cursor(true), GameCursor::Hidden);
-    }
-
-    #[tokio::test]
-    async fn game_cursor_uses_default_cursor_while_real_gameplay_is_paused() {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Playing;
-        state.session.playtesting_editor = false;
-        state.session.game_paused = true;
-
-        assert_eq!(state.game_cursor(false), GameCursor::Default);
-        assert_eq!(state.game_cursor(true), GameCursor::Default);
-    }
-
-    #[tokio::test]
-    async fn game_cursor_uses_default_cursor_outside_playing_including_over_egui() {
-        let mut state = State::new_test().await;
-
-        state.phase = AppPhase::Menu;
-        assert_eq!(state.game_cursor(false), GameCursor::Default);
-        assert_eq!(state.game_cursor(true), GameCursor::Default);
-
-        state.phase = AppPhase::Editor;
-        assert_eq!(state.game_cursor(false), GameCursor::Default);
-        assert_eq!(state.game_cursor(true), GameCursor::Default);
-
-        state.phase = AppPhase::GameOver;
-        assert_eq!(state.game_cursor(false), GameCursor::Default);
-        assert_eq!(state.game_cursor(true), GameCursor::Default);
-    }
-
-    #[tokio::test]
-    async fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
-        let mut state = State::new_test().await;
-
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0, 1];
-        state.editor.input.hovered_block_index = Some(1);
-        state.editor.input.marquee_start_screen = Some([10.0, 20.0]);
-        state.editor.input.marquee_current_screen = Some([30.0, 40.0]);
-        state.editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.input.hovered_block_index = Some(1);
+        editor.input.marquee_start_screen = Some([10.0, 20.0]);
+        editor.input.marquee_current_screen = Some([30.0, 40.0]);
+        editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
             start_mouse: [0.0, 0.0],
@@ -2191,7 +1890,7 @@ mod tests {
             start_center_world: [0.0, 0.0, 0.0],
             start_blocks: Vec::new(),
         });
-        state.editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
+        editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
             start_mouse: [0.0, 0.0],
             start_center_world: [0.0, 0.0, 0.0],
             start_drag_world: [0.0, 0.0, 0.0],
@@ -2199,66 +1898,66 @@ mod tests {
             start_blocks: Vec::new(),
         });
 
-        state.editor.set_mode(EditorMode::Null);
+        editor.set_mode(EditorMode::Null);
 
-        assert_eq!(state.editor.mode(), EditorMode::Null);
-        assert!(state.editor.runtime.interaction.gizmo_drag.is_none());
-        assert!(state.editor.runtime.interaction.block_drag.is_none());
-        assert!(state.editor.input.selected_block_index.is_none());
-        assert!(state.editor.input.selected_block_indices.is_empty());
-        assert!(state.editor.input.hovered_block_index.is_none());
-        assert!(state.editor.input.marquee_start_screen.is_none());
-        assert!(state.editor.input.marquee_current_screen.is_none());
+        assert_eq!(editor.mode(), EditorMode::Null);
+        assert!(editor.runtime.interaction.gizmo_drag.is_none());
+        assert!(editor.runtime.interaction.block_drag.is_none());
+        assert!(editor.input.selected_block_index.is_none());
+        assert!(editor.input.selected_block_indices.is_empty());
+        assert!(editor.input.hovered_block_index.is_none());
+        assert!(editor.input.marquee_start_screen.is_none());
+        assert!(editor.input.marquee_current_screen.is_none());
     }
 
-    #[tokio::test]
-    async fn selected_block_mutators_apply_snap_and_clamp_rules() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn selected_block_mutators_apply_snap_and_clamp_rules() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.objects.push(LevelObject::default());
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.config.snap_to_grid = true;
-        state.editor.config.snap_step = 0.5;
-        state.editor.config.snap_rotation = true;
-        state.editor.config.snap_rotation_step_degrees = 15.0;
-        state.editor.input.ctrl_held = false;
+        editor.objects.push(LevelObject::default());
+        editor.input.selected_block_index = Some(0);
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 0.5;
+        editor.config.snap_rotation = true;
+        editor.config.snap_rotation_step_degrees = 15.0;
+        editor.input.ctrl_held = false;
 
-        state.editor.set_selected_block_position([1.24, -1.0, 2.26]);
-        assert_eq!(state.editor.objects[0].position, [1.0, 0.0, 2.5]);
-        assert_eq!(state.editor.input.cursor, [1.0, 0.0, 2.5]);
+        editor.set_selected_block_position([1.24, -1.0, 2.26]);
+        assert_eq!(editor.objects[0].position, [1.0, 0.0, 2.5]);
+        assert_eq!(editor.input.cursor, [1.0, 0.0, 2.5]);
 
-        state.editor.set_selected_block_size([0.1, 0.4, 0.62]);
-        assert_eq!(state.editor.objects[0].size, [0.5, 0.5, 0.5]);
+        editor.set_selected_block_size([0.1, 0.4, 0.62]);
+        assert_eq!(editor.objects[0].size, [0.5, 0.5, 0.5]);
 
-        state.editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
-        assert_eq!(state.editor.objects[0].rotation, [0.0, 15.0, 45.0]);
+        editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
+        assert_eq!(editor.objects[0].rotation, [0.0, 15.0, 45.0]);
 
-        state.editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
-        assert_eq!(state.editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
+        editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
+        assert_eq!(editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
 
-        state.editor.set_selected_block_id(BlockId::new("stone"));
-        assert_eq!(state.editor.objects[0].block_id, "core/stone");
+        editor.set_selected_block_id(BlockId::new("stone"));
+        assert_eq!(editor.objects[0].block_id, "core/stone");
     }
 
-    #[tokio::test]
-    async fn timeline_clamp_and_cache_invalidation_helpers_work() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn timeline_clamp_and_cache_invalidation_helpers_work() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.timeline.clock.duration_seconds = 2.0;
-        assert!(state.editor.set_timeline_time_seconds(5.0));
-        assert_eq!(state.editor.timeline.clock.time_seconds, 2.0);
-        assert!(!state.editor.set_timeline_time_seconds(2.0));
+        editor.timeline.clock.duration_seconds = 2.0;
+        assert!(editor.set_timeline_time_seconds(5.0));
+        assert_eq!(editor.timeline.clock.time_seconds, 2.0);
+        assert!(!editor.set_timeline_time_seconds(2.0));
 
-        state.editor.timeline.clock.time_seconds = 10.0;
-        state.editor.set_timeline_duration_seconds(0.01);
-        assert_eq!(state.editor.timeline.clock.duration_seconds, 0.1);
-        assert_eq!(state.editor.timeline.clock.time_seconds, 0.1);
+        editor.timeline.clock.time_seconds = 10.0;
+        editor.set_timeline_duration_seconds(0.01);
+        assert_eq!(editor.timeline.clock.duration_seconds, 0.1);
+        assert_eq!(editor.timeline.clock.time_seconds, 0.1);
 
         let mut runtime =
             TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
         runtime.advance_to(1.5);
-        state.editor.timeline.snapshot_cache_step_seconds = 0.5;
-        state.editor.timeline.snapshot_cache = vec![
+        editor.timeline.snapshot_cache_step_seconds = 0.5;
+        editor.timeline.snapshot_cache = vec![
             crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [0.0, 0.0, 0.0],
                 direction: Direction::Forward,
@@ -2292,311 +1991,38 @@ mod tests {
                 trail_point_count: 0,
             },
         ];
-        state.editor.timeline.snapshot_cache_revision = 123;
-        state.editor.timeline.scrub_runtime = Some(runtime);
-        state.editor.timeline.scrub_runtime_revision = 55;
+        editor.timeline.snapshot_cache_revision = 123;
+        editor.timeline.scrub_runtime = Some(runtime);
+        editor.timeline.scrub_runtime_revision = 55;
 
-        state.editor.invalidate_samples_from(1.0);
-        assert_eq!(state.editor.timeline.snapshot_cache.len(), 2);
-        assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
-        assert!(state.editor.timeline.scrub_runtime.is_none());
-        assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+        editor.invalidate_samples_from(1.0);
+        assert_eq!(editor.timeline.snapshot_cache.len(), 2);
+        assert_eq!(editor.timeline.snapshot_cache_revision, 0);
+        assert!(editor.timeline.scrub_runtime.is_none());
+        assert_eq!(editor.timeline.scrub_runtime_revision, 0);
 
-        state.editor.invalidate_samples();
-        assert!(state.editor.timeline.snapshot_cache.is_empty());
-        assert_eq!(state.editor.timeline.snapshot_cache_revision, 0);
-        assert!(state.editor.timeline.scrub_runtime.is_none());
-        assert_eq!(state.editor.timeline.scrub_runtime_revision, 0);
+        editor.invalidate_samples();
+        assert!(editor.timeline.snapshot_cache.is_empty());
+        assert_eq!(editor.timeline.snapshot_cache_revision, 0);
+        assert!(editor.timeline.scrub_runtime.is_none());
+        assert_eq!(editor.timeline.scrub_runtime_revision, 0);
     }
 
-    #[tokio::test]
-    async fn bpm_tap_estimates_tempo_and_reset_clears_state() {
-        let mut state = State::new_test().await;
+    #[test]
+    fn bpm_tap_estimates_tempo_and_reset_clears_state() {
+        let mut editor = EditorSubsystem::default();
 
-        state.editor.bpm_tap(1.0);
-        assert!(state.editor.bpm_tap_result().is_none());
+        editor.bpm_tap(1.0);
+        assert!(editor.bpm_tap_result().is_none());
 
-        state.editor.bpm_tap(1.5);
-        state.editor.bpm_tap(2.0);
+        editor.bpm_tap(1.5);
+        editor.bpm_tap(2.0);
 
-        let bpm = state.editor.bpm_tap_result().expect("bpm should exist");
+        let bpm = editor.bpm_tap_result().expect("bpm should exist");
         approx::assert_abs_diff_eq!(bpm, 120.0, epsilon = 1e-3);
 
-        state.editor.bpm_tap_reset();
-        assert!(state.editor.bpm_tap_result().is_none());
-        assert!(state.editor.timing.bpm_tap_times.is_empty());
-    }
-
-    #[tokio::test]
-    async fn state_wrappers_update_timeline_taps_and_simulate_hitbox_flag() {
-        let mut state = State::new_test().await;
-
-        state.phase = eg_types::AppPhase::Editor;
-        state.editor.timeline.preview.position = [3.5, 0.0, 4.5];
-
-        state.set_editor_timeline_duration_seconds(6.0);
-        assert_eq!(state.editor_timeline_duration_seconds(), 6.0);
-
-        state.set_editor_timeline_time_seconds(3.0);
-        assert_eq!(state.editor_timeline_time_seconds(), 3.0);
-
-        state.editor_add_tap();
-        assert_eq!(state.editor_tap_times().len(), 1);
-
-        state.editor_remove_tap_at(3.0);
-        assert_eq!(state.editor_tap_times().len(), 0);
-
-        state.editor_add_tap();
-        assert_eq!(state.editor_tap_times().len(), 1);
-
-        state.editor_remove_tap();
-        assert_eq!(state.editor_tap_times().len(), 0);
-
-        state.editor_add_tap();
-        state.editor.timeline.preview.position = [4.5, 0.0, 4.5];
-        state.set_editor_timeline_time_seconds(4.0);
-        state.editor_add_tap();
-        assert_eq!(state.editor_tap_times().len(), 2);
-
-        state.editor_clear_taps();
-        assert!(state.editor_tap_times().is_empty());
-
-        state
-            .editor
-            .objects
-            .push(transform_trigger(0.0, vec!["obj_000001"], [1.0, 0.0, 0.0]));
-
-        state.set_editor_playback_speed(4.0);
-        assert_eq!(state.editor_playback_speed(), 2.0);
-
-        state.set_editor_waveform_zoom(25.0);
-        state.set_editor_waveform_scroll(2.5);
-        assert_eq!(state.editor_waveform_zoom(), 10.0);
-        assert_eq!(state.editor_waveform_scroll(), 2.5);
-    }
-
-    #[tokio::test]
-    async fn tap_mutations_mark_indicators_and_preview_dirty() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.duration_seconds = 1.0;
-        state.set_editor_timeline_time_seconds(0.125);
-        assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
-        state.editor.camera.editor_pan = [8.0, -6.0];
-        state.editor.camera.editor_target_z = 3.0;
-        let original_pan = state.editor.camera.editor_pan;
-        let original_target_z = state.editor.camera.editor_target_z;
-
-        state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-        state.editor_add_tap();
-        assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
-        assert!(state.editor.runtime.dirty.rebuild_preview_player);
-        assert_eq!(state.editor.timeline.preview.direction, Direction::Right);
-        assert_eq!(state.editor.camera.editor_pan, original_pan);
-        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-
-        state.editor.runtime.dirty = crate::state::EditorDirtyFlags::default();
-        state.editor_remove_tap();
-        assert!(state.editor.runtime.dirty.rebuild_tap_indicators);
-        assert!(state.editor.runtime.dirty.rebuild_preview_player);
-        assert_eq!(state.editor.timeline.preview.direction, Direction::Forward);
-        assert_eq!(state.editor.camera.editor_pan, original_pan);
-        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-    }
-
-    #[tokio::test]
-    async fn timeline_seek_tracks_preview_by_default() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.duration_seconds = 1.0;
-        state.editor.camera.editor_pan = [8.0, -6.0];
-        state.editor.camera.editor_target_z = 3.0;
-
-        state.set_editor_timeline_time_seconds(0.125);
-
-        let preview_position = state.editor.timeline.preview.position;
-        assert_eq!(state.editor_timeline_time_seconds(), 0.125);
-        assert_eq!(
-            state.editor.camera.editor_pan,
-            [preview_position[0] + 0.5, preview_position[2] + 0.5]
-        );
-        assert_eq!(state.editor.camera.editor_target_z, preview_position[1]);
-    }
-
-    #[tokio::test]
-    async fn timeline_seek_preserves_editor_camera_focus_when_ctrl_is_held() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.timeline.clock.duration_seconds = 1.0;
-        state.editor.camera.editor_pan = [8.0, -6.0];
-        state.editor.camera.editor_target_z = 3.0;
-        state.editor.input.ctrl_held = true;
-        let original_pan = state.editor.camera.editor_pan;
-        let original_target_z = state.editor.camera.editor_target_z;
-
-        state.set_editor_timeline_time_seconds(0.125);
-
-        assert_eq!(state.editor_timeline_time_seconds(), 0.125);
-        assert_eq!(state.editor.camera.editor_pan, original_pan);
-        assert_eq!(state.editor.camera.editor_target_z, original_target_z);
-    }
-
-    #[tokio::test]
-    async fn adding_tap_recomputes_all_indicator_positions() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Tapping;
-        state.editor.objects.clear();
-        state.editor.spawn.position = [0.0, 0.0, 0.0];
-        state.editor.spawn.direction = Direction::Forward;
-        state.editor.timeline.clock.duration_seconds = 2.0;
-
-        let step_time = 1.0 / eg_game::BASE_PLAYER_SPEED;
-        state.set_editor_timeline_time_seconds(4.0 * step_time);
-        state.editor_add_tap();
-
-        state.set_editor_timeline_time_seconds(2.0 * step_time);
-        state.editor_add_tap();
-
-        let expected = eg_editor_domain::derive_tap_indicator_positions(
-            state.editor.spawn.position,
-            state.editor.spawn.direction,
-            &state.editor.timeline.taps.tap_times,
-            &state.editor.objects,
-        );
-
-        assert_eq!(state.editor.timeline.taps.tap_indicator_positions, expected);
-    }
-
-    #[tokio::test]
-    async fn pan_input_wrappers_are_phase_gated_but_modifiers_are_global() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Menu;
-
-        state.set_editor_pan_up_held(true);
-        state.set_editor_pan_down_held(true);
-        state.set_editor_pan_left_held(true);
-        state.set_editor_pan_right_held(true);
-        state.set_editor_shift_held(true);
-        state.set_editor_ctrl_held(true);
-        state.set_editor_alt_held(true);
-
-        assert!(!state.editor.input.pan_up_held);
-        assert!(!state.editor.input.pan_down_held);
-        assert!(!state.editor.input.pan_left_held);
-        assert!(!state.editor.input.pan_right_held);
-        assert!(state.editor.input.shift_held);
-        assert!(state.editor.input.ctrl_held);
-        assert!(state.editor.input.alt_held);
-
-        state.set_editor_shift_held(false);
-        state.set_editor_ctrl_held(false);
-        state.set_editor_alt_held(false);
-
-        state.phase = AppPhase::Editor;
-        state.set_editor_pan_up_held(true);
-        state.set_editor_pan_down_held(true);
-        state.set_editor_pan_left_held(true);
-        state.set_editor_pan_right_held(true);
-        state.set_editor_shift_held(true);
-        state.set_editor_ctrl_held(true);
-        state.set_editor_alt_held(true);
-
-        assert!(state.editor.input.pan_up_held);
-        assert!(state.editor.input.pan_down_held);
-        assert!(state.editor.input.pan_left_held);
-        assert!(state.editor.input.pan_right_held);
-        assert!(state.editor.input.shift_held);
-        assert!(state.editor.input.ctrl_held);
-        assert!(state.editor.input.alt_held);
-    }
-
-    #[tokio::test]
-    async fn editor_effective_mode_for_playback_uses_last_mode_when_ui_is_null() {
-        let mut state = State::new_test().await;
-
-        state.editor.timeline.playback.playing = true;
-        state.editor.input.mode = EditorMode::Null;
-        state.editor.runtime.interaction.last_mode = Some(EditorMode::Timing);
-        assert_eq!(
-            state.editor_effective_mode_for_playback(),
-            EditorMode::Timing
-        );
-        assert!(state.editor_is_effectively_timing_mode());
-
-        state.editor.runtime.interaction.last_mode = None;
-        assert_eq!(state.editor_effective_mode_for_playback(), EditorMode::Null);
-        assert!(!state.editor_is_effectively_timing_mode());
-
-        state.editor.timeline.playback.playing = false;
-        state.editor.input.mode = EditorMode::Place;
-        assert_eq!(
-            state.editor_effective_mode_for_playback(),
-            EditorMode::Place
-        );
-    }
-
-    #[tokio::test]
-    async fn editor_wrapper_setters_and_getters_cover_timing_and_waveform_state() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-
-        state.editor_add_timing_point(2.0, 130.0);
-        state.editor_add_timing_point(1.0, 120.0);
-        assert_eq!(state.editor_timing_points().len(), 2);
-        assert!(
-            state.editor_timing_points()[0].time_seconds
-                <= state.editor_timing_points()[1].time_seconds
-        );
-
-        state.set_editor_timing_selected_index(Some(1));
-        assert_eq!(state.editor_timing_selected_index(), Some(1));
-        state.editor_update_timing_point_time(1, -5.0);
-        assert!(state.editor_timing_points()[0].time_seconds >= 0.0);
-        state.editor_update_timing_point_bpm(0, 0.2);
-        assert!(state.editor_timing_points()[0].bpm >= 1.0);
-        state.editor_update_timing_point_time_signature(0, 0, 0);
-        assert!(state.editor_timing_points()[0].time_signature_numerator >= 1);
-        assert!(state.editor_timing_points()[0].time_signature_denominator >= 1);
-        state.editor_remove_timing_point(5);
-        state.editor_remove_timing_point(0);
-        assert!(state.editor_timing_points().len() <= 1);
-
-        state.set_editor_waveform_zoom(0.01);
-        state.set_editor_waveform_scroll(3.25);
-        assert_eq!(state.editor_waveform_zoom(), 0.1);
-        assert_eq!(state.editor_waveform_scroll(), 3.25);
-
-        state.editor.timing.waveform_samples = vec![0.1, 0.2, 0.3];
-        state.editor.timing.waveform_sample_rate = 44_100;
-        assert_eq!(state.editor_waveform_samples(), &[0.1, 0.2, 0.3]);
-        assert_eq!(state.editor_waveform_sample_rate(), 44_100);
-    }
-
-    #[tokio::test]
-    async fn set_editor_block_id_and_snap_settings_update_app_settings() {
-        let mut state = State::new_test().await;
-        state.phase = AppPhase::Editor;
-
-        state.editor.objects.push(LevelObject::default());
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
-
-        state.set_editor_block_id(BlockId::new("core/lava"));
-        assert_eq!(state.editor_selected_block_id().to_string(), "core/lava");
-
-        state.set_editor_snap_to_grid(true);
-        state.set_editor_snap_step(0.2);
-        state.set_editor_snap_rotation(true);
-        state.set_editor_snap_rotation_step(7.5);
-
-        assert!(state.editor_snap_to_grid());
-        assert_eq!(state.editor_snap_step(), 0.2);
-        assert!(state.editor_snap_rotation());
-        assert_eq!(state.editor_snap_rotation_step_degrees(), 7.5);
-        assert!(state.app_settings().editor_snap_to_grid);
-        assert_eq!(state.app_settings().editor_snap_step, 0.2);
-        assert!(state.app_settings().editor_rotation_snap);
-        assert_eq!(state.app_settings().editor_rotation_snap_step, 7.5);
+        editor.bpm_tap_reset();
+        assert!(editor.bpm_tap_result().is_none());
+        assert!(editor.timing.bpm_tap_times.is_empty());
     }
 }

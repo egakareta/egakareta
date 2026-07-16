@@ -278,7 +278,7 @@ mod tests {
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
         show_mode_selector_popup, show_player_camera_status_row,
     };
-    use crate::test_utils::editor_ui_snapshot;
+    use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
     use eg_state::state::UiStateView;
     use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata};
@@ -289,7 +289,7 @@ mod tests {
         preview_direction: Direction,
         mode: EditorMode,
     ) -> UiStateView<'a> {
-        let mut view = editor_ui_snapshot(app_settings, music_metadata);
+        let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
         view.level_name = Some("Shared Test");

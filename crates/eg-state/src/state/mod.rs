@@ -21,9 +21,7 @@ mod editor_timeline_cache;
 mod editor_timing;
 mod editor_trail;
 mod editor_triggers;
-mod escape_compat;
 mod frame_time;
-mod gameplay_compat;
 pub(crate) mod gameplay_world;
 mod history;
 mod input_bridge;
@@ -38,8 +36,7 @@ mod sets;
 mod state_helpers;
 mod state_resources;
 mod transitions;
-mod ui_snapshot;
-mod update;
+mod ui_state;
 mod visual_effects;
 
 use crate::events as state_events;
@@ -60,10 +57,12 @@ use std::collections::VecDeque;
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
 pub(crate) use async_bridge::apply_imported_level_to_world;
-pub(crate) use audio_state::start_audio_source_at_seconds_for_resources;
 pub use audio_state::{
     AudioBackendRes, AudioState, AudioSubsystem, EditorAudioCacheRes, RuntimeAudioPreloadRes,
     RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
+};
+pub(crate) use audio_state::{
+    load_waveform_for_level_resources, start_audio_source_at_seconds_for_resources,
 };
 pub use auth_state::AuthSubsystem;
 pub use editor_camera::EditorCameraState;
@@ -111,7 +110,7 @@ pub use state_resources::{
     GameplayResetRes, GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes,
     MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
-pub use ui_snapshot::{UiStateData, UiStateRes, UiStateView};
+pub use ui_state::{UiStateData, UiStateRes, UiStateView};
 
 use eg_game::{GameCheckpointState, GameState};
 use eg_mesh::MeshGeometry;
@@ -231,9 +230,7 @@ pub struct State {
     session: SessionSubsystem,
     menu: MenuSubsystem,
     phase: AppPhase,
-    frame_runtime: FrameRuntimeState,
     render_resources: Option<StateRenderResources>,
-    gameplay_world_needs_seed: bool,
 }
 
 pub struct StateRenderResources {
@@ -375,33 +372,6 @@ impl State {
     }
 
     /// Install the five App-world async channel resources during Runtime
-    /// construction. Production frames poll these resources directly.
-    pub fn install_async_channel_resources(&self, world: &mut bevy_ecs::world::World) {
-        async_bridge::install_async_bridge_from_state_arc(
-            world,
-            std::sync::Arc::clone(&self.auth.receiver),
-            std::sync::Arc::clone(&self.audio.state.editor.audio_import_channel.1),
-            std::sync::Arc::clone(&self.audio.state.editor.waveform_load_channel.1),
-            std::sync::Arc::clone(&self.audio.state.runtime_preload.preload_channel.1),
-            std::sync::Arc::clone(&self.session.editor_level_import_channel.1),
-        );
-        world.insert_resource(LevelImportSenderRes::new(
-            self.session.editor_level_import_channel.0.clone(),
-        ));
-        world.insert_resource(AudioImportSenderRes::new(
-            self.audio.state.editor.audio_import_channel.0.clone(),
-        ));
-        world.insert_resource(self.audio.state.editor.cache.clone());
-        world.insert_resource(self.audio.state.runtime_preload.cache.clone());
-        world.insert_resource(RuntimeAudioPreloadSenderRes(
-            self.audio.state.runtime_preload.preload_channel.0.clone(),
-        ));
-        world.insert_resource(self.audio.state.runtime.clone());
-        world.insert_resource(WaveformLoadSenderRes(
-            self.audio.state.editor.waveform_load_channel.0.clone(),
-        ));
-    }
-
     /// Resizes the rendering surface to the new dimensions.
     ///
     /// Skips resizing if either dimension is zero. Prepares the surface host
@@ -435,7 +405,6 @@ impl State {
             return;
         }
 
-        self.mark_app_gameplay_world_for_legacy_seed();
         let time_seconds = time_seconds.max(0.0);
         let insert_at = self
             .gameplay
@@ -494,7 +463,6 @@ impl State {
             return false;
         }
 
-        self.mark_app_gameplay_world_for_legacy_seed();
         self.gameplay.state.started = true;
         if self.session.playtesting_editor {
             let level_name = self
@@ -560,7 +528,6 @@ impl State {
             AppPhase::Menu => self.start_editor(self.menu.state.selected_level),
             AppPhase::Editor => self.back_to_menu(),
             AppPhase::Playing if self.session.playtesting_editor => {
-                self.mark_app_gameplay_world_for_legacy_seed();
                 self.phase = AppPhase::Editor;
                 self.stop_audio();
                 self.sync_editor_objects();

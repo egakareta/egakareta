@@ -710,7 +710,7 @@ pub(crate) fn show_waveform_panel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::editor_ui_snapshot;
+    use crate::test_utils::editor_ui_view;
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
         MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
@@ -731,7 +731,7 @@ mod tests {
         playing: bool,
         trigger_selected_index: Option<usize>,
     ) -> eg_state::state::UiStateView<'a> {
-        let mut view = editor_ui_snapshot(app_settings, music_metadata);
+        let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.playing = playing;

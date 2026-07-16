@@ -763,7 +763,7 @@ mod tests {
     ) -> Vec<AppCommand> {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_snapshot(&app_settings, &music_metadata);
+        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.is_editor = false;
         view.is_menu = true;
         view.auth_display_name = auth_display_name;

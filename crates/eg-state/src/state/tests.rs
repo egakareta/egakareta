@@ -1101,63 +1101,6 @@ async fn editor_playtest_preserves_airborne_vertical_motion() {
 }
 
 #[tokio::test]
-async fn editor_scrub_draws_ghost_trail_without_preview_head_mesh() {
-    let mut state = new_editor_state().await;
-    state.editor.set_mode(EditorMode::Place);
-    state.set_editor_timeline_time_seconds(0.65);
-
-    state.update();
-
-    let trail_count = state
-        .render_meshes()
-        .trail
-        .draw_data()
-        .map(|draw_data| draw_data.count())
-        .expect("trail mesh should exist after editor scrub update");
-    assert!(
-        trail_count > 0,
-        "editor scrub should draw ghost trail vertices when timeline time is non-zero"
-    );
-    assert!(
-        state
-            .render_meshes()
-            .editor_preview_player
-            .draw_data()
-            .is_none(),
-        "preview head mesh should remain empty"
-    );
-}
-
-#[tokio::test]
-async fn editor_playback_draws_ghost_trail_without_preview_head_mesh() {
-    let mut state = new_editor_state().await;
-    state.editor.set_mode(EditorMode::Place);
-    state.set_editor_timeline_time_seconds(0.65);
-    state.toggle_editor_timeline_playback();
-
-    state.update();
-
-    let trail_count = state
-        .render_meshes()
-        .trail
-        .draw_data()
-        .map(|draw_data| draw_data.count())
-        .expect("trail mesh should exist during editor playback update");
-    assert!(
-        trail_count > 0,
-        "editor playback should draw ghost trail vertices"
-    );
-    assert!(
-        state
-            .render_meshes()
-            .editor_preview_player
-            .draw_data()
-            .is_none(),
-        "preview head mesh should remain empty during playback"
-    );
-}
-
-#[tokio::test]
 async fn test_state_input_routing() {
     let mut state = State::new_test().await;
 
