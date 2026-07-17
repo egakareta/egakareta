@@ -9,9 +9,9 @@
 //!
 //! Bevy 0.19's `Event` trait is for fire-and-forget observer triggers; for
 //! buffered per-frame events we use a regular struct + a `Resource` buffer
-//! ([`ConsumedEventsBuffer`]). The wrapper [`GameState`] drains that buffer
-//! into its legacy `consumed_object_events` field in
-//! [`crate::state::GameState::sync_from_world`].
+//! ([`ConsumedEventsBuffer`]). App-world consumers drain that buffer
+//! when they need the consumed object data; gameplay systems own no
+//! compatibility field mirror.
 //!
 //! REFACTOR POINT(full-bevy): [`ConsumedEventsBuffer`] resource becomes a
 //! `Message<ConsumedObjectEvent>` in the full-Bevy migration.
@@ -27,8 +27,8 @@ pub struct ConsumedObjectEvent {
     pub object: LevelObject,
 }
 
-/// Per-frame buffer of [`ConsumedObjectEvent`]s. Cleared by
-/// [`crate::state::GameState::sync_from_world`] each tick.
+/// Per-frame buffer of [`ConsumedObjectEvent`]s. Drained by the consuming
+/// App-world schedule each tick.
 #[derive(Resource, Default)]
 pub struct ConsumedEventsBuffer {
     pub events: Vec<ConsumedObjectEvent>,

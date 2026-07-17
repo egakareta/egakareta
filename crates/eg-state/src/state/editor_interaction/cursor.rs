@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorSubsystem, State};
+use super::super::EditorSubsystem;
 use eg_types::AppPhase;
 use eg_types::EditorInteractionChange;
 use glam::Vec2;
@@ -108,61 +108,5 @@ impl EditorSubsystem {
         }
 
         self.update_cursor_from_screen(x, y, viewport)
-    }
-}
-
-impl State {
-    #[cfg(test)]
-    pub fn force_editor_cursor_from_pointer(&mut self) {
-        let Some(pointer) = self.editor.input.pointer_screen else {
-            return;
-        };
-
-        if self.editor_pointer_over_ui_input(pointer[0], pointer[1]) {
-            return;
-        }
-
-        self.force_editor_cursor_from_screen(pointer[0], pointer[1]);
-    }
-
-    #[cfg(test)]
-    pub fn force_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        if self.editor.force_cursor_from_screen(x, y, viewport_size)
-            == EditorInteractionChange::Cursor
-        {
-            self.rebuild_editor_cursor_vertices();
-        }
-    }
-
-    #[cfg(test)]
-    pub fn update_editor_cursor_from_screen(&mut self, x: f64, y: f64) {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        let previous_tap_division_hover = self.editor.runtime.interaction.hovered_tap_division;
-        let previous_tap_hover = self.editor.runtime.interaction.hovered_tap_index;
-        match self
-            .editor
-            .update_cursor_from_screen_ext(x, y, viewport_size, self.phase)
-        {
-            EditorInteractionChange::Hover => self.rebuild_editor_hover_outline_vertices(),
-            EditorInteractionChange::Cursor => self.rebuild_editor_cursor_vertices(),
-            EditorInteractionChange::None => {}
-        }
-        if self.editor.runtime.interaction.hovered_tap_division != previous_tap_division_hover
-            || self.editor.runtime.interaction.hovered_tap_index != previous_tap_hover
-        {
-            self.rebuild_tap_indicator_vertices();
-            self.rebuild_editor_cursor_vertices();
-        }
     }
 }

@@ -7,62 +7,9 @@
 */
 use bevy_ecs::prelude::*;
 
-use super::{
-    AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest, State,
-};
-use eg_platform::services::{
-    AuthServiceMessage, trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out,
-};
+use super::{AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest};
+use eg_platform::services::{trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out};
 use eg_types::AuthSession;
-
-/// Receiver end of the auth service channel. The `Sender` is cloned into
-/// background tasks; the `Receiver` is shared with the Bevy World
-/// resource (`AuthChannelRes`) via `Arc<Mutex<>>` so the per-frame
-/// `poll_channels_system` can drain it.
-///
-/// `Receiver<T>` is not `Clone`; wrapping it in `Arc<Mutex<>>` lets the
-/// World resource and the legacy field share the same receiver. Production
-/// frames drain auth results and start guarded refreshes through
-/// `StateSchedule`; direct legacy auth methods remain for focused
-/// compatibility tests.
-pub type AuthChannelReceiver =
-    std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<AuthServiceMessage>>>;
-
-pub struct AuthSubsystem {
-    pub state: AuthStateRes,
-    pub receiver: AuthChannelReceiver,
-}
-
-impl AuthSubsystem {
-    pub fn new(session: Option<AuthSession>, external_navigation_enabled: bool) -> Self {
-        let (sender, receiver) = std::sync::mpsc::channel();
-        Self {
-            state: AuthStateRes {
-                session,
-                pending: false,
-                message: None,
-                refresh_started: false,
-                external_navigation_enabled,
-                sender,
-            },
-            receiver: std::sync::Arc::new(std::sync::Mutex::new(receiver)),
-        }
-    }
-}
-
-impl State {
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn set_auth_state_for_test(
-        &mut self,
-        session: Option<AuthSession>,
-        pending: bool,
-        message: Option<String>,
-    ) {
-        self.auth.state.session = session;
-        self.auth.state.pending = pending;
-        self.auth.state.message = message;
-    }
-}
 
 impl AuthStateRes {
     pub fn display_name(&self) -> Option<&str> {

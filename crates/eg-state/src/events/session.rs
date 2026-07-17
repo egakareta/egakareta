@@ -43,7 +43,7 @@ use eg_types::{
 };
 
 use crate::state::{
-    AppPhaseRes, AudioBackendRes, AudioImportSenderRes, BuiltinLevelCatalogRes,
+    AppPhaseRes, AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes,
     EditorAudioCacheRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes,
     EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
     RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
@@ -320,7 +320,7 @@ pub fn handle_set_graphics_backend(
 
 pub fn handle_set_audio_backend(
     mut events: MessageReader<SetAudioBackend>,
-    backend: Res<AudioBackendRes>,
+    backend: AudioBackendSystemParam<'_>,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;

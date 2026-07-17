@@ -5,10 +5,21 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::events::ConsumedObjectEvent;
-use super::state::GameState;
+use bevy_ecs::{schedule::Schedule, world::World};
+
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
+use crate::components::{
+    BlockId, CachedBlockBehavior, ColorTint, Grounded, Object, ObjectBundle, ObjectData, ObjectId,
+    Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position, Rotation, Size,
+    SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
+};
+use crate::events::{ConsumedEventsBuffer, ConsumedObjectEvent};
+use crate::physics::BASE_PLAYER_SPEED;
+use crate::plugin::{build_gameplay_schedule, initialize_gameplay_world};
+use crate::resources::{FrameDelta, GameClock, LevelMeta, SpatialIndex};
+
+#[derive(Clone, Copy)]
 pub struct TimelineSimulationState {
     pub position: [f32; 3],
     pub direction: Direction,
@@ -18,11 +29,26 @@ pub struct TimelineSimulationState {
     pub is_grounded: bool,
 }
 
-/// REFACTOR POINT(full-bevy): currently uses its own private [`GameState`]
-/// (which itself is a wrapper). Will be replaced by a `bevy_ecs::World` +
-/// `Schedule` shared with the editor and play views.
+/// ECS-backed timeline preview runtime.
+///
+/// The preview uses the same GamePlugin and GameplaySchedule as the
+/// production App world, while keeping its own short-lived App so scrubbing
+/// does not mutate the editor's authoritative gameplay world.
+pub fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
+    [
+        position[0].floor() + 0.5,
+        position[1],
+        position[2].floor() + 0.5,
+    ]
+}
 pub struct TimelineSimulationRuntime {
-    game: GameState,
+    world: World,
+    schedule: Schedule,
+    state: TimelineSimulationState,
+    trail_segments: Vec<Vec<[f32; 3]>>,
+    objects: Vec<LevelObject>,
+    game_over: bool,
+    level_complete: bool,
     tap_times: Vec<f32>,
     tap_index: usize,
     elapsed_seconds: f32,
@@ -31,6 +57,13 @@ pub struct TimelineSimulationRuntime {
 
 const TIMELINE_SIMULATION_DT: f32 = 1.0 / 240.0;
 const TIMELINE_TAP_EPSILON_SECONDS: f32 = 1.0 / 480.0;
+
+fn object_order_key(id: &str) -> (u8, usize, &str) {
+    id.strip_prefix("__obj_")
+        .and_then(|suffix| suffix.parse::<usize>().ok())
+        .map(|index| (0, index, id))
+        .unwrap_or((1, 0, id))
+}
 
 impl TimelineSimulationRuntime {
     pub fn new(
@@ -56,11 +89,57 @@ impl TimelineSimulationRuntime {
         simulation_dt: f32,
     ) -> Self {
         puffin::profile_scope!("TimelineRuntimeBuild");
-        let mut game = GameState::new();
-        game.objects = objects.to_vec();
-        game.rebuild_behavior_cache();
-        game.apply_spawn(spawn_position, spawn_direction);
-        game.started = true;
+
+        let spawn_position = center_spawn_position(spawn_position);
+        let authored_objects = objects.to_vec();
+        let mut world = World::new();
+        initialize_gameplay_world(&mut world);
+        let schedule = build_gameplay_schedule();
+
+        {
+            let world = &mut world;
+            for (index, object) in authored_objects.iter().enumerate() {
+                world.spawn(ObjectBundle {
+                    object: Object,
+                    id: ObjectId(format!("__obj_{index}")),
+                    data: ObjectData(object.clone()),
+                    position: Position(object.position),
+                    rotation: Rotation(object.rotation),
+                    size: Size(object.size),
+                    block_id: BlockId(object.block_id.clone()),
+                    color_tint: ColorTint(object.color_tint),
+                    cached_behavior: CachedBlockBehavior::from_block_id(&object.block_id),
+                });
+            }
+
+            world.spawn(PlayerBundle {
+                player: Player,
+                position: PlayerPosition(spawn_position),
+                direction: PlayerDirection(spawn_direction),
+                speed: PlayerSpeed(BASE_PLAYER_SPEED),
+                vertical_velocity: VerticalVelocity(0.0),
+                grounded: Grounded(true),
+                trail: Trail {
+                    segments: vec![vec![spawn_position]],
+                },
+                spawn_position: SpawnPosition(spawn_position),
+                spawn_direction: SpawnDirection(spawn_direction),
+            });
+
+            world.resource_mut::<GameClock>().started = true;
+            {
+                let mut level = world.resource_mut::<LevelMeta>();
+                level.objects = authored_objects.clone();
+                level.spawn_position = spawn_position;
+                level.spawn_direction = spawn_direction;
+            }
+
+            let mut spatial = world
+                .remove_resource::<SpatialIndex>()
+                .expect("GamePlugin must install SpatialIndex");
+            spatial.rebuild(world);
+            world.insert_resource(spatial);
+        }
 
         let mut sorted_taps: Vec<f32> = tap_times
             .iter()
@@ -70,7 +149,20 @@ impl TimelineSimulationRuntime {
         sorted_taps.sort_by(f32::total_cmp);
 
         let mut runtime = Self {
-            game,
+            world,
+            schedule,
+            state: TimelineSimulationState {
+                position: spawn_position,
+                direction: spawn_direction,
+                elapsed_seconds: 0.0,
+                speed: BASE_PLAYER_SPEED,
+                vertical_velocity: 0.0,
+                is_grounded: true,
+            },
+            trail_segments: vec![vec![spawn_position]],
+            objects: authored_objects,
+            game_over: false,
+            level_complete: false,
             tap_times: sorted_taps,
             tap_index: 0,
             elapsed_seconds: 0.0,
@@ -78,15 +170,55 @@ impl TimelineSimulationRuntime {
         };
 
         runtime.apply_pending_taps(TIMELINE_TAP_EPSILON_SECONDS);
+        runtime.sync_snapshot();
         runtime
     }
 
     fn apply_pending_taps(&mut self, up_to_time: f32) {
         while self.tap_index < self.tap_times.len() && self.tap_times[self.tap_index] <= up_to_time
         {
-            self.game.turn_right();
+            self.apply_turn_right();
             self.tap_index += 1;
         }
+    }
+
+    fn apply_turn_right(&mut self) {
+        let world = &mut self.world;
+        let can_turn = {
+            let clock = world.resource::<GameClock>();
+            clock.started && !clock.game_over && !clock.level_complete
+        };
+        if !can_turn {
+            return;
+        }
+
+        let mut players =
+            world.query::<(&PlayerPosition, &mut PlayerDirection, &Grounded, &mut Trail)>();
+        let Ok((position, mut direction, grounded, mut trail)) = players.single_mut(world) else {
+            return;
+        };
+        if !grounded.0 {
+            return;
+        }
+
+        const MIN_DELTA: f32 = 0.001;
+        if let Some(segment) = trail.segments.last_mut() {
+            let duplicate = segment.last().is_some_and(|last| {
+                (last[0] - position.0[0]).abs() < MIN_DELTA
+                    && (last[1] - position.0[1]).abs() < MIN_DELTA
+                    && (last[2] - position.0[2]).abs() < MIN_DELTA
+            });
+            if !duplicate {
+                segment.push(position.0);
+            }
+        } else {
+            trail.segments.push(vec![position.0]);
+        }
+
+        direction.0 = match direction.0 {
+            Direction::Forward => Direction::Right,
+            Direction::Right => Direction::Forward,
+        };
     }
 
     pub fn advance_to(&mut self, target_time_seconds: f32) {
@@ -120,11 +252,14 @@ impl TimelineSimulationRuntime {
                 continue;
             }
 
-            self.game.update(step_dt);
+            self.world.resource_mut::<FrameDelta>().0 = step_dt;
+            self.schedule.run(&mut self.world);
+            self.sync_snapshot();
             self.elapsed_seconds = step_target;
+            self.state.elapsed_seconds = step_target;
             self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
 
-            if self.game.game_over {
+            if self.game_over {
                 return;
             }
         }
@@ -135,48 +270,91 @@ impl TimelineSimulationRuntime {
     }
 
     pub fn position(&self) -> [f32; 3] {
-        self.game.position
+        self.state.position
     }
 
     pub fn direction(&self) -> Direction {
-        self.game.direction
+        self.state.direction
     }
 
     pub fn is_grounded(&self) -> bool {
-        self.game.is_grounded
+        self.state.is_grounded
     }
 
     pub fn game_over(&self) -> bool {
-        self.game.game_over
+        self.game_over
     }
 
     pub fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
-        self.game.take_consumed_object_events()
+        let world = &mut self.world;
+        std::mem::take(&mut world.resource_mut::<ConsumedEventsBuffer>().events)
     }
 
     pub fn trail_segments(&self) -> &[Vec<[f32; 3]>] {
-        &self.game.trail_segments
+        &self.trail_segments
     }
 
     pub fn objects(&self) -> &[LevelObject] {
-        &self.game.objects
+        &self.objects
     }
 
     pub fn snapshot(&self) -> TimelineSimulationState {
-        TimelineSimulationState {
-            position: self.game.position,
-            direction: match self.game.direction {
-                Direction::Forward => Direction::Forward,
-                Direction::Right => Direction::Right,
-            },
-            elapsed_seconds: self.elapsed_seconds,
-            speed: self.game.speed,
-            vertical_velocity: self.game.vertical_velocity,
-            is_grounded: self.game.is_grounded,
+        self.state
+    }
+
+    fn sync_snapshot(&mut self) {
+        let (clock, player, objects) = {
+            let world = &mut self.world;
+            let clock = {
+                let clock = world.resource::<GameClock>();
+                (clock.elapsed_seconds, clock.game_over, clock.level_complete)
+            };
+            let player = {
+                let mut query = world.query::<(
+                    &PlayerPosition,
+                    &PlayerDirection,
+                    &PlayerSpeed,
+                    &VerticalVelocity,
+                    &Grounded,
+                    &Trail,
+                )>();
+                query.iter(world).next().map(
+                    |(position, direction, speed, vertical_velocity, grounded, trail)| {
+                        (
+                            position.0,
+                            direction.0,
+                            speed.0,
+                            vertical_velocity.0,
+                            grounded.0,
+                            trail.segments.clone(),
+                        )
+                    },
+                )
+            };
+            let mut query = world.query::<(&ObjectId, &ObjectData)>();
+            let mut objects = query
+                .iter(world)
+                .map(|(id, data)| (id.0.clone(), data.0.clone()))
+                .collect::<Vec<_>>();
+            objects.sort_by(|(left, _), (right, _)| {
+                object_order_key(left).cmp(&object_order_key(right))
+            });
+            (clock, player, objects)
+        };
+
+        self.game_over = clock.1;
+        self.level_complete = clock.2;
+        if let Some((position, direction, speed, vertical_velocity, grounded, trail)) = player {
+            self.state.position = position;
+            self.state.direction = direction;
+            self.state.speed = speed;
+            self.state.vertical_velocity = vertical_velocity;
+            self.state.is_grounded = grounded;
+            self.trail_segments = trail;
         }
+        self.objects = objects.into_iter().map(|(_, object)| object).collect();
     }
 }
-
 pub fn simulate_timeline_state(
     spawn_position: [f32; 3],
     spawn_direction: Direction,

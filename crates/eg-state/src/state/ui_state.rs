@@ -10,7 +10,7 @@ use super::{
     EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
     MenuStateRes, PerfRes, SessionStateRes, evaluate_camera_track_for_objects,
 };
-use bevy_ecs::prelude::Resource;
+
 use bevy_ecs::world::World;
 use eg_blocks::{BlockDefinition, BlockId};
 use eg_types::{
@@ -27,90 +27,6 @@ pub struct SelectedTapViewModel {
     pub time_seconds: f32,
     pub position: [f32; 3],
 }
-
-/// Borrowed UI view assembled from App-owned resources.
-pub struct UiStateView<'a> {
-    pub is_editor: bool,
-    pub is_menu: bool,
-    pub is_game_paused: bool,
-    pub is_practice_mode_enabled: bool,
-    pub mode: EditorMode,
-    pub last_mode: Option<EditorMode>,
-    pub available_levels: &'a [String],
-    pub level_name: Option<&'a str>,
-    pub menu_level_name: Option<&'a str>,
-    pub menu_selected_level_progress: Option<PlayerLevelProgress>,
-    pub show_metadata: bool,
-    pub show_place_window: bool,
-    pub show_settings: bool,
-    pub settings_section: SettingsSection,
-    pub keybind_capture_action: Option<&'a (String, usize)>,
-    pub music_metadata: &'a MusicMetadata,
-    pub creator_metadata: BasicLevelMetadata,
-    pub sky_color: [f32; 3],
-    pub app_settings: &'a AppSettings,
-    pub configured_graphics_backend: &'a str,
-    pub configured_audio_backend: &'a str,
-    pub graphics_backend_locked: bool,
-    pub audio_backend_locked: bool,
-    pub graphics_backend_options: &'a [String],
-    pub audio_backend_options: &'a [String],
-    pub settings_restart_required: bool,
-    pub auth_display_name: Option<&'a str>,
-    pub auth_pending: bool,
-    pub auth_message: Option<&'a str>,
-    pub perf_overlay_enabled: bool,
-    pub perf_graphics_backend: String,
-    pub perf_audio_backend: String,
-    pub perf_has_latest_frame: bool,
-    pub snap_to_grid: bool,
-    pub snap_step: f32,
-    pub snap_rotation: bool,
-    pub snap_rotation_step_degrees: f32,
-    pub selected_block_id: &'a BlockId,
-    pub place_preview_position: [f32; 3],
-    pub place_preview_size: [f32; 3],
-    pub recent_block_ids: &'a [BlockId],
-    pub selected_block: Option<LevelObject>,
-    pub selected_block_count: usize,
-    pub clipboard_block_count: usize,
-    pub can_undo: bool,
-    pub can_redo: bool,
-    pub playing: bool,
-    pub timeline_time_seconds: f32,
-    pub timeline_duration_seconds: f32,
-    pub tap_times: &'a [f32],
-    pub selected_tap: Option<SelectedTapViewModel>,
-    pub timeline_preview_position: [f32; 3],
-    pub timeline_preview_direction: Direction,
-    pub timing_points: &'a [TimingPoint],
-    pub playback_speed: f32,
-    pub timing_selected_index: Option<usize>,
-    pub waveform_zoom: f32,
-    pub waveform_scroll: f32,
-    pub waveform_samples: &'a [f32],
-    pub waveform_sample_rate: u32,
-    pub waveform_window_size: usize,
-    pub waveform_loading: bool,
-    pub waveform_complete: bool,
-    pub bpm_tap_result: Option<f32>,
-    pub trigger_objects: Vec<LevelObject>,
-    pub trigger_selected_index: Option<usize>,
-    pub camera_position: [f32; 3],
-    pub camera_preview_position: [f32; 3],
-    pub camera_preview_target: [f32; 3],
-    pub camera_rotation: f32,
-    pub camera_pitch: f32,
-    pub fps: f32,
-    pub marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
-    pub object_count: usize,
-}
-
-/// App-owned storage for the UI view model during the transition away from
-/// `State::ui_state_snapshot`. The resource owns its data; `view()` only
-/// creates the borrowed shape still consumed by the existing egui helpers.
-#[derive(Resource, Clone)]
-pub struct UiStateRes(pub UiStateData);
 
 #[derive(Clone)]
 pub struct UiStateData {
@@ -188,98 +104,6 @@ pub struct UiStateData {
     pub fps: f32,
     pub marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
     pub object_count: usize,
-}
-
-impl UiStateRes {
-    /// Build the presentation view from authoritative App-world resources.
-    ///
-    /// `UiStateView` is the borrowed shape consumed by the existing egui
-    /// helpers, but this constructor no longer needs the compatibility
-    /// `State` object. `MenuStateRes` is optional for headless TestApp worlds;
-    /// production Runtime inserts it during construction.
-    pub fn from_world(world: &World) -> Self {
-        Self(UiStateData::from_world(world))
-    }
-
-    pub fn view(&self) -> UiStateView<'_> {
-        let data = &self.0;
-        UiStateView {
-            is_editor: data.is_editor,
-            is_menu: data.is_menu,
-            is_game_paused: data.is_game_paused,
-            is_practice_mode_enabled: data.is_practice_mode_enabled,
-            mode: data.mode,
-            last_mode: data.last_mode,
-            available_levels: &data.available_levels,
-            level_name: data.level_name.as_deref(),
-            menu_level_name: data.menu_level_name.as_deref(),
-            menu_selected_level_progress: data.menu_selected_level_progress,
-            show_metadata: data.show_metadata,
-            show_place_window: data.show_place_window,
-            show_settings: data.show_settings,
-            settings_section: data.settings_section,
-            keybind_capture_action: data.keybind_capture_action.as_ref(),
-            music_metadata: &data.music_metadata,
-            creator_metadata: data.creator_metadata.clone(),
-            sky_color: data.sky_color,
-            app_settings: &data.app_settings,
-            configured_graphics_backend: &data.configured_graphics_backend,
-            configured_audio_backend: &data.configured_audio_backend,
-            graphics_backend_locked: data.graphics_backend_locked,
-            audio_backend_locked: data.audio_backend_locked,
-            graphics_backend_options: &data.graphics_backend_options,
-            audio_backend_options: &data.audio_backend_options,
-            settings_restart_required: data.settings_restart_required,
-            auth_display_name: data.auth_display_name.as_deref(),
-            auth_pending: data.auth_pending,
-            auth_message: data.auth_message.as_deref(),
-            perf_overlay_enabled: data.perf_overlay_enabled,
-            perf_graphics_backend: data.perf_graphics_backend.clone(),
-            perf_audio_backend: data.perf_audio_backend.clone(),
-            perf_has_latest_frame: data.perf_has_latest_frame,
-            snap_to_grid: data.snap_to_grid,
-            snap_step: data.snap_step,
-            snap_rotation: data.snap_rotation,
-            snap_rotation_step_degrees: data.snap_rotation_step_degrees,
-            selected_block_id: &data.selected_block_id,
-            place_preview_position: data.place_preview_position,
-            place_preview_size: data.place_preview_size,
-            recent_block_ids: &data.recent_block_ids,
-            selected_block: data.selected_block.clone(),
-            selected_block_count: data.selected_block_count,
-            clipboard_block_count: data.clipboard_block_count,
-            can_undo: data.can_undo,
-            can_redo: data.can_redo,
-            playing: data.playing,
-            timeline_time_seconds: data.timeline_time_seconds,
-            timeline_duration_seconds: data.timeline_duration_seconds,
-            tap_times: &data.tap_times,
-            selected_tap: data.selected_tap,
-            timeline_preview_position: data.timeline_preview_position,
-            timeline_preview_direction: data.timeline_preview_direction,
-            timing_points: &data.timing_points,
-            playback_speed: data.playback_speed,
-            timing_selected_index: data.timing_selected_index,
-            waveform_zoom: data.waveform_zoom,
-            waveform_scroll: data.waveform_scroll,
-            waveform_samples: &data.waveform_samples,
-            waveform_sample_rate: data.waveform_sample_rate,
-            waveform_window_size: data.waveform_window_size,
-            waveform_loading: data.waveform_loading,
-            waveform_complete: data.waveform_complete,
-            bpm_tap_result: data.bpm_tap_result,
-            trigger_objects: data.trigger_objects.clone(),
-            trigger_selected_index: data.trigger_selected_index,
-            camera_position: data.camera_position,
-            camera_preview_position: data.camera_preview_position,
-            camera_preview_target: data.camera_preview_target,
-            camera_rotation: data.camera_rotation,
-            camera_pitch: data.camera_pitch,
-            fps: data.fps,
-            marquee_selection_rect_screen: data.marquee_selection_rect_screen,
-            object_count: data.object_count,
-        }
-    }
 }
 
 impl UiStateData {

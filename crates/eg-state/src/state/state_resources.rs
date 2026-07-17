@@ -97,9 +97,7 @@ impl Default for AppPhaseRes {
 /// App-owned frame timing resource used by scheduled systems after the legacy callback was
 /// decomposed into scheduled systems.
 ///
-/// REFACTOR POINT(full-bevy): replace `FrameTimeRes` with `bevy_time`
-/// `Time<Virtual>` / `Time<Fixed>` resources once the custom frame
-/// driver moves to the full Bevy app runner.
+/// `Time<Virtual>` is authoritative for production App frames; `FrameTimeRes` retains derived FPS and presentation metrics. Bare-world direct schedules use its bounded `Instant` fallback.
 #[derive(Resource, Clone, Copy)]
 pub struct FrameTimeRes {
     pub last_frame: web_time::Instant,
@@ -111,11 +109,18 @@ pub struct FrameTimeRes {
 impl FrameTimeRes {
     pub fn advance(&mut self) {
         let now = web_time::Instant::now();
-        // Treat a stalled/background frame as at most 250ms of presentation
-        // time. This keeps camera transitions and other frame consumers from
-        // completing an entire transition after a long compile/debug pause.
         let frame_dt = (now - self.last_frame).as_secs_f32().clamp(0.0, 0.25);
         self.last_frame = now;
+        self.apply_delta(frame_dt, None);
+    }
+
+    pub fn advance_from_bevy_time(&mut self, delta_seconds: f32, global_time_seconds: f32) {
+        self.last_frame = web_time::Instant::now();
+        self.apply_delta(delta_seconds, Some(global_time_seconds));
+    }
+
+    fn apply_delta(&mut self, delta_seconds: f32, global_time_seconds: Option<f32>) {
+        let frame_dt = delta_seconds.max(0.0).min(0.25);
         self.delta_seconds = frame_dt;
 
         let instant_fps = 1.0 / frame_dt.max(1e-4);
@@ -125,7 +130,9 @@ impl FrameTimeRes {
             self.fps_smoothed = self.fps_smoothed * 0.9 + instant_fps * 0.1;
         }
 
-        self.global_time_seconds += frame_dt.max(0.0);
+        self.global_time_seconds = global_time_seconds
+            .unwrap_or(self.global_time_seconds + frame_dt)
+            .max(0.0);
     }
 }
 
@@ -175,10 +182,8 @@ impl Default for BuiltinLevelCatalogRes {
     }
 }
 
-/// `SessionSubsystem` fields mirrored as a resource. Only the
-/// default-constructible subset is included in Phase 2a; the full
-/// `SessionSubsystem` mirror (with `LevelImportChannelRes`, practice
-/// checkpoints, etc.) lands in Phase 2b.
+/// App-owned session state used directly by handlers, UI view construction,
+/// gameplay transitions, and async level-import results.
 #[derive(Resource, Default)]
 pub struct SessionStateRes {
     pub editor_level_name: Option<String>,

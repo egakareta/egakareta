@@ -873,7 +873,7 @@ mod tests {
         world.init_resource::<eg_game::PendingTurnInputs>();
         world.init_resource::<eg_game::PlayerProgress>();
         world.init_resource::<eg_game::FrameDelta>();
-        world.init_resource::<eg_game::FixedStepConfig>();
+
         world.init_resource::<eg_game::DeathSfxFlag>();
         world.init_resource::<eg_game::SpatialIndex>();
         world.init_resource::<eg_game::GameRuntimeTuning>();
@@ -891,7 +891,10 @@ mod tests {
         world.init_resource::<crate::state::LevelExportServiceRes>();
         world.init_resource::<crate::state::LevelImportSenderRes>();
         world.init_resource::<crate::state::AudioImportSenderRes>();
+        #[cfg(not(target_arch = "wasm32"))]
         world.init_resource::<crate::state::AudioBackendRes>();
+        #[cfg(target_arch = "wasm32")]
+        world.init_non_send::<crate::state::AudioBackendRes>();
         world.init_resource::<crate::state::EditorAudioCacheRes>();
         world.init_resource::<crate::state::RuntimeAudioPreloadRes>();
         world.init_resource::<crate::state::RuntimeAudioPreloadSenderRes>();
@@ -1023,22 +1026,21 @@ mod tests {
             .set(AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.resource_mut::<eg_game::GameClock>().game_over = true;
-        let checkpoint =
-            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
-                position: [2.0, 0.0, 3.0],
-                direction: eg_types::Direction::Right,
-                elapsed_seconds: 3.5,
-                speed: 2.0,
-                objects: Vec::new(),
-                vertical_velocity: 0.25,
-                is_grounded: false,
-                progress: eg_types::PlayerLevelProgress {
-                    progress_percent: 42.0,
-                    completed: false,
-                    gems_collected: 2,
-                    gems_max: 5,
-                },
-            });
+        let checkpoint = eg_game::GameCheckpointState::from_parts(eg_game::GameCheckpointParts {
+            position: [2.0, 0.0, 3.0],
+            direction: eg_types::Direction::Right,
+            elapsed_seconds: 3.5,
+            speed: 2.0,
+            objects: Vec::new(),
+            vertical_velocity: 0.25,
+            is_grounded: false,
+            progress: eg_types::PlayerLevelProgress {
+                progress_percent: 42.0,
+                completed: false,
+                gems_collected: 2,
+                gems_max: 5,
+            },
+        });
         let mut session = world.resource_mut::<crate::state::SessionStateRes>();
         session.practice_mode_enabled = true;
         session
@@ -1510,7 +1512,7 @@ mod tests {
             session
                 .practice_checkpoints
                 .push(crate::state::PracticeCheckpoint {
-                    gameplay: eg_game::GameState::new().checkpoint_state(),
+                    gameplay: eg_game::GameCheckpointState::default(),
                     trigger_base_objects: None,
                 });
         }

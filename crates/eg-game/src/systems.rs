@@ -6,8 +6,8 @@
 
 */
 //! Gameplay systems. These are pure Bevy ECS systems, grouped in
-//! [`GameplaySet`] for ordering. The `state.rs` wrapper drives them by
-//! running the schedule in `GameState::update`.
+//! [`GameplaySet`] for ordering. The shared gameplay schedule drives them
+//! directly from App-world resources and components.
 
 use std::collections::HashMap;
 
@@ -29,7 +29,7 @@ use crate::resources::{
 };
 
 /// Ordered gameplay system set. Run as a single tick to advance the
-/// simulation by [`FixedStepConfig::dt`] seconds.
+/// simulation by the explicit FrameDelta seconds resource.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameplaySet {
     /// Drain pending turn inputs into the player direction.
@@ -88,7 +88,7 @@ pub struct CollisionResult {
 /// `PlayerDirection`. Run before [`GameplaySet::AdvancePlayer`].
 pub fn turn_input_system(
     mut pending: ResMut<PendingTurnInputs>,
-    mut players: Query<&mut PlayerDirection>,
+    mut players: Query<(&mut PlayerDirection, &Grounded)>,
     clock: Res<GameClock>,
 ) {
     if !clock.started || clock.game_over || clock.level_complete {
@@ -99,7 +99,8 @@ pub fn turn_input_system(
         if front.at_seconds <= clock.elapsed_seconds {
             let TimedTurnInput { kind, .. } = *front;
             pending.taps.pop_front();
-            if let Ok(mut direction) = players.single_mut()
+            if let Ok((mut direction, grounded)) = players.single_mut()
+                && grounded.0
                 && kind == TurnInputKind::TurnRight
             {
                 direction.0 = match direction.0 {
@@ -371,8 +372,8 @@ pub fn ground_gravity_system(
 // 6. Trail
 // ---------------------------------------------------------------------------
 
-/// Manage trail segments based on `Grounded` changes. Mirrors the legacy
-/// `GameState::update` transition logic:
+/// Manage trail segments based on `Grounded` changes:
+///
 /// - `grounded -> airborne` (just took off): append the current position to
 ///   the last trail segment, deduping within `MIN_DELTA`.
 /// - `airborne -> grounded` (just landed): start a new segment containing

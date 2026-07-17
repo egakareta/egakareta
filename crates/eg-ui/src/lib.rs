@@ -30,7 +30,7 @@ use crate::modes::timing::show_timing_mode_bottom_panel;
 use bevy_ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateView;
+use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -39,10 +39,7 @@ pub use menu::{
     MenuTextures, load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_practice_checkpoint_ui,
 };
-pub use plugin::{
-    EguiContextRes, UiPlugin, register_ui_resources_world, sync_egui_context, write_ui_command,
-    write_ui_commands,
-};
+pub use plugin::{UiPlugin, register_ui_resources_world, write_ui_command, write_ui_commands};
 
 /// Destination for semantic UI commands emitted while egui is running.
 ///
@@ -368,7 +365,7 @@ fn context_menu_button_impl(
 
 fn show_editor_context_menu(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
     commands: &mut impl UiCommandSink,
 ) {
@@ -642,7 +639,7 @@ fn show_editor_context_menu(
 
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
@@ -661,7 +658,7 @@ fn show_settings_sidebar_area(
 
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
     sidebar_width: f32,
     viewport_height: f32,
@@ -740,19 +737,15 @@ fn show_settings_section_tab(
     }
 }
 
-fn show_backend_settings(
-    ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
-    commands: &mut impl UiCommandSink,
-) {
+fn show_backend_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
     show_backend_selector(
         ui,
         commands,
         BackendSelector {
             label: format!("{} Graphics backend", egui_phosphor::regular::DESKTOP),
             id_salt: "settings_graphics_backend",
-            configured_backend: view.configured_graphics_backend,
-            backend_options: view.graphics_backend_options,
+            configured_backend: &view.configured_graphics_backend,
+            backend_options: &view.graphics_backend_options,
             locked: view.graphics_backend_locked,
         },
         EditorCommand::SetGraphicsBackend,
@@ -775,8 +768,8 @@ fn show_backend_settings(
         BackendSelector {
             label: format!("{} Audio backend", egui_phosphor::regular::SPEAKER_HIGH),
             id_salt: "settings_audio_backend",
-            configured_backend: view.configured_audio_backend,
-            backend_options: view.audio_backend_options,
+            configured_backend: &view.configured_audio_backend,
+            backend_options: &view.audio_backend_options,
             locked: view.audio_backend_locked,
         },
         EditorCommand::SetAudioBackend,
@@ -823,11 +816,7 @@ fn show_backend_selector(
     }
 }
 
-fn show_ui_scale_setting(
-    ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
-    commands: &mut impl UiCommandSink,
-) {
+fn show_ui_scale_setting(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
     let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
     if ui
@@ -845,11 +834,7 @@ fn show_ui_scale_setting(
     }
 }
 
-fn show_keybind_settings(
-    ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
-    commands: &mut impl UiCommandSink,
-) {
+fn show_keybind_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
     let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
         BTreeMap::new();
     for metadata in essential_keybind_actions() {
@@ -885,7 +870,7 @@ fn show_keybind_settings(
                             metadata,
                             &current_chords,
                             &default_chords,
-                            view.keybind_capture_action,
+                            view.keybind_capture_action.as_ref(),
                         );
                         ui.separator();
                     }
@@ -901,10 +886,10 @@ fn show_keybind_settings(
 
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
 /// Hidden during active gameplay.
-/// Renders from [`UiStateView`] and queues commands for the caller to dispatch.
+/// Renders from [`UiStateData`] and queues commands for the caller to dispatch.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.show_settings {
@@ -921,9 +906,9 @@ pub fn show_settings_sidebar(
 /// Render the editor UI from an App-owned view and write semantic commands to
 /// the supplied sink. Returns the rectangles used by platform input routing.
 #[allow(deprecated)]
-pub fn show_editor_ui_from_view(
+pub fn show_editor_ui(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut impl UiCommandSink,
 ) -> Vec<[f32; 4]> {
@@ -996,8 +981,8 @@ pub fn show_editor_ui_from_view(
 
             ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
 
-            let levels = view.available_levels;
-            let selected = view.level_name.unwrap_or("Untitled");
+            let levels = &view.available_levels;
+            let selected = view.level_name.as_deref().unwrap_or("Untitled");
 
             egui::ComboBox::from_id_salt("level_select")
                 .selected_text(selected)
@@ -1062,7 +1047,7 @@ pub fn show_editor_ui_from_view(
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
-                        let mut name = view.level_name.unwrap_or("Untitled").to_string();
+                        let mut name = view.level_name.as_deref().unwrap_or("Untitled").to_string();
                         if ui.text_edit_singleline(&mut name).changed() {
                             commands.push(AppCommand::Editor(EditorCommand::RenameLevel(name)));
                         }
@@ -1415,21 +1400,20 @@ pub fn show_editor_ui_from_view(
 
 /// Compatibility adapter returning the old command vector shape.
 #[allow(deprecated)]
-pub fn show_editor_ui_commands_from_view(
+pub fn show_editor_ui_commands(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
 ) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
     let mut commands = Vec::new();
-    let ui_input_blocking_rects =
-        show_editor_ui_from_view(ctx, view, block_icon_texture_ids, &mut commands);
+    let ui_input_blocking_rects = show_editor_ui(ctx, view, block_icon_texture_ids, &mut commands);
     (commands, ui_input_blocking_rects)
 }
 
 /// Shows the app-wide profiler window when the performance overlay is enabled.
 pub fn show_perf_overlay(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.perf_overlay_enabled {
@@ -1982,13 +1966,13 @@ mod tests {
         UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink, block_matches_catalog_category,
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
         perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui_commands_from_view, show_perf_overlay,
+        settings_sidebar_default_width, show_editor_ui_commands, show_perf_overlay,
         sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateView;
+    use eg_state::state::UiStateData;
     use eg_state::state::editor_command::EditorCommand;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
     use glam::{Mat3, Vec3};
@@ -2019,12 +2003,12 @@ mod tests {
         sign != 0.0
     }
 
-    fn run_editor_ui_once(view: &UiStateView<'_>) {
+    fn run_editor_ui_once(view: &UiStateData) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            let _ = show_editor_ui_commands_from_view(ctx, view, &block_icon_texture_ids);
+            let _ = show_editor_ui_commands(ctx, view, &block_icon_texture_ids);
         });
     }
 
@@ -2302,26 +2286,26 @@ mod test_utils {
     use std::sync::LazyLock;
 
     use eg_blocks::BlockId;
-    use eg_state::state::UiStateView;
+    use eg_state::state::UiStateData;
     use eg_types::{
         AppSettings, Direction, EditorMode, LevelMetadata, MusicMetadata, SettingsSection,
     };
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
-    pub fn editor_ui_view<'a>(
-        app_settings: &'a AppSettings,
-        music_metadata: &'a MusicMetadata,
-    ) -> UiStateView<'a> {
-        UiStateView {
+    pub fn editor_ui_view(
+        app_settings: &AppSettings,
+        music_metadata: &MusicMetadata,
+    ) -> UiStateData {
+        UiStateData {
             is_editor: true,
             is_menu: false,
             is_game_paused: false,
             is_practice_mode_enabled: false,
             mode: EditorMode::Select,
             last_mode: Some(EditorMode::Select),
-            available_levels: &[],
-            level_name: Some("Test Level"),
+            available_levels: Vec::new(),
+            level_name: Some("Test Level".to_owned()),
             menu_level_name: None,
             menu_selected_level_progress: None,
             show_metadata: false,
@@ -2329,16 +2313,16 @@ mod test_utils {
             show_settings: false,
             settings_section: SettingsSection::Backends,
             keybind_capture_action: None,
-            music_metadata,
+            music_metadata: music_metadata.clone(),
             creator_metadata: eg_types::BasicLevelMetadata::default(),
             sky_color: LevelMetadata::default().sky_color,
-            app_settings,
-            configured_graphics_backend: "Auto",
-            configured_audio_backend: "Default",
+            app_settings: app_settings.clone(),
+            configured_graphics_backend: "Auto".to_owned(),
+            configured_audio_backend: "Default".to_owned(),
             graphics_backend_locked: false,
             audio_backend_locked: false,
-            graphics_backend_options: &[],
-            audio_backend_options: &[],
+            graphics_backend_options: Vec::new(),
+            audio_backend_options: Vec::new(),
             settings_restart_required: false,
             auth_display_name: None,
             auth_pending: false,
@@ -2351,10 +2335,10 @@ mod test_utils {
             snap_step: 1.0,
             snap_rotation: true,
             snap_rotation_step_degrees: 15.0,
-            selected_block_id: &DEFAULT_BLOCK_ID,
+            selected_block_id: DEFAULT_BLOCK_ID.clone(),
             place_preview_position: [0.0, 0.0, 0.0],
             place_preview_size: [1.0, 1.0, 1.0],
-            recent_block_ids: &[],
+            recent_block_ids: Vec::new(),
             selected_block: None,
             selected_block_count: 0,
             clipboard_block_count: 0,
@@ -2363,16 +2347,16 @@ mod test_utils {
             playing: false,
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
-            tap_times: &[],
+            tap_times: Vec::new(),
             selected_tap: None,
             timeline_preview_position: [0.0, 0.0, 0.0],
             timeline_preview_direction: Direction::Forward,
-            timing_points: &[],
+            timing_points: Vec::new(),
             playback_speed: 1.0,
             timing_selected_index: None,
             waveform_zoom: 1.0,
             waveform_scroll: 0.0,
-            waveform_samples: &[],
+            waveform_samples: Vec::new(),
             waveform_sample_rate: 0,
             waveform_window_size: 256,
             waveform_loading: false,

@@ -42,10 +42,10 @@ use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AppPhaseRes, AudioBackendRes, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
-    start_audio_source_at_seconds_for_resources,
+    AppPhaseRes, AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes,
+    EditorDirtyFlags, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
+    RuntimeAudioPreloadRes, SessionStateRes, start_audio_source_at_seconds_for_resources,
 };
 
 /// Toggle timeline playback.
@@ -131,7 +131,7 @@ pub fn handle_toggle_timeline_playback(
     mut input: ResMut<EditorInputRes>,
     mut runtime: ResMut<EditorRuntimeRes>,
     mut timeline: ResMut<EditorTimelineRes>,
-    audio: Res<AudioBackendRes>,
+    audio: AudioBackendSystemParam<'_>,
     editor_audio: Res<EditorAudioCacheRes>,
     runtime_preload: Res<RuntimeAudioPreloadRes>,
     objects: Res<EditorObjectsRes>,

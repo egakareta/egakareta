@@ -8,7 +8,7 @@
 use crate::UiCommandSink;
 use crate::components::show_shadowed_label;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateView;
+use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 
 const MENU_TEXTURE_MAX_DIMENSION: u32 = 256;
@@ -139,14 +139,17 @@ const PAUSE_MENU_PRACTICE_GAP: f32 = 10.0;
 /// Shows the selected level name in the menu hero position.
 pub fn show_menu_favicon_ui(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     _favicon: &egui::TextureHandle,
 ) {
     if !view.is_menu {
         return;
     }
 
-    let level_name = view.menu_level_name.unwrap_or("No Level Selected");
+    let level_name = view
+        .menu_level_name
+        .as_deref()
+        .unwrap_or("No Level Selected");
     let max_width = (ctx.content_rect().width() - MENU_LEVEL_TITLE_MAX_WIDTH_PADDING).max(1.0);
 
     egui::Area::new("menu_favicon_area".into())
@@ -180,7 +183,7 @@ pub fn show_menu_favicon_ui(
 /// Shows the menu play button UI overlay.
 pub fn show_menu_play_ui(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
     play_button: Option<&egui::TextureHandle>,
     play_button_filled: Option<&egui::TextureHandle>,
@@ -319,7 +322,7 @@ fn show_menu_image_button_at_rect(
 /// Shows the in-game pause menu overlay for real gameplay sessions.
 pub fn show_pause_menu_ui(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.is_game_paused {
@@ -425,7 +428,7 @@ pub fn show_pause_menu_ui(
 /// Shows the practice-mode checkpoint placement button during real gameplay.
 pub fn show_practice_checkpoint_ui(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.is_practice_mode_enabled || view.is_game_paused {
@@ -478,7 +481,7 @@ pub fn show_practice_checkpoint_ui(
     }
 }
 
-fn show_menu_level_progress_row(ui: &mut egui::Ui, view: &UiStateView<'_>) {
+fn show_menu_level_progress_row(ui: &mut egui::Ui, view: &UiStateData) {
     let progress = view.menu_selected_level_progress.unwrap_or_default();
 
     let percent_text = format!("{:.0}%", progress.progress_percent);
@@ -650,7 +653,7 @@ fn paint_menu_gem_icon(painter: &egui::Painter, rect: egui::Rect, shadow: bool) 
 /// Shows the main-menu topbar.
 pub fn show_menu_topbar_ui(
     root_ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !view.is_menu {
@@ -679,7 +682,7 @@ pub fn show_menu_topbar_ui(
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.horizontal(|ui| {
-                    if let Some(name) = view.auth_display_name {
+                    if let Some(name) = &view.auth_display_name {
                         ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
                         if ui
                             .add_enabled(!view.auth_pending, egui::Button::new("Sign out"))
@@ -719,7 +722,7 @@ pub fn show_menu_topbar_ui(
         ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
     });
 
-    if let Some(message) = view.auth_message {
+    if let Some(message) = &view.auth_message {
         egui::Area::new("menu_auth_message_area".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
@@ -766,9 +769,9 @@ mod tests {
         let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.is_editor = false;
         view.is_menu = true;
-        view.auth_display_name = auth_display_name;
+        view.auth_display_name = auth_display_name.map(str::to_owned);
         view.auth_pending = auth_pending;
-        view.auth_message = auth_message;
+        view.auth_message = auth_message.map(str::to_owned);
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {

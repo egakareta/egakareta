@@ -8,12 +8,12 @@
 use crate::UiCommandSink;
 use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateView;
+use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     _duration_seconds: f32,
     commands: &mut impl UiCommandSink,
 ) {
@@ -90,7 +90,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                 }
             });
 
-            let timing_points = view.timing_points;
+            let timing_points = &view.timing_points;
             let selected_idx = view.timing_selected_index;
             egui::ScrollArea::vertical()
                 .max_height(80.0)
@@ -123,7 +123,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
         // Selected timing point editor
         ui.vertical(|ui| {
-            let timing_points = view.timing_points;
+            let timing_points = &view.timing_points;
             if let Some(idx) = view.timing_selected_index {
                 if let Some(tp) = timing_points.get(idx) {
                     ui.label(format!("Editing Point #{}", idx + 1));
@@ -215,7 +215,7 @@ mod tests {
     use super::show_timing_mode_bottom_panel;
     use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateView;
+    use eg_state::state::UiStateData;
     use eg_types::LevelObject;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
 
@@ -226,13 +226,13 @@ mod tests {
         trigger_objects: &'a [LevelObject],
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
-    ) -> UiStateView<'a> {
+    ) -> UiStateData {
         let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.timeline_time_seconds = 2.5;
         view.timeline_preview_position = [1.0, 2.0, 3.0];
-        view.timing_points = timing_points;
+        view.timing_points = timing_points.to_vec();
         view.timing_selected_index = timing_selected_index;
         view.bpm_tap_result = bpm_tap_result;
         view.trigger_objects = trigger_objects.to_vec();

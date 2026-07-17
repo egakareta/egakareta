@@ -5,9 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{
-    EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem, State,
-};
+use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem};
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
@@ -761,46 +759,6 @@ impl EditorSubsystem {
         } else {
             false
         }
-    }
-}
-
-impl State {
-    #[cfg(test)]
-    pub fn drag_editor_gizmo_from_screen(&mut self, x: f64, y: f64) -> bool {
-        let viewport = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .drag_gizmo_from_screen(x, y, viewport, self.phase)
-    }
-
-    #[cfg(test)]
-    pub fn begin_editor_gizmo_drag(&mut self, x: f64, y: f64) -> bool {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .begin_gizmo_drag_ext(x, y, viewport_size, self.phase)
-    }
-
-    pub fn editor_gizmo_axis_lengths_world(&self, center: Vec3, target_pixels: f32) -> [f32; 3] {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .gizmo_axis_lengths_world(center, target_pixels, viewport_size)
-    }
-
-    pub fn editor_gizmo_axis_width_world(&self, center: Vec3, target_pixels: f32) -> f32 {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .gizmo_axis_width_world(center, target_pixels, viewport_size)
     }
 }
 

@@ -7,8 +7,8 @@
 */
 //! Test harness for the eg-game ECS core.
 //!
-//! [`TestApp`] is the headless gameplay equivalent of the legacy
-//! [`GameState`](crate::GameState) wrapper. It builds a [`bevy_app::App`] with
+//! [`TestApp`] is the headless gameplay harness.
+//! It builds a [`bevy_app::App`] with
 //! [`GamePlugin`](crate::GamePlugin), exposes the underlying [`World`], and
 //! runs the real [`GameplaySchedule`](crate::GameplaySchedule) for focused ECS
 //! tests.

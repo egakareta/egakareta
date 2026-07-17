@@ -1961,7 +1961,7 @@ mod tests {
     };
     use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes, SessionStateRes};
     use bevy_ecs::world::World;
-    use eg_types::{AppPhase, EditorMode, PhysicalSize};
+    use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize};
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {
@@ -2103,6 +2103,253 @@ mod tests {
                 apply_gamma_correction: false,
             }
         );
+    }
+    fn extract_selection_overlays(
+        input: eg_types::EditorInputState,
+        objects: Vec<LevelObject>,
+    ) -> (RenderEditorSelectionOverlayRes, RenderEditorHoverOverlayRes) {
+        let mut world = World::new();
+        world.insert_resource(AppPhaseRes::new(AppPhase::Editor));
+        world.insert_resource(EditorInputRes(input));
+        world.insert_resource(EditorObjectsRes { objects });
+        world.init_resource::<RenderEditorSelectionOverlayRes>();
+        world.init_resource::<RenderEditorHoverOverlayRes>();
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(extract_editor_selection_overlays_system);
+        schedule.run(&mut world);
+
+        (
+            world.resource::<RenderEditorSelectionOverlayRes>().clone(),
+            world.resource::<RenderEditorHoverOverlayRes>().clone(),
+        )
+    }
+
+    #[test]
+    fn selection_overlay_keeps_hover_outline_before_marquee_activation() {
+        let input = eg_types::EditorInputState {
+            mode: EditorMode::Select,
+            hovered_block_index: Some(0),
+            left_mouse_down: true,
+            marquee_start_screen: Some([100.0, 100.0]),
+            marquee_current_screen: Some([101.0, 101.0]),
+            ..Default::default()
+        };
+        let (_, hover) = extract_selection_overlays(
+            input,
+            vec![
+                LevelObject::default(),
+                LevelObject {
+                    position: [5.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+            ],
+        );
+
+        assert_eq!(hover.outline_vertices.len(), 36);
+        assert_eq!(hover.stencil_vertices.len(), 36);
+    }
+
+    #[test]
+    fn selection_overlay_builds_one_instance_per_selected_object() {
+        let input = eg_types::EditorInputState {
+            mode: EditorMode::Select,
+            selected_block_index: Some(0),
+            selected_block_indices: vec![0, 1],
+            ..Default::default()
+        };
+        let (selection, _) = extract_selection_overlays(
+            input,
+            vec![
+                LevelObject::default(),
+                LevelObject {
+                    position: [2.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+            ],
+        );
+
+        assert_eq!(selection.instances.len(), 2);
+        assert_eq!(selection.outline_vertices.len(), 72);
+        assert_eq!(selection.stencil_vertices.len(), 72);
+    }
+
+    #[test]
+    fn selection_overlay_uses_group_bounds_for_large_selections() {
+        let objects = (0..701)
+            .map(|index| LevelObject {
+                position: [index as f32, 0.0, 0.0],
+                ..LevelObject::default()
+            })
+            .collect::<Vec<_>>();
+        let input = eg_types::EditorInputState {
+            mode: EditorMode::Select,
+            selected_block_index: Some(0),
+            selected_block_indices: (0..701).collect(),
+            ..Default::default()
+        };
+        let (selection, _) = extract_selection_overlays(input, objects);
+
+        assert_eq!(selection.instances.len(), 1);
+        assert_eq!(selection.outline_vertices.len(), 36);
+        assert_eq!(selection.stencil_vertices.len(), 36);
+    }
+    #[test]
+    fn editor_cursor_extraction_hides_cursor_over_selected_tap() {
+        let mut app = crate::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        {
+            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.mode = EditorMode::Tapping;
+            input.0.cursor = [1.0, 0.0, 1.0];
+        }
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .hovered_tap_index = Some(0);
+        app.world_mut()
+            .resource_mut::<EditorTimelineRes>()
+            .0
+            .taps
+            .tap_indicator_positions = vec![[1.0, 0.0, 1.0]];
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(extract_editor_cursor_vertices_system);
+        schedule.run(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<RenderEditorCursorVerticesRes>()
+                .0
+                .is_empty()
+        );
+
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .hovered_tap_index = None;
+        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [2.0, 0.0, 2.0];
+        schedule.run(app.world_mut());
+        assert!(
+            !app.world()
+                .resource::<RenderEditorCursorVerticesRes>()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn editor_tap_indicator_extraction_respects_phase_and_mode() {
+        let mut app = crate::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        {
+            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.mode = EditorMode::Tapping;
+        }
+        {
+            let mut timeline = app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.taps.tap_times = vec![0.5];
+            timeline.0.taps.tap_indicator_positions = vec![[1.0, 0.0, 1.0]];
+        }
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(extract_editor_tap_indicator_vertices_system);
+        schedule.run(app.world_mut());
+        assert!(
+            !app.world()
+                .resource::<RenderEditorTapIndicatorVerticesRes>()
+                .0
+                .is_empty()
+        );
+
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Timing;
+        schedule.run(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<RenderEditorTapIndicatorVerticesRes>()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn editor_transform_marker_extraction_is_app_owned_and_phase_gated() {
+        let mut app = crate::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
+            LevelObject::new("core/stone"),
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                trigger: Some(eg_types::TimedTrigger {
+                    time_seconds: 0.0,
+                    duration_seconds: 0.0,
+                    easing: eg_types::EasingDirection::Linear,
+                    target: eg_types::TriggerTarget::Objects {
+                        object_ids: vec!["object_0_0_0".to_string()],
+                    },
+                    transform: true,
+                    camera: None,
+                }),
+                ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+            },
+        ];
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(extract_editor_transform_trigger_marker_vertices_system);
+        schedule.run(app.world_mut());
+        assert!(
+            !app.world()
+                .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+                .0
+                .is_empty()
+        );
+
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Menu);
+        schedule.run(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+                .0
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn editor_block_mesh_extraction_reads_app_objects_and_selection() {
+        let mut app = crate::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .resource_mut::<AppPhaseRes>()
+            .set(AppPhase::Editor);
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
+        {
+            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = Some(0);
+            input.0.selected_block_indices = vec![0];
+        }
+        app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
+            LevelObject::new("core/stone"),
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                ..LevelObject::new("core/grass")
+            },
+        ];
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(extract_editor_block_meshes_system);
+        schedule.run(app.world_mut());
+
+        let meshes = app.world().resource::<RenderEditorBlockMeshesRes>();
+        assert!(!meshes.static_mesh.chunks.is_empty());
+        assert!(!meshes.selected_geometry.is_empty());
     }
     #[test]
     fn editor_render_objects_apply_transform_triggers_without_mutating_authored_objects() {

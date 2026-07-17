@@ -7,7 +7,7 @@
 */
 //! Bevy UI plugin and command bridge.
 //!
-//! REFACTOR POINT(full-bevy): `EguiContextRes` and the manual command bridge
+//! REFACTOR POINT(full-bevy): the manual command bridge
 //! are replaced by `bevy_egui` systems writing Bevy input/events directly.
 
 use bevy_app::{App, Plugin};
@@ -15,29 +15,18 @@ use bevy_ecs::prelude::*;
 use eg_state::commands::AppCommand;
 use eg_state::events;
 
-/// Current egui context for UI systems.
-#[derive(Resource, Default, Clone)]
-pub struct EguiContextRes(pub Option<egui::Context>);
-
 /// Registers egui-facing resources and typed command messages.
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         eg_state::events::register_command_events(app);
-        app.init_resource::<EguiContextRes>();
     }
 }
 
 /// Register UI resources on a bare World without adding App-level systems.
 pub fn register_ui_resources_world(world: &mut World) {
     eg_state::events::register_command_events_world(world);
-    world.init_resource::<EguiContextRes>();
-}
-
-/// Mirror the current egui context into the App World for UI systems.
-pub fn sync_egui_context(world: &mut World, ctx: &egui::Context) {
-    world.resource_mut::<EguiContextRes>().0 = Some(ctx.clone());
 }
 
 /// Immediately write UI commands to the Bevy message bus.

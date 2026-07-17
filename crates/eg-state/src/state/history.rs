@@ -7,9 +7,9 @@
 */
 #[cfg(test)]
 use super::EditorClipboard;
-use super::{EditorHistorySnapshot, EditorSubsystem, State};
+use super::{EditorHistorySnapshot, EditorSubsystem};
+#[cfg(test)]
 use eg_editor_domain::derive_tap_indicator_positions;
-use eg_types::AppPhase;
 #[cfg(test)]
 use eg_types::{LevelObject, TriggerTarget, next_level_object_id};
 
@@ -54,6 +54,7 @@ impl EditorSubsystem {
         self.runtime.history.redo.clear();
     }
 
+    #[cfg(test)]
     fn apply_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
         self.objects = snapshot.objects;
         self.input.selected_block_index = snapshot.selected_block_index;
@@ -118,6 +119,7 @@ impl EditorSubsystem {
         self.pick_spatial_index.invalidate();
     }
 
+    #[cfg(test)]
     pub(super) fn undo(&mut self) -> bool {
         if let Some(snapshot) = self.runtime.history.undo.pop() {
             let current = self.history_snapshot();
@@ -129,6 +131,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn redo(&mut self) -> bool {
         if let Some(snapshot) = self.runtime.history.redo.pop() {
             let current = self.history_snapshot();
@@ -283,59 +286,6 @@ fn regenerate_object_ids_for_clipboard(
     }
 }
 
-impl State {
-    pub(super) fn record_editor_history_state(&mut self) {
-        if self.phase != AppPhase::Editor {
-            return;
-        }
-        self.editor.record_history_state();
-    }
-
-    /// Reverts the last recorded action in the editor.
-    ///
-    /// If successful, it synchronizes the editor's visual objects and markers.
-    pub fn editor_undo(&mut self) {
-        if self.phase == AppPhase::Editor && self.editor.undo() {
-            self.sync_editor_objects();
-            self.rebuild_editor_cursor_vertices();
-            self.rebuild_spawn_marker_vertices();
-        }
-    }
-
-    /// Re-applies a previously undone action in the editor.
-    ///
-    /// If successful, it synchronizes the editor's visual objects and markers.
-    pub fn editor_redo(&mut self) {
-        if self.phase == AppPhase::Editor && self.editor.redo() {
-            self.sync_editor_objects();
-            self.rebuild_editor_cursor_vertices();
-            self.rebuild_spawn_marker_vertices();
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn editor_copy_block(&mut self) {
-        if self.phase == AppPhase::Editor {
-            self.editor.copy_selected();
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn editor_paste_block(&mut self) {
-        if self.phase == AppPhase::Editor && self.editor.paste_from_clipboard() {
-            self.sync_editor_objects();
-            self.rebuild_editor_cursor_vertices();
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn editor_duplicate_selected_block_in_place(&mut self) {
-        if self.phase == AppPhase::Editor && self.editor.duplicate_selected() {
-            self.sync_editor_objects();
-            self.rebuild_editor_cursor_vertices();
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,7 +322,7 @@ mod tests {
         let mut editor = EditorSubsystem::default();
 
         editor.record_history_state();
-        editor_undo();
+        assert!(editor.undo());
         assert_eq!(editor.runtime.history.redo.len(), 1);
 
         editor.record_history_state();
@@ -406,10 +356,10 @@ mod tests {
         editor.input.selected_block_indices = vec![0, 1];
         editor.input.selected_block_index = Some(0); // Anchor
 
-        editor_copy_block();
+        editor.copy_selected();
 
         editor.input.cursor = [20.0, 5.0, 20.0];
-        editor_paste_block();
+        assert!(editor.paste_from_clipboard());
 
         assert_eq!(editor.objects.len(), 4);
         // Pasted blocks should be relative to anchor [10, 0, 10]
@@ -431,11 +381,11 @@ mod tests {
         editor.input.selected_block_index = None;
         editor.input.cursor = [10.0, 0.0, 10.0];
 
-        editor_copy_block();
+        editor.copy_selected();
         assert!(editor.runtime.interaction.clipboard.is_some());
 
         editor.input.cursor = [30.0, 0.0, 30.0];
-        editor_paste_block();
+        assert!(editor.paste_from_clipboard());
         assert_eq!(editor.objects.len(), 2);
         assert_eq!(editor.objects[1].position, [30.0, 0.0, 30.0]);
     }
@@ -448,7 +398,7 @@ mod tests {
         editor.input.selected_block_indices = vec![0, 1];
         editor.input.selected_block_index = Some(1); // Anchor
 
-        editor_duplicate_selected_block_in_place();
+        assert!(editor.duplicate_selected());
 
         assert_eq!(editor.objects.len(), 4);
         assert_eq!(editor.objects[2].position, [10.0, 0.0, 10.0]);

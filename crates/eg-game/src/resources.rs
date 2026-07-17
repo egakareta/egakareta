@@ -21,7 +21,7 @@ use crate::spatial::SpatialGrid;
 /// levels); `started` gates whether the simulation is running; `game_over`
 /// and `level_complete` are terminal states.
 ///
-/// REFACTOR POINT(full-bevy): `elapsed_seconds` and `level_duration_seconds`
+/// The gameplay clock remains domain state; its per-frame advance is supplied by the App gameplay schedule.
 /// are replaced by `bevy_time` `Time<Fixed>` in the full-Bevy migration.
 #[derive(Resource)]
 pub struct GameClock {
@@ -119,28 +119,11 @@ pub enum TurnInputKind {
     TurnRight,
 }
 
-/// Fixed-step simulation tuning. Retained for future full-Bevy migration
-/// (`bevy_time` `Time<Fixed>`); not currently used by the wrapper
-/// because `GameState::update(dt)` runs a single schedule tick per call,
-/// matching the legacy single-tick API.
-///
-/// REFACTOR POINT(full-bevy): replaced by `bevy_time` `Time<Fixed>`.
-#[derive(Resource, Clone, Copy)]
-pub struct FixedStepConfig {
-    pub dt: f32,
-}
-
-impl Default for FixedStepConfig {
-    fn default() -> Self {
-        Self { dt: 1.0 / 120.0 }
-    }
-}
-
-/// Per-frame time delta. Set by `GameState::update(dt)` before running the
+/// Per-frame time delta. Set by the gameplay frame driver before running the
 /// schedule. Read by `advance_player_system`, `ground_gravity_system`, and
 /// `completion_system` to know how much wall-clock time to advance.
 ///
-/// REFACTOR POINT(full-bevy): replaced by `bevy_time` `Time<Virtual>`.
+/// Production frame timing is sourced from bevy_time::Time<Virtual> by eg-state; this resource remains the gameplay-system input boundary.
 #[derive(Resource, Default, Clone, Copy)]
 pub struct FrameDelta(pub f32);
 

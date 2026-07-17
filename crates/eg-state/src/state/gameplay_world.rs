@@ -7,28 +7,27 @@
 */
 //! App-world gameplay ownership handoff.
 //!
-//! The compatibility `GameState` still provides the legacy field surface
-//! needed by rendering and old tests, but the active runtime simulation now
-//! lives in the Runtime-owned App world. This module contains the two narrow
-//! adapters needed while those consumers are being migrated: initial/transition
-//! seeding and copying gameplay values back for compatibility presentation.
+//! The Runtime-owned App world is authoritative for gameplay simulation.
+//! This module contains the narrow initial/transition seeding adapters
+//! needed while consumers are being migrated.
+//!
+//!
 
 use bevy_ecs::prelude::*;
 
 use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
-    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FixedStepConfig,
-    FrameDelta, GameClock, LevelMeta, Object, ObjectBundle, ObjectData, ObjectId,
-    PendingTurnInputs, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerProgress,
-    PlayerSpeed, Position, Rotation, Size, SpatialIndex, SpawnDirection, SpawnPosition,
-    TimedTurnInput, Trail, TurnInputKind, VerticalVelocity,
+    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FrameDelta,
+    GameClock, LevelMeta, Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player,
+    PlayerBundle, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation,
+    Size, SpatialIndex, SpawnDirection, SpawnPosition, TimedTurnInput, Trail, VerticalVelocity,
 };
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
-    AppPhaseRes, AudioBackendRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
-    FrameTimeRes, GameplayResetRes, GameplayResetSeed, GameplaySubsystem, MenuStateRes,
-    RuntimeAudioPreloadRes, SessionStateRes,
+    AppPhaseRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, FrameTimeRes,
+    GameplayResetRes, GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes,
+    with_audio_backend,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -36,39 +35,26 @@ const DEAD_SFX: &[u8] = include_bytes!(concat!(
     "/assets/dead.mp3"
 ));
 
-pub(super) fn seed_app_gameplay_world_from_subsystem(
-    world: &mut World,
-    gameplay: &GameplaySubsystem,
-) {
-    let game = &gameplay.state;
-    let pending_turns = gameplay
-        .pending_turn_inputs
-        .iter()
-        .map(|input| TimedTurnInput {
-            at_seconds: input.time_seconds,
-            kind: TurnInputKind::TurnRight,
-        })
-        .collect::<Vec<_>>();
-
+pub(super) fn seed_app_gameplay_world(world: &mut World) {
     replace_app_gameplay_world(
         world,
         GameplayWorldSeed {
-            objects: game.objects.clone(),
-            position: game.position,
-            direction: game.direction,
-            speed: game.speed,
-            vertical_velocity: game.vertical_velocity,
-            is_grounded: game.is_grounded,
-            trail_segments: game.trail_segments.clone(),
-            elapsed_seconds: game.elapsed_seconds,
-            level_duration_seconds: game.level_duration_seconds,
-            started: game.started,
-            game_over: game.game_over,
-            level_complete: game.level_complete,
-            completion_hold_seconds: game.completion_hold_seconds,
-            progress: game.level_progress(),
-            pending_turns,
-            death_sfx_played: gameplay.death_sfx_played,
+            objects: Vec::new(),
+            position: [0.0, 0.0, 0.0],
+            direction: Direction::Forward,
+            speed: BASE_PLAYER_SPEED,
+            vertical_velocity: 0.0,
+            is_grounded: true,
+            trail_segments: vec![vec![[0.0, 0.0, 0.0]]],
+            elapsed_seconds: 0.0,
+            level_duration_seconds: f32::INFINITY,
+            started: false,
+            game_over: false,
+            level_complete: false,
+            completion_hold_seconds: 0.0,
+            progress: PlayerLevelProgress::default(),
+            pending_turns: Vec::new(),
+            death_sfx_played: false,
         },
     );
 }
@@ -208,7 +194,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
         pending
     };
     if should_play_death_sfx {
-        world.resource::<AudioBackendRes>().play_sfx(DEAD_SFX);
+        with_audio_backend(world, |audio| audio.play_sfx(DEAD_SFX));
     }
 
     if practice_mode_enabled && !playtesting_editor {
@@ -252,7 +238,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
             }
         };
 
-        world.resource::<AudioBackendRes>().stop();
+        with_audio_backend(world, |audio| audio.stop());
         world.resource_mut::<PendingTurnInputs>().taps.clear();
         {
             let mut session = world.resource_mut::<SessionStateRes>();
@@ -272,7 +258,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
     if !playtesting_editor {
         persist_level_progress(world, progress);
     }
-    world.resource::<AudioBackendRes>().stop();
+    with_audio_backend(world, |audio| audio.stop());
     world.resource_mut::<PendingTurnInputs>().taps.clear();
 }
 
@@ -290,13 +276,11 @@ fn warmup_gameplay_audio(world: &World, start_seconds: f32) {
         .resource::<RuntimeAudioPreloadRes>()
         .bytes(&source_key)
     {
-        world
-            .resource::<AudioBackendRes>()
-            .warmup_preloaded_asset_at(&level_name, &bytes, start_seconds);
+        with_audio_backend(world, |audio| {
+            audio.warmup_preloaded_asset_at(&level_name, &bytes, start_seconds);
+        });
     } else {
-        world
-            .resource::<AudioBackendRes>()
-            .warmup_at(&level_name, start_seconds);
+        with_audio_backend(world, |audio| audio.warmup_at(&level_name, start_seconds));
     }
 }
 
@@ -524,7 +508,7 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
     }
     world.resource_mut::<PendingTurnInputs>().taps = pending_turns.into();
     world.resource_mut::<FrameDelta>().0 = 0.0;
-    world.resource_mut::<FixedStepConfig>().dt = 1.0 / 120.0;
+
     world.resource_mut::<DeathSfxFlag>().0 = death_sfx_played;
     rebuild_spatial_index(world);
 }

@@ -17,9 +17,9 @@ use super::audio_state::start_audio_source_at_seconds_for_resources;
 use super::editor_timeline::EditorTimelineState;
 use super::runtime::BlockVisualEffect;
 use super::{
-    AppPhaseRes, AudioBackendRes, EditorAudioCacheRes, EditorDirtyFlags, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
+    AppPhaseRes, AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
 };
 
 const METRONOME_MAJOR_SFX: &[u8] = include_bytes!(concat!(
@@ -42,7 +42,7 @@ pub(crate) fn update_editor_timeline_playback_system(
     mut timeline: ResMut<EditorTimelineRes>,
     timing: Res<EditorTimingRes>,
     mut runtime_state: ResMut<EditorRuntimeRes>,
-    audio: Res<AudioBackendRes>,
+    audio: AudioBackendSystemParam<'_>,
     editor_audio: Res<EditorAudioCacheRes>,
     runtime_preload: Res<RuntimeAudioPreloadRes>,
     session: Res<SessionStateRes>,

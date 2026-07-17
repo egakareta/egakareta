@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorSubsystem, State};
+use super::super::EditorSubsystem;
 use eg_types::AppPhase;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 
@@ -165,19 +165,6 @@ impl EditorSubsystem {
     }
 }
 
-impl State {
-    pub fn drag_editor_camera_by_pixels(&mut self, dx: f64, dy: f64) {
-        let is_game_active = self.gameplay.state.started && !self.gameplay.state.game_over;
-        self.editor
-            .drag_camera_by_pixels(dx, dy, self.phase, is_game_active);
-
-        if self.phase == AppPhase::Editor {
-            self.editor
-                .mark_dirty(crate::state::EditorDirtyFlags::camera_changed());
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::super::EditorSubsystem;
@@ -236,13 +223,10 @@ mod tests {
     fn camera_orientation_transition_wraps_and_interpolates() {
         let mut editor = EditorSubsystem::default();
 
-        state.phase = AppPhase::Editor;
         editor.camera.editor_yaw = 3.0;
         editor.camera.editor_pitch = 0.2;
 
-        state
-            .editor
-            .set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
+        editor.set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
         let transition = editor.camera.transition.as_ref().expect("transition");
         assert!(transition.target_yaw > transition.start_yaw);
         approx::assert_abs_diff_eq!(transition.target_pitch, 0.6, epsilon = 1e-6);

@@ -41,6 +41,7 @@ use crate::state::{
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, GameplayResetRes,
     GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
     RuntimeAudioPreloadSenderRes, SessionStateRes, apply_imported_level_to_world,
+    with_audio_backend,
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -156,7 +157,10 @@ pub struct TurnRightResources<'w> {
     menu: Option<Res<'w, MenuStateRes>>,
     catalog: Res<'w, BuiltinLevelCatalogRes>,
     gameplay_reset: ResMut<'w, GameplayResetRes>,
+    #[cfg(not(target_arch = "wasm32"))]
     audio: Res<'w, AudioBackendRes>,
+    #[cfg(target_arch = "wasm32")]
+    audio: NonSend<'w, AudioBackendRes>,
     editor_audio: Res<'w, EditorAudioCacheRes>,
     runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
     runtime_preload_sender: Res<'w, RuntimeAudioPreloadSenderRes>,
@@ -524,9 +528,7 @@ fn enter_editor_from_menu(world: &mut World) {
     }
 
     preload_editor_audio(world, &level_name);
-    world
-        .resource::<AudioBackendRes>()
-        .warmup_at(&level_name, 0.0);
+    with_audio_backend(world, |audio| audio.warmup_at(&level_name, 0.0));
 }
 
 fn preload_editor_audio(world: &World, level_name: &str) {
@@ -618,8 +620,8 @@ pub struct PracticeCheckpointResources<'w, 's> {
 }
 
 // `GameSetPracticeCheckpoint` is an App-world gameplay carve-out. The
-// handler captures the current player/object ECS state directly; the legacy
-// `GameState` wrapper is only refreshed later for compatibility rendering.
+// handler captures the current player/object ECS state directly and builds
+// an independent checkpoint snapshot for App-owned practice state.
 pub fn handle_game_set_practice_checkpoint(
     mut events: MessageReader<GameSetPracticeCheckpoint>,
     mut resources: PracticeCheckpointResources,
@@ -657,7 +659,7 @@ pub fn handle_game_set_practice_checkpoint(
             .into_iter()
             .map(|(_, object)| object)
             .collect();
-        let checkpoint = eg_game::GameState::checkpoint_state_from_parts(GameCheckpointParts {
+        let checkpoint = eg_game::GameCheckpointState::from_parts(GameCheckpointParts {
             position: position.0,
             direction: direction.0,
             elapsed_seconds: resources.clock.elapsed_seconds,

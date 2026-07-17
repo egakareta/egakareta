@@ -15,7 +15,7 @@
 //!
 //! Plugin graph:
 //! - [`GameplayPlugin`] — wraps `eg_game::GamePlugin` + owns
-//!   `GameplaySubsystem`-related resources (`SessionStateRes`-style
+//!   gameplay-related resources (`SessionStateRes`-style
 //!   fields that affect gameplay).
 //! - [`EditorPlugin`] — owns the `Editor*Res` family (input, config,
 //!   camera, triggers, timeline, timing, runtime, history, perf).
@@ -35,6 +35,7 @@
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
+use bevy_time::TimePlugin;
 
 use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
@@ -47,8 +48,8 @@ use super::state_resources::{
     PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 use super::{
-    AudioBackendRes, EditorAudioCacheRes, RuntimeAudioPreloadRes, RuntimeAudioPreloadSenderRes,
-    WaveformLoadSenderRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
+    RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
 };
 
 /// Registers the headless gameplay systems. Currently a thin shim around
@@ -93,11 +94,14 @@ impl Plugin for EditorPlugin {
             .init_resource::<LevelExportServiceRes>()
             .init_resource::<LevelImportSenderRes>()
             .init_resource::<AudioImportSenderRes>()
-            .init_resource::<AudioBackendRes>()
             .init_resource::<EditorAudioCacheRes>()
             .init_resource::<RuntimeAudioPreloadRes>()
             .init_resource::<RuntimeAudioPreloadSenderRes>()
             .init_resource::<WaveformLoadSenderRes>();
+        #[cfg(not(target_arch = "wasm32"))]
+        app.init_resource::<AudioBackendRes>();
+        #[cfg(target_arch = "wasm32")]
+        app.init_non_send::<AudioBackendRes>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -109,7 +113,7 @@ pub struct SessionPlugin;
 fn sync_gameplay_audio_pause_system(
     phase: Res<AppPhaseRes>,
     session: Res<SessionStateRes>,
-    audio: Res<AudioBackendRes>,
+    audio: AudioBackendSystemParam<'_>,
     mut pending_turn_inputs: ResMut<eg_game::PendingTurnInputs>,
 ) {
     if !session.is_changed()
@@ -128,7 +132,7 @@ fn sync_gameplay_audio_pause_system(
 
 fn consume_audio_stop_request_system(
     mut session: ResMut<SessionStateRes>,
-    audio: Res<AudioBackendRes>,
+    audio: AudioBackendSystemParam<'_>,
 ) {
     if session.audio_stop_pending {
         audio.stop();
@@ -163,7 +167,7 @@ impl Plugin for MenuPlugin {
 
 /// Aggregator plugin. Add this to an `App` to register every eg-state
 /// plugin in dependency order. Equivalent to a hand-written
-/// `app.add_plugins((MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin))`
+/// `app.add_plugins((TimePlugin, MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin))`
 /// — kept as a single plugin so the order is centralized and the full
 /// eg-state `App` is built with one call.
 pub struct StatePlugins;
@@ -171,6 +175,7 @@ pub struct StatePlugins;
 impl Plugin for StatePlugins {
     fn build(&self, app: &mut App) {
         app.add_plugins((
+            TimePlugin,
             MenuPlugin,
             SessionPlugin,
             EditorPlugin,
@@ -178,7 +183,7 @@ impl Plugin for StatePlugins {
             // Rendering extraction plugin. Registers the POD
             // resources (RenderUniformsRes, RenderFrameInputRes,
             // RenderResizeRequest) and the system sets (RenderSet).
-            // State construction inserts the authoritative heavy
+            // AppBootstrap installs the authoritative heavy
             // resources (RenderGpuRes, RenderMeshesRes,
             // RenderSurfaceHostRes) after wgpu initialization.
             RenderPlugin,
@@ -201,14 +206,9 @@ pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
 }
 
-/// Drive the eg-state schedule on a World.
-///
-/// Phase 7 keeps the legacy `State` object as the compatibility owner for
-/// rendering and input, but Runtime now controls the frame order explicitly:
-/// `app.update()` runs App systems, then Runtime invokes this helper. The
-/// `StateSchedule` owns phase-transition detection before command handlers and
-/// frame/update systems run.
-pub fn run_state_schedule_in_world(world: &mut World) {
+/// App `PostUpdate` and the headless test harness use this system to run the
+/// state, gameplay, and render-extraction schedules in one canonical order.
+pub fn run_state_schedule_system(world: &mut World) {
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
     super::gameplay_world::run_app_gameplay_schedule(world);
@@ -252,16 +252,17 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<LevelExportServiceRes>();
     world.init_resource::<LevelImportSenderRes>();
     world.init_resource::<AudioImportSenderRes>();
+    #[cfg(not(target_arch = "wasm32"))]
     world.init_resource::<AudioBackendRes>();
+    #[cfg(target_arch = "wasm32")]
+    world.init_non_send::<AudioBackendRes>();
     world.init_resource::<EditorAudioCacheRes>();
     world.init_resource::<RuntimeAudioPreloadRes>();
     world.init_resource::<RuntimeAudioPreloadSenderRes>();
     world.init_resource::<WaveformLoadSenderRes>();
     super::input_bridge::register_platform_input_resources(world);
-    // Phase 4a: rendering extraction plugin's POD resources. The
-    // The heavy GPU resource is not default-constructible. Production
-    // Runtime construction transfers all heavy resources into the App world;
-    // bare test worlds keep only the default mesh/surface placeholders.
+    // Bare worlds used by focused render fixtures still need the
+    // default POD and placeholder mesh/surface resources.
     super::render::plugin::register_render_pod_resources(world);
 }
 
@@ -272,8 +273,7 @@ pub fn register_state_resources(world: &mut World) {
 /// the `Messages<T>` buffers for every event type, then adds the
 /// [`StateSchedule`] to the world. The schedule contains per-message
 /// handlers that mutate App-world resources directly or write typed request
-/// resources for Runtime to consume while legacy side effects still live on
-/// `State`.
+/// resources for unavoidable platform side effects.
 ///
 /// Phase 6a: the schedule also contains the
 /// `poll_channels_system` from `state::async_bridge` that drains
@@ -281,8 +281,7 @@ pub fn register_state_resources(world: &mut World) {
 /// waveform, audio preload, level import) and emits the
 /// corresponding async-result events into the World. The channel
 /// wrappers themselves are inserted lazily by
-/// `install_async_bridge_from_state` (when the legacy `State`
-/// fields are wired into the world).
+/// install_async_channel_resources (when external platform services are installed).
 ///
 /// Runtime and tests call this for the App-owned world before running
 /// [`StateSchedule`].
@@ -295,8 +294,8 @@ pub fn register_state_command_pipeline(world: &mut World) {
 
     // Phase 6a: register the async-bridge `Messages<T>` resources
     // (the channel wrappers are inserted lazily by
-    // `install_async_bridge_from_state`).
-    crate::state::async_bridge::register_state_async_bridge_world(world);
+    // `install_async_channel_resources`).
+    crate::state::async_bridge::register_async_channel_resources_world(world);
 
     // Build the per-frame schedule that handles the per-event
     // message resources, updates App-world resources / typed

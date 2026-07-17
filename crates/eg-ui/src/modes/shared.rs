@@ -7,7 +7,7 @@
 */
 use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateView;
+use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{Direction, EditorMode};
 
@@ -85,7 +85,7 @@ pub(crate) fn show_editor_property_popup(
 
 pub(crate) fn show_mode_selector_popup(
     ctx: &egui::Context,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     top_bar_height: f32,
     commands: &mut impl UiCommandSink,
 ) {
@@ -175,7 +175,7 @@ pub(crate) fn show_mode_selector_popup(
 
 fn show_grid_snap_controls(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
@@ -209,7 +209,7 @@ fn show_grid_snap_controls(
 
 fn show_rotation_snap_controls(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
@@ -247,7 +247,7 @@ fn show_rotation_snap_controls(
     });
 }
 
-pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiStateView<'_>) {
+pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiStateData) {
     let position = view.timeline_preview_position;
     let direction = view.timeline_preview_direction;
     let direction_label = match direction {
@@ -280,7 +280,7 @@ mod tests {
     };
     use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateView;
+    use eg_state::state::UiStateData;
     use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata};
 
     fn make_view<'a>(
@@ -288,11 +288,11 @@ mod tests {
         music_metadata: &'a MusicMetadata,
         preview_direction: Direction,
         mode: EditorMode,
-    ) -> UiStateView<'a> {
+    ) -> UiStateData {
         let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
-        view.level_name = Some("Shared Test");
+        view.level_name = Some("Shared Test".to_owned());
         view.timeline_time_seconds = 1.0;
         view.timeline_preview_position = [2.0, 1.0, 0.0];
         view.timeline_preview_direction = preview_direction;

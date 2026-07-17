@@ -18,7 +18,7 @@ mod platform;
 mod tests;
 
 pub use eg_ui::{
-    MenuTextures, load_menu_textures, show_editor_ui_commands_from_view, show_editor_ui_from_view,
+    MenuTextures, load_menu_textures, show_editor_ui, show_editor_ui_commands,
     show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui, show_pause_menu_ui,
     show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };

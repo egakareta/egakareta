@@ -7,17 +7,17 @@
 */
 //! Test harness for the eg-state `App`.
 //!
-//! [`TestApp`] is the Bevy-native equivalent of `State::new_test()` — it
+//! [`TestApp`] is the canonical headless Bevy harness for eg-state -- it
 //! builds a [`bevy_app::App`] with every eg-state plugin registered and
 //! the per-frame [`StateSchedule`] wired in, without touching the heavy
 //! GPU/surface resources. Tests that want to assert on the World, queries,
-//! or resources use [`TestApp`] instead of constructing a full [`State`].
+//! or resources use [`TestApp`] directly.
 //!
 //! The harness is intentionally minimal: no headless GPU, no window, no
 //! surface. It exposes only the resources, events, schedules, and systems
 //! that the plugin graph registers. Tests that need the heavy render
-//! path (e.g. the wgpu buffers, the surface, the egui renderer) still
-//! use [`State::new_test`].
+//! path (e.g. the wgpu buffers, the surface, the egui renderer) use
+//! App-owned render resources and focused render fixtures.
 //!
 //! # Examples
 //!
@@ -33,11 +33,9 @@
 //! ```
 //!
 //! REFACTOR POINT(full-bevy): in the full-Bevy migration, the harness
-//! becomes a thin wrapper around `bevy_app::App::new()` + the eg-state
-//! plugin graph; the `State` god-object disappears entirely and the
-//! `TestApp` is the only test entry point.
+//! remains a thin wrapper around `bevy_app::App::new()` plus the eg-state
+//! plugin graph; App-owned resources are the only state authority.
 //!
-//! [State]: crate::state::State
 //! [StateSchedule]: crate::state::StateSchedule
 
 use bevy_app::App;
@@ -51,13 +49,12 @@ use super::plugins::{register_state_command_pipeline, setup_state_app};
 /// Wraps a [`bevy_app::App`] built with [`setup_state_app`] + the
 /// per-frame [`StateSchedule`]. Provides ergonomic accessors for the
 /// underlying [`World`] + [`App`] so tests can assert on resources,
-/// events, and queries without going through the full [`State`] god
+/// events, and queries without constructing a monolithic compatibility
 /// object.
 ///
 /// Construct via [`TestApp::minimal`] (no GPU) or [`TestApp::with_app`]
 /// (custom pre-wired [`App`]).
 ///
-/// [`State`]: crate::state::State
 pub struct TestApp {
     app: App,
 }
@@ -67,9 +64,8 @@ impl TestApp {
     /// registered. No GPU, no surface, no window.
     ///
     /// This is the canonical entry point for headless eg-state tests. It
-    /// mirrors what `State::new_test()` does for the legacy `State` —
-    /// same plugin graph, same schedule wiring, no heavy render
-    /// resources.
+    /// installs the plugin graph and schedule wiring used by App tests,
+    /// without heavy render resources.
     pub fn minimal() -> Self {
         let mut app = App::new();
         setup_state_app(&mut app);
@@ -83,12 +79,8 @@ impl TestApp {
             preview_camera_position: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
             preview_camera_target: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         }));
-        let gameplay = super::GameplaySubsystem {
-            state: eg_game::GameState::new(),
-            pending_turn_inputs: std::collections::VecDeque::new(),
-            death_sfx_played: false,
-        };
-        super::gameplay_world::seed_app_gameplay_world_from_subsystem(app.world_mut(), &gameplay);
+
+        super::gameplay_world::seed_app_gameplay_world(app.world_mut());
 
         Self { app }
     }
@@ -141,7 +133,7 @@ impl TestApp {
     /// Run the same state, gameplay, and render-extraction schedules as the
     /// production Runtime frame driver.
     pub fn tick_state(&mut self) {
-        super::plugins::run_state_schedule_in_world(self.world_mut());
+        super::plugins::run_state_schedule_system(self.world_mut());
     }
 
     /// Run the [`StateSchedule`] once on the World.
@@ -183,7 +175,7 @@ mod tests {
         AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
         FrameTimeRes, MenuStateRes, PerfRes, RenderExtractSchedule, RenderTrailVerticesRes,
-        SessionStateRes, UiStateRes,
+        SessionStateRes, UiStateData,
     };
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{AppPhase, Direction, EditorMode, MenuState};
@@ -232,16 +224,16 @@ mod tests {
             .clock
             .time_seconds = 2.5;
 
-        let resource = UiStateRes::from_world(app.world());
-        let view = resource.view();
+        let data = UiStateData::from_world(app.world());
+        let view = data;
 
         assert!(view.is_editor);
         assert_eq!(
             view.available_levels,
             ["First".to_string(), "Second".to_string()]
         );
-        assert_eq!(view.menu_level_name, Some("Second"));
-        assert_eq!(view.level_name, Some("World-owned level"));
+        assert_eq!(view.menu_level_name.as_deref(), Some("Second"));
+        assert_eq!(view.level_name.as_deref(), Some("World-owned level"));
         assert_eq!(view.place_preview_position, [4.0, 5.0, 6.0]);
         assert_eq!(view.timeline_time_seconds, 2.5);
     }

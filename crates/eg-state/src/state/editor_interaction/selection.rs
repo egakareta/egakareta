@@ -5,9 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{
-    EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem, State,
-};
+use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem};
 use eg_types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
@@ -651,87 +649,6 @@ impl EditorSubsystem {
         }
 
         changed
-    }
-}
-
-impl State {
-    #[cfg(test)]
-    pub fn begin_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
-        let handled = self.editor.begin_marquee_selection(x, y, self.phase);
-        if handled {
-            self.editor
-                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
-        }
-        handled
-    }
-
-    #[cfg(test)]
-    pub fn update_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
-        let handled = self.editor.update_marquee_selection(x, y, self.phase);
-        if handled {
-            if self.editor.marquee_has_dragged_far_enough() {
-                let viewport_size = Vec2::new(
-                    self.render_gpu().config.width as f32,
-                    self.render_gpu().config.height as f32,
-                );
-                let additive = self.editor.input.shift_held;
-                self.editor.apply_marquee_selection(viewport_size, additive);
-            }
-            self.editor
-                .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
-        }
-        handled
-    }
-
-    #[cfg(test)]
-    pub fn finish_editor_marquee_selection(&mut self, x: f64, y: f64) -> bool {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        let had_marquee = self.editor.input.marquee_start_screen.is_some();
-        if !had_marquee {
-            return false;
-        }
-
-        let marquee_consumed =
-            self.editor
-                .finish_marquee_selection(x, y, viewport_size, self.phase);
-        if marquee_consumed {
-            return true;
-        }
-
-        self.editor
-            .mark_dirty(EditorDirtyFlags::selection_overlay_changed());
-
-        let mode = self.editor.mode();
-        if self.phase == AppPhase::Editor && mode.is_transform_mode() {
-            self.editor
-                .select_block_from_screen(x, y, viewport_size, self.phase);
-            return true;
-        }
-
-        false
-    }
-
-    #[cfg(test)]
-    pub fn drag_editor_selection_from_screen(&mut self, x: f64, y: f64) -> bool {
-        let viewport = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .drag_selection_from_screen(x, y, viewport, self.phase)
-    }
-
-    #[cfg(test)]
-    pub fn begin_editor_selected_block_drag(&mut self, x: f64, y: f64) -> bool {
-        let viewport_size = Vec2::new(
-            self.render_gpu().config.width as f32,
-            self.render_gpu().config.height as f32,
-        );
-        self.editor
-            .begin_selected_block_drag_ext(x, y, viewport_size, self.phase)
     }
 }
 

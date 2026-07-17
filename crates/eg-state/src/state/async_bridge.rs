@@ -111,7 +111,7 @@ pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 /// Holds the shared `Arc<Mutex<Receiver<T>>>` drained by the World's
 /// `poll_channels_system` in production. The `Arc<Mutex<>>` is
 /// constructed by `State::lifecycle` and shared with the World via
-/// `install_async_bridge_from_state_arc`; direct legacy helper calls can
+/// `install_async_channel_resources_arc`; direct legacy helper calls can
 /// still use the same receiver in focused tests.
 #[allow(dead_code)]
 #[derive(Resource)]
@@ -265,9 +265,9 @@ where
 /// directly by tests, so each message is consumed at most once.
 ///
 /// This function is a no-op when a resource is already installed
-/// (e.g. by `register_state_async_bridge` during world construction).
+/// (e.g. by `register_async_channel_resources` during world construction).
 #[allow(dead_code)]
-pub fn install_async_bridge_from_state(
+pub fn install_async_channel_resources(
     world: &mut World,
     auth_receiver: Receiver<AuthServiceMessage>,
     audio_import_receiver: Receiver<(String, Vec<u8>)>,
@@ -301,14 +301,14 @@ pub fn install_async_bridge_from_state(
     }
 }
 
-/// Same as [`install_async_bridge_from_state`] but the receivers are
+/// Same as [`install_async_channel_resources`] but the receivers are
 /// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage
 /// used by `State.auth.channel.1`,
 /// `State.audio.state.editor.audio_import_channel.1`, and the other
 /// legacy channel fields. The resource stores a clone of the same
 /// `Arc`, so the schedule drains the actual legacy receiver.
 #[allow(dead_code)]
-pub fn install_async_bridge_from_state_arc(
+pub fn install_async_channel_resources_arc(
     world: &mut World,
     auth_receiver: SharedAuthReceiver,
     audio_import_receiver: SharedAudioImportReceiver,
@@ -338,10 +338,10 @@ pub fn install_async_bridge_from_state_arc(
 ///
 /// This is the `App`-flavoured registration helper. The
 /// `World`-flavoured equivalent is
-/// [`register_state_async_bridge_world`]. See the
+/// [`register_async_channel_resources_world`]. See the
 /// [`crate::state::plugins`] module for the schedule wiring.
 #[allow(dead_code)]
-pub fn register_state_async_bridge(app: &mut bevy_app::App) {
+pub fn register_async_channel_resources(app: &mut bevy_app::App) {
     use bevy_ecs::message::Messages;
 
     app.add_message::<AuthServiceResultEvent>()
@@ -353,7 +353,7 @@ pub fn register_state_async_bridge(app: &mut bevy_app::App) {
     // Channel wrappers are inserted in Phase 6b when the legacy
     // fields are torn out. For Phase 6a, the world has the
     // `Messages<T>` resources but the channel wrappers are
-    // inserted lazily by `install_async_bridge_from_state_arc` (or
+    // inserted lazily by `install_async_channel_resources_arc` (or
     // not at all in tests that don't install legacy channel resources).
     //
     // The `_ = Messages::<...>::default()` lines below silence the
@@ -368,9 +368,9 @@ pub fn register_state_async_bridge(app: &mut bevy_app::App) {
 
 /// World-flavoured registration for callers that build a `World`
 /// directly (the `State` constructor). Mirrors
-/// [`register_state_async_bridge`] without going through an `App`.
+/// [`register_async_channel_resources`] without going through an `App`.
 #[allow(dead_code)]
-pub fn register_state_async_bridge_world(world: &mut World) {
+pub fn register_async_channel_resources_world(world: &mut World) {
     use bevy_ecs::message::Messages;
 
     world.init_resource::<Messages<AuthServiceResultEvent>>();
@@ -780,7 +780,7 @@ mod tests {
     fn build_world() -> World {
         let mut world = World::new();
         crate::state::plugins::register_state_resources(&mut world);
-        register_state_async_bridge_world(&mut world);
+        register_async_channel_resources_world(&mut world);
         world
     }
 
@@ -821,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn install_async_bridge_from_state_inserts_wrappers() {
+    fn install_async_channel_resources_inserts_wrappers() {
         let mut world = build_world();
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
@@ -829,7 +829,7 @@ mod tests {
         let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_bridge_from_state(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
 
         assert!(world.contains_resource::<AuthChannelRes>());
         assert!(world.contains_resource::<AudioImportChannelRes>());
@@ -839,8 +839,8 @@ mod tests {
     }
 
     #[test]
-    fn install_async_bridge_from_state_is_idempotent() {
-        // Calling install_async_bridge_from_state twice must not
+    fn install_async_channel_resources_is_idempotent() {
+        // Calling install_async_channel_resources twice must not
         // overwrite an existing wrapper (the legacy receiver would
         // be lost otherwise). The second call is a no-op for
         // already-installed resources.
@@ -851,7 +851,7 @@ mod tests {
         let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_bridge_from_state(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
 
         // A second call with fresh receivers must not replace the
         // installed ones.
@@ -861,7 +861,7 @@ mod tests {
         let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
-        install_async_bridge_from_state(&mut world, auth_rx2, ai_rx2, wf_rx2, ap_rx2, li_rx2);
+        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, wf_rx2, ap_rx2, li_rx2);
 
         // The original receivers are still installed (we can verify
         // by checking the wrappers exist).
@@ -873,7 +873,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn install_async_bridge_from_state_arc_shares_receivers() {
+    fn install_async_channel_resources_arc_shares_receivers() {
         // The new Arc-based installer stores `Arc<Mutex<Receiver<T>>>`
         // in the resources. We verify the resources are inserted
         // and that the Arc has a single reference (shared between
@@ -891,7 +891,7 @@ mod tests {
         let ap_arc = std::sync::Arc::new(std::sync::Mutex::new(ap_rx));
         let li_arc = std::sync::Arc::new(std::sync::Mutex::new(li_rx));
 
-        install_async_bridge_from_state_arc(
+        install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::clone(&auth_arc),
             std::sync::Arc::clone(&ai_arc),
@@ -914,7 +914,7 @@ mod tests {
     }
 
     #[test]
-    fn install_async_bridge_from_state_arc_is_idempotent() {
+    fn install_async_channel_resources_arc_is_idempotent() {
         // Calling the Arc-based installer twice must not
         // overwrite an existing wrapper.
         let mut world = build_world();
@@ -924,7 +924,7 @@ mod tests {
         let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_bridge_from_state_arc(
+        install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx)),
@@ -941,7 +941,7 @@ mod tests {
         let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
-        install_async_bridge_from_state_arc(
+        install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx2)),

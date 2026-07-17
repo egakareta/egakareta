@@ -9,10 +9,10 @@
 use crate::load_menu_textures;
 #[cfg(not(test))]
 use crate::{
-    show_editor_ui_from_view, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
-use bevy_app::App;
+use bevy_app::{App, PostUpdate};
 #[cfg(not(test))]
 use bevy_ecs::world::World;
 #[cfg(not(test))]
@@ -20,24 +20,25 @@ use eg_render::block_icon_cache::BlockIconCache;
 use eg_state::state::AppPhaseRes;
 use eg_state::state::AudioBackendRes;
 
+use eg_state::state::AppBootstrap;
 use eg_state::state::EditorInputRes;
 use eg_state::state::RenderConfigRes;
 #[cfg(not(test))]
 use eg_state::state::RenderEguiRes;
 #[cfg(not(test))]
 use eg_state::state::RenderGpuRes;
+#[cfg(not(target_arch = "wasm32"))]
 use eg_state::state::RenderSurfaceHostRes;
 use eg_state::state::SessionStateRes;
-use eg_state::state::StateAppBootstrap;
 use eg_state::state::enqueue_platform_input;
 use eg_state::state::register_state_command_pipeline;
-use eg_state::state::run_state_schedule_in_world;
+
 use eg_state::state::setup_state_app;
 #[cfg(test)]
 use eg_state::state::test_support::TestApp;
+use eg_ui::register_ui_resources_world;
 #[cfg(not(test))]
 use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
-use eg_ui::{register_ui_resources_world, sync_egui_context};
 #[cfg(not(test))]
 use egui_wgpu::ScreenDescriptor;
 
@@ -76,9 +77,7 @@ fn run_egui_ui_system(world: &mut World) {
         .remove_non_send::<RenderEguiRes>()
         .expect("RenderEguiRes must be installed before App update");
 
-    let ui_state_resource = eg_state::state::UiStateRes::from_world(world);
-    world.insert_resource(ui_state_resource.clone());
-    let view = ui_state_resource.view();
+    let ui_state = eg_state::state::UiStateData::from_world(world);
     let render_config = *world.resource::<RenderConfigRes>();
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
@@ -104,30 +103,26 @@ fn run_egui_ui_system(world: &mut World) {
             let mut command_sink = WorldUiCommandSink::new(world);
             frame.egui_ctx.run_ui(raw_input.0, |root_ui| {
                 let ctx = root_ui.ctx().clone();
-                ui_input_blocking_rects = show_editor_ui_from_view(
-                    &ctx,
-                    &view,
-                    &block_icon_texture_ids,
-                    &mut command_sink,
-                );
+                ui_input_blocking_rects =
+                    show_editor_ui(&ctx, &ui_state, &block_icon_texture_ids, &mut command_sink);
                 ui_input_pixels_per_point = ctx.pixels_per_point();
-                if !view.is_editor {
-                    show_settings_sidebar(&ctx, &view, &mut command_sink);
+                if !ui_state.is_editor {
+                    show_settings_sidebar(&ctx, &ui_state, &mut command_sink);
                 }
-                show_perf_overlay(&ctx, &view, &mut command_sink);
-                show_menu_topbar_ui(root_ui, &view, &mut command_sink);
+                show_perf_overlay(&ctx, &ui_state, &mut command_sink);
+                show_menu_topbar_ui(root_ui, &ui_state, &mut command_sink);
                 show_menu_play_ui(
                     &ctx,
-                    &view,
+                    &ui_state,
                     &mut command_sink,
                     frame.menu_textures.play_button.as_ref(),
                     frame.menu_textures.play_button_filled.as_ref(),
                     frame.menu_textures.edit_button.as_ref(),
                 );
-                show_practice_checkpoint_ui(&ctx, &view, &mut command_sink);
-                show_pause_menu_ui(&ctx, &view, &mut command_sink);
+                show_practice_checkpoint_ui(&ctx, &ui_state, &mut command_sink);
+                show_pause_menu_ui(&ctx, &ui_state, &mut command_sink);
                 if let Some(favicon) = &frame.menu_textures.favicon {
-                    show_menu_favicon_ui(&ctx, &view, favicon);
+                    show_menu_favicon_ui(&ctx, &ui_state, favicon);
                 }
             })
         };
@@ -181,7 +176,7 @@ fn run_egui_ui_system(world: &mut World) {
 ///
 /// The App world is the production command/schedule driver. The egui context,
 /// renderer, menu textures, block-icon cache, and all state resources are
-/// installed directly by StateAppBootstrap. Tests use App-native TestApp
+/// installed directly by AppBootstrap. Tests use App-native TestApp
 /// fixtures, and Runtime owns only the App.
 ///
 /// REFACTOR POINT(full-bevy): when full Bevy lands, the custom bootstrap and
@@ -191,7 +186,7 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    pub fn from_bootstrap(bootstrap: StateAppBootstrap) -> Self {
+    pub fn from_bootstrap(bootstrap: AppBootstrap) -> Self {
         let egui_ctx = egui::Context::default();
         #[cfg(not(test))]
         {
@@ -233,6 +228,7 @@ impl Runtime {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
+        app.add_systems(PostUpdate, eg_state::state::run_state_schedule_system);
         register_ui_resources_world(app.world_mut());
         #[cfg(not(test))]
         app.add_systems(bevy_app::Update, run_egui_ui_system);
@@ -261,8 +257,6 @@ impl Runtime {
             _presentation: (),
         });
 
-        let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
-        app.world_mut().insert_resource(ui_state_resource);
         Self { app }
     }
 
@@ -280,14 +274,19 @@ impl Runtime {
             egui_ctx,
             _presentation: (),
         });
-        let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
-        app.world_mut().insert_resource(ui_state_resource);
+
         Self { app }
     }
     pub fn ensure_audio_device(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
         self.app
             .world()
             .resource::<AudioBackendRes>()
+            .ensure_device();
+        #[cfg(target_arch = "wasm32")]
+        self.app
+            .world()
+            .non_send::<AudioBackendRes>()
             .ensure_device();
     }
 
@@ -334,15 +333,13 @@ impl Runtime {
     /// Drive one frame through the App-owned presentation resources.
     pub fn run_app_frame(&mut self, raw_input: egui::RawInput) -> egui::FullOutput {
         let app = &mut self.app;
+        #[cfg(test)]
         let egui_ctx = app
             .world()
             .non_send::<EguiFrameResources>()
             .egui_ctx
             .clone();
-        sync_egui_context(app.world_mut(), &egui_ctx);
 
-        let ui_state_resource = eg_state::state::UiStateRes::from_world(app.world());
-        app.world_mut().insert_resource(ui_state_resource);
         #[cfg(not(test))]
         {
             app.world_mut().insert_non_send(EguiRawInputRes(raw_input));
@@ -369,7 +366,6 @@ impl Runtime {
             input.0.ui_input_pixels_per_point = 1.0;
         }
 
-        run_state_schedule_in_world(app.world_mut());
         #[cfg(not(test))]
         {
             let mut render = app.world_mut().non_send_mut::<RenderEguiRes>();
@@ -402,9 +398,8 @@ mod tests {
         AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
         EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
         EditorTriggerRes, FrameTimeRes, GameplayResetRes, MenuStateRes, PerfFrameCopyRequest,
-        PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes, UiStateRes,
+        PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
     };
-    use eg_ui::EguiContextRes;
 
     fn runtime_in_phase(phase: eg_types::AppPhase) -> Runtime {
         let mut runtime = Runtime::new_test();
@@ -485,10 +480,7 @@ mod tests {
             world.contains_resource::<EditorInputRes>(),
             "EditorInputRes registered by EditorPlugin"
         );
-        assert!(
-            world.contains_resource::<UiStateRes>(),
-            "UiStateRes seeded for App-owned UI presentation"
-        );
+
         assert!(
             world.contains_resource::<EditorObjectsRes>(),
             "EditorObjectsRes registered by EditorPlugin"
@@ -541,10 +533,6 @@ mod tests {
             world.contains_resource::<PlatformInputQueue>(),
             "PlatformInputQueue registered by EditorPlugin"
         );
-        assert!(
-            world.contains_resource::<EguiContextRes>(),
-            "EguiContextRes registered by Runtime UI bridge"
-        );
     }
 
     /// `register_state_command_pipeline` adds the per-frame
@@ -570,8 +558,8 @@ mod tests {
 
     /// `GameplayPlugin` installs the real eg-game ECS schedule into
     /// the App's World. This is the first single-source cut: gameplay
-    /// resources and systems exist on the App, not only in the legacy
-    /// `GameState` wrapper path.
+    /// resources and systems exist on the App world; the compatibility wrapper
+    /// remains isolated to eg-game legacy callers.
     #[test]
     fn runtime_app_registers_gameplay_schedule() {
         let mut runtime = Runtime::new_test();
@@ -594,31 +582,6 @@ mod tests {
 
         let output = runtime.run_app_frame(egui::RawInput::default());
         assert!(output.pixels_per_point > 0.0);
-    }
-
-    /// `Runtime::run_app_frame` mirrors the live egui context into the
-    /// App's World before the frame update. This gives Bevy UI systems
-    /// an App-world anchor while the compatibility renderer still owns
-    /// actual egui painting.
-    #[test]
-    fn runtime_run_app_frame_syncs_egui_context_to_app_world() {
-        let mut runtime = Runtime::new_test();
-
-        assert!(
-            runtime.app.world().resource::<EguiContextRes>().0.is_none(),
-            "egui context starts empty before the first frame"
-        );
-
-        let output = runtime.run_app_frame(egui::RawInput::default());
-        let app_ctx = runtime
-            .app
-            .world()
-            .resource::<EguiContextRes>()
-            .0
-            .as_ref()
-            .expect("egui context mirrored into App World");
-
-        assert_eq!(app_ctx.pixels_per_point(), output.pixels_per_point);
     }
 
     /// Platform input now enters the App world; the state schedule driver
@@ -689,11 +652,10 @@ mod tests {
         );
     }
 
-    /// Plain `app.update()` no longer drives the mirror `StateSchedule`.
-    /// Runtime owns that order so command draining stays visible in one
-    /// frame-driver method.
+    /// App `PostUpdate` drives the state, gameplay, and render pipeline after UI.
+    /// The test harness registers the same canonical schedule system.
     #[test]
-    fn runtime_app_update_does_not_run_state_schedule_directly() {
+    fn runtime_app_update_runs_state_schedule() {
         let mut runtime = Runtime::new_test();
 
         runtime
@@ -706,7 +668,7 @@ mod tests {
 
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
-        assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Menu);
+        assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
     }
 
     /// `Runtime::run_app_frame` drains App-world messages and applies
@@ -1105,7 +1067,7 @@ mod tests {
             session
                 .practice_checkpoints
                 .push(eg_state::state::PracticeCheckpoint {
-                    gameplay: eg_game::GameState::new().checkpoint_state(),
+                    gameplay: eg_game::GameCheckpointState::default(),
                     trigger_base_objects: None,
                 });
         }
@@ -1277,22 +1239,21 @@ mod tests {
     fn runtime_game_over_practice_respawn_is_app_owned() {
         let mut runtime = runtime_in_playing(false, false);
 
-        let checkpoint =
-            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
-                position: [2.0, 0.0, 3.0],
-                direction: eg_types::Direction::Right,
-                elapsed_seconds: 3.5,
-                speed: 2.0,
-                objects: Vec::new(),
-                vertical_velocity: 0.25,
-                is_grounded: false,
-                progress: eg_types::PlayerLevelProgress {
-                    progress_percent: 42.0,
-                    completed: false,
-                    gems_collected: 2,
-                    gems_max: 5,
-                },
-            });
+        let checkpoint = eg_game::GameCheckpointState::from_parts(eg_game::GameCheckpointParts {
+            position: [2.0, 0.0, 3.0],
+            direction: eg_types::Direction::Right,
+            elapsed_seconds: 3.5,
+            speed: 2.0,
+            objects: Vec::new(),
+            vertical_velocity: 0.25,
+            is_grounded: false,
+            progress: eg_types::PlayerLevelProgress {
+                progress_percent: 42.0,
+                completed: false,
+                gems_collected: 2,
+                gems_max: 5,
+            },
+        });
         {
             let world = runtime.app.world_mut();
             let mut clock = world.resource_mut::<eg_game::GameClock>();
@@ -3185,22 +3146,21 @@ mod tests {
     fn runtime_turn_right_respawns_from_app_practice_checkpoint() {
         let mut runtime = runtime_in_playing(false, false);
 
-        let checkpoint =
-            eg_game::GameState::checkpoint_state_from_parts(eg_game::GameCheckpointParts {
-                position: [2.0, 0.0, 3.0],
-                direction: eg_types::Direction::Right,
-                elapsed_seconds: 3.5,
-                speed: 2.0,
-                objects: Vec::new(),
-                vertical_velocity: 0.25,
-                is_grounded: false,
-                progress: eg_types::PlayerLevelProgress {
-                    progress_percent: 42.0,
-                    completed: false,
-                    gems_collected: 2,
-                    gems_max: 5,
-                },
-            });
+        let checkpoint = eg_game::GameCheckpointState::from_parts(eg_game::GameCheckpointParts {
+            position: [2.0, 0.0, 3.0],
+            direction: eg_types::Direction::Right,
+            elapsed_seconds: 3.5,
+            speed: 2.0,
+            objects: Vec::new(),
+            vertical_velocity: 0.25,
+            is_grounded: false,
+            progress: eg_types::PlayerLevelProgress {
+                progress_percent: 42.0,
+                completed: false,
+                gems_collected: 2,
+                gems_max: 5,
+            },
+        });
         {
             let world = runtime.app.world_mut();
             world.resource_mut::<eg_game::GameClock>().started = true;

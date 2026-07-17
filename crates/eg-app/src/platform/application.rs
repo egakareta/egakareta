@@ -30,7 +30,7 @@ use crate::platform::input_mapping::{
 use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
 use crate::platform::runtime::Runtime;
 use eg_state::commands::InputEvent;
-use eg_state::state::StateAppBootstrap;
+use eg_state::state::AppBootstrap;
 use eg_types::GameCursor;
 
 // REFACTOR POINT(full-bevy): replace this custom winit `ApplicationHandler`
@@ -337,9 +337,9 @@ impl ApplicationHandler for App {
                 .create_window(window_attributes)
                 .expect("Failed to create window");
 
-            let runtime = Runtime::from_bootstrap(pollster::block_on(
-                StateAppBootstrap::new_native(Arc::new(window)),
-            ));
+            let runtime = Runtime::from_bootstrap(pollster::block_on(AppBootstrap::new_native(
+                Arc::new(window),
+            )));
             let Some(window) = runtime.window() else {
                 log::error!("Native runtime missing window handle after initialization");
                 return;
@@ -1203,7 +1203,7 @@ pub async fn run_game() -> Result<(), JsValue> {
     )?;
 
     let runtime = Runtime::from_bootstrap(
-        StateAppBootstrap::new(
+        AppBootstrap::new(
             canvas.clone(),
             launch_backend_query_param("graphics"),
             launch_backend_query_param("audio"),

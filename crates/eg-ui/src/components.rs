@@ -7,7 +7,7 @@
 */
 use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateView;
+use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::EditorMode;
 
@@ -84,13 +84,13 @@ fn timeline_bar_nearest_tap_index(
         .map(|(index, _)| index)
 }
 
-fn timeline_bar_view_is_tapping(view: &UiStateView<'_>) -> bool {
+fn timeline_bar_view_is_tapping(view: &UiStateData) -> bool {
     view.mode == EditorMode::Tapping
         || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
 }
 
 fn timeline_bar_push_tap_click_commands(
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     pointer_x: f32,
     rect: egui::Rect,
     view_start: f32,
@@ -98,7 +98,7 @@ fn timeline_bar_push_tap_click_commands(
     commands: &mut impl UiCommandSink,
 ) -> bool {
     let Some(index) = timeline_bar_nearest_tap_index(
-        view.tap_times,
+        &view.tap_times,
         pointer_x,
         rect,
         view_start,
@@ -156,7 +156,7 @@ fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
 
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     duration_seconds: f32,
     commands: &mut impl UiCommandSink,
 ) {
@@ -276,7 +276,7 @@ pub(crate) fn show_timeline_bar(
         );
 
         // Draw beat lines from timing points
-        let timing_points = view.timing_points;
+        let timing_points = &view.timing_points;
         {
             puffin::profile_scope!("UiTimelineBeatLines");
             for (tp_idx, tp) in timing_points.iter().enumerate() {
@@ -315,7 +315,7 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw tap circles
-        for tap_time in view.tap_times {
+        for tap_time in &view.tap_times {
             if *tap_time >= view_start && *tap_time <= view_end {
                 let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
                 let center = egui::pos2(x, center_y);
@@ -334,7 +334,7 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw timing point markers (red vertical lines)
-        for tp in view.timing_points {
+        for tp in &view.timing_points {
             if tp.time_seconds >= view_start && tp.time_seconds <= view_end {
                 let x =
                     rect.left() + (tp.time_seconds - view_start) / visible_duration * rect.width();
@@ -414,7 +414,7 @@ pub(crate) fn show_timeline_bar(
         if response.clicked_by(egui::PointerButton::Secondary)
             && let Some(pointer) = response.interact_pointer_pos()
             && let Some(index) = timeline_bar_nearest_tap_index(
-                view.tap_times,
+                &view.tap_times,
                 pointer.x,
                 rect,
                 view_start,
@@ -499,14 +499,14 @@ pub(crate) fn show_timeline_bar(
 
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
-    view: &UiStateView<'_>,
+    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     puffin::profile_scope!("UiWaveformPanel");
     let duration_seconds = view
         .timeline_duration_seconds
         .max(MIN_TIMELINE_DURATION_SECONDS);
-    let waveform_samples = view.waveform_samples;
+    let waveform_samples = &view.waveform_samples;
     let sample_rate = view.waveform_sample_rate;
     let zoom = view.waveform_zoom;
 
@@ -586,7 +586,7 @@ pub(crate) fn show_waveform_panel(
     }
 
     // Draw beat grid lines from timing points
-    let timing_points = view.timing_points;
+    let timing_points = &view.timing_points;
     {
         puffin::profile_scope!("UiWaveformBeatGrid");
         for (tp_idx, tp) in timing_points.iter().enumerate() {
@@ -730,18 +730,18 @@ mod tests {
         waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
-    ) -> eg_state::state::UiStateView<'a> {
+    ) -> eg_state::state::UiStateData {
         let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = EditorMode::Timing;
         view.last_mode = Some(EditorMode::Timing);
         view.playing = playing;
         view.timeline_time_seconds = timeline_time_seconds;
         view.timeline_duration_seconds = timeline_duration_seconds;
-        view.tap_times = tap_times;
-        view.timing_points = timing_points;
+        view.tap_times = tap_times.to_vec();
+        view.timing_points = timing_points.to_vec();
         view.waveform_zoom = waveform_zoom;
         view.waveform_scroll = waveform_scroll;
-        view.waveform_samples = waveform_samples;
+        view.waveform_samples = waveform_samples.to_vec();
         view.waveform_sample_rate = 44_100;
         view.waveform_complete = true;
         view.trigger_objects = trigger_objects.to_vec();

@@ -16,7 +16,6 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::TextureViewDescriptor;
 
-use super::super::State;
 use eg_render::MeshSlot;
 use eg_render::RenderSurfaceError;
 use eg_types::AppPhase;
@@ -104,33 +103,6 @@ impl FrustumPlane {
     }
 }
 
-#[cfg(test)]
-fn view_projection_for_current_phase(state: &State) -> Mat4 {
-    let height = state.render_gpu().config.height.max(1);
-    let aspect = state.render_gpu().config.width.max(1) as f32 / height as f32;
-    let (eye, target) = match state.phase {
-        AppPhase::Editor if state.editor_is_playing() => {
-            let (eye, target) = state.editor_preview_camera_view();
-            (Vec3::from_array(eye), Vec3::from_array(target))
-        }
-        AppPhase::Editor => {
-            let target = Vec3::new(
-                state.editor.camera.editor_pan[0],
-                state.editor.camera.editor_target_z,
-                state.editor.camera.editor_pan[1],
-            );
-            (target + state.editor_camera_offset(), target)
-        }
-        AppPhase::Playing | AppPhase::GameOver => state.playing_camera_view(),
-        AppPhase::Menu => (
-            Vec3::from_array(state.menu.state.preview_camera_position),
-            Vec3::from_array(state.menu.state.preview_camera_target),
-        ),
-    };
-    Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0)
-        * Mat4::look_at_rh(eye, target, Vec3::Y)
-}
-
 fn draw_visible_chunked_geometry(
     render_pass: &mut wgpu::RenderPass<'_>,
     slot: &ChunkedBlockMeshSlot,
@@ -194,42 +166,6 @@ pub fn render_egui_with_resources(
         frame_input,
         camera_view_projection,
     )
-}
-
-impl State {
-    #[cfg(test)]
-    fn with_render_context<T>(&mut self, f: impl FnOnce(&mut RenderContext<'_>) -> T) -> T {
-        let resources = self
-            .render_resources
-            .as_mut()
-            .expect("State render resources are App-owned in production");
-        f(&mut RenderContext {
-            gpu: &mut resources.gpu,
-            meshes: &mut resources.meshes,
-        })
-    }
-
-    #[cfg(test)]
-    pub fn render_to_view<F>(
-        &mut self,
-        view: &wgpu::TextureView,
-        encoder: &mut wgpu::CommandEncoder,
-        overlay: F,
-    ) where
-        F: FnOnce(&wgpu::Device, &wgpu::Queue, &wgpu::TextureView, &mut wgpu::CommandEncoder),
-    {
-        let frame_input = self.compute_frame_input_snapshot();
-        let camera_view_projection = view_projection_for_current_phase(self).to_cols_array_2d();
-        self.with_render_context(|context| {
-            context.render_to_view_with_frame_input(
-                view,
-                encoder,
-                frame_input,
-                camera_view_projection,
-                overlay,
-            )
-        });
-    }
 }
 
 impl RenderContext<'_> {
@@ -892,23 +828,18 @@ impl RenderContext<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-    use std::sync::mpsc;
 
-    use egui_wgpu::ScreenDescriptor;
     use glam::Mat4;
     use wgpu::Color;
 
-    use super::super::MeshSlot;
     use super::{RenderSurfaceError, ViewFrustum, current_surface_output};
-    use crate::state::State;
-    use eg_mesh::{ChunkAabb, Vertex};
+    use eg_mesh::ChunkAabb;
     use eg_render::{
-        EditorOutlineInstance, apply_gamma_correction_if_enabled, clear_color_for_phase,
-        editor_grid_darkening, linear_to_srgb, should_draw_editor_cursor,
-        should_draw_editor_overlays, should_draw_floor_and_grid, should_skip_world,
+        apply_gamma_correction_if_enabled, clear_color_for_phase, editor_grid_darkening,
+        linear_to_srgb, should_draw_editor_cursor, should_draw_editor_overlays,
+        should_draw_floor_and_grid, should_skip_world,
     };
-    use eg_types::{AppPhase, CameraUniform, EditorMode, LevelMetadata, PhysicalSize};
+    use eg_types::{AppPhase, EditorMode, LevelMetadata};
 
     fn assert_color_approx(actual: Color, expected: Color) {
         approx::assert_abs_diff_eq!(actual.r as f32, expected.r as f32, epsilon = 1e-6);
@@ -931,148 +862,6 @@ mod tests {
         let aabb = ChunkAabb::from_min_max([2.0, -0.5, -0.5], [3.0, 0.5, 0.5]);
 
         assert!(!frustum.intersects_aabb(aabb));
-    }
-
-    fn fullscreen_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
-        vec![
-            Vertex::untextured([-1.0, -1.0, z], color),
-            Vertex::untextured([3.0, -1.0, z], color),
-            Vertex::untextured([-1.0, 3.0, z], color),
-        ]
-    }
-
-    fn corner_triangle(z: f32, color: [f32; 4]) -> Vec<Vertex> {
-        vec![
-            Vertex::untextured([-0.95, -0.95, z], color),
-            Vertex::untextured([-0.85, -0.95, z], color),
-            Vertex::untextured([-0.95, -0.85, z], color),
-        ]
-    }
-
-    fn rgba_from_surface_format(format: wgpu::TextureFormat, pixel: [u8; 4]) -> [u8; 4] {
-        match format {
-            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb => {
-                [pixel[2], pixel[1], pixel[0], pixel[3]]
-            }
-            _ => pixel,
-        }
-    }
-
-    fn render_center_pixel(state: &mut State) -> [u8; 4] {
-        let size = 8;
-        state.resize_surface(PhysicalSize {
-            width: size,
-            height: size,
-        });
-        let camera = CameraUniform {
-            view_proj: Mat4::IDENTITY.to_cols_array_2d(),
-            camera_position: [0.0, 0.0, 0.0, 0.0],
-        };
-        state.queue().write_buffer(
-            &state.render_gpu().camera_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[camera]),
-        );
-
-        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
-            label: Some("Outline Occlusion Test Render Texture"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: state.render_gpu().config.format,
-            usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let readback = state.device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Outline Occlusion Test Readback Buffer"),
-            size: 256,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        let mut encoder = state
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Outline Occlusion Test Encoder"),
-            });
-
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: size / 2,
-                    y: size / 2,
-                    z: 0,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: &readback,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(256),
-                    rows_per_image: Some(1),
-                },
-            },
-            wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-        );
-        state.queue().submit(std::iter::once(encoder.finish()));
-
-        let buffer_slice = readback.slice(..);
-        let (sender, receiver) = mpsc::channel();
-        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
-            sender.send(result).expect("readback result should send");
-        });
-        state
-            .device()
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("device polling should succeed");
-        receiver
-            .recv()
-            .expect("readback result should be received")
-            .expect("readback mapping should succeed");
-        let data = buffer_slice.get_mapped_range();
-        let pixel = [data[0], data[1], data[2], data[3]];
-        drop(data);
-        readback.unmap();
-        rgba_from_surface_format(state.render_gpu().config.format, pixel)
-    }
-
-    fn prepare_outline_occlusion_test_state(state: &mut State) {
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Select;
-        state.render_meshes_mut().floor = MeshSlot::Empty;
-        state.render_meshes_mut().grid = MeshSlot::Empty;
-        state.render_meshes_mut().trail = MeshSlot::Empty;
-        state.render_meshes_mut().blocks = MeshSlot::Empty;
-        state.render_meshes_mut().blocks_static = MeshSlot::Empty;
-        state.render_meshes_mut().blocks_selected = MeshSlot::Empty;
-        state.render_meshes_mut().editor_cursor = MeshSlot::Empty;
-        state.render_meshes_mut().editor_hover_stencil = MeshSlot::Empty;
-        state.render_meshes_mut().editor_hover_outline = MeshSlot::Empty;
-        state.render_meshes_mut().editor_selection_stencil = MeshSlot::Empty;
-        state.render_meshes_mut().editor_selection_outline = MeshSlot::Empty;
-        state
-            .render_meshes_mut()
-            .editor_selection_outline_instances
-            .clear();
-        state.render_meshes_mut().editor_gizmo = MeshSlot::Empty;
-        state.render_meshes_mut().tap_indicators = MeshSlot::Empty;
-        state.render_meshes_mut().transform_trigger_markers = MeshSlot::Empty;
-        state.render_meshes_mut().spawn_marker = MeshSlot::Empty;
-        state.render_meshes_mut().camera_trigger_markers = MeshSlot::Empty;
-        state.render_meshes_mut().editor_preview_player = MeshSlot::Empty;
     }
 
     #[tokio::test]
@@ -1292,244 +1081,5 @@ mod tests {
             current_surface_output(wgpu::CurrentSurfaceTexture::Validation),
             Err(RenderSurfaceError::Validation)
         ));
-    }
-
-    #[tokio::test]
-    async fn selection_outline_ignores_unselected_scene_depth() {
-        let mut state = State::new_test().await;
-        prepare_outline_occlusion_test_state(&mut state);
-
-        let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-        let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
-
-        state.render_meshes_mut().blocks_static =
-            MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-        state.render_meshes_mut().editor_selection_stencil =
-            MeshSlot::from_vertices(state.device(), "Selection Mask", &corner_mask);
-        state.render_meshes_mut().editor_selection_outline =
-            MeshSlot::from_vertices(state.device(), "Selection Outline", &cyan_outline);
-        state.render_meshes_mut().editor_selection_outline_instances =
-            vec![EditorOutlineInstance {
-                mask_vertices: 0..corner_mask.len() as u32,
-                outline_vertices: 0..cyan_outline.len() as u32,
-            }];
-
-        let pixel = render_center_pixel(&mut state);
-        assert!(
-            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-            "selection outline should draw over unselected scene depth; got rgba={pixel:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn hover_outline_ignores_unselected_scene_depth() {
-        let mut state = State::new_test().await;
-        prepare_outline_occlusion_test_state(&mut state);
-
-        let red_front = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-        let corner_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
-
-        state.render_meshes_mut().blocks_static =
-            MeshSlot::from_vertices(state.device(), "Unselected Front Block", &red_front);
-        state.render_meshes_mut().editor_hover_stencil =
-            MeshSlot::from_vertices(state.device(), "Hover Mask", &corner_mask);
-        state.render_meshes_mut().editor_hover_outline =
-            MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
-
-        let pixel = render_center_pixel(&mut state);
-        assert!(
-            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-            "hover outline should draw over unselected scene depth; got rgba={pixel:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn hover_outline_draws_over_selected_blocks() {
-        let mut state = State::new_test().await;
-        prepare_outline_occlusion_test_state(&mut state);
-
-        let red_selected = fullscreen_triangle(0.1, [1.0, 0.0, 0.0, 1.0]);
-        let cyan_outline = fullscreen_triangle(0.2, [0.0, 1.0, 1.0, 1.0]);
-        let selected_mask = fullscreen_triangle(0.1, [1.0, 1.0, 1.0, 1.0]);
-        let hover_mask = corner_triangle(0.2, [1.0, 1.0, 1.0, 1.0]);
-
-        state.render_meshes_mut().blocks_selected =
-            MeshSlot::from_vertices(state.device(), "Selected Front Block", &red_selected);
-        state.render_meshes_mut().editor_selection_stencil =
-            MeshSlot::from_vertices(state.device(), "Selected Occlusion Mask", &selected_mask);
-        state.render_meshes_mut().editor_hover_stencil =
-            MeshSlot::from_vertices(state.device(), "Hover Mask", &hover_mask);
-        state.render_meshes_mut().editor_hover_outline =
-            MeshSlot::from_vertices(state.device(), "Hover Outline", &cyan_outline);
-
-        let pixel = render_center_pixel(&mut state);
-        assert!(
-            pixel[0] < 80 && pixel[1] > 180 && pixel[2] > 180,
-            "hover outline should draw over selected block depth; got rgba={pixel:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_render_to_view_exercises_full_pipeline() {
-        let mut state = State::new_test().await;
-        let size = 64;
-        state.resize_surface(eg_types::PhysicalSize {
-            width: size,
-            height: size,
-        });
-
-        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
-            label: Some("Test Render Texture"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: state.render_gpu().config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = state
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Test Encoder"),
-            });
-
-        // 1. Test Editor Phase + Place Mode
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Place;
-
-        // Populate some meshes
-        state.editor.objects.push(eg_types::LevelObject::default());
-        state.editor.input.selected_block_indices = vec![0];
-        state.sync_editor_objects();
-        state.rebuild_editor_cursor_vertices();
-        state.rebuild_spawn_marker_vertices();
-
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-        // 2. Test Playing Phase + GameOver
-        state.phase = AppPhase::Playing;
-        state.gameplay.state.game_over = true;
-        state.editor.timeline.playback.playing = true; // For trail
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-        // 3. Test Timing Mode (skip world)
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Timing;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-        // 4. Test with gamma correction enabled
-        state.render_gpu_mut().apply_gamma_correction = true;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {});
-
-        state.queue().submit(std::iter::once(encoder.finish()));
-    }
-
-    #[tokio::test]
-    async fn render_to_view_draws_populated_mesh_slots_across_phases() {
-        let mut state = State::new_test().await;
-        let size = 96;
-        state.resize_surface(eg_types::PhysicalSize {
-            width: size,
-            height: size,
-        });
-
-        let texture = state.device().create_texture(&wgpu::TextureDescriptor {
-            label: Some("Branch Coverage Render Texture"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: state.render_gpu().config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = state
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Branch Coverage Encoder"),
-            });
-
-        let tri = vec![
-            Vertex::untextured([0.0, 0.0, 0.0], [1.0, 0.2, 0.2, 1.0]),
-            Vertex::untextured([0.2, 0.0, 0.0], [0.2, 1.0, 0.2, 1.0]),
-            Vertex::untextured([0.0, 0.2, 0.0], [0.2, 0.2, 1.0, 1.0]),
-        ];
-
-        state.render_meshes_mut().floor = MeshSlot::from_vertices(state.device(), "floor", &tri);
-        state.render_meshes_mut().grid = MeshSlot::from_vertices(state.device(), "grid", &tri);
-        state.render_meshes_mut().trail = MeshSlot::from_vertices(state.device(), "trail", &tri);
-        state.render_meshes_mut().blocks = MeshSlot::from_vertices(state.device(), "blocks", &tri);
-        state.render_meshes_mut().blocks_static =
-            MeshSlot::from_vertices(state.device(), "blocks_static", &tri);
-        state.render_meshes_mut().blocks_selected =
-            MeshSlot::from_vertices(state.device(), "blocks_selected", &tri);
-        state.render_meshes_mut().editor_cursor =
-            MeshSlot::from_vertices(state.device(), "cursor", &tri);
-        state.render_meshes_mut().editor_hover_stencil =
-            MeshSlot::from_vertices(state.device(), "hover_stencil", &tri);
-        state.render_meshes_mut().editor_hover_outline =
-            MeshSlot::from_vertices(state.device(), "hover", &tri);
-        state.render_meshes_mut().editor_selection_stencil =
-            MeshSlot::from_vertices(state.device(), "selection_stencil", &tri);
-        state.render_meshes_mut().editor_selection_outline =
-            MeshSlot::from_vertices(state.device(), "selection", &tri);
-        state.render_meshes_mut().editor_gizmo =
-            MeshSlot::from_vertices(state.device(), "gizmo", &tri);
-        state.render_meshes_mut().tap_indicators =
-            MeshSlot::from_vertices(state.device(), "taps", &tri);
-        state.render_meshes_mut().transform_trigger_markers =
-            MeshSlot::from_vertices(state.device(), "transform_markers", &tri);
-        state.render_meshes_mut().spawn_marker =
-            MeshSlot::from_vertices(state.device(), "spawn", &tri);
-        state.render_meshes_mut().camera_trigger_markers =
-            MeshSlot::from_vertices(state.device(), "camera_markers", &tri);
-
-        let overlay_calls = Cell::new(0_u32);
-
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Place;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-            overlay_calls.set(overlay_calls.get() + 1);
-        });
-
-        state.phase = AppPhase::Editor;
-        state.editor.input.mode = EditorMode::Timing;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-            overlay_calls.set(overlay_calls.get() + 1);
-        });
-
-        state.phase = AppPhase::Playing;
-        state.gameplay.state.game_over = false;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-            overlay_calls.set(overlay_calls.get() + 1);
-        });
-
-        state.phase = AppPhase::GameOver;
-        state.gameplay.state.game_over = true;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-            overlay_calls.set(overlay_calls.get() + 1);
-        });
-
-        state.phase = AppPhase::Menu;
-        state.editor.input.mode = EditorMode::Select;
-        state.render_to_view(&view, &mut encoder, |_, _, _, _| {
-            overlay_calls.set(overlay_calls.get() + 1);
-        });
-
-        assert_eq!(overlay_calls.get(), 5);
-        state.queue().submit(std::iter::once(encoder.finish()));
     }
 }

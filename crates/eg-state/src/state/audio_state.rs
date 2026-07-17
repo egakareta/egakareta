@@ -6,12 +6,13 @@
 
 */
 use bevy_ecs::prelude::Resource;
+use bevy_ecs::world::World;
 use eg_audio::audio::{AudioBackend, runtime_asset_source_key};
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use super::{EditorTimingState, State};
+use super::EditorTimingState;
 use eg_audio::service::{
     AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformResult,
 };
@@ -19,13 +20,35 @@ use eg_platform::io::save_waveform_to_storage;
 use eg_platform::task::spawn_background;
 use eg_types::PersistentWaveformCacheEntry;
 
-// REFACTOR POINT(full-bevy): `AudioSubsystem` becomes Bevy audio resources or
+// REFACTOR POINT(full-bevy): `AudioState` becomes Bevy audio resources or
 // stays as a custom resource behind Bevy systems; direct `State` polling goes away.
 
 /// Authoritative platform audio backend shared with the App world while the
 /// remaining playback callers are removed from the compatibility `State`.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Resource, Clone)]
 pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Clone)]
+pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
+
+#[cfg(not(target_arch = "wasm32"))]
+pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::Res<'w, AudioBackendRes>;
+
+#[cfg(target_arch = "wasm32")]
+pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::NonSend<'w, AudioBackendRes>;
+
+pub(crate) fn with_audio_backend<R>(world: &World, f: impl FnOnce(&AudioBackendRes) -> R) -> R {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        return f(world.resource::<AudioBackendRes>());
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        f(world.non_send::<AudioBackendRes>())
+    }
+}
 
 impl Default for AudioBackendRes {
     fn default() -> Self {
@@ -312,10 +335,6 @@ pub struct AudioState {
     pub editor: EditorAudioState,
 }
 
-pub struct AudioSubsystem {
-    pub state: AudioState,
-}
-
 impl AudioState {
     pub fn new(local_audio_cache: HashMap<String, Vec<u8>>) -> Self {
         let (preload_tx, preload_rx) = std::sync::mpsc::channel::<AudioPreloadResult>();
@@ -434,111 +453,6 @@ pub(crate) fn load_waveform_for_level_resources(
         .bytes_for_level_audio(&level_name)
         .or_else(|| runtime_preload.bytes(&source_key));
     eg_audio::service::start_waveform_loading(level_name, cached_bytes, sender);
-}
-
-impl State {
-    pub fn preload_runtime_audio(&mut self, level_name: &str, audio_source: &str) {
-        self.audio
-            .state
-            .preload_runtime_audio(level_name, audio_source);
-    }
-
-    pub fn stop_audio(&mut self) {
-        self.audio.state.runtime.stop();
-    }
-
-    pub fn pause_game_audio(&mut self) {
-        self.audio.state.runtime.pause();
-    }
-
-    pub fn resume_game_audio(&mut self) {
-        self.audio.state.runtime.resume();
-    }
-
-    pub(super) fn start_audio_source_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-
-        if (self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor)
-            && let Some(bytes) = self
-                .audio
-                .state
-                .editor
-                .cache
-                .bytes_for_level_audio(level_name)
-        {
-            self.audio
-                .state
-                .runtime
-                .start_with_bytes_at(&bytes, start_seconds);
-            return;
-        }
-
-        if let Some(bytes) = self.audio.state.runtime_preload.cache.bytes(&source_key) {
-            self.audio
-                .state
-                .runtime
-                .start_preloaded_asset_at(level_name, &bytes, start_seconds);
-        } else {
-            self.audio.state.runtime.start_at(level_name, start_seconds);
-        }
-    }
-
-    pub fn warmup_audio_at_seconds(&mut self, level_name: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-
-        #[cfg(test)]
-        {
-            self.audio.state.runtime_preload.last_warmup_request =
-                Some((source_key, start_seconds.max(0.0)));
-        }
-
-        #[cfg(not(test))]
-        {
-            if (self.phase == eg_types::AppPhase::Editor || self.session.playtesting_editor)
-                && let Some(bytes) = self
-                    .audio
-                    .state
-                    .editor
-                    .cache
-                    .bytes_for_level_audio(level_name)
-            {
-                self.audio
-                    .state
-                    .runtime
-                    .warmup_with_bytes_at(&bytes, start_seconds);
-                return;
-            }
-
-            if let Some(bytes) = self.audio.state.runtime_preload.cache.bytes(&source_key) {
-                self.audio.state.runtime.warmup_preloaded_asset_at(
-                    level_name,
-                    &bytes,
-                    start_seconds,
-                );
-            } else {
-                self.audio
-                    .state
-                    .runtime
-                    .warmup_at(level_name, start_seconds);
-            }
-        }
-    }
-
-    pub fn load_waveform_for_current_audio(&mut self) {
-        let level_name = self
-            .session
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
-        let sender = self.audio.state.editor.waveform_load_channel.0.clone();
-        load_waveform_for_level_resources(
-            level_name,
-            &self.audio.state.editor.cache,
-            &self.audio.state.runtime_preload.cache,
-            &mut self.editor.timing,
-            sender,
-        );
-    }
 }
 
 /// Persists a waveform completed by the App-world async result handler.

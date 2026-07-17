@@ -6,19 +6,13 @@
 
 */
 use super::runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState};
-use super::{
-    AudioState, AudioSubsystem, AuthSubsystem, EditorConfigState, EditorSubsystem,
-    GameplaySubsystem, MenuSubsystem, SessionSubsystem, State,
-};
+use super::{AudioState, AuthStateRes, EditorConfigState, EditorSubsystem};
 use bevy_ecs::world::World;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use glam::Mat4;
-#[cfg(any(test, feature = "test-support"))]
-use std::sync::OnceLock;
 use wgpu::util::DeviceExt;
 
 use eg_blocks::BlockTextureAtlas;
-use eg_game::GameState;
 use eg_level::builtin_level_names;
 use eg_mesh::{
     BlockInstance, Vertex, build_block_geometry, build_floor_vertices, build_grid_vertices,
@@ -221,119 +215,21 @@ fn default_grid_uniform() -> GridUniform {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
-struct TestGpuFixture {
-    adapter_info: wgpu::AdapterInfo,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    size: PhysicalSize<u32>,
-    depth_texture: wgpu::Texture,
-    depth_view: wgpu::TextureView,
-    editor_outline_occlusion_depth_texture: wgpu::Texture,
-    editor_outline_occlusion_depth_view: wgpu::TextureView,
-    render_pipeline: wgpu::RenderPipeline,
-    instanced_block_pipeline: wgpu::RenderPipeline,
-    grid_pipeline: wgpu::RenderPipeline,
-    block_icon_pipeline: wgpu::RenderPipeline,
-    editor_ghost_trail_pipeline: wgpu::RenderPipeline,
-    gizmo_overlay_pipeline: wgpu::RenderPipeline,
-    editor_outline_occlusion_depth_pipeline: wgpu::RenderPipeline,
-    editor_outline_mask_pipeline: wgpu::RenderPipeline,
-    editor_outline_pipeline: wgpu::RenderPipeline,
-    editor_hover_outline_pipeline: wgpu::RenderPipeline,
-    line_bind_group_layout: wgpu::BindGroupLayout,
-    _zero_line_uniform_buffer: wgpu::Buffer,
-    zero_line_bind_group: wgpu::BindGroup,
-    camera_bind_group_layout: wgpu::BindGroupLayout,
-    color_space_bind_group_layout: wgpu::BindGroupLayout,
-    grid_bind_group_layout: wgpu::BindGroupLayout,
-    block_texture_bind_group: wgpu::BindGroup,
-    apply_gamma_correction: bool,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl From<&GpuContext> for TestGpuFixture {
-    fn from(gpu: &GpuContext) -> Self {
-        let zero_line_uniform_buffer =
-            gpu.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Shared Test Line Uniform Buffer"),
-                    contents: bytemuck::bytes_of(&default_line_uniform()),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-        let zero_line_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Shared Test Zero Line Bind Group"),
-            layout: &gpu.line_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: zero_line_uniform_buffer.as_entire_binding(),
-            }],
-        });
-
-        Self {
-            adapter_info: gpu.adapter_info.clone(),
-            device: gpu.device.clone(),
-            queue: gpu.queue.clone(),
-            config: gpu.config.clone(),
-            size: gpu.size,
-            depth_texture: gpu.depth_texture.clone(),
-            depth_view: gpu.depth_view.clone(),
-            editor_outline_occlusion_depth_texture: gpu
-                .editor_outline_occlusion_depth_texture
-                .clone(),
-            editor_outline_occlusion_depth_view: gpu.editor_outline_occlusion_depth_view.clone(),
-            render_pipeline: gpu.render_pipeline.clone(),
-            instanced_block_pipeline: gpu.instanced_block_pipeline.clone(),
-            grid_pipeline: gpu.grid_pipeline.clone(),
-            block_icon_pipeline: gpu.block_icon_pipeline.clone(),
-            editor_ghost_trail_pipeline: gpu.editor_ghost_trail_pipeline.clone(),
-            gizmo_overlay_pipeline: gpu.gizmo_overlay_pipeline.clone(),
-            editor_outline_occlusion_depth_pipeline: gpu
-                .editor_outline_occlusion_depth_pipeline
-                .clone(),
-            editor_outline_mask_pipeline: gpu.editor_outline_mask_pipeline.clone(),
-            editor_outline_pipeline: gpu.editor_outline_pipeline.clone(),
-            editor_hover_outline_pipeline: gpu.editor_hover_outline_pipeline.clone(),
-            line_bind_group_layout: gpu.line_bind_group_layout.clone(),
-            _zero_line_uniform_buffer: zero_line_uniform_buffer,
-            zero_line_bind_group,
-            camera_bind_group_layout: gpu.camera_bind_group_layout.clone(),
-            color_space_bind_group_layout: gpu.color_space_bind_group_layout.clone(),
-            grid_bind_group_layout: gpu.grid_bind_group_layout.clone(),
-            block_texture_bind_group: gpu.block_texture_bind_group.clone(),
-            apply_gamma_correction: gpu.apply_gamma_correction,
-        }
-    }
-}
-
 /// Transient result of the shared GPU/platform initializer.
-struct StateInitialization {
-    auth: AuthSubsystem,
-    gameplay: GameplaySubsystem,
+struct AppInitialization {
+    auth: AuthStateRes,
+    auth_receiver: crate::state::async_bridge::SharedAuthReceiver,
     editor: EditorSubsystem,
-    audio: AudioSubsystem,
-    session: SessionSubsystem,
-    menu: MenuSubsystem,
+    audio: AudioState,
+    session: super::SessionStateRes,
+    level_import_channel: (
+        std::sync::mpsc::Sender<Vec<u8>>,
+        crate::state::async_bridge::SharedLevelImportReceiver,
+    ),
+    menu: MenuState,
     phase: AppPhase,
     frame_runtime: FrameRuntimeState,
-    render_resources: super::StateRenderResources,
-}
-
-impl StateInitialization {
-    #[cfg(any(test, feature = "test-support"))]
-    fn into_state(self) -> State {
-        State {
-            auth: self.auth,
-            gameplay: self.gameplay,
-            editor: self.editor,
-            audio: self.audio,
-            session: self.session,
-            menu: self.menu,
-            phase: self.phase,
-            render_resources: Some(self.render_resources),
-        }
-    }
+    render_resources: super::RenderBootstrapResources,
 }
 
 /// One-time production bootstrap that installs authoritative resources directly
@@ -341,9 +237,9 @@ impl StateInitialization {
 ///
 /// REFACTOR POINT(full-bevy): replace this custom wgpu/platform bootstrap with
 /// Bevy renderer, window, asset, task, and audio plugins.
-pub struct StateAppBootstrap(StateInitialization);
+pub struct AppBootstrap(AppInitialization);
 
-impl StateAppBootstrap {
+impl AppBootstrap {
     #[cfg(target_arch = "wasm32")]
     pub async fn new(
         canvas: WasmCanvas,
@@ -364,7 +260,7 @@ impl StateAppBootstrap {
         let (surface_host, instance, surface, size) =
             SurfaceHost::create_for_wasm(canvas, wasm_backends);
         Self(
-            StateInitialization::new_common(
+            AppInitialization::new_common(
                 instance,
                 Some(surface_host),
                 Some(surface),
@@ -381,7 +277,7 @@ impl StateAppBootstrap {
     pub async fn new_native(window: NativeWindow) -> Self {
         let (surface_host, instance, surface, size) = SurfaceHost::create_for_native(window);
         Self(
-            StateInitialization::new_common(
+            AppInitialization::new_common(
                 instance,
                 Some(surface_host),
                 Some(surface),
@@ -395,40 +291,45 @@ impl StateAppBootstrap {
     }
 
     pub fn install(self, world: &mut World) {
-        let StateInitialization {
+        let AppInitialization {
             auth,
-            gameplay,
+            auth_receiver,
+
             editor,
             audio,
             session,
+            level_import_channel,
             menu,
             phase,
             frame_runtime,
             render_resources,
         } = self.0;
 
-        super::async_bridge::install_async_bridge_from_state_arc(
+        super::async_bridge::install_async_channel_resources_arc(
             world,
-            std::sync::Arc::clone(&auth.receiver),
-            std::sync::Arc::clone(&audio.state.editor.audio_import_channel.1),
-            std::sync::Arc::clone(&audio.state.editor.waveform_load_channel.1),
-            std::sync::Arc::clone(&audio.state.runtime_preload.preload_channel.1),
-            std::sync::Arc::clone(&session.editor_level_import_channel.1),
+            std::sync::Arc::clone(&auth_receiver),
+            std::sync::Arc::clone(&audio.editor.audio_import_channel.1),
+            std::sync::Arc::clone(&audio.editor.waveform_load_channel.1),
+            std::sync::Arc::clone(&audio.runtime_preload.preload_channel.1),
+            std::sync::Arc::clone(&level_import_channel.1),
         );
         world.insert_resource(super::LevelImportSenderRes::new(
-            session.editor_level_import_channel.0.clone(),
+            level_import_channel.0.clone(),
         ));
         world.insert_resource(super::AudioImportSenderRes::new(
-            audio.state.editor.audio_import_channel.0.clone(),
+            audio.editor.audio_import_channel.0.clone(),
         ));
-        world.insert_resource(audio.state.editor.cache.clone());
-        world.insert_resource(audio.state.runtime_preload.cache.clone());
+        world.insert_resource(audio.editor.cache.clone());
+        world.insert_resource(audio.runtime_preload.cache.clone());
         world.insert_resource(super::RuntimeAudioPreloadSenderRes(
-            audio.state.runtime_preload.preload_channel.0.clone(),
+            audio.runtime_preload.preload_channel.0.clone(),
         ));
-        world.insert_resource(audio.state.runtime.clone());
+        #[cfg(not(target_arch = "wasm32"))]
+        world.insert_resource(audio.runtime.clone());
+        #[cfg(target_arch = "wasm32")]
+        world.insert_non_send(audio.runtime.clone());
         world.insert_resource(super::WaveformLoadSenderRes(
-            audio.state.editor.waveform_load_channel.0.clone(),
+            audio.editor.waveform_load_channel.0.clone(),
         ));
 
         let (render_gpu, render_meshes, render_surface_host) = render_resources.into_parts();
@@ -438,13 +339,13 @@ impl StateAppBootstrap {
         world.insert_non_send(super::RenderMeshesRes(render_meshes));
         world.insert_non_send(super::RenderSurfaceHostRes(render_surface_host));
 
-        super::gameplay_world::seed_app_gameplay_world_from_subsystem(world, &gameplay);
+        super::gameplay_world::seed_app_gameplay_world(world);
         world.insert_resource(super::MenuPreviewObjectsRes {
-            objects: gameplay.state.objects.clone(),
+            objects: Vec::new(),
         });
         world.insert_resource(super::AppPhaseRes::new(phase));
-        world.insert_resource(super::MenuStateRes::new(menu.state));
-        world.insert_resource(auth.state);
+        world.insert_resource(super::MenuStateRes::new(menu));
+        world.insert_resource(auth);
 
         world.insert_resource(super::EditorConfigRes(editor.config.clone()));
         world.insert_resource(super::EditorInputRes(editor.input.clone()));
@@ -480,36 +381,12 @@ impl StateAppBootstrap {
             selected_index: editor.triggers.selected_index,
         }));
 
-        let practice_mode_enabled = phase == AppPhase::Playing
+        let mut session = session;
+        session.practice_mode_enabled = phase == AppPhase::Playing
             && !session.playtesting_editor
             && session.practice_mode_enabled;
-        world.insert_resource(super::SessionStateRes {
-            editor_level_name: session.editor_level_name,
-            editor_music_metadata: session.editor_music_metadata,
-            editor_creator_metadata: session.editor_creator_metadata,
-            editor_sky_color: session.editor_sky_color,
-            editor_menu_preview_camera: session.editor_menu_preview_camera,
-            editor_show_metadata: session.editor_show_metadata,
-            editor_show_place_window: session.editor_show_place_window,
-            editor_show_settings: session.editor_show_settings,
-            editor_settings_section: session.editor_settings_section,
-            editor_keybind_capture_action: session.editor_keybind_capture_action,
-            settings_restart_required: session.settings_restart_required,
-            graphics_backend_locked: session.graphics_backend_locked,
-            audio_backend_locked: session.audio_backend_locked,
-            available_graphics_backends: session.available_graphics_backends,
-            available_audio_backends: session.available_audio_backends,
-            app_settings: session.app_settings,
-            playing_level_name: session.playing_level_name,
-            playtesting_editor: session.playtesting_editor,
-            game_paused: session.game_paused,
-            playtest_audio_start_seconds: session.playtest_audio_start_seconds,
-            playing_sky_color: session.playing_sky_color,
-            playing_trigger_base_objects: session.playing_trigger_base_objects,
-            practice_mode_enabled,
-            practice_checkpoints: session.practice_checkpoints,
-            audio_stop_pending: false,
-        });
+        session.audio_stop_pending = false;
+        world.insert_resource(session);
         world.insert_resource(super::FrameTimeRes {
             last_frame: frame_runtime.editor.last_frame,
             delta_seconds: frame_runtime.editor.delta_seconds,
@@ -523,309 +400,15 @@ fn build_state_render_resources(
     gpu: GpuContext,
     surface_host: Option<SurfaceHost>,
     meshes: SceneMeshes,
-) -> super::StateRenderResources {
-    super::StateRenderResources {
+) -> super::RenderBootstrapResources {
+    super::RenderBootstrapResources {
         gpu,
         meshes,
         surface_host,
     }
 }
 
-impl State {
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn try_new_test() -> Option<State> {
-        let fixture = Self::shared_test_gpu_fixture()?;
-        Some(Self::new_state_from_test_gpu_fixture(fixture))
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub async fn new_test() -> State {
-        Self::try_new_test()
-            .await
-            .expect(
-                "No suitable wgpu adapter found for tests. Install Vulkan-capable drivers (or a Vulkan software driver on Linux/headless environments), or use try_new_test() when running in an environment without GPU support.",
-            )
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    fn shared_test_gpu_fixture() -> Option<&'static TestGpuFixture> {
-        static FIXTURE: OnceLock<Option<TestGpuFixture>> = OnceLock::new();
-
-        FIXTURE
-            .get_or_init(|| {
-                pollster::block_on(async {
-                    let backends_to_try = if cfg!(target_os = "linux") {
-                        vec![wgpu::Backends::VULKAN, wgpu::Backends::all()]
-                    } else {
-                        vec![wgpu::Backends::all()]
-                    };
-
-                    for backends in backends_to_try {
-                        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-                            backends,
-                            ..wgpu::InstanceDescriptor::new_without_display_handle()
-                        });
-
-                        if let Some(initialization) = StateInitialization::new_common(
-                            instance,
-                            None,
-                            None,
-                            PhysicalSize {
-                                width: 800,
-                                height: 600,
-                            },
-                            None,
-                            None,
-                        )
-                        .await
-                        {
-                            let state = initialization.into_state();
-                            let fixture = TestGpuFixture::from(state.render_gpu());
-                            return Some(fixture);
-                        }
-                    }
-
-                    None
-                })
-            })
-            .as_ref()
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    fn new_state_from_test_gpu_fixture(fixture: &TestGpuFixture) -> State {
-        use eg_types::LevelMetadata;
-
-        let line_uniform = default_line_uniform();
-        let line_uniform_buffer =
-            fixture
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Line Uniform Buffer"),
-                    contents: bytemuck::bytes_of(&line_uniform),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-
-        let camera_uniform = default_camera_uniform();
-        let camera_uniform_buffer =
-            fixture
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Camera Uniform Buffer"),
-                    contents: bytemuck::bytes_of(&camera_uniform),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-        let camera_bind_group = fixture
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Camera Bind Group"),
-                layout: &fixture.camera_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
-        let color_space_uniform = default_color_space_uniform(fixture.apply_gamma_correction);
-        let color_space_uniform_buffer =
-            fixture
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Color Space Uniform Buffer"),
-                    contents: bytemuck::bytes_of(&color_space_uniform),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-        let color_space_bind_group = fixture
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Color Space Bind Group"),
-                layout: &fixture.color_space_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: color_space_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
-        let grid_uniform = default_grid_uniform();
-        let grid_uniform_buffer =
-            fixture
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Grid Uniform Buffer"),
-                    contents: bytemuck::bytes_of(&grid_uniform),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-        let grid_bind_group = fixture
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Grid Bind Group"),
-                layout: &fixture.grid_bind_group_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: grid_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
-        let trail_mesh = MeshSlot::streaming(&fixture.device, "Trail Vertex Buffer", 36 * 1024);
-
-        let menu = MenuState {
-            selected_level: 0,
-            levels: builtin_level_names(),
-            preview_level_index: None,
-            preview_sky_color: LevelMetadata::default().sky_color,
-            preview_camera_position: DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
-            preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
-        };
-
-        let mut game = GameState::new();
-        game.objects = vec![];
-        game.rebuild_behavior_cache();
-
-        let app_settings = eg_types::AppSettings::default();
-        let auth_session = None;
-
-        let local_audio_cache = std::collections::HashMap::new();
-        let available_graphics_backends = discover_graphics_backends();
-        let available_audio_backends = eg_audio::audio::available_host_labels();
-        let audio_state = AudioState::new(local_audio_cache);
-        let _ = audio_state
-            .runtime
-            .set_preferred_backend_name(&app_settings.audio_backend);
-
-        Self {
-            render_resources: Some(build_state_render_resources(
-                GpuContext {
-                    surface: None,
-                    adapter_info: fixture.adapter_info.clone(),
-                    device: fixture.device.clone(),
-                    queue: fixture.queue.clone(),
-                    config: fixture.config.clone(),
-                    size: fixture.size,
-                    depth_texture: fixture.depth_texture.clone(),
-                    depth_view: fixture.depth_view.clone(),
-                    editor_outline_occlusion_depth_texture: fixture
-                        .editor_outline_occlusion_depth_texture
-                        .clone(),
-                    editor_outline_occlusion_depth_view: fixture
-                        .editor_outline_occlusion_depth_view
-                        .clone(),
-                    render_pipeline: fixture.render_pipeline.clone(),
-                    instanced_block_pipeline: fixture.instanced_block_pipeline.clone(),
-                    grid_pipeline: fixture.grid_pipeline.clone(),
-                    block_icon_pipeline: fixture.block_icon_pipeline.clone(),
-                    editor_ghost_trail_pipeline: fixture.editor_ghost_trail_pipeline.clone(),
-                    gizmo_overlay_pipeline: fixture.gizmo_overlay_pipeline.clone(),
-                    editor_outline_occlusion_depth_pipeline: fixture
-                        .editor_outline_occlusion_depth_pipeline
-                        .clone(),
-                    editor_outline_mask_pipeline: fixture.editor_outline_mask_pipeline.clone(),
-                    editor_outline_pipeline: fixture.editor_outline_pipeline.clone(),
-                    editor_hover_outline_pipeline: fixture.editor_hover_outline_pipeline.clone(),
-                    line_bind_group_layout: fixture.line_bind_group_layout.clone(),
-                    line_uniform_buffer,
-                    zero_line_bind_group: fixture.zero_line_bind_group.clone(),
-                    camera_uniform_buffer,
-                    camera_bind_group_layout: fixture.camera_bind_group_layout.clone(),
-                    camera_bind_group,
-                    color_space_bind_group_layout: fixture.color_space_bind_group_layout.clone(),
-                    color_space_uniform_buffer,
-                    color_space_bind_group,
-                    grid_bind_group_layout: fixture.grid_bind_group_layout.clone(),
-                    grid_uniform_buffer,
-                    grid_bind_group,
-                    block_texture_bind_group: fixture.block_texture_bind_group.clone(),
-                    apply_gamma_correction: fixture.apply_gamma_correction,
-                },
-                None,
-                SceneMeshes {
-                    floor: MeshSlot::Empty,
-                    grid: MeshSlot::Empty,
-                    trail: trail_mesh,
-                    gem_shatter_effects: MeshSlot::Empty,
-                    practice_checkpoints: MeshSlot::Empty,
-                    blocks: MeshSlot::Empty,
-                    blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
-                    blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
-                    editor_cursor: MeshSlot::Empty,
-                    editor_hover_stencil: MeshSlot::Empty,
-                    editor_hover_outline: MeshSlot::Empty,
-                    editor_selection_stencil: MeshSlot::Empty,
-                    editor_selection_outline: MeshSlot::Empty,
-                    editor_selection_outline_instances: Vec::new(),
-                    editor_gizmo: MeshSlot::Empty,
-                    tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
-                    spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
-                    editor_preview_player: MeshSlot::Empty,
-                    editor_hitbox_visualization: MeshSlot::Empty,
-                    camera_arrow: MeshSlot::Empty,
-                },
-            )),
-            auth: AuthSubsystem::new(auth_session, false),
-            gameplay: GameplaySubsystem {
-                state: game,
-                pending_turn_inputs: std::collections::VecDeque::new(),
-                death_sfx_played: false,
-            },
-            phase: AppPhase::Menu,
-            menu: MenuSubsystem { state: menu },
-            audio: AudioSubsystem { state: audio_state },
-            session: SessionSubsystem {
-                editor_level_name: None,
-                editor_music_metadata: MusicMetadata {
-                    title: None,
-                    author: None,
-                },
-                editor_creator_metadata: BasicLevelMetadata::default(),
-                editor_sky_color: LevelMetadata::default().sky_color,
-                editor_menu_preview_camera: None,
-                editor_show_metadata: false,
-                editor_show_place_window: false,
-                editor_show_settings: false,
-                editor_settings_section: SettingsSection::Backends,
-                editor_keybind_capture_action: None,
-                editor_level_import_channel: {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-                },
-                settings_restart_required: false,
-                graphics_backend_locked: false,
-                audio_backend_locked: false,
-                available_graphics_backends,
-                available_audio_backends,
-                app_settings: app_settings.clone(),
-                playing_level_name: None,
-                playtesting_editor: false,
-                game_paused: false,
-                playtest_audio_start_seconds: None,
-                playing_sky_color: LevelMetadata::default().sky_color,
-                playing_trigger_base_objects: None,
-                practice_mode_enabled: false,
-                practice_checkpoints: Vec::new(),
-            },
-            editor: EditorSubsystem {
-                config: EditorConfigState {
-                    snap_to_grid: app_settings.editor_snap_to_grid,
-                    snap_step: app_settings.editor_snap_step.max(0.05),
-                    snap_rotation: app_settings.editor_rotation_snap,
-                    snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
-                    ..EditorConfigState::default()
-                },
-                runtime: EditorRuntimeState {
-                    dirty: EditorDirtyFlags::from_object_sync(),
-                    ..EditorRuntimeState::default()
-                },
-                ..EditorSubsystem::default()
-            },
-        }
-    }
-}
-
-impl StateInitialization {
+impl AppInitialization {
     async fn new_common(
         instance: wgpu::Instance,
         surface_host: Option<SurfaceHost>,
@@ -833,7 +416,7 @@ impl StateInitialization {
         size: PhysicalSize<u32>,
         graphics_backend_override: Option<String>,
         audio_backend_override: Option<String>,
-    ) -> Option<StateInitialization> {
+    ) -> Option<AppInitialization> {
         let adapter = match instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -1522,10 +1105,6 @@ impl StateInitialization {
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         };
 
-        let mut game = GameState::new();
-        game.objects = vec![];
-        game.rebuild_behavior_cache();
-
         let mut app_settings = if cfg!(test) {
             eg_types::AppSettings::default()
         } else {
@@ -1584,12 +1163,20 @@ impl StateInitialization {
             .runtime
             .set_preferred_backend_name(&app_settings.audio_backend);
 
-        let block_geometry = build_block_geometry(&game.objects);
+        let block_geometry = build_block_geometry(&[]);
         let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
 
         let now = web_time::Instant::now();
 
-        Some(StateInitialization {
+        let (auth_sender, auth_receiver) = std::sync::mpsc::channel();
+        let auth_receiver = std::sync::Arc::new(std::sync::Mutex::new(auth_receiver));
+        let (level_import_sender, level_import_receiver) = std::sync::mpsc::channel();
+        let level_import_channel = (
+            level_import_sender,
+            std::sync::Arc::new(std::sync::Mutex::new(level_import_receiver)),
+        );
+
+        Some(AppInitialization {
             render_resources: build_state_render_resources(
                 GpuContext {
                     surface,
@@ -1657,14 +1244,18 @@ impl StateInitialization {
                     camera_arrow: MeshSlot::Empty,
                 },
             ),
-            auth: AuthSubsystem::new(auth_session, true),
-            gameplay: GameplaySubsystem {
-                state: game,
-                pending_turn_inputs: std::collections::VecDeque::new(),
-                death_sfx_played: false,
+            auth: AuthStateRes {
+                session: auth_session,
+                pending: false,
+                message: None,
+                refresh_started: false,
+                external_navigation_enabled: true,
+                sender: auth_sender,
             },
+            auth_receiver,
+
             phase: AppPhase::Menu,
-            menu: MenuSubsystem { state: menu },
+            menu,
             frame_runtime: FrameRuntimeState {
                 editor: EditorFrameState {
                     last_frame: now,
@@ -1672,8 +1263,8 @@ impl StateInitialization {
                 },
                 global_time_seconds: 0.0,
             },
-            audio: AudioSubsystem { state: audio_state },
-            session: SessionSubsystem {
+            audio: audio_state,
+            session: super::SessionStateRes {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {
                     title: None,
@@ -1687,10 +1278,6 @@ impl StateInitialization {
                 editor_show_settings: false,
                 editor_settings_section: SettingsSection::Backends,
                 editor_keybind_capture_action: None,
-                editor_level_import_channel: {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-                },
                 settings_restart_required: false,
                 graphics_backend_locked,
                 audio_backend_locked,
@@ -1705,7 +1292,9 @@ impl StateInitialization {
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
                 practice_checkpoints: Vec::new(),
+                audio_stop_pending: false,
             },
+            level_import_channel,
             editor: EditorSubsystem {
                 config: EditorConfigState {
                     snap_to_grid: app_settings.editor_snap_to_grid,
@@ -1726,16 +1315,13 @@ impl StateInitialization {
 
 #[cfg(test)]
 mod tests {
-    use eg_game::TimelineSimulationRuntime;
-    use eg_types::{Direction, MusicMetadata};
 
     use super::{
-        State, block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
+        block_texture_array_layer_count, editor_ghost_trail_depth_stencil_state,
         editor_ghost_trail_primitive_state, editor_hover_outline_depth_stencil_state,
         editor_outline_depth_stencil_state, editor_outline_mask_depth_stencil_state,
         editor_outline_occlusion_depth_mask_depth_stencil_state,
     };
-    use eg_types::AppPhase;
 
     #[test]
     fn block_texture_array_layer_count_avoids_gl_cube_heuristics() {
@@ -1803,123 +1389,6 @@ mod tests {
         assert_eq!(
             hover_outline.stencil.front.compare,
             wgpu::CompareFunction::NotEqual
-        );
-    }
-
-    #[tokio::test]
-    async fn test_lifecycle_transitions() {
-        let mut state = State::new_test().await;
-
-        state.enter_playing_phase(Some("LifecycleTest".to_string()), false);
-        assert_eq!(state.phase, AppPhase::Playing);
-
-        state.back_to_menu();
-        assert_eq!(state.phase, AppPhase::Menu);
-    }
-
-    #[tokio::test]
-    async fn test_lifecycle_audio_side_effects() {
-        let mut state = State::new_test().await;
-
-        state.enter_editor_phase("Test Level".to_string());
-        state.editor.timeline.playback.playing = true;
-        state.editor.timeline.playback.runtime = Some(TimelineSimulationRuntime::new(
-            [0.0, 0.0, 0.0],
-            Direction::Forward,
-            &[],
-            &[],
-        ));
-
-        let level_name = state.menu.state.levels[0].clone();
-        state.load_builtin_level_into_editor(&level_name);
-
-        assert!(
-            !state.editor.timeline.playback.playing,
-            "Loading a level in editor must stop timeline playback"
-        );
-        assert!(
-            state.editor.timeline.playback.runtime.is_none(),
-            "Loading a level in editor must clear playback runtime"
-        );
-        assert!(
-            !state.audio.state.runtime.is_playing(),
-            "Loading a level in editor must stop runtime audio"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_lifecycle_audio_start_marks_playing_in_tests() {
-        let mut state = State::new_test().await;
-
-        state.enter_editor_phase("AudioStartTest".to_string());
-        state.set_editor_music_metadata(MusicMetadata::default());
-        state
-            .audio
-            .state
-            .editor
-            .cache
-            .insert_level_audio("AudioStartTest", eg_audio::audio::tiny_wav_bytes());
-        state.editor_playtest();
-
-        state.turn_right();
-
-        assert!(
-            state.audio.state.runtime.is_playing(),
-            "First gameplay input after starting a level should mark runtime audio as playing in tests"
-        );
-        assert!(
-            state.audio.state.runtime.playback_time_seconds().is_some(),
-            "First gameplay input after starting a level should produce a runtime playback clock in tests"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_phase_transition_preserves_editor_clipboard() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("Test Level".to_string());
-
-        // 1. Setup: Enter editor and copy a block
-        state.turn_right(); // Place block
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
-        state.editor_copy_block();
-        assert!(state.editor.runtime.interaction.clipboard.is_some());
-
-        // 2. Transition to playing: Clipboard should remain available for editor re-entry.
-        state.start_level(0);
-        assert_eq!(state.phase, AppPhase::Playing);
-        assert!(
-            state.editor.runtime.interaction.clipboard.is_some(),
-            "Clipboard should survive entering game phase"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_editor_load_level_resets_history_and_preserves_clipboard() {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase("Test Level".to_string());
-
-        state.turn_right(); // Place block -> adds to undo history
-        state.editor.input.selected_block_index = Some(0);
-        state.editor.input.selected_block_indices = vec![0];
-        state.editor_copy_block();
-        assert!(!state.editor.runtime.history.undo.is_empty());
-        assert!(state.editor.runtime.interaction.clipboard.is_some());
-
-        let level_name = state.menu.state.levels[0].clone();
-        state.load_builtin_level_into_editor(&level_name);
-
-        assert!(
-            state.editor.runtime.history.undo.is_empty(),
-            "Loading a level in editor must clear undo history"
-        );
-        assert!(
-            state.editor.runtime.history.redo.is_empty(),
-            "Loading a level in editor must clear redo history"
-        );
-        assert!(
-            state.editor.runtime.interaction.clipboard.is_some(),
-            "Loading a level in editor should preserve clipboard"
         );
     }
 }

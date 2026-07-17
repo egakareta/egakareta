@@ -8,23 +8,10 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use eg_state::state::State;
-use eg_types::EditorMode;
 use egakareta_lib::bench_support::{
     TimelineScrubBenchmarkState, advance_timeline_preview, rebuild_chunked_dense_block_mesh,
     rebuild_full_block_mesh, rebuild_transformed_block_mesh, transform_objects_only,
 };
-
-fn build_editor_playback_start_state() -> State {
-    pollster::block_on(async {
-        let mut state = State::new_test().await;
-        state.enter_editor_phase_for_test("Ambition");
-        state.load_builtin_level_into_editor("Ambition");
-        state.set_editor_mode(EditorMode::Place);
-        state.set_editor_timeline_duration_seconds(120.0);
-        state
-    })
-}
 
 fn editor_mesh_rebuild_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("editor_full_block_mesh_rebuild");
@@ -104,30 +91,6 @@ fn timeline_preview_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
-fn editor_playback_start_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("editor_timeline_playback_start");
-    for start_time_seconds in [6.0_f32, 60.0_f32] {
-        group.bench_function(
-            format!("start_playback_from_{}s", start_time_seconds as u32),
-            |b| {
-                b.iter_batched(
-                    build_editor_playback_start_state,
-                    |mut state| {
-                        state.set_editor_timeline_time_seconds(start_time_seconds);
-                        state.toggle_editor_timeline_playback();
-                        black_box(state.editor_is_playing());
-                        black_box(state.editor_mode());
-                        black_box(state.editor_timeline_time_seconds());
-                        black_box(state.editor_timeline_preview());
-                    },
-                    BatchSize::SmallInput,
-                )
-            },
-        );
-    }
-    group.finish();
-}
-
 fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("editor_timeline_scrub_no_playback");
     for simulate_trigger_hitboxes in [false, true] {
@@ -177,7 +140,6 @@ criterion_group!(
     chunked_greedy_mesh_benchmarks,
     trigger_transform_benchmarks,
     timeline_preview_benchmarks,
-    editor_playback_start_benchmarks,
     editor_timeline_scrub_benchmarks
 );
 criterion_main!(perf_hot_paths);

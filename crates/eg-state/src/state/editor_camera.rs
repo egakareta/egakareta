@@ -8,8 +8,8 @@
 use bevy_ecs::prelude::{Res, ResMut};
 use glam::{Mat4, Vec2, Vec3};
 
+use super::EditorSubsystem;
 use super::editor_triggers::camera_trigger_object_pose;
-use super::{EditorSubsystem, State};
 use eg_blocks::BlockId;
 use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorInputState};
 use eg_types::{
@@ -377,6 +377,7 @@ impl EditorSubsystem {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn evaluate_camera_track(
         &self,
         time_seconds: f32,
@@ -455,47 +456,6 @@ pub fn update_editor_camera_pan_system(
         camera
             .0
             .update_pan_from_input(&input.0, frame_time.delta_seconds);
-    }
-}
-
-impl State {
-    pub(super) fn editor_camera_offset(&self) -> Vec3 {
-        self.editor.camera_offset()
-    }
-
-    #[cfg(test)]
-    pub(super) fn playing_camera_view(&self) -> (Vec3, Vec3) {
-        let target = Vec3::from_array(self.gameplay.state.position);
-        let sample = self.editor.evaluate_camera_track(
-            self.gameplay.state.elapsed_seconds,
-            target,
-            self.gameplay.state.started && !self.gameplay.state.game_over,
-        );
-        (sample.eye, sample.target)
-    }
-
-    pub fn editor_preview_camera_view(&self) -> ([f32; 3], [f32; 3]) {
-        let target = Vec3::from_array(self.editor.timeline.preview.position);
-        let sample = self.editor.evaluate_camera_track(
-            self.editor.timeline.clock.time_seconds,
-            target,
-            true,
-        );
-        (sample.eye.to_array(), sample.target.to_array())
-    }
-
-    /// Moves the editor cursor one unit up in the grid.
-    pub fn move_editor_up(&mut self) {
-        if self.phase == AppPhase::Editor {
-            self.move_editor_cursor(0, 1);
-        }
-    }
-
-    /// Moves the editor cursor one unit down in the grid.
-    pub fn move_editor_down(&mut self) {
-        if self.phase == AppPhase::Editor {
-            self.move_editor_cursor(0, -1);
-        }
     }
 }
 
