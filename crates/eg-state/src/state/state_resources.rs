@@ -46,33 +46,20 @@ use eg_types::SpawnMetadata;
 // AppPhase (Bevy States target)
 // ---------------------------------------------------------------------------
 
-/// Wrapper resource that holds the current `AppPhase`. Used as a Bevy
-/// `States` derive target so transition systems (`OnEnter(Playing)` etc.)
-/// can react to phase changes. The legacy `State::phase` field mirrors
-/// this resource; updates flow both ways during Phase 2.
+/// Compatibility mirror of the authoritative Bevy `State<AppPhase>`.
 ///
-/// `previous_app_phase` is the value the resource held on the previous
-/// frame. The transition system in [`crate::state::transitions`] compares
-/// the current and previous values to detect phase changes and emit
-/// `OnEnter` / `OnExit` side effects. The default value is `Menu` on
-/// both fields so the first frame is a no-op.
-///
-/// REFACTOR POINT(full-bevy): `AppPhase` is already a `Copy + Eq + Hash`
-/// enum, so the full-Bevy migration just adds the `States` derive directly
-/// in `eg-types` and drops this wrapper (and the `previous_app_phase`
-/// bookkeeping).
+/// Existing App-world handlers still read this resource while their query
+/// signatures are migrated. New phase transitions must queue `NextState<AppPhase>`;
+/// the runtime bridge keeps this mirror aligned after Bevy applies the
+/// transition.
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct AppPhaseRes {
     pub current: AppPhase,
-    pub previous_app_phase: AppPhase,
 }
 
 impl AppPhaseRes {
     pub const fn new(phase: AppPhase) -> Self {
-        Self {
-            current: phase,
-            previous_app_phase: phase,
-        }
+        Self { current: phase }
     }
 
     pub const fn get(&self) -> AppPhase {

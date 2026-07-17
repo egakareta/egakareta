@@ -34,6 +34,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::NextState;
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
     derive_timeline_elapsed_seconds, remove_tap_with_indicator,
@@ -439,6 +440,7 @@ pub fn handle_set_waveform_scroll(
 pub fn handle_playtest(
     mut events: MessageReader<Playtest>,
     mut phase: ResMut<AppPhaseRes>,
+    mut next_phase: ResMut<NextState<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     spawn: Res<EditorSpawnRes>,
     mut timeline: ResMut<EditorTimelineRes>,
@@ -467,6 +469,7 @@ pub fn handle_playtest(
         timeline.0.playback.playing = false;
         timeline.0.playback.runtime = None;
         phase.set(AppPhase::Playing);
+        next_phase.set(AppPhase::Playing);
         session.game_paused = false;
         session.playtesting_editor = true;
         session.playing_level_name = transition.playing_level_name.clone();

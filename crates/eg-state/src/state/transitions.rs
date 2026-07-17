@@ -5,93 +5,95 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Phase transition systems for the eg-state `App`.
+//! Bevy state transition wiring for the eg-state App.
 //!
-//! Phase 2c introduces the [`AppPhaseRes`] -> legacy `State::phase` sync
-//!   + a small set of transition hooks that run when the application
-//!     changes phase. The transitions are driven by a `previous_app_phase`
-//!     field on [`AppPhaseRes`] so the Bevy 0.19 lack of a buffered
-//!     `Events<T>` doesn't get in the way. The actual `OnEnter(T)` /
-//!     `OnExit(T)` system-set ergonomics from Bevy 0.13 land in Phase 3
-//!     (Command/Event fragmentation).
-//!
-//! Hook contract:
-//!
-//!   - [`on_enter_phase`] runs once when `AppPhaseRes` first changes to a
-//!     value. Side effects that should happen on phase entry (e.g. reset
-//!     `GameClock`, refresh menu preview) go here.
-//!   - [`on_exit_phase`] runs once when `AppPhaseRes` changes away from a
-//!     value. Side effects that should happen on phase exit (e.g. stop
-//!     audio, despawn `Player`) go here.
-//!
-//! REFACTOR POINT(full-bevy): the full-Bevy migration replaces
-//! `AppPhaseRes` with `AppPhase` itself annotated with `#[derive(States)]`
-//! and uses `OnEnter(T)` / `OnExit(T)` system sets directly. The
-//! `previous_app_phase` bookkeeping is replaced by Bevy's `States` derive
-//! + schedule-level transition detection.
+//! `State<AppPhase>` is authoritative. The `AppPhaseRes` resource remains a
+//! compatibility mirror for handlers whose signatures have not moved to
+//! `Res<State<AppPhase>>` yet.
 
-#[cfg(test)]
-use bevy_ecs::change_detection::Mut;
-use bevy_ecs::prelude::ResMut;
+use bevy_app::App;
+use bevy_ecs::prelude::World;
+use bevy_state::prelude::{NextState, OnEnter, OnExit, State};
 use eg_types::AppPhase;
 
 use super::state_resources::AppPhaseRes;
 
-/// Test helper for focused transition tests that do not build a schedule.
-#[cfg(test)]
-pub fn phase_transition_system(mut phase: Mut<'_, AppPhaseRes>) {
-    apply_phase_transition(&mut phase);
-}
-
-/// Detect `AppPhase` changes and run the appropriate enter/exit transitions.
+/// Queue a transition requested through the temporary compatibility mirror.
 ///
-/// Production frames run this as the first phase of `StateSchedule` so phase
-/// bookkeeping is no longer a manual Runtime/TestApp prelude.
-pub fn phase_transition_schedule_system(mut phase: ResMut<'_, AppPhaseRes>) {
-    apply_phase_transition(&mut phase);
-}
-
-fn apply_phase_transition(phase: &mut AppPhaseRes) {
-    let current = phase.get();
-    if phase.previous_app_phase == current {
+/// This keeps existing fixture code that sets `AppPhaseRes` working while all
+/// production transitions move to `NextState<AppPhase>`.
+pub(super) fn queue_compatibility_phase_transition(world: &mut World) {
+    if !world.contains_resource::<State<AppPhase>>()
+        || !world.contains_resource::<NextState<AppPhase>>()
+        || !world.contains_resource::<AppPhaseRes>()
+    {
         return;
     }
 
-    on_exit_phase(phase.previous_app_phase);
-    on_enter_phase(current);
-
-    phase.previous_app_phase = current;
-}
-
-/// Hook that runs when the application leaves a given phase. Kept as a
-/// free function (not a system) so it can be unit-tested without a
-/// schedule. Side effects are minimal in Phase 2c — the existing
-/// `State::turn_right` / `start_level` / `toggle_editor` methods
-/// already do the heavy lifting; this hook just exists as a single
-/// place to put cleanup logic in subsequent phases.
-fn on_exit_phase(phase: AppPhase) {
-    puffin::profile_scope!("OnExitPhase", format!("{:?}", phase));
-    match phase {
-        AppPhase::Menu => log_phase_transition("exit", phase),
-        AppPhase::Playing => log_phase_transition("exit", phase),
-        AppPhase::Editor => log_phase_transition("exit", phase),
-        AppPhase::GameOver => log_phase_transition("exit", phase),
+    let target = world.resource::<AppPhaseRes>().current;
+    let current = *world.resource::<State<AppPhase>>().get();
+    if target != current {
+        world.resource_mut::<NextState<AppPhase>>().set(target);
     }
 }
 
-/// Hook that runs when the application enters a given phase. See
-/// [`on_exit_phase`] for the design.
-fn on_enter_phase(phase: AppPhase) {
-    puffin::profile_scope!("OnEnterPhase", format!("{:?}", phase));
-    match phase {
-        AppPhase::Menu => log_phase_transition("enter", phase),
-        AppPhase::Playing => log_phase_transition("enter", phase),
-        AppPhase::Editor => log_phase_transition("enter", phase),
-        AppPhase::GameOver => log_phase_transition("enter", phase),
+/// Refresh the compatibility mirror after Bevy applies a state transition.
+pub(super) fn sync_compatibility_phase_from_state(world: &mut World) {
+    if !world.contains_resource::<State<AppPhase>>() || !world.contains_resource::<AppPhaseRes>() {
+        return;
     }
+
+    let current = *world.resource::<State<AppPhase>>().get();
+    let mut phase = world.resource_mut::<AppPhaseRes>();
+    phase.current = current;
+}
+
+/// Register the small remaining phase hooks on Bevy's transition schedules.
+pub(super) fn register_phase_transition_hooks(app: &mut App) {
+    app.add_systems(OnEnter(AppPhase::Menu), on_enter_menu)
+        .add_systems(OnEnter(AppPhase::Playing), on_enter_playing)
+        .add_systems(OnEnter(AppPhase::Editor), on_enter_editor)
+        .add_systems(OnEnter(AppPhase::GameOver), on_enter_game_over)
+        .add_systems(OnExit(AppPhase::Menu), on_exit_menu)
+        .add_systems(OnExit(AppPhase::Playing), on_exit_playing)
+        .add_systems(OnExit(AppPhase::Editor), on_exit_editor)
+        .add_systems(OnExit(AppPhase::GameOver), on_exit_game_over);
+}
+
+fn on_enter_menu() {
+    log_phase_transition("enter", AppPhase::Menu);
+}
+
+fn on_enter_playing() {
+    log_phase_transition("enter", AppPhase::Playing);
+}
+
+fn on_enter_editor() {
+    log_phase_transition("enter", AppPhase::Editor);
+}
+
+fn on_enter_game_over() {
+    log_phase_transition("enter", AppPhase::GameOver);
+}
+
+fn on_exit_menu() {
+    log_phase_transition("exit", AppPhase::Menu);
+}
+
+fn on_exit_playing() {
+    log_phase_transition("exit", AppPhase::Playing);
+}
+
+fn on_exit_editor() {
+    log_phase_transition("exit", AppPhase::Editor);
+}
+
+fn on_exit_game_over() {
+    log_phase_transition("exit", AppPhase::GameOver);
 }
 
 fn log_phase_transition(kind: &str, phase: AppPhase) {
+    puffin::profile_scope!("PhaseTransition", format!("{kind} {phase:?}"));
     log::debug!("phase transition: {} {:?}", kind, phase);
 }
 
@@ -99,57 +101,31 @@ fn log_phase_transition(kind: &str, phase: AppPhase) {
 mod tests {
     use super::*;
     use crate::state::plugins::register_state_resources;
-    use crate::state::state_resources::AppPhaseRes;
     use bevy_ecs::world::World;
+    use bevy_state::prelude::NextState;
 
     #[test]
-    fn first_call_with_default_phase_runs_enter_menu_transition() {
+    fn compatibility_phase_queues_a_bevy_transition() {
         let mut world = World::new();
         register_state_resources(&mut world);
-
-        // Default: AppPhase::Menu, previous = Menu -> no transition.
-        phase_transition_system(world.resource_mut::<AppPhaseRes>());
-        assert_eq!(world.resource::<AppPhaseRes>().get(), AppPhase::Menu);
-        assert_eq!(
-            world.resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Menu
-        );
-    }
-
-    #[test]
-    fn changing_phase_runs_enter_and_exit_hooks() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-
-        // Switch to Playing. previous starts as Menu, so we expect
-        // an OnExit(Menu) + OnEnter(Playing) pair.
         world.resource_mut::<AppPhaseRes>().set(AppPhase::Playing);
-        phase_transition_system(world.resource_mut::<AppPhaseRes>());
-        assert_eq!(
-            world.resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Playing
-        );
 
-        // Switch to Editor. expect OnExit(Playing) + OnEnter(Editor).
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
-        phase_transition_system(world.resource_mut::<AppPhaseRes>());
-        assert_eq!(
-            world.resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Editor
-        );
+        queue_compatibility_phase_transition(&mut world);
+
+        assert!(matches!(
+            world.resource::<NextState<AppPhase>>(),
+            NextState::Pending(AppPhase::Playing)
+        ));
     }
 
     #[test]
-    fn no_transition_when_phase_unchanged() {
+    fn compatibility_phase_mirrors_the_authoritative_state() {
         let mut world = World::new();
         register_state_resources(&mut world);
+        world.insert_resource(State::new(AppPhase::Editor));
 
-        // First call: from Menu -> Menu, no transition.
-        phase_transition_system(world.resource_mut::<AppPhaseRes>());
-        // Set the previous manually so we can confirm a no-op call.
-        let before = *world.resource::<AppPhaseRes>();
-        phase_transition_system(world.resource_mut::<AppPhaseRes>());
-        let after = *world.resource::<AppPhaseRes>();
-        assert_eq!(before.previous_app_phase, after.previous_app_phase);
+        sync_compatibility_phase_from_state(&mut world);
+
+        assert_eq!(world.resource::<AppPhaseRes>().current, AppPhase::Editor);
     }
 }

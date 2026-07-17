@@ -1,3 +1,4 @@
+use bevy_state::prelude::States;
 use smart_default::SmartDefault;
 use smart_is_default::SmartIsDefault;
 
@@ -51,10 +52,11 @@ pub enum EditorPlaceMode {
 pub const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10.565456];
 pub const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, States)]
 /// The current phase of the application.
 /// Determines which UI and logic to run.
 pub enum AppPhase {
+    #[default]
     Menu,
     Playing,
     Editor,

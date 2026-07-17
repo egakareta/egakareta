@@ -98,18 +98,13 @@ fn tick_state_is_safe_to_call_with_empty_schedule() {
 
 #[test]
 fn tick_state_runs_phase_transition_system() {
-    // Phase 2c: `tick_state` now runs the `phase_transition_system`
-    // which detects changes to `AppPhaseRes` and runs `OnEnter` /
-    // `OnExit` side effects. Demonstrate the bookkeeping works:
-    // - the first tick is a no-op (current == previous == Menu)
-    // - after we change the resource, the next tick updates the
-    //   `previous_app_phase` field.
+    // The Bevy State resource is authoritative; AppPhaseRes remains a
+    // compatibility mirror for handlers that have not moved to State yet.
     let mut app = crate::state::test_support::TestApp::minimal();
 
-    // Initial tick: no transition.
     app.tick_state();
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().previous_app_phase,
+        app.world().resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Menu
     );
 
@@ -119,21 +114,15 @@ fn tick_state_runs_phase_transition_system() {
         .resource_mut::<AppPhaseRes>()
         .set(eg_types::AppPhase::Playing);
 
-    // Tick: should detect the change and update `previous_app_phase`.
     app.tick_state();
     assert_eq!(
         app.world().resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Playing
     );
-    assert_eq!(
-        app.world().resource::<AppPhaseRes>().previous_app_phase,
-        eg_types::AppPhase::Playing
-    );
 
-    // Subsequent tick with no change: no-op.
     app.tick_state();
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().previous_app_phase,
+        app.world().resource::<AppPhaseRes>().get(),
         eg_types::AppPhase::Playing
     );
 }

@@ -35,6 +35,7 @@ approx = "0.5"
 bevy_app = "0.19"
 bevy_clipboard = "0.19"
 bevy_ecs = "0.19"
+bevy_state = "0.19"
 bevy_tasks = "0.19"
 bevy_time = "0.19"
 bytemuck = { version = "1.25", features = ["derive"] }

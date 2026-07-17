@@ -77,7 +77,7 @@ fn run_egui_ui_system(world: &mut World) {
         .remove_non_send::<RenderEguiRes>()
         .expect("RenderEguiRes must be installed before App update");
 
-    let ui_state = eg_state::state::UiStateData::from_world(world);
+    let ui_state = world.resource::<eg_state::state::UiStateData>().clone();
     let render_config = *world.resource::<RenderConfigRes>();
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
@@ -233,6 +233,8 @@ impl Runtime {
         #[cfg(not(test))]
         app.add_systems(bevy_app::Update, run_egui_ui_system);
         bootstrap.install(app.world_mut());
+        let ui_state = eg_state::state::UiStateData::from_world(app.world());
+        app.insert_resource(ui_state);
 
         #[cfg(not(test))]
         {
@@ -270,6 +272,8 @@ impl Runtime {
         let egui_ctx = egui::Context::default();
         let mut app = test_app.into_app();
         register_ui_resources_world(app.world_mut());
+        let ui_state = eg_state::state::UiStateData::from_world(app.world());
+        app.insert_resource(ui_state);
         app.insert_non_send(EguiFrameResources {
             egui_ctx,
             _presentation: (),
@@ -639,7 +643,6 @@ mod tests {
 
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
-        assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
         let app_frame_time = *runtime.app.world().resource::<FrameTimeRes>();
         assert!(
             app_frame_time.delta_seconds > 0.0,
@@ -668,7 +671,6 @@ mod tests {
 
         let app_phase = runtime.app.world().resource::<AppPhaseRes>();
         assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
-        assert_eq!(app_phase.previous_app_phase, eg_types::AppPhase::Playing);
     }
 
     /// `Runtime::run_app_frame` drains App-world messages and applies

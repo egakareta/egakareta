@@ -25,6 +25,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::NextState;
 use eg_audio::audio::runtime_asset_source_key;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
@@ -118,7 +119,10 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
         match resources.phase.current {
             AppPhase::Editor => place_editor_block_from_turn_right(&mut resources),
             AppPhase::Menu => start_gameplay_from_menu(&mut resources),
-            AppPhase::GameOver => resources.phase.set(AppPhase::Menu),
+            AppPhase::GameOver => {
+                resources.phase.set(AppPhase::Menu);
+                resources.next_phase.set(AppPhase::Menu);
+            }
             AppPhase::Playing if resources.session.game_paused => {}
             AppPhase::Playing
                 if resources.clock.game_over && !resources.session.practice_mode_enabled =>
@@ -153,6 +157,7 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
 #[derive(SystemParam)]
 pub struct TurnRightResources<'w> {
     phase: ResMut<'w, AppPhaseRes>,
+    next_phase: ResMut<'w, NextState<AppPhase>>,
     session: ResMut<'w, SessionStateRes>,
     menu: Option<Res<'w, MenuStateRes>>,
     catalog: Res<'w, BuiltinLevelCatalogRes>,
@@ -278,6 +283,7 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
     let objects = metadata.objects.clone();
 
     resources.phase.set(AppPhase::Playing);
+    resources.next_phase.set(AppPhase::Playing);
     resources.session.playtesting_editor = false;
     resources.session.game_paused = false;
     resources.session.playing_level_name = Some(level_name.clone());
@@ -454,6 +460,9 @@ pub fn handle_toggle_editor(world: &mut World) {
         match world.resource::<AppPhaseRes>().current {
             AppPhase::Editor => {
                 world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
+                world
+                    .resource_mut::<NextState<AppPhase>>()
+                    .set(AppPhase::Menu);
                 world.resource_mut::<SessionStateRes>().transition_to_menu();
                 if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
                     menu.0.preview_level_index = None;
@@ -462,6 +471,9 @@ pub fn handle_toggle_editor(world: &mut World) {
             AppPhase::Playing if world.resource::<SessionStateRes>().playtesting_editor => {
                 let mut phase = world.resource_mut::<AppPhaseRes>();
                 phase.set(AppPhase::Editor);
+                world
+                    .resource_mut::<NextState<AppPhase>>()
+                    .set(AppPhase::Editor);
                 let mut session = world.resource_mut::<SessionStateRes>();
                 session.playtesting_editor = false;
                 session.game_paused = false;
@@ -492,6 +504,9 @@ fn enter_editor_from_menu(world: &mut World) {
     apply_imported_level_to_world(world, metadata);
 
     world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+    world
+        .resource_mut::<NextState<AppPhase>>()
+        .set(AppPhase::Editor);
     {
         let mut input = world.resource_mut::<EditorInputRes>();
         input.0.mode = EditorMode::Null;
@@ -704,6 +719,7 @@ pub fn handle_game_remove_practice_checkpoint(
 pub fn handle_game_quit_to_menu(
     mut events: MessageReader<GameQuitToMenu>,
     mut phase: ResMut<AppPhaseRes>,
+    mut next_phase: ResMut<NextState<AppPhase>>,
     mut session: ResMut<SessionStateRes>,
     mut menu: Option<ResMut<MenuStateRes>>,
 ) {
@@ -713,6 +729,7 @@ pub fn handle_game_quit_to_menu(
         }
 
         phase.set(AppPhase::Menu);
+        next_phase.set(AppPhase::Menu);
         session.transition_to_menu();
         if let Some(menu) = menu.as_deref_mut() {
             menu.0.preview_level_index = None;

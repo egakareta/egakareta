@@ -33,9 +33,10 @@
 //! the schedule labels here are replaced by Bevy's standard
 //! `Update` / `FixedUpdate` / `OnEnter` schedules.
 
-use bevy_app::{App, Plugin};
+use bevy_app::{App, FixedUpdate, Plugin};
 use bevy_ecs::prelude::*;
-use bevy_time::TimePlugin;
+use bevy_state::{app::AppExtStates, prelude::State};
+use bevy_time::{Fixed, Time, TimePlugin};
 
 use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
@@ -60,7 +61,10 @@ pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(eg_game::GamePlugin);
+        app.add_plugins(eg_game::GamePlugin).add_systems(
+            FixedUpdate,
+            super::gameplay_world::run_app_gameplay_fixed_system,
+        );
     }
 }
 
@@ -176,6 +180,7 @@ impl Plugin for StatePlugins {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             TimePlugin,
+            bevy_state::app::StatesPlugin,
             MenuPlugin,
             SessionPlugin,
             EditorPlugin,
@@ -187,7 +192,9 @@ impl Plugin for StatePlugins {
             // resources (RenderGpuRes, RenderMeshesRes,
             // RenderSurfaceHostRes) after wgpu initialization.
             RenderPlugin,
-        ));
+        ))
+        .init_state::<eg_types::AppPhase>();
+        super::transitions::register_phase_transition_hooks(app);
     }
 }
 
@@ -209,11 +216,19 @@ pub fn setup_state_app(app: &mut App) {
 /// App `PostUpdate` and the headless test harness use this system to run the
 /// state, gameplay, and render-extraction schedules in one canonical order.
 pub fn run_state_schedule_system(world: &mut World) {
+    super::transitions::queue_compatibility_phase_transition(world);
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
-    super::gameplay_world::run_app_gameplay_schedule(world);
+    let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
+    super::transitions::sync_compatibility_phase_from_state(world);
+    if world.contains_resource::<super::gameplay_world::ManualGameplayDriverRes>()
+        || !world.contains_resource::<Time<Fixed>>()
+    {
+        super::gameplay_world::run_app_gameplay_schedule(world);
+    }
     super::gameplay_world::apply_completed_gameplay_transition_system(world);
     super::gameplay_world::apply_game_over_transition_system(world);
+    super::ui_state::refresh_ui_state_resource_system(world);
     let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
 }
 
@@ -227,6 +242,8 @@ pub fn run_state_schedule_system(world: &mut World) {
 #[allow(dead_code)]
 pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AppPhaseRes>();
+    world.insert_resource(State::new(eg_types::AppPhase::Menu));
+    world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
     world.init_resource::<MenuPreviewObjectsRes>();
     world.init_resource::<BlockEffectsRes>();
     world.init_resource::<SessionStateRes>();
@@ -312,13 +329,7 @@ pub fn register_state_command_pipeline(world: &mut World) {
         )
             .chain(),
     );
-    schedule.add_systems(
-        (
-            crate::state::transitions::phase_transition_schedule_system,
-            crate::state::frame_time::advance_frame_time_system,
-        )
-            .chain(),
-    );
+    schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
     crate::events::add_command_systems(&mut schedule);
     schedule.add_systems(consume_audio_stop_request_system.after(crate::events::CommandHandlerSet));
     schedule.add_systems(sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system));

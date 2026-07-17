@@ -70,6 +70,7 @@ impl TestApp {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_command_pipeline(app.world_mut());
+        app.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
 
         app.insert_resource(super::MenuStateRes::new(eg_types::MenuState {
             selected_level: 0,
@@ -282,34 +283,24 @@ mod tests {
     fn test_app_phase_transition_via_tick_state() {
         let mut app = TestApp::minimal();
 
-        // Initial tick: no transition.
         app.tick_state();
-        assert_eq!(
-            app.world().resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Menu,
-        );
+        assert_eq!(app.world().resource::<AppPhaseRes>().get(), AppPhase::Menu);
 
         // Change the phase manually.
         app.world_mut()
             .resource_mut::<AppPhaseRes>()
             .set(AppPhase::Playing);
 
-        // StateSchedule detects the change and updates `previous_app_phase`.
         app.tick_state();
         assert_eq!(
             app.world().resource::<AppPhaseRes>().get(),
             AppPhase::Playing
         );
-        assert_eq!(
-            app.world().resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Playing,
-        );
 
-        // Subsequent tick with no change: no-op.
         app.tick_state();
         assert_eq!(
-            app.world().resource::<AppPhaseRes>().previous_app_phase,
-            AppPhase::Playing,
+            app.world().resource::<AppPhaseRes>().get(),
+            AppPhase::Playing
         );
     }
     #[test]

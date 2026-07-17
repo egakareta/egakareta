@@ -6,15 +6,16 @@
 
 */
 use super::{
-    AppPhaseRes, AuthStateRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+    AuthStateRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
     EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
     MenuStateRes, PerfRes, SessionStateRes, evaluate_camera_track_for_objects,
 };
 
-use bevy_ecs::world::World;
+use bevy_ecs::{prelude::Resource, world::World};
+use bevy_state::prelude::State;
 use eg_blocks::{BlockDefinition, BlockId};
 use eg_types::{
-    AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
+    AppPhase, AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
     PlayerLevelProgress, SettingsSection, TimingPoint,
 };
 use glam::Vec3;
@@ -28,7 +29,7 @@ pub struct SelectedTapViewModel {
     pub position: [f32; 3],
 }
 
-#[derive(Clone)]
+#[derive(Resource, Clone)]
 pub struct UiStateData {
     pub is_editor: bool,
     pub is_menu: bool,
@@ -106,9 +107,15 @@ pub struct UiStateData {
     pub object_count: usize,
 }
 
+/// Rebuild the App-owned UI read model after state and command systems finish.
+pub(super) fn refresh_ui_state_resource_system(world: &mut World) {
+    let ui_state = UiStateData::from_world(world);
+    world.insert_resource(ui_state);
+}
+
 impl UiStateData {
     pub fn from_world(world: &World) -> Self {
-        let phase = world.resource::<AppPhaseRes>().current;
+        let phase = *world.resource::<State<AppPhase>>().get();
         let session = world.resource::<SessionStateRes>();
         let input = &world.resource::<EditorInputRes>().0;
         let objects = &world.resource::<EditorObjectsRes>().objects;

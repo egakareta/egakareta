@@ -11,6 +11,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::NextState;
 
 use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
@@ -92,6 +93,7 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
             eg_types::AppPhase::Playing => {
                 if resources.session.playtesting_editor {
                     resources.phase.set(eg_types::AppPhase::Editor);
+                    resources.next_phase.set(eg_types::AppPhase::Editor);
                     resources.session.playtesting_editor = false;
                     resources.session.game_paused = false;
                     resources.session.audio_stop_pending = true;
@@ -123,15 +125,18 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
 
                 if let Some(menu) = resources.menu.as_deref_mut() {
                     resources.phase.set(eg_types::AppPhase::Menu);
+                    resources.next_phase.set(eg_types::AppPhase::Menu);
                     resources.session.transition_to_menu();
                     menu.0.preview_level_index = None;
                     continue;
                 }
                 resources.phase.set(eg_types::AppPhase::Menu);
+                resources.next_phase.set(eg_types::AppPhase::Menu);
                 resources.session.transition_to_menu();
             }
             eg_types::AppPhase::GameOver => {
                 resources.phase.set(eg_types::AppPhase::Menu);
+                resources.next_phase.set(eg_types::AppPhase::Menu);
                 resources.session.transition_to_menu();
                 if let Some(menu) = resources.menu.as_deref_mut() {
                     menu.0.preview_level_index = None;
@@ -145,6 +150,7 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
 #[derive(SystemParam)]
 pub struct EscapeResources<'w> {
     phase: ResMut<'w, AppPhaseRes>,
+    next_phase: ResMut<'w, NextState<eg_types::AppPhase>>,
     input: ResMut<'w, EditorInputRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,

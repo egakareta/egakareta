@@ -14,6 +14,7 @@
 //!
 
 use bevy_ecs::prelude::*;
+use bevy_time::{Fixed, Time};
 
 use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
@@ -34,6 +35,10 @@ const DEAD_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/dead.mp3"
 ));
+
+/// Keeps headless fixtures deterministic while production uses `FixedUpdate`.
+#[derive(Resource, Default)]
+pub(crate) struct ManualGameplayDriverRes;
 
 pub(super) fn seed_app_gameplay_world(world: &mut World) {
     replace_app_gameplay_world(
@@ -70,6 +75,27 @@ pub fn run_app_gameplay_schedule(world: &mut World) {
     }
 
     let delta = world.resource::<FrameTimeRes>().delta_seconds.max(0.0);
+    world.resource_mut::<FrameDelta>().0 = delta;
+    world.run_schedule(eg_game::GameplaySchedule);
+}
+
+/// Advance the App-owned gameplay schedule from Bevy's fixed main loop.
+///
+/// Production frames no longer run gameplay from `PostUpdate`; Bevy decides
+/// whether zero, one, or several fixed ticks are due from `Time<Virtual>`.
+/// The manual `FrameTimeRes` driver remains available for bare-world fixtures.
+pub(super) fn run_app_gameplay_fixed_system(world: &mut World) {
+    if world.contains_resource::<ManualGameplayDriverRes>() {
+        return;
+    }
+
+    let should_run = world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
+        && !world.resource::<SessionStateRes>().game_paused;
+    if !should_run {
+        return;
+    }
+
+    let delta = world.resource::<Time<Fixed>>().delta_secs().max(0.0);
     world.resource_mut::<FrameDelta>().0 = delta;
     world.run_schedule(eg_game::GameplaySchedule);
 }
@@ -128,6 +154,9 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
         world
             .resource_mut::<AppPhaseRes>()
             .set(eg_types::AppPhase::Editor);
+        world
+            .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
+            .set(eg_types::AppPhase::Editor);
         let mut session = world.resource_mut::<SessionStateRes>();
         session.playtesting_editor = false;
         session.game_paused = false;
@@ -139,6 +168,9 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     } else {
         world
             .resource_mut::<AppPhaseRes>()
+            .set(eg_types::AppPhase::Menu);
+        world
+            .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Menu);
         world.resource_mut::<SessionStateRes>().transition_to_menu();
     }
