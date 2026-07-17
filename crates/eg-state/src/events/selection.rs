@@ -10,6 +10,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_blocks::BlockId;
 use eg_editor_domain::{
     TimelineNearSearch, derive_timeline_time_for_world_target_near_time, snap_cell_to_step,
@@ -21,10 +22,9 @@ use eg_types::{
 use glam::Vec3;
 
 use crate::state::{
-    AppPhaseRes, CameraViewSample, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-    EditorHistorySnapshot, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
-    evaluate_camera_track_for_objects,
+    CameraViewSample, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, SessionStateRes, evaluate_camera_track_for_objects,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -80,7 +80,7 @@ pub fn handle_add_transform_trigger(
 
 #[derive(SystemParam)]
 pub struct SelectionResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     objects: ResMut<'w, EditorObjectsRes>,
     input: ResMut<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
@@ -95,7 +95,7 @@ pub struct SelectionResources<'w> {
 }
 
 fn snap_selection_to_grid(resources: &mut SelectionResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
@@ -109,7 +109,7 @@ fn snap_selection_to_grid(resources: &mut SelectionResources<'_>) -> bool {
 }
 
 fn focus_camera_target(resources: &mut SelectionResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
@@ -381,7 +381,7 @@ fn snap_selected_tap_to_grid(resources: &mut SelectionResources<'_>) -> bool {
 }
 
 fn add_transform_trigger(resources: &mut SelectionResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor || resources.timeline.0.playback.playing {
+    if *resources.phase.get() != AppPhase::Editor || resources.timeline.0.playback.playing {
         return false;
     }
 

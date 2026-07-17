@@ -16,7 +16,7 @@ use crate::components::{
 };
 use crate::events::{ConsumedEventsBuffer, ConsumedObjectEvent};
 use crate::physics::BASE_PLAYER_SPEED;
-use crate::plugin::{build_gameplay_schedule, initialize_gameplay_world};
+use crate::plugin::{build_fixed_update_schedule, initialize_gameplay_world};
 use crate::resources::{FrameDelta, GameClock, LevelMeta, SpatialIndex};
 
 #[derive(Clone, Copy)]
@@ -31,7 +31,7 @@ pub struct TimelineSimulationState {
 
 /// ECS-backed timeline preview runtime.
 ///
-/// The preview uses the same GamePlugin and GameplaySchedule as the
+/// The preview uses the same GamePlugin and Bevy `FixedUpdate` schedule as the
 /// production App world, while keeping its own short-lived App so scrubbing
 /// does not mutate the editor's authoritative gameplay world.
 pub fn center_spawn_position(position: [f32; 3]) -> [f32; 3] {
@@ -94,7 +94,7 @@ impl TimelineSimulationRuntime {
         let authored_objects = objects.to_vec();
         let mut world = World::new();
         initialize_gameplay_world(&mut world);
-        let schedule = build_gameplay_schedule();
+        let schedule = build_fixed_update_schedule();
 
         {
             let world = &mut world;

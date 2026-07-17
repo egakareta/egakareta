@@ -8,6 +8,7 @@
 //! App-world editor timeline playback.
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_blocks::BlockEffectColorMode;
 use eg_editor_domain::derive_timeline_elapsed_seconds;
 use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};
@@ -17,7 +18,7 @@ use super::audio_state::start_audio_source_at_seconds_for_resources;
 use super::editor_timeline::EditorTimelineState;
 use super::runtime::BlockVisualEffect;
 use super::{
-    AppPhaseRes, AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
     EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
     EditorTimingRes, FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
 };
@@ -34,7 +35,7 @@ const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
 /// Advance editor playback from App-owned clock/audio state and publish only
 /// presentation invalidations for the compatibility renderer.
 pub(crate) fn update_editor_timeline_playback_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     frame_time: Res<FrameTimeRes>,
     mut input: ResMut<EditorInputRes>,
     objects: Res<EditorObjectsRes>,
@@ -47,7 +48,7 @@ pub(crate) fn update_editor_timeline_playback_system(
     runtime_preload: Res<RuntimeAudioPreloadRes>,
     session: Res<SessionStateRes>,
 ) {
-    if phase.current != AppPhase::Editor || !timeline.0.playback.playing {
+    if *phase.get() != AppPhase::Editor || !timeline.0.playback.playing {
         return;
     }
 

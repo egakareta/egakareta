@@ -37,16 +37,17 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_types::{
     AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorStateParams,
     LevelPreviewCameraMetadata, MusicMetadata, SettingsSection,
 };
 
 use crate::state::{
-    AppPhaseRes, AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes,
-    EditorAudioCacheRes, EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
-    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
+    AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes, EditorAudioCacheRes,
+    EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes, RuntimeAudioPreloadRes,
+    SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
     load_waveform_for_level_resources,
 };
 
@@ -486,12 +487,12 @@ pub fn handle_trigger_audio_import(
 
 pub fn handle_capture_menu_preview_camera(
     mut events: MessageReader<CaptureMenuPreviewCamera>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     camera: Res<EditorCameraRes>,
     mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
 
@@ -507,11 +508,11 @@ pub fn handle_capture_menu_preview_camera(
 
 pub fn handle_use_auto_menu_preview_camera(
     mut events: MessageReader<UseAutoMenuPreviewCamera>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
         session.editor_menu_preview_camera = None;

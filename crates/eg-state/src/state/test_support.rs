@@ -178,6 +178,7 @@ mod tests {
         FrameTimeRes, MenuStateRes, PerfRes, RenderExtractSchedule, RenderTrailVerticesRes,
         SessionStateRes, UiStateData,
     };
+    use bevy_app::FixedUpdate;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{AppPhase, Direction, EditorMode, MenuState};
 
@@ -272,11 +273,7 @@ mod tests {
     #[test]
     fn test_app_registers_gameplay_schedule() {
         let mut app = TestApp::minimal();
-        assert!(
-            app.world_mut()
-                .try_run_schedule(eg_game::GameplaySchedule)
-                .is_ok()
-        );
+        assert!(app.world_mut().try_run_schedule(FixedUpdate).is_ok());
     }
 
     #[test]

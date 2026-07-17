@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_editor_domain::{
     remove_topmost_block_at_cursor, snap_cell_to_step, snap_component_to_step,
     topmost_block_index_at_cursor,
@@ -20,9 +21,9 @@ use eg_types::LevelObject;
 use eg_types::{AppPhase, EditorInputState, EditorMode, TriggerTarget, next_level_object_id};
 
 use crate::state::{
-    AppPhaseRes, EditorClipboard, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes,
+    EditorClipboard, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
+    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes,
 };
 
 /// Remove the block under cursor or selected blocks.
@@ -59,7 +60,7 @@ pub fn register_events(app: &mut App) {
 
 #[derive(SystemParam)]
 pub struct BlockResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     objects: ResMut<'w, EditorObjectsRes>,
     input: ResMut<'w, EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,
@@ -73,7 +74,7 @@ pub struct BlockResources<'w> {
 
 pub fn handle_remove_block(mut events: MessageReader<RemoveBlock>, mut resources: BlockResources) {
     for _ in events.read() {
-        if resources.phase.current != AppPhase::Editor
+        if *resources.phase.get() != AppPhase::Editor
             || effective_editor_mode(&resources) == EditorMode::Tapping
         {
             continue;
@@ -87,7 +88,7 @@ pub fn handle_duplicate_block(
     mut resources: BlockResources,
 ) {
     for _ in events.read() {
-        if resources.phase.current == AppPhase::Editor {
+        if *resources.phase.get() == AppPhase::Editor {
             duplicate_selected(&mut resources);
         }
     }
@@ -95,7 +96,7 @@ pub fn handle_duplicate_block(
 
 pub fn handle_copy_block(mut events: MessageReader<CopyBlock>, mut resources: BlockResources) {
     for _ in events.read() {
-        if resources.phase.current == AppPhase::Editor {
+        if *resources.phase.get() == AppPhase::Editor {
             copy_selected(&mut resources);
         }
     }
@@ -103,7 +104,7 @@ pub fn handle_copy_block(mut events: MessageReader<CopyBlock>, mut resources: Bl
 
 pub fn handle_paste_block(mut events: MessageReader<PasteBlock>, mut resources: BlockResources) {
     for _ in events.read() {
-        if resources.phase.current == AppPhase::Editor {
+        if *resources.phase.get() == AppPhase::Editor {
             paste_from_clipboard(&mut resources);
         }
     }
@@ -114,7 +115,7 @@ pub fn handle_update_selected_block(
     mut resources: BlockResources,
 ) {
     for event in events.read() {
-        if resources.phase.current == AppPhase::Editor {
+        if *resources.phase.get() == AppPhase::Editor {
             update_selected_block(&mut resources, &event.0);
         }
     }

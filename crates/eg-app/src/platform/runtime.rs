@@ -12,6 +12,8 @@ use crate::{
     show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
     show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
 };
+#[cfg(test)]
+use bevy_app::FixedUpdate;
 use bevy_app::{App, PostUpdate};
 #[cfg(not(test))]
 use bevy_ecs::world::World;
@@ -568,13 +570,10 @@ mod tests {
     fn runtime_app_registers_gameplay_schedule() {
         let mut runtime = Runtime::new_test();
 
-        let result = runtime
-            .app
-            .world_mut()
-            .try_run_schedule(eg_game::GameplaySchedule);
+        let result = runtime.app.world_mut().try_run_schedule(FixedUpdate);
         assert!(
             result.is_ok(),
-            "GameplaySchedule should be registered on the App's World"
+            "FixedUpdate should be registered on the App's World"
         );
     }
 

@@ -5,11 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! `GamePlugin` — the headless gameplay Bevy plugin.
+//! `GamePlugin` - the headless gameplay Bevy plugin.
 
-use bevy_app::{App, Plugin};
+use bevy_app::{App, FixedUpdate, Plugin};
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::{Schedule, ScheduleLabel};
+use bevy_ecs::schedule::Schedule;
 
 use crate::events::ConsumedEventsBuffer;
 use crate::resources::{
@@ -18,23 +18,39 @@ use crate::resources::{
 };
 use crate::systems::{self, CollisionOutcome, GameplaySet};
 
-/// `ScheduleLabel` for the headless gameplay tick.
-#[derive(ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GameplaySchedule;
-
 /// Plugin that registers the headless gameplay systems + resources.
-///
-/// REFACTOR POINT(full-bevy): the [`Schedule`] + [`GameplaySet`] defined here
-/// will be replaced by `bevy_render` + `bevy_time` `Time<Fixed>` + Bevy's
-/// render graph in the full-Bevy migration. The `App` lives in `eg-state`
-/// then, and the eg-state plugin just composes this with editor + render
-/// plugins.
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         initialize_gameplay_world(app.world_mut());
-        app.add_schedule(build_gameplay_schedule());
+        app.add_systems(
+            FixedUpdate,
+            (
+                systems::turn_input_system.in_set(GameplaySet::TurnInput),
+                systems::advance_player_system.in_set(GameplaySet::AdvancePlayer),
+                systems::collision_query_system.in_set(GameplaySet::Collision),
+                systems::consume_objects_system.in_set(GameplaySet::ConsumeObjects),
+                systems::ground_gravity_system.in_set(GameplaySet::GroundGravity),
+                systems::trail_system.in_set(GameplaySet::Trail),
+                systems::completion_system.in_set(GameplaySet::Completion),
+                systems::progress_update_system.in_set(GameplaySet::Progress),
+            ),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            (
+                GameplaySet::TurnInput,
+                GameplaySet::AdvancePlayer,
+                GameplaySet::Collision,
+                GameplaySet::ConsumeObjects,
+                GameplaySet::GroundGravity,
+                GameplaySet::Trail,
+                GameplaySet::Completion,
+                GameplaySet::Progress,
+            )
+                .chain(),
+        );
     }
 }
 
@@ -52,8 +68,10 @@ pub fn initialize_gameplay_world(world: &mut World) {
     world.init_resource::<ConsumedEventsBuffer>();
 }
 
-pub fn build_gameplay_schedule() -> Schedule {
-    let mut schedule = Schedule::new(GameplaySchedule);
+/// Build the same standard Bevy fixed-time schedule for an isolated gameplay
+/// fixture such as the editor timeline preview.
+pub fn build_fixed_update_schedule() -> Schedule {
+    let mut schedule = Schedule::new(FixedUpdate);
     schedule.configure_sets(
         (
             GameplaySet::TurnInput,
@@ -67,19 +85,20 @@ pub fn build_gameplay_schedule() -> Schedule {
         )
             .chain(),
     );
-    schedule
-        .add_systems(systems::turn_input_system.in_set(GameplaySet::TurnInput))
-        .add_systems(systems::advance_player_system.in_set(GameplaySet::AdvancePlayer))
-        .add_systems(systems::collision_query_system.in_set(GameplaySet::Collision))
-        .add_systems(systems::consume_objects_system.in_set(GameplaySet::ConsumeObjects))
-        .add_systems(systems::ground_gravity_system.in_set(GameplaySet::GroundGravity))
-        .add_systems(systems::trail_system.in_set(GameplaySet::Trail))
-        .add_systems(systems::completion_system.in_set(GameplaySet::Completion))
-        .add_systems(systems::progress_update_system.in_set(GameplaySet::Progress));
+    schedule.add_systems((
+        systems::turn_input_system.in_set(GameplaySet::TurnInput),
+        systems::advance_player_system.in_set(GameplaySet::AdvancePlayer),
+        systems::collision_query_system.in_set(GameplaySet::Collision),
+        systems::consume_objects_system.in_set(GameplaySet::ConsumeObjects),
+        systems::ground_gravity_system.in_set(GameplaySet::GroundGravity),
+        systems::trail_system.in_set(GameplaySet::Trail),
+        systems::completion_system.in_set(GameplaySet::Completion),
+        systems::progress_update_system.in_set(GameplaySet::Progress),
+    ));
     schedule
 }
 
-/// Run a single gameplay tick on the given `World`.
+/// Run one standard Bevy fixed-time gameplay tick on the given world.
 pub fn tick_gameplay(world: &mut World) {
-    world.run_schedule(GameplaySchedule);
+    world.run_schedule(FixedUpdate);
 }

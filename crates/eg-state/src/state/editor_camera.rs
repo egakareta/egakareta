@@ -6,6 +6,7 @@
 
 */
 use bevy_ecs::prelude::{Res, ResMut};
+use bevy_state::prelude::State;
 use glam::{Mat4, Vec2, Vec3};
 
 use super::EditorSubsystem;
@@ -446,12 +447,12 @@ impl EditorSubsystem {
 
 /// Advance editor camera key panning from App-owned input and camera state.
 pub fn update_editor_camera_pan_system(
-    phase: Res<crate::state::AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     frame_time: Res<crate::state::FrameTimeRes>,
     input: Res<crate::state::EditorInputRes>,
     mut camera: ResMut<crate::state::EditorCameraRes>,
 ) {
-    if phase.current == AppPhase::Editor {
+    if *phase.get() == AppPhase::Editor {
         camera.0.update_camera_transition(frame_time.delta_seconds);
         camera
             .0

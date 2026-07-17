@@ -63,7 +63,23 @@ impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(eg_game::GamePlugin).add_systems(
             FixedUpdate,
-            super::gameplay_world::run_app_gameplay_fixed_system,
+            super::gameplay_world::prepare_app_gameplay_fixed_system
+                .before(eg_game::systems::GameplaySet::TurnInput),
+        );
+        app.configure_sets(
+            FixedUpdate,
+            (
+                eg_game::systems::GameplaySet::TurnInput,
+                eg_game::systems::GameplaySet::AdvancePlayer,
+                eg_game::systems::GameplaySet::Collision,
+                eg_game::systems::GameplaySet::ConsumeObjects,
+                eg_game::systems::GameplaySet::GroundGravity,
+                eg_game::systems::GameplaySet::Trail,
+                eg_game::systems::GameplaySet::Completion,
+                eg_game::systems::GameplaySet::Progress,
+            )
+                .chain()
+                .run_if(super::gameplay_world::gameplay_is_active),
         );
     }
 }
@@ -221,10 +237,14 @@ pub fn run_state_schedule_system(world: &mut World) {
     let _ = world.try_run_schedule(StateSchedule);
     let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
     super::transitions::sync_compatibility_phase_from_state(world);
-    if world.contains_resource::<super::gameplay_world::ManualGameplayDriverRes>()
-        || !world.contains_resource::<Time<Fixed>>()
-    {
-        super::gameplay_world::run_app_gameplay_schedule(world);
+    let manual_driver = world
+        .remove_resource::<super::gameplay_world::ManualGameplayDriverRes>()
+        .is_some();
+    if manual_driver && world.contains_resource::<Time<Fixed>>() {
+        let _ = world.try_run_schedule(FixedUpdate);
+    }
+    if manual_driver {
+        world.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
     }
     super::gameplay_world::apply_completed_gameplay_transition_system(world);
     super::gameplay_world::apply_game_over_transition_system(world);

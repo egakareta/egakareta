@@ -22,7 +22,7 @@ pub use checkpoint::*;
 pub use components::*;
 pub use events::*;
 pub use physics::*;
-pub use plugin::{GamePlugin, GameplaySchedule, tick_gameplay};
+pub use plugin::{GamePlugin, build_fixed_update_schedule, tick_gameplay};
 pub use resources::*;
 pub use simulation::*;
 pub use test_app::TestApp;

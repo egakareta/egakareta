@@ -8,18 +8,19 @@
 //! App-world lifecycle for block visual effects.
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_types::AppPhase;
 
-use super::{AppPhaseRes, BlockEffectsRes, EditorRuntimeRes, FrameTimeRes};
+use super::{BlockEffectsRes, EditorRuntimeRes, FrameTimeRes};
 
 /// Consume newly produced effects and own their frame lifecycle.
 pub(crate) fn update_block_effects_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     frame_time: Res<FrameTimeRes>,
     mut editor_runtime: ResMut<EditorRuntimeRes>,
     mut effects: ResMut<BlockEffectsRes>,
 ) {
-    if phase.current == AppPhase::Menu {
+    if *phase.get() == AppPhase::Menu {
         effects.effects.clear();
         editor_runtime.0.pending_block_effects.clear();
         return;

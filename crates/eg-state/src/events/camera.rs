@@ -29,6 +29,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_blocks::BlockId;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
@@ -37,9 +38,9 @@ use eg_types::{
 };
 
 use crate::state::{
-    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
-    EditorInputRes, EditorObjectsRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose,
+    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
+    EditorObjectsRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, camera_trigger_object_pose,
 };
 
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
@@ -175,7 +176,7 @@ pub fn handle_add_camera_follow_trigger(
 
 #[derive(SystemParam)]
 pub struct CameraResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     objects: ResMut<'w, EditorObjectsRes>,
     input: Res<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
@@ -192,7 +193,7 @@ pub struct CameraResources<'w> {
 // -----------------------------------------------------------------------
 
 fn add_camera_trigger(resources: &mut CameraResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
@@ -208,7 +209,7 @@ fn add_camera_trigger(resources: &mut CameraResources<'_>) -> bool {
 }
 
 fn add_camera_follow_trigger(resources: &mut CameraResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 

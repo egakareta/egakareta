@@ -13,13 +13,14 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_types::AppPhase;
 
 use crate::events::session::persist_app_settings;
 use crate::state::{
-    AppPhaseRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, SessionStateRes,
+    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectsRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, SessionStateRes,
 };
 
 /// Set whether to snap to grid.
@@ -47,7 +48,7 @@ pub fn register_events(app: &mut App) {
 
 #[derive(SystemParam)]
 pub struct SnapResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     config: ResMut<'w, EditorConfigRes>,
     input: ResMut<'w, EditorInputRes>,
     objects: ResMut<'w, EditorObjectsRes>,
@@ -130,7 +131,7 @@ enum SelectedSnap {
 }
 
 fn resnap_selected_object(resources: &mut SnapResources<'_>, selected_snap: SelectedSnap) {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return;
     }
     let Some(index) = resources

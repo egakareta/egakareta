@@ -14,6 +14,7 @@
 //!
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use bevy_time::{Fixed, Time};
 
 use eg_audio::audio::runtime_asset_source_key;
@@ -26,9 +27,8 @@ use eg_game::{
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
-    AppPhaseRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, FrameTimeRes,
-    GameplayResetRes, GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes,
-    with_audio_backend,
+    AppPhaseRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, GameplayResetRes,
+    GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -64,40 +64,27 @@ pub(super) fn seed_app_gameplay_world(world: &mut World) {
     );
 }
 
-/// Advance the App-owned gameplay simulation after command handlers have
-/// captured this frame's intents. The scheduled App-world frame path is
-/// intentionally not involved in this schedule call.
-pub fn run_app_gameplay_schedule(world: &mut World) {
-    let should_run = world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
-        && !world.resource::<SessionStateRes>().game_paused;
-    if !should_run {
-        return;
-    }
-
-    let delta = world.resource::<FrameTimeRes>().delta_seconds.max(0.0);
-    world.resource_mut::<FrameDelta>().0 = delta;
-    world.run_schedule(eg_game::GameplaySchedule);
+/// Keep fixed-step gameplay systems active only for unpaused gameplay.
+pub(super) fn gameplay_is_active(
+    phase: Res<State<eg_types::AppPhase>>,
+    session: Res<SessionStateRes>,
+    manual_driver: Option<Res<ManualGameplayDriverRes>>,
+) -> bool {
+    manual_driver.is_none() && *phase.get() == eg_types::AppPhase::Playing && !session.game_paused
 }
 
-/// Advance the App-owned gameplay schedule from Bevy's fixed main loop.
-///
-/// Production frames no longer run gameplay from `PostUpdate`; Bevy decides
-/// whether zero, one, or several fixed ticks are due from `Time<Virtual>`.
-/// The manual `FrameTimeRes` driver remains available for bare-world fixtures.
-pub(super) fn run_app_gameplay_fixed_system(world: &mut World) {
-    if world.contains_resource::<ManualGameplayDriverRes>() {
-        return;
-    }
-
-    let should_run = world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
-        && !world.resource::<SessionStateRes>().game_paused;
-    if !should_run {
-        return;
-    }
-
-    let delta = world.resource::<Time<Fixed>>().delta_secs().max(0.0);
-    world.resource_mut::<FrameDelta>().0 = delta;
-    world.run_schedule(eg_game::GameplaySchedule);
+/// Feed the standard `FixedUpdate` gameplay systems from Bevy's fixed delta.
+pub(super) fn prepare_app_gameplay_fixed_system(
+    phase: Res<State<eg_types::AppPhase>>,
+    session: Res<SessionStateRes>,
+    time: Res<Time<Fixed>>,
+    mut delta: ResMut<FrameDelta>,
+) {
+    delta.0 = if *phase.get() == eg_types::AppPhase::Playing && !session.game_paused {
+        time.delta_secs().max(0.0)
+    } else {
+        0.0
+    };
 }
 
 /// Apply the terminal gameplay transition after the App-owned simulation has

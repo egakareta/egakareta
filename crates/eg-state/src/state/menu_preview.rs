@@ -8,13 +8,14 @@
 //! App-world menu preview selection and metadata extraction.
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_types::{
     AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
     LevelMetadata,
 };
 
 use super::level_management::menu_preview_camera_for_metadata;
-use super::{AppPhaseRes, BuiltinLevelCatalogRes, MenuPreviewObjectsRes, MenuStateRes};
+use super::{BuiltinLevelCatalogRes, MenuPreviewObjectsRes, MenuStateRes};
 
 /// Refresh the selected built-in level used by the menu preview.
 ///
@@ -22,7 +23,7 @@ use super::{AppPhaseRes, BuiltinLevelCatalogRes, MenuPreviewObjectsRes, MenuStat
 /// sky color, and objects. Render extraction consumes the objects and emits
 /// the cached preview mesh for the compatibility presenter.
 pub(crate) fn refresh_menu_preview_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     catalog: Res<BuiltinLevelCatalogRes>,
     menu: Option<ResMut<MenuStateRes>>,
     preview_objects: Option<ResMut<MenuPreviewObjectsRes>>,
@@ -34,8 +35,7 @@ pub(crate) fn refresh_menu_preview_system(
         return;
     };
 
-    if phase.current != AppPhase::Menu || menu.0.preview_level_index == Some(menu.0.selected_level)
-    {
+    if *phase.get() != AppPhase::Menu || menu.0.preview_level_index == Some(menu.0.selected_level) {
         return;
     }
 

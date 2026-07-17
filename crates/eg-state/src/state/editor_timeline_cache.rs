@@ -8,20 +8,21 @@
 //! Shared App-world/editor compatibility timeline snapshot-cache rebuild.
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, LevelObject, SpawnMetadata};
 
 use super::editor_timeline::{EditorTimelineSnapshot, EditorTimelineState};
-use super::{AppPhaseRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes};
+use super::{EditorObjectsRes, EditorSpawnRes, EditorTimelineRes};
 
 /// Keep the App-owned timeline cache current before render extraction.
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     spawn: Res<EditorSpawnRes>,
     mut timeline: ResMut<EditorTimelineRes>,
 ) {
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         return;
     }
 

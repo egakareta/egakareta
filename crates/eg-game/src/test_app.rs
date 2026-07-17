@@ -10,13 +10,15 @@
 //! [`TestApp`] is the headless gameplay harness.
 //! It builds a [`bevy_app::App`] with
 //! [`GamePlugin`](crate::GamePlugin), exposes the underlying [`World`], and
-//! runs the real [`GameplaySchedule`](crate::GameplaySchedule) for focused ECS
+//! runs the real Bevy `FixedUpdate` schedule for focused ECS
 //! tests.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::plugin::{GamePlugin, GameplaySchedule};
+use bevy_app::FixedUpdate;
+
+use crate::plugin::GamePlugin;
 
 /// Headless Bevy app for gameplay-system tests.
 pub struct TestApp {
@@ -63,12 +65,12 @@ impl TestApp {
 
     /// Run one headless gameplay tick.
     pub fn tick_gameplay(&mut self) {
-        self.world_mut().run_schedule(GameplaySchedule);
+        self.world_mut().run_schedule(FixedUpdate);
     }
 
     /// Run one headless gameplay tick and report whether the schedule exists.
     pub fn try_tick_gameplay(&mut self) -> bool {
-        self.world_mut().try_run_schedule(GameplaySchedule).is_ok()
+        self.world_mut().try_run_schedule(FixedUpdate).is_ok()
     }
 
     /// Assert that the gameplay plugin registered a resource.

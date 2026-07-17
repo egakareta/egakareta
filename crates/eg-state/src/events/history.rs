@@ -11,12 +11,13 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, EditorInputState, LevelObject};
 
 use crate::state::{
-    AppPhaseRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorObjectsRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorObjectsRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
 };
 
 /// Undo the last editor action.
@@ -61,11 +62,11 @@ pub struct HistoryResources<'w> {
 
 pub fn handle_undo(
     mut events: MessageReader<Undo>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut resources: HistoryResources,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
         let Some(snapshot) = resources.history.0.undo.pop() else {
@@ -79,11 +80,11 @@ pub fn handle_undo(
 
 pub fn handle_redo(
     mut events: MessageReader<Redo>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut resources: HistoryResources,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
         let Some(snapshot) = resources.history.0.redo.pop() else {
