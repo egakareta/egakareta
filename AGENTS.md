@@ -109,6 +109,8 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 We are migrating from a hand-rolled state machine to a `bevy_ecs` + `bevy_app` core (custom wgpu/egui/rodio/cpal stack kept for now). The current production frame path drives `bevy_app::App::update()` from winit, and App owns the egui presentation resources; the legacy `State` compatibility shell has been deleted; remaining custom winit/wgpu/egui and external-service boundaries are App-owned. A future revision will move to the full Bevy umbrella (`bevy_render`, `bevy_winit`, `bevy_egui`, `bevy_tasks`, `bevy_time` `Time<Fixed>`, etc.). Every site that will eventually be replaced by a full-Bevy feature **MUST** be tagged with a `// REFACTOR POINT(full-bevy): <one-line summary>` doc comment and have a matching entry in [docs/bevy-migration.md](docs/bevy-migration.md). The comment is the canonical pointer; the doc is the registry. When the swap happens, both the comment and the doc entry are removed together.
 
+Please read Bevy skills in `.agents/skills/bevy-*/SKILL.md` for guidance.
+
 ### Block Asset Authoring
 
 Built-in block definitions live in `assets/blocks/*.json`. Prefer JSON `geometry.elements` for cuboid or voxel-style shapes. Each cuboid uses 0..16 block-local coordinates:
