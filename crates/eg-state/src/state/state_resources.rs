@@ -8,11 +8,10 @@
 //! ECS resource definitions for eg-state.
 //!
 //! These resources are the App-world state boundary for the per-subsystem
-//! values that historically lived on the legacy `State` struct (see
-//! [`crate::state::State`]). The initial construction path seeds them from
-//! `State`; migrated production systems then own the live values, while the
-//! legacy fields remain only where an external side effect or compatibility
-//! presenter still requires them.
+//! values that historically lived in the hand-rolled state machine. App
+//! bootstrap inserts the resources directly, and migrated production systems
+//! own the live values. Platform services remain behind explicit resource
+//! boundaries where they require external channels or handles.
 //!
 //! Naming convention: `<Domain>Res` for top-level domain resources, and
 //! `<Domain><Noun>Res` for grouped sub-state.
@@ -24,9 +23,10 @@
 use bevy_ecs::prelude::*;
 use eg_platform::services::AuthServiceMessage;
 use eg_types::{
-    AppPhase, AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
+    AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
     LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress,
 };
+
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -43,40 +43,6 @@ use crate::state::runtime::{BlockVisualEffect, EditorRuntimeState};
 use eg_types::SpawnMetadata;
 
 // ---------------------------------------------------------------------------
-// AppPhase (Bevy States target)
-// ---------------------------------------------------------------------------
-
-/// Compatibility mirror of the authoritative Bevy `State<AppPhase>`.
-///
-/// Existing App-world handlers still read this resource while their query
-/// signatures are migrated. New phase transitions must queue `NextState<AppPhase>`;
-/// the runtime bridge keeps this mirror aligned after Bevy applies the
-/// transition.
-#[derive(Resource, Debug, Clone, Copy)]
-pub struct AppPhaseRes {
-    pub current: AppPhase,
-}
-
-impl AppPhaseRes {
-    pub const fn new(phase: AppPhase) -> Self {
-        Self { current: phase }
-    }
-
-    pub const fn get(&self) -> AppPhase {
-        self.current
-    }
-
-    pub fn set(&mut self, phase: AppPhase) {
-        self.current = phase;
-    }
-}
-
-impl Default for AppPhaseRes {
-    fn default() -> Self {
-        Self::new(AppPhase::Menu)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Frame timing
 // ---------------------------------------------------------------------------

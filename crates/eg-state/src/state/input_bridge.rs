@@ -8,12 +8,13 @@
 //! Platform input resources for the Bevy App world.
 
 use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 
 use crate::commands::{AppCommand, InputEvent};
 use crate::state::editor_command::EditorCommand;
 use crate::state::{
-    AppPhaseRes, EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorTimelineRes, EditorTimingRes, SessionStateRes,
+    EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
+    EditorTimingRes, SessionStateRes,
 };
 use eg_editor_domain::{TimingDivisionDirection, timing_division_time_in_direction};
 use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
@@ -548,11 +549,11 @@ fn has_block_selection(world: &World) -> bool {
 }
 
 fn is_editor(world: &World) -> bool {
-    world.resource::<AppPhaseRes>().current == AppPhase::Editor
+    *world.resource::<State<AppPhase>>().get() == AppPhase::Editor
 }
 
 fn is_playing(world: &World) -> bool {
-    world.resource::<AppPhaseRes>().current == AppPhase::Playing
+    *world.resource::<State<AppPhase>>().get() == AppPhase::Playing
 }
 
 fn is_game_paused(world: &World) -> bool {
@@ -651,7 +652,7 @@ mod tests {
         let mut world = World::new();
         register_state_resources(&mut world);
         crate::events::register_command_events_world(&mut world);
-        world.resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+        world.insert_resource(State::new(AppPhase::Editor));
 
         enqueue_platform_input(
             &mut world,

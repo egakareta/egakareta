@@ -11,7 +11,7 @@
 //! buffered per-frame events we use a regular struct + a `Resource` buffer
 //! ([`ConsumedEventsBuffer`]). App-world consumers drain that buffer
 //! when they need the consumed object data; gameplay systems own no
-//! compatibility field mirror.
+//! duplicate state mirror.
 //!
 //! REFACTOR POINT(full-bevy): [`ConsumedEventsBuffer`] resource becomes a
 //! `Message<ConsumedObjectEvent>` in the full-Bevy migration.

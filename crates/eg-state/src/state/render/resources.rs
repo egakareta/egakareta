@@ -386,25 +386,6 @@ pub fn render_pod_resources_present(world: &World) -> bool {
         && world.contains_resource::<RenderResizeRequest>()
 }
 
-/// Returns `true` if the world has every heavy render resource. This
-/// is true for constructed `State` worlds after wgpu initialization;
-/// bare test worlds may omit `RenderGpuRes` because it has no default.
-#[allow(dead_code)]
-pub fn render_heavy_resources_present(world: &World) -> bool {
-    world.contains_non_send::<RenderGpuRes>()
-        && world.contains_non_send::<RenderMeshesRes>()
-        && world.contains_non_send::<RenderSurfaceHostRes>()
-}
-
-/// Returns `true` if the world has every Phase 4c heavy resource.
-/// Today this is `true` for every eg-state `World`; the resources are
-/// inserted with authoritative construction values.
-#[allow(dead_code)]
-pub fn render_phase4c_resources_present(world: &World) -> bool {
-    world.contains_non_send::<RenderMeshesRes>()
-        && world.contains_non_send::<RenderSurfaceHostRes>()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

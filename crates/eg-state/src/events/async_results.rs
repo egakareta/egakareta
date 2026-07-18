@@ -7,17 +7,15 @@
 */
 //! Async result events (Phase 6a).
 //!
-//! The legacy `State` struct holds five `mpsc` channels that the
-//! platform layer (auth service, audio service, level importer) and
-//! background tasks write to. Production frames drain those channels
-//! through `StateSchedule`.
+//! Platform services and background tasks write five `mpsc` channels
+//! (auth service, audio service, level importer). App-owned `StateSchedule`
+//! drains those channels and emits typed result messages into the World.
 //!
 //! Phase 6a introduced a Bevy `Message` per channel so a
 //! `PollChannelsSet` system can drain the receivers and emit
 //! per-message result events into the World. Phase 6b added handler
-//! systems that consume the events and install compatibility closures;
-//! the runtime drains those closures before the remaining legacy update
-//! branch logic runs.
+//! systems that consume the messages and mutate App-world resources or
+//! enqueue typed requests for unavoidable external side effects.
 //!
 //! ## Why messages and not direct resource writes?
 //!

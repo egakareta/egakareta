@@ -5,14 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Async channel bridge (Phase 6a).
+//! Async platform-result ingestion (Phase 6a).
 //!
-//! The legacy `State` struct holds five `mpsc::Receiver`s that the
-//! platform layer (auth service, audio service, level importer) and
-//! background tasks write to. The production frame now drains those
-//! receivers through `StateSchedule`.
+//! Platform services and background tasks produce five `mpsc::Receiver`
+//! streams (auth service, audio service, level importer). The App-owned
+//! `StateSchedule` drains those streams once per frame.
 //!
-//! Phase 6a introduces **Bevy resources** that wrap each receiver
+//! Phase 6a introduced **Bevy resources** that wrap each receiver
 //! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
 //! `AudioPreloadChannelRes`, `LevelImportChannelRes`) plus a
 //! `PollChannelsSet` system set with a `poll_channels_system` that
@@ -20,7 +19,8 @@
 //! result event into the World (Phase 6a's five new
 //! [`async_results`](crate::events::async_results) message types).
 //!
-//! `StateSchedule` is the sole owner for these drains.
+//! `StateSchedule` is the sole owner for these drains and the result
+//! handlers mutate App-world resources directly.
 //!
 //! ## Why a `Mutex<Receiver<T>>` wrapper?
 //!
@@ -38,8 +38,8 @@
 //! 5 receivers into 5 distinct result events. Phase 6b added one
 //! handler system per channel. All five handlers mutate App-world
 //! resources directly. Shared editor and runtime audio-cache resources
-//! let remaining compatibility playback code read the same authoritative
-//! cache without copying it back into `State`.
+//! let platform-facing audio code read the same authoritative cache without
+//! introducing a second state owner.
 //!
 //! ## Schedule graph (post Phase 6b)
 //!
@@ -85,9 +85,8 @@ use crate::state::{
 // Type aliases for the shared `Arc<Mutex<Receiver<T>>>` channels
 // ---------------------------------------------------------------------------
 
-/// Shared `Arc<Mutex<Receiver<AuthServiceMessage>>>` held by both the
-/// legacy `State::auth.channel.1` field and the World's
-/// `AuthChannelRes` resource.
+/// Shared auth receiver retained by the bootstrap channel owner and the
+/// App-world `AuthChannelRes` resource during installation.
 pub type SharedAuthReceiver = std::sync::Arc<Mutex<Receiver<AuthServiceMessage>>>;
 
 /// Shared `Arc<Mutex<Receiver<(String, Vec<u8>)>>>`.
@@ -108,11 +107,10 @@ pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 
 /// Bevy `Resource` wrapper around the auth-service `mpsc::Receiver`.
 ///
-/// Holds the shared `Arc<Mutex<Receiver<T>>>` drained by the World's
-/// `poll_channels_system` in production. The `Arc<Mutex<>>` is
-/// constructed by `State::lifecycle` and shared with the World via
-/// `install_async_channel_resources_arc`; direct legacy helper calls can
-/// still use the same receiver in focused tests.
+/// Holds the shared receiver drained by the App-world
+/// `poll_channels_system`. The `Arc<Mutex<>>` is created by App bootstrap;
+/// direct World fixtures can install an equivalent receiver for focused
+/// tests.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct AuthChannelRes(pub SharedAuthReceiver);
@@ -252,17 +250,14 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Helpers used by `State` to wire the legacy channels into the resources
+// Helpers used by App bootstrap and direct World fixtures to install the
+// external platform channels into App resources.
 // ---------------------------------------------------------------------------
 
 /// Install every async channel wrapper resource on a `World`.
 ///
-/// Used by the runtime/test harness to populate the resources from the
-/// legacy `State::auth.channel.1` /
-/// `State::audio.state.editor.audio_import_channel.1` / etc. fields.
-/// Production frames drain these resources through the schedule. The
-/// legacy helper methods still share the same receiver when called
-/// directly by tests, so each message is consumed at most once.
+/// Used by direct World fixtures to populate the resources from channel
+/// receivers. Production frames drain these resources through the schedule.
 ///
 /// This function is a no-op when a resource is already installed
 /// (e.g. by `register_async_channel_resources` during world construction).
@@ -302,11 +297,9 @@ pub fn install_async_channel_resources(
 }
 
 /// Same as [`install_async_channel_resources`] but the receivers are
-/// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage
-/// used by `State.auth.channel.1`,
-/// `State.audio.state.editor.audio_import_channel.1`, and the other
-/// legacy channel fields. The resource stores a clone of the same
-/// `Arc`, so the schedule drains the actual legacy receiver.
+/// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage used
+/// by the platform bootstrap channel owners. The resource stores the same
+/// receiver so the App schedule drains the actual platform stream.
 #[allow(dead_code)]
 pub fn install_async_channel_resources_arc(
     world: &mut World,
@@ -333,42 +326,9 @@ pub fn install_async_channel_resources_arc(
     }
 }
 
-/// Register the async-bridge `Message<T>` resources + the
-/// `PollChannelsSet` on an `App`.
-///
-/// This is the `App`-flavoured registration helper. The
-/// `World`-flavoured equivalent is
-/// [`register_async_channel_resources_world`]. See the
-/// [`crate::state::plugins`] module for the schedule wiring.
-#[allow(dead_code)]
-pub fn register_async_channel_resources(app: &mut bevy_app::App) {
-    use bevy_ecs::message::Messages;
-
-    app.add_message::<AuthServiceResultEvent>()
-        .add_message::<AudioImportResultEvent>()
-        .add_message::<WaveformResultEvent>()
-        .add_message::<AudioPreloadResultEvent>()
-        .add_message::<LevelImportResultEvent>();
-
-    // Channel wrappers are inserted in Phase 6b when the legacy
-    // fields are torn out. For Phase 6a, the world has the
-    // `Messages<T>` resources but the channel wrappers are
-    // inserted lazily by `install_async_channel_resources_arc` (or
-    // not at all in tests that don't install legacy channel resources).
-    //
-    // The `_ = Messages::<...>::default()` lines below silence the
-    // "unused import" lint without forcing the messages to be
-    // initialized (Bevy `add_message` does that).
-    let _ = Messages::<AuthServiceResultEvent>::default;
-    let _ = Messages::<AudioImportResultEvent>::default;
-    let _ = Messages::<WaveformResultEvent>::default;
-    let _ = Messages::<AudioPreloadResultEvent>::default;
-    let _ = Messages::<LevelImportResultEvent>::default;
-}
-
 /// World-flavoured registration for callers that build a `World`
-/// directly (the `State` constructor). Mirrors
-/// [`register_async_channel_resources`] without going through an `App`.
+/// directly. The App-owned schedule uses this registration path for both
+/// production bootstrap and headless fixtures.
 #[allow(dead_code)]
 pub fn register_async_channel_resources_world(world: &mut World) {
     use bevy_ecs::message::Messages;
@@ -382,7 +342,7 @@ pub fn register_async_channel_resources_world(world: &mut World) {
 
 /// Add the `poll_channels_system` to a `Schedule`.
 ///
-/// Callers (today: the `register_state_command_pipeline` helper) add
+/// Callers (today: the `register_state_schedule` helper) add
 /// the system in a `.add_systems((...))` tuple inside the schedule.
 /// The system is assigned to the [`PollChannelsSet`] so cross-set
 /// ordering can be expressed via `.in_set(PollChannelsSet)`.
@@ -403,7 +363,7 @@ pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
 pub struct ApplyAsyncResultsSet;
 
 /// Consume `AuthServiceResultEvent`s and apply them to App-world auth state.
-/// Auth results never install a compatibility closure.
+/// Auth results mutate the App-owned auth resource directly.
 #[allow(dead_code)]
 pub fn auth_handler_system(
     mut events: MessageReader<AuthServiceResultEvent>,
@@ -841,7 +801,7 @@ mod tests {
     #[test]
     fn install_async_channel_resources_is_idempotent() {
         // Calling install_async_channel_resources twice must not
-        // overwrite an existing wrapper (the legacy receiver would
+        // overwrite an existing wrapper (the external receiver would
         // be lost otherwise). The second call is a no-op for
         // already-installed resources.
         let mut world = build_world();

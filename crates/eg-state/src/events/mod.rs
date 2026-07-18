@@ -128,7 +128,7 @@ pub fn register_command_events(app: &mut App) {
 /// that work with a bare `World` (e.g. `State` constructs its `World`
 /// directly without going through an `App`). Initializes the
 /// `Messages<T>` resource for every event type; does **not** add a
-/// schedule — see `register_state_command_pipeline` for the full
+/// schedule — see `register_state_schedule` for the full
 /// `World` setup.
 pub fn register_command_events_world(world: &mut World) {
     use bevy_ecs::message::Messages;
@@ -831,10 +831,33 @@ mod tests {
     use crate::events::navigation::TurnRight;
     use crate::events::snap::SetSnapToGrid;
     use bevy_ecs::message::Messages;
+    use bevy_state::prelude::State;
     use eg_types::{
-        DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, EditorMode,
-        LevelMetadata, LevelObject, MenuState,
+        AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        EditorMode, LevelMetadata, LevelObject, MenuState,
     };
+
+    fn set_test_phase(world: &mut bevy_ecs::world::World, phase: AppPhase) {
+        world.insert_resource(State::new(phase));
+    }
+
+    fn test_phase(world: &bevy_ecs::world::World) -> AppPhase {
+        *world.resource::<State<AppPhase>>().get()
+    }
+
+    fn apply_test_phase_transition(
+        mut next: ResMut<bevy_state::prelude::NextState<AppPhase>>,
+        mut state: ResMut<State<AppPhase>>,
+    ) {
+        let target = match std::mem::take(&mut *next) {
+            bevy_state::prelude::NextState::Pending(target)
+            | bevy_state::prelude::NextState::PendingIfNeq(target) => Some(target),
+            bevy_state::prelude::NextState::Unchanged => None,
+        };
+        if let Some(target) = target {
+            *state = State::new(target);
+        }
+    }
 
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
@@ -843,7 +866,7 @@ mod tests {
         // All per-message drain systems run in the same schedule, so the
         // helper must register every resource any of them reads. The
         // carve-out handlers (input_state, pointer) reach for
-        // `EditorInputRes`, `EditorCameraRes`, and `AppPhaseRes`; the
+        // `EditorInputRes`, `EditorCameraRes`, and `State<AppPhase>`; the
         // `snap` carve-out reaches for `EditorConfigRes`; the `history`
         // carve-out reaches for `EditorObjectsRes` + the editor mirrors; the `timeline`
         // carve-out reaches for `EditorTimelineRes` + `EditorRuntimeRes`; the `bpm`
@@ -880,8 +903,10 @@ mod tests {
         world.init_resource::<eg_game::LevelMeta>();
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
-        world.init_resource::<crate::state::AppPhaseRes>();
+        world.insert_resource(State::new(AppPhase::Menu));
+        world.init_resource::<bevy_state::prelude::NextState<AppPhase>>();
         world.init_resource::<crate::state::RenderUniformsRes>();
+        world.init_resource::<crate::state::RenderConfigRes>();
         world.init_resource::<crate::state::RenderResizeRequest>();
         world.init_resource::<crate::state::AuthSubmitSignInRequest>();
         world.init_resource::<crate::state::AuthSignOutRequest>();
@@ -914,6 +939,7 @@ mod tests {
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         add_command_systems(&mut schedule);
+        schedule.add_systems(apply_test_phase_transition.after(crate::events::CommandHandlerSet));
         schedule.add_systems(
             crate::state::gameplay_world::apply_pending_gameplay_reset_system
                 .after(crate::events::navigation::handle_turn_right)
@@ -929,10 +955,7 @@ mod tests {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Playing
-        );
+        assert_eq!(test_phase(&world), AppPhase::Playing);
         assert_eq!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -946,9 +969,7 @@ mod tests {
     #[test]
     fn turn_right_starts_unstarted_app_gameplay_without_request() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .playing_level_name = Some("NavigationLevelA".to_string());
@@ -962,26 +983,22 @@ mod tests {
     #[test]
     fn carve_out_turn_right_in_game_over_returns_to_menu_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::GameOver);
+        set_test_phase(&mut world, AppPhase::GameOver);
 
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
 
         assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
+            test_phase(&world),
             AppPhase::Menu,
-            "GameOver TurnRight must return to menu through AppPhaseRes"
+            "GameOver TurnRight must return to menu through State<AppPhase>"
         );
     }
 
     #[test]
     fn carve_out_turn_right_in_paused_gameplay_is_a_direct_noop() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .game_paused = true;
@@ -990,7 +1007,7 @@ mod tests {
         world.run_schedule(crate::state::StateSchedule);
 
         assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
+            test_phase(&world),
             AppPhase::Playing,
             "paused gameplay TurnRight must not change the App phase"
         );
@@ -1005,9 +1022,7 @@ mod tests {
     #[test]
     fn carve_out_turn_right_in_non_practice_game_over_requests_app_reset() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.resource_mut::<eg_game::GameClock>().game_over = true;
 
@@ -1021,9 +1036,7 @@ mod tests {
     #[test]
     fn turn_right_respawns_from_app_practice_checkpoint_without_request() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.resource_mut::<eg_game::GameClock>().game_over = true;
         let checkpoint = eg_game::GameCheckpointState::from_parts(eg_game::GameCheckpointParts {
@@ -1072,9 +1085,7 @@ mod tests {
     #[test]
     fn turn_right_restarts_practice_without_checkpoint_in_app_world() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.resource_mut::<eg_game::GameClock>().game_over = true;
         world
@@ -1101,9 +1112,7 @@ mod tests {
     #[test]
     fn carve_out_turn_right_in_active_gameplay_queues_app_turn() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.resource_mut::<eg_game::GameClock>().elapsed_seconds = 1.25;
         world.spawn(eg_game::PlayerBundle {
@@ -1131,9 +1140,7 @@ mod tests {
     #[test]
     fn carve_out_turn_right_in_airborne_gameplay_queues_app_turn() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world.resource_mut::<eg_game::GameClock>().started = true;
         world.spawn(eg_game::PlayerBundle {
             player: eg_game::Player,
@@ -1158,9 +1165,7 @@ mod tests {
     #[test]
     fn carve_out_turn_right_in_editor_places_block_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorInputRes>()
             .0
@@ -1191,10 +1196,7 @@ mod tests {
         let mut world = build_event_world();
         world.write_message(navigation::ToggleEditor);
         world.run_schedule(crate::state::StateSchedule);
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Editor
-        );
+        assert_eq!(test_phase(&world), AppPhase::Editor);
         assert_eq!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -1211,16 +1213,11 @@ mod tests {
     #[test]
     fn carve_out_toggle_editor_from_editor_returns_to_menu_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world.write_message(navigation::ToggleEditor);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Menu
-        );
+        assert_eq!(test_phase(&world), AppPhase::Menu);
         assert!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -1231,9 +1228,7 @@ mod tests {
     #[test]
     fn toggle_editor_returns_from_playtest_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .playtesting_editor = true;
@@ -1241,10 +1236,7 @@ mod tests {
         world.write_message(navigation::ToggleEditor);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Editor
-        );
+        assert_eq!(test_phase(&world), AppPhase::Editor);
         let session = world.resource::<crate::state::SessionStateRes>();
         assert!(!session.playtesting_editor);
         assert!(!session.game_paused);
@@ -1346,10 +1338,7 @@ mod tests {
         world.write_message(GameQuitToMenu);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Menu
-        );
+        assert_eq!(test_phase(&world), AppPhase::Menu);
         assert!(
             !world
                 .resource::<crate::state::SessionStateRes>()
@@ -1362,9 +1351,7 @@ mod tests {
     #[test]
     fn carve_out_game_quit_to_menu_mutates_app_resources() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .playtesting_editor = false;
@@ -1372,10 +1359,7 @@ mod tests {
         world.write_message(GameQuitToMenu);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Menu
-        );
+        assert_eq!(test_phase(&world), AppPhase::Menu);
         let session = world.resource::<crate::state::SessionStateRes>();
         assert!(!session.game_paused);
         assert!(!session.practice_mode_enabled);
@@ -1401,9 +1385,7 @@ mod tests {
     #[test]
     fn carve_out_game_restart_level_resets_app_gameplay_world() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         {
             let mut session = world.resource_mut::<crate::state::SessionStateRes>();
             session.game_paused = true;
@@ -1468,9 +1450,7 @@ mod tests {
     #[test]
     fn carve_out_game_set_practice_checkpoint_captures_app_world_state() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .practice_mode_enabled = true;
@@ -1503,9 +1483,7 @@ mod tests {
     #[test]
     fn carve_out_game_remove_practice_checkpoint_mutates_session_resource() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         {
             let mut session = world.resource_mut::<crate::state::SessionStateRes>();
             session.practice_mode_enabled = true;
@@ -1541,9 +1519,7 @@ mod tests {
     #[test]
     fn carve_out_undo_redo_mutates_editor_history_resources() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
 
         let current_object = LevelObject {
             id: "current".to_string(),
@@ -1646,9 +1622,7 @@ mod tests {
         use crate::events::block::RemoveBlock;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![
@@ -1690,9 +1664,7 @@ mod tests {
         use crate::events::block::{CopyBlock, DuplicateBlock, PasteBlock};
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -1749,9 +1721,7 @@ mod tests {
         use crate::events::block::UpdateSelectedBlock;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -1801,9 +1771,7 @@ mod tests {
         use crate::events::selection::SnapSelectionToGrid;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorConfigRes>()
             .0
@@ -1855,9 +1823,7 @@ mod tests {
         use crate::events::selection::SnapSelectionToGrid;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorConfigRes>()
             .0
@@ -1898,9 +1864,7 @@ mod tests {
         use crate::events::selection::FocusCameraTarget;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![
@@ -1935,9 +1899,7 @@ mod tests {
         use crate::events::selection::FocusCameraTarget;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -1971,9 +1933,7 @@ mod tests {
         use crate::events::selection::FocusCameraTarget;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorTimelineRes>()
             .0
@@ -2012,9 +1972,7 @@ mod tests {
         use crate::events::selection::AddTransformTrigger;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorTimelineRes>()
             .0
@@ -2131,9 +2089,7 @@ mod tests {
     #[test]
     fn set_snap_to_grid_updates_settings_and_resnaps_selected_object() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut config = world.resource_mut::<crate::state::EditorConfigRes>();
             config.0.snap_to_grid = false;
@@ -2194,10 +2150,7 @@ mod tests {
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Playing
-        );
+        assert_eq!(test_phase(&world), AppPhase::Playing);
     }
 
     #[test]
@@ -2409,10 +2362,10 @@ mod tests {
         SetShowSettings, SetUiScaleMultiplier, ToggleSettings, UpdateCreatorMetadata, UpdateMusic,
         UpdateSkyColor, UseAutoMenuPreviewCamera,
     };
-    use crate::state::{AppPhaseRes, EditorCameraRes, SessionStateRes};
+    use crate::state::{EditorCameraRes, SessionStateRes};
     use eg_types::{
-        AppPhase, BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata,
-        MusicMetadata, SettingsSection, default_essential_keybinds,
+        BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
+        SettingsSection, default_essential_keybinds,
     };
 
     #[test]
@@ -2747,7 +2700,7 @@ mod tests {
     #[test]
     fn carve_out_capture_menu_preview_camera_mutates_session_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut camera = world.resource_mut::<EditorCameraRes>();
             camera.0.editor_pan = [2.0, -4.0];
@@ -2778,7 +2731,7 @@ mod tests {
     #[test]
     fn carve_out_use_auto_menu_preview_camera_mutates_session_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<SessionStateRes>()
             .editor_menu_preview_camera = Some(LevelPreviewCameraMetadata {
@@ -2800,7 +2753,7 @@ mod tests {
     #[test]
     fn carve_out_menu_preview_camera_messages_respect_editor_phase() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
+        set_test_phase(&mut world, AppPhase::Menu);
         let existing = Some(LevelPreviewCameraMetadata {
             position: [9.0, 8.0, 7.0],
             target: [6.0, 5.0, 4.0],
@@ -3245,7 +3198,7 @@ mod tests {
     #[test]
     fn carve_out_add_camera_trigger_mutates_editor_objects_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world.resource_mut::<EditorCameraRes>().0.editor_pan = [12.0, -7.0];
         world.resource_mut::<EditorCameraRes>().0.editor_target_z = 4.5;
         world.resource_mut::<EditorCameraRes>().0.editor_yaw = 0.9;
@@ -3286,7 +3239,7 @@ mod tests {
     #[test]
     fn carve_out_add_camera_follow_trigger_mutates_editor_objects_resource() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
             timeline.0.clock.time_seconds = 0.5;
@@ -3332,7 +3285,7 @@ mod tests {
     #[test]
     fn carve_out_camera_trigger_creation_respects_editor_phase() {
         let mut world = build_event_world();
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
+        set_test_phase(&mut world, AppPhase::Menu);
 
         world.write_message(AddCameraTrigger);
         world.write_message(AddCameraFollowTrigger);
@@ -3464,18 +3417,13 @@ mod tests {
         world.write_message(Escape);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
+        assert_eq!(test_phase(&world), eg_types::AppPhase::Menu);
     }
 
     #[test]
     fn carve_out_escape_in_real_gameplay_toggles_pause_resource_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         {
             let mut session = world.resource_mut::<crate::state::SessionStateRes>();
             session.playtesting_editor = false;
@@ -3505,9 +3453,7 @@ mod tests {
     #[test]
     fn escape_in_playtest_returns_to_editor_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         {
             let mut session = world.resource_mut::<crate::state::SessionStateRes>();
             session.playtesting_editor = true;
@@ -3523,10 +3469,7 @@ mod tests {
                 .game_paused,
             "playtest Escape must not mutate the real-game pause flag"
         );
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            eg_types::AppPhase::Editor
-        );
+        assert_eq!(test_phase(&world), eg_types::AppPhase::Editor);
         assert!(
             !world
                 .resource::<crate::state::SessionStateRes>()
@@ -3545,9 +3488,7 @@ mod tests {
     #[test]
     fn carve_out_escape_with_editor_selection_clears_resources_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -3581,9 +3522,7 @@ mod tests {
     #[test]
     fn carve_out_escape_with_editor_playback_stops_resources_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Null;
         world
             .resource_mut::<crate::state::EditorRuntimeRes>()
@@ -3626,9 +3565,7 @@ mod tests {
     #[test]
     fn carve_out_escape_with_editor_timeline_time_resets_resource_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
             timeline.0.clock.duration_seconds = 4.0;
@@ -3654,16 +3591,11 @@ mod tests {
     #[test]
     fn carve_out_escape_at_editor_origin_returns_to_menu_directly() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world.write_message(Escape);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
+        assert_eq!(test_phase(&world), eg_types::AppPhase::Menu);
         assert!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -3790,9 +3722,7 @@ mod tests {
 
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/lava");
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -3840,9 +3770,7 @@ mod tests {
 
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/stone");
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -3897,9 +3825,7 @@ mod tests {
 
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/grass");
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::EditorObjectsRes>()
             .objects = vec![LevelObject {
@@ -3946,9 +3872,7 @@ mod tests {
         use crate::events::timeline::Playtest;
 
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .editor_level_name = Some("AppPlaytest".to_string());
@@ -3961,10 +3885,7 @@ mod tests {
         world.write_message(Playtest);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::AppPhaseRes>().current,
-            AppPhase::Playing
-        );
+        assert_eq!(test_phase(&world), AppPhase::Playing);
         let session = world.resource::<crate::state::SessionStateRes>();
         assert!(session.playtesting_editor);
         assert!(session.audio_stop_pending);
@@ -4134,9 +4055,7 @@ mod tests {
     #[test]
     fn carve_out_menu_next_prev_level_mutates_menu_resource() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Menu);
+        set_test_phase(&mut world, AppPhase::Menu);
         world
             .resource_mut::<crate::state::MenuStateRes>()
             .0
@@ -4168,9 +4087,7 @@ mod tests {
     #[test]
     fn carve_out_editor_next_prev_level_mutates_cursor_resource() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world
             .resource_mut::<crate::state::MenuStateRes>()
             .0
@@ -4216,9 +4133,7 @@ mod tests {
     #[test]
     fn carve_out_next_prev_level_is_noop_outside_menu_and_editor() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Playing);
+        set_test_phase(&mut world, AppPhase::Playing);
         world
             .resource_mut::<crate::state::EditorInputRes>()
             .0
@@ -4250,9 +4165,7 @@ mod tests {
     #[test]
     fn carve_out_next_prev_level_missing_menu_resource_does_not_stage_legacy_command() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Menu);
+        set_test_phase(&mut world, AppPhase::Menu);
         world.remove_resource::<crate::state::MenuStateRes>();
 
         world.write_message(NextLevel);
@@ -4393,9 +4306,7 @@ mod tests {
     #[test]
     fn carve_out_set_selected_tap_time_mutates_editor_timeline_resource() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
             timeline.0.clock.duration_seconds = 2.0;
@@ -4483,9 +4394,7 @@ mod tests {
     #[test]
     fn carve_out_toggle_timeline_playback_mutates_timeline_and_input_resources() {
         let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
+        set_test_phase(&mut world, AppPhase::Editor);
         world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Timing;
 
         world.write_message(ToggleTimelinePlayback);

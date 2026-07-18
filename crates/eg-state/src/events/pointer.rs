@@ -14,14 +14,15 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick};
 use glam::Vec2;
 
 use crate::events::navigation::TurnRight;
 use crate::state::{
-    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
-    EditorInputRes, EditorInteractionState, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorSubsystem, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
+    EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes, EditorInputRes,
+    EditorInteractionState, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorSubsystem,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
 };
 
 /// Mouse button state update for editor interaction routing.
@@ -69,7 +70,7 @@ pub fn register_events(app: &mut App) {
 
 #[derive(SystemParam)]
 pub struct PointerResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     input: ResMut<'w, EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,
     objects: ResMut<'w, EditorObjectsRes>,
@@ -214,7 +215,7 @@ pub fn handle_mouse_button(
             0 => {
                 resources.input.0.left_mouse_down = event.pressed;
                 if event.pressed {
-                    if resources.phase.current == AppPhase::Editor {
+                    if *resources.phase.get() == AppPhase::Editor {
                         if let Some(pointer) = resources.input.0.pointer_screen {
                             primary_click.write(PrimaryClick {
                                 x: pointer[0],
@@ -223,20 +224,20 @@ pub fn handle_mouse_button(
                         } else {
                             turn_right.write(TurnRight);
                         }
-                    } else if resources.phase.current != AppPhase::Menu {
+                    } else if *resources.phase.get() != AppPhase::Menu {
                         turn_right.write(TurnRight);
                     }
                 }
                 if !event.pressed {
                     let mut editor = temporary_editor(&resources);
-                    if resources.phase.current == AppPhase::Editor
+                    if *resources.phase.get() == AppPhase::Editor
                         && let Some(pointer) = resources.input.0.pointer_screen
                     {
                         editor.finish_marquee_selection(
                             pointer[0],
                             pointer[1],
                             viewport(&resources),
-                            resources.phase.current,
+                            *resources.phase.get(),
                         );
                         let had_drag = editor.runtime.interaction.gizmo_drag.is_some()
                             || editor.runtime.interaction.block_drag.is_some();
@@ -267,8 +268,8 @@ pub fn handle_primary_click(
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         resources.input.0.left_mouse_down = true;
-        if resources.phase.current != AppPhase::Editor {
-            if resources.phase.current != AppPhase::Menu {
+        if *resources.phase.get() != AppPhase::Editor {
+            if *resources.phase.get() != AppPhase::Menu {
                 turn_right.write(TurnRight);
             }
             continue;
@@ -294,7 +295,7 @@ pub fn handle_primary_click(
                     event.x,
                     event.y,
                     viewport,
-                    resources.phase.current,
+                    *resources.phase.get(),
                 );
                 let place_mode = if editor.input.shift_held {
                     eg_types::EditorPlaceMode::Stamp
@@ -314,8 +315,7 @@ pub fn handle_primary_click(
             }
             EditorMode::Timing | EditorMode::Null => {}
             EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
-                if editor.begin_gizmo_drag_ext(event.x, event.y, viewport, resources.phase.current)
-                {
+                if editor.begin_gizmo_drag_ext(event.x, event.y, viewport, *resources.phase.get()) {
                     commit_editor(&mut resources, editor);
                     continue;
                 }
@@ -324,7 +324,7 @@ pub fn handle_primary_click(
                         event.x,
                         event.y,
                         viewport,
-                        resources.phase.current,
+                        *resources.phase.get(),
                     )
                 {
                     commit_editor(&mut resources, editor);
@@ -341,10 +341,10 @@ pub fn handle_primary_click(
                         event.x,
                         event.y,
                         viewport,
-                        resources.phase.current,
+                        *resources.phase.get(),
                     );
                 } else {
-                    editor.begin_marquee_selection(event.x, event.y, resources.phase.current);
+                    editor.begin_marquee_selection(event.x, event.y, *resources.phase.get());
                 }
                 commit_editor(&mut resources, editor);
             }
@@ -358,7 +358,7 @@ pub fn handle_pointer_moved(
 ) {
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
-        if resources.phase.current != AppPhase::Editor {
+        if *resources.phase.get() != AppPhase::Editor {
             continue;
         }
 
@@ -370,13 +370,13 @@ pub fn handle_pointer_moved(
                     event.x,
                     event.y,
                     viewport(&resources),
-                    resources.phase.current,
+                    *resources.phase.get(),
                 ) || editor.drag_selection_from_screen(
                     event.x,
                     event.y,
                     viewport(&resources),
-                    resources.phase.current,
-                ) || editor.update_marquee_selection(event.x, event.y, resources.phase.current);
+                    *resources.phase.get(),
+                ) || editor.update_marquee_selection(event.x, event.y, *resources.phase.get());
         }
         if !handled {
             if editor.input.mode == EditorMode::Tapping {
@@ -392,7 +392,7 @@ pub fn handle_pointer_moved(
                     event.x,
                     event.y,
                     viewport(&resources),
-                    resources.phase.current,
+                    *resources.phase.get(),
                 );
             }
         }
@@ -406,7 +406,7 @@ pub fn handle_update_cursor_from_screen(
 ) {
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
-        if resources.phase.current != AppPhase::Editor
+        if *resources.phase.get() != AppPhase::Editor
             || resources.input.0.right_dragging
             || resources.input.0.mode == EditorMode::Null
         {
@@ -417,7 +417,7 @@ pub fn handle_update_cursor_from_screen(
             event.x,
             event.y,
             viewport(&resources),
-            resources.phase.current,
+            *resources.phase.get(),
         );
         commit_editor(&mut resources, editor);
     }
@@ -426,7 +426,7 @@ pub fn handle_update_cursor_from_screen(
 pub fn handle_camera_drag(
     mut events: MessageReader<CameraDrag>,
     input: Res<EditorInputRes>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut camera: ResMut<EditorCameraRes>,
 ) {
     if !input.0.right_dragging {
@@ -438,7 +438,7 @@ pub fn handle_camera_drag(
     const PITCH_SPEED: f32 = 0.006;
 
     for event in events.read() {
-        match phase.current {
+        match *phase.get() {
             eg_types::AppPhase::Editor => {
                 camera.0.editor_yaw -= event.dx as f32 * ROTATE_SPEED;
                 camera.0.editor_pitch = (camera.0.editor_pitch + event.dy as f32 * PITCH_SPEED)

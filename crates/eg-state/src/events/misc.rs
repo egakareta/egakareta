@@ -11,12 +11,11 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::NextState;
+use bevy_state::prelude::{NextState, State};
 
 use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes,
-    SessionStateRes,
+    EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes, SessionStateRes,
 };
 
 /// Toggle editor hitbox visualization.
@@ -89,10 +88,9 @@ pub fn handle_toggle_place_window(
 // App world.
 pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
     for _ in events.read() {
-        match resources.phase.current {
+        match *resources.phase.get() {
             eg_types::AppPhase::Playing => {
                 if resources.session.playtesting_editor {
-                    resources.phase.set(eg_types::AppPhase::Editor);
                     resources.next_phase.set(eg_types::AppPhase::Editor);
                     resources.session.playtesting_editor = false;
                     resources.session.game_paused = false;
@@ -124,18 +122,15 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
                 }
 
                 if let Some(menu) = resources.menu.as_deref_mut() {
-                    resources.phase.set(eg_types::AppPhase::Menu);
                     resources.next_phase.set(eg_types::AppPhase::Menu);
                     resources.session.transition_to_menu();
                     menu.0.preview_level_index = None;
                     continue;
                 }
-                resources.phase.set(eg_types::AppPhase::Menu);
                 resources.next_phase.set(eg_types::AppPhase::Menu);
                 resources.session.transition_to_menu();
             }
             eg_types::AppPhase::GameOver => {
-                resources.phase.set(eg_types::AppPhase::Menu);
                 resources.next_phase.set(eg_types::AppPhase::Menu);
                 resources.session.transition_to_menu();
                 if let Some(menu) = resources.menu.as_deref_mut() {
@@ -149,7 +144,7 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
 
 #[derive(SystemParam)]
 pub struct EscapeResources<'w> {
-    phase: ResMut<'w, AppPhaseRes>,
+    phase: Res<'w, State<eg_types::AppPhase>>,
     next_phase: ResMut<'w, NextState<eg_types::AppPhase>>,
     input: ResMut<'w, EditorInputRes>,
     timeline: ResMut<'w, EditorTimelineRes>,

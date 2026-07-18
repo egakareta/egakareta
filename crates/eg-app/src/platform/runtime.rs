@@ -17,13 +17,19 @@ use bevy_app::FixedUpdate;
 use bevy_app::{App, PostUpdate};
 #[cfg(not(test))]
 use bevy_ecs::world::World;
+use bevy_state::prelude::State;
 #[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
-use eg_state::state::AppPhaseRes;
 use eg_state::state::AudioBackendRes;
 
 use eg_state::state::AppBootstrap;
+#[cfg(not(test))]
+use eg_state::state::AuthStateRes;
 use eg_state::state::EditorInputRes;
+#[cfg(not(test))]
+use eg_state::state::MenuStateRes;
+#[cfg(not(test))]
+use eg_state::state::PerfRes;
 use eg_state::state::RenderConfigRes;
 #[cfg(not(test))]
 use eg_state::state::RenderEguiRes;
@@ -33,7 +39,7 @@ use eg_state::state::RenderGpuRes;
 use eg_state::state::RenderSurfaceHostRes;
 use eg_state::state::SessionStateRes;
 use eg_state::state::enqueue_platform_input;
-use eg_state::state::register_state_command_pipeline;
+use eg_state::state::register_state_schedule;
 
 use eg_state::state::setup_state_app;
 #[cfg(test)]
@@ -79,7 +85,87 @@ fn run_egui_ui_system(world: &mut World) {
         .remove_non_send::<RenderEguiRes>()
         .expect("RenderEguiRes must be installed before App update");
 
-    let ui_state = world.resource::<eg_state::state::UiStateData>().clone();
+    let phase = *world.resource::<State<eg_types::AppPhase>>().get();
+    let is_menu = phase == eg_types::AppPhase::Menu;
+    let is_editor = phase == eg_types::AppPhase::Editor;
+    let show_settings = world.resource::<SessionStateRes>().editor_show_settings;
+    let (
+        editor_show_metadata,
+        editor_show_place_window,
+        editor_settings_section,
+        editor_keybind_capture_action,
+    ) = {
+        let session = world.resource::<SessionStateRes>();
+        (
+            session.editor_show_metadata,
+            session.editor_show_place_window,
+            session.editor_settings_section,
+            session.editor_keybind_capture_action.clone(),
+        )
+    };
+    let (is_game_paused, is_practice_mode_enabled) = {
+        let session = world.resource::<SessionStateRes>();
+        let is_real_gameplay = phase == eg_types::AppPhase::Playing && !session.playtesting_editor;
+        (
+            is_real_gameplay && session.game_paused,
+            is_real_gameplay && session.practice_mode_enabled,
+        )
+    };
+    let (menu_level_name, menu_selected_level_progress) = {
+        let session = world.resource::<SessionStateRes>();
+        let menu_level_name = world
+            .get_resource::<MenuStateRes>()
+            .and_then(|menu| menu.0.levels.get(menu.0.selected_level).cloned());
+        let progress = menu_level_name
+            .as_deref()
+            .and_then(|level_name| session.app_settings.level_progress.get(level_name).copied());
+        (menu_level_name, progress)
+    };
+    let available_levels = world
+        .get_resource::<MenuStateRes>()
+        .map(|menu| menu.0.levels.clone())
+        .unwrap_or_default();
+    let (editor_level_name, editor_music_metadata, editor_creator_metadata, editor_sky_color) = {
+        let session = world.resource::<SessionStateRes>();
+        (
+            session.editor_level_name.clone(),
+            session.editor_music_metadata.clone(),
+            session.editor_creator_metadata.clone(),
+            session.editor_sky_color,
+        )
+    };
+    let app_settings = world.resource::<SessionStateRes>().app_settings.clone();
+    let (auth_display_name, auth_pending, auth_message) = {
+        let auth = world.resource::<AuthStateRes>();
+        (
+            auth.display_name().map(ToOwned::to_owned),
+            auth.pending,
+            auth.message.clone(),
+        )
+    };
+    let (
+        perf_overlay_enabled,
+        perf_graphics_backend,
+        perf_audio_backend,
+        perf_fps,
+        perf_has_latest_frame,
+    ) = {
+        let perf = world.resource::<PerfRes>();
+        let graphics_backend = world.non_send::<RenderGpuRes>().0.adapter_info.backend;
+        let has_latest_frame = perf.0.global_frame_view.lock().latest_frame().is_some();
+        (
+            perf.0.overlay_enabled,
+            format!("{graphics_backend:?}"),
+            world
+                .resource::<SessionStateRes>()
+                .app_settings
+                .audio_backend
+                .clone(),
+            perf.0.fps_smoothed,
+            has_latest_frame,
+        )
+    };
+    let ui_state = eg_state::state::UiStateData::from_world(world);
     let render_config = *world.resource::<RenderConfigRes>();
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
@@ -105,26 +191,85 @@ fn run_egui_ui_system(world: &mut World) {
             let mut command_sink = WorldUiCommandSink::new(world);
             frame.egui_ctx.run_ui(raw_input.0, |root_ui| {
                 let ctx = root_ui.ctx().clone();
-                ui_input_blocking_rects =
-                    show_editor_ui(&ctx, &ui_state, &block_icon_texture_ids, &mut command_sink);
+                ui_input_blocking_rects = show_editor_ui(
+                    &ctx,
+                    is_editor,
+                    show_settings,
+                    &available_levels,
+                    editor_level_name.as_deref(),
+                    &editor_music_metadata,
+                    &editor_creator_metadata,
+                    editor_sky_color,
+                    &app_settings,
+                    editor_show_metadata,
+                    editor_show_place_window,
+                    editor_settings_section,
+                    editor_keybind_capture_action.as_ref(),
+                    &ui_state,
+                    &block_icon_texture_ids,
+                    &mut command_sink,
+                );
                 ui_input_pixels_per_point = ctx.pixels_per_point();
-                if !ui_state.is_editor {
-                    show_settings_sidebar(&ctx, &ui_state, &mut command_sink);
+                if !is_editor {
+                    show_settings_sidebar(
+                        &ctx,
+                        show_settings,
+                        is_menu,
+                        is_editor,
+                        is_game_paused,
+                        &app_settings,
+                        editor_settings_section,
+                        editor_keybind_capture_action.as_ref(),
+                        &ui_state,
+                        &mut command_sink,
+                    );
                 }
-                show_perf_overlay(&ctx, &ui_state, &mut command_sink);
-                show_menu_topbar_ui(root_ui, &ui_state, &mut command_sink);
+                show_perf_overlay(
+                    &ctx,
+                    perf_overlay_enabled,
+                    &perf_graphics_backend,
+                    &perf_audio_backend,
+                    perf_fps,
+                    perf_has_latest_frame,
+                    &mut command_sink,
+                );
+                show_menu_topbar_ui(
+                    root_ui,
+                    is_menu,
+                    &app_settings,
+                    auth_display_name.as_deref(),
+                    auth_pending,
+                    auth_message.as_deref(),
+                    &mut command_sink,
+                );
                 show_menu_play_ui(
                     &ctx,
-                    &ui_state,
+                    is_menu,
                     &mut command_sink,
                     frame.menu_textures.play_button.as_ref(),
                     frame.menu_textures.play_button_filled.as_ref(),
                     frame.menu_textures.edit_button.as_ref(),
                 );
-                show_practice_checkpoint_ui(&ctx, &ui_state, &mut command_sink);
-                show_pause_menu_ui(&ctx, &ui_state, &mut command_sink);
+                show_practice_checkpoint_ui(
+                    &ctx,
+                    is_practice_mode_enabled,
+                    is_game_paused,
+                    &mut command_sink,
+                );
+                show_pause_menu_ui(
+                    &ctx,
+                    is_game_paused,
+                    is_practice_mode_enabled,
+                    &mut command_sink,
+                );
                 if let Some(favicon) = &frame.menu_textures.favicon {
-                    show_menu_favicon_ui(&ctx, &ui_state, favicon);
+                    show_menu_favicon_ui(
+                        &ctx,
+                        is_menu,
+                        menu_level_name.as_deref(),
+                        menu_selected_level_progress,
+                        favicon,
+                    );
                 }
             })
         };
@@ -174,7 +319,7 @@ fn run_egui_ui_system(world: &mut World) {
 /// `bevy_app::App` wired with the eg-state plugin graph (see
 /// [`setup_state_app`]). The winit redraw path now calls
 /// [`Runtime::run_app_frame`], which owns the App update and command
-/// drain before handing the frame back to the compatibility renderer.
+/// drain before handing the frame back to the App-owned render presenter.
 ///
 /// The App world is the production command/schedule driver. The egui context,
 /// renderer, menu textures, block-icon cache, and all state resources are
@@ -229,14 +374,12 @@ impl Runtime {
         let menu_textures = load_menu_textures(&egui_ctx);
         let mut app = App::new();
         setup_state_app(&mut app);
-        register_state_command_pipeline(app.world_mut());
+        register_state_schedule(app.world_mut());
         app.add_systems(PostUpdate, eg_state::state::run_state_schedule_system);
         register_ui_resources_world(app.world_mut());
         #[cfg(not(test))]
         app.add_systems(bevy_app::Update, run_egui_ui_system);
         bootstrap.install(app.world_mut());
-        let ui_state = eg_state::state::UiStateData::from_world(app.world());
-        app.insert_resource(ui_state);
 
         #[cfg(not(test))]
         {
@@ -273,9 +416,8 @@ impl Runtime {
     pub fn from_test_app(test_app: TestApp) -> Self {
         let egui_ctx = egui::Context::default();
         let mut app = test_app.into_app();
+        app.add_systems(PostUpdate, eg_state::state::run_state_schedule_system);
         register_ui_resources_world(app.world_mut());
-        let ui_state = eg_state::state::UiStateData::from_world(app.world());
-        app.insert_resource(ui_state);
         app.insert_non_send(EguiFrameResources {
             egui_ctx,
             _presentation: (),
@@ -299,7 +441,7 @@ impl Runtime {
     /// Return the cursor policy from the authoritative App-world session.
     pub fn game_cursor(&self) -> eg_types::GameCursor {
         let world = self.app.world();
-        if world.resource::<AppPhaseRes>().current == eg_types::AppPhase::Playing
+        if *world.resource::<State<eg_types::AppPhase>>().get() == eg_types::AppPhase::Playing
             && !world.resource::<SessionStateRes>().game_paused
         {
             eg_types::GameCursor::Hidden
@@ -311,7 +453,7 @@ impl Runtime {
     /// Return whether the physical pointer position intersects App-owned editor UI.
     pub fn editor_pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
         let world = self.app.world();
-        if world.resource::<AppPhaseRes>().current != eg_types::AppPhase::Editor {
+        if *world.resource::<State<eg_types::AppPhase>>().get() != eg_types::AppPhase::Editor {
             return false;
         }
 
@@ -399,22 +541,27 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy_state::prelude::State;
     use eg_state::state::{
-        AppPhaseRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-        AuthSubmitSignInRequest, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-        EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes,
-        EditorTriggerRes, FrameTimeRes, GameplayResetRes, MenuStateRes, PerfFrameCopyRequest,
-        PerfRes, PlatformInputQueue, RenderResizeRequest, SessionStateRes,
+        AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
+        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
+        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+        GameplayResetRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue,
+        RenderResizeRequest, SessionStateRes,
     };
 
     fn runtime_in_phase(phase: eg_types::AppPhase) -> Runtime {
         let mut runtime = Runtime::new_test();
+        runtime.app.world_mut().insert_resource(State::new(phase));
         runtime
+    }
+
+    fn current_phase(runtime: &Runtime) -> eg_types::AppPhase {
+        *runtime
             .app
-            .world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(phase);
-        runtime
+            .world()
+            .resource::<State<eg_types::AppPhase>>()
+            .get()
     }
 
     fn runtime_in_playing(playtesting_editor: bool, game_paused: bool) -> Runtime {
@@ -445,7 +592,7 @@ mod tests {
         assert!(ctx.pixels_per_point() > 0.0);
 
         // Verify the fixture was installed into the App world.
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
     }
 
     // ---- Phase 7 tests ----
@@ -459,7 +606,7 @@ mod tests {
 
     /// `Runtime::new` builds an `App` whose `World` contains every
     /// resource that `StatePlugins` is responsible for registering.
-    /// `AppPhaseRes` defaults to `AppPhase::Menu`; gameplay, editor,
+    /// `State<AppPhase>` defaults to `AppPhase::Menu`; gameplay, editor,
     /// session, and render resources are installed by their plugins.
     #[test]
     fn runtime_app_has_state_plugin_resources() {
@@ -471,8 +618,8 @@ mod tests {
             "GameClock registered by GameplayPlugin"
         );
         assert!(
-            world.contains_resource::<AppPhaseRes>(),
-            "AppPhaseRes registered by MenuPlugin"
+            world.contains_resource::<State<eg_types::AppPhase>>(),
+            "State<AppPhase> registered by MenuPlugin"
         );
         assert!(
             world.contains_resource::<SessionStateRes>(),
@@ -480,7 +627,7 @@ mod tests {
         );
         assert!(
             world.contains_resource::<MenuStateRes>(),
-            "MenuStateRes seeded from legacy State"
+            "MenuStateRes seeded by AppBootstrap"
         );
         assert!(
             world.contains_resource::<EditorInputRes>(),
@@ -541,7 +688,7 @@ mod tests {
         );
     }
 
-    /// `register_state_command_pipeline` adds the per-frame
+    /// `register_state_schedule` adds the per-frame
     /// `StateSchedule` to the App's World via Bevy's
     /// `World::add_schedule`. Pin the schedule is reachable from
     /// the App so the future 7-1 sub-phase can move the
@@ -562,10 +709,8 @@ mod tests {
         );
     }
 
-    /// `GameplayPlugin` installs the real eg-game ECS schedule into
-    /// the App's World. This is the first single-source cut: gameplay
-    /// resources and systems exist on the App world; the compatibility wrapper
-    /// remains isolated to eg-game legacy callers.
+    /// `GameplayPlugin` installs the eg-game ECS schedule into the App's
+    /// World. Gameplay resources and systems are App-world authoritative.
     #[test]
     fn runtime_app_registers_gameplay_schedule() {
         let mut runtime = Runtime::new_test();
@@ -625,8 +770,8 @@ mod tests {
 
     /// `Runtime::run_app_frame` drives the App's `Update` schedule,
     /// then explicitly runs the eg-state `StateSchedule` on the App's
-    /// World before syncing typed request resources and scheduled frame
-    /// timing back through the remaining compatibility shell.
+    /// World while typed request resources and scheduled frame timing remain
+    /// App-world owned.
     #[test]
     fn runtime_run_app_frame_updates_app_state_schedule() {
         let mut runtime = Runtime::new_test();
@@ -634,14 +779,12 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(eg_types::AppPhase::Playing);
+            .insert_resource(State::new(eg_types::AppPhase::Playing));
         std::thread::sleep(std::time::Duration::from_millis(20));
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let app_phase = runtime.app.world().resource::<AppPhaseRes>();
-        assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
         let app_frame_time = *runtime.app.world().resource::<FrameTimeRes>();
         assert!(
             app_frame_time.delta_seconds > 0.0,
@@ -663,18 +806,15 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(eg_types::AppPhase::Playing);
+            .insert_resource(State::new(eg_types::AppPhase::Playing));
 
         runtime.app.update();
 
-        let app_phase = runtime.app.world().resource::<AppPhaseRes>();
-        assert_eq!(app_phase.current, eg_types::AppPhase::Playing);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
     }
 
-    /// `Runtime::run_app_frame` drains App-world messages and applies
-    /// the recovered legacy command to `State` during the compatibility
-    /// window. UI commands enter through this path before legacy dispatch.
+    /// `Runtime::run_app_frame` drains App-world messages and runs the
+    /// authoritative state schedule. UI commands enter through this path.
     #[test]
     fn runtime_run_app_frame_dispatches_app_world_commands() {
         let mut runtime = Runtime::new_test();
@@ -692,9 +832,7 @@ mod tests {
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert!(
-            runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Editor
-        );
+        assert!(current_phase(&runtime) == eg_types::AppPhase::Editor);
     }
 
     #[test]
@@ -828,13 +966,9 @@ mod tests {
 
     // --- Phase 3.48 / Navigation request carve-out tests ---
     //
-    // The `GameQuitToMenu`, `GameRestartLevel`,
-    // `GameSetPracticeCheckpoint`, and
-    // `GameRemovePracticeCheckpoint` messages route through dedicated
-    // request resources; the runtime sync consumes them and calls the
-    // existing legacy `State::apply_game_*` compatibility methods.
-    // The end-to-end tests below exercise the full pipeline through
-    // `Runtime::run_app_frame`.
+    // The gameplay messages route through direct App-world resources or
+    // dedicated typed requests consumed by StateSchedule. The end-to-end
+    // tests below exercise the full pipeline through `run_app_frame`.
 
     use eg_state::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, TurnRight as GameTurnRight,
@@ -849,11 +983,7 @@ mod tests {
         runtime.app.world_mut().write_message(GameQuitToMenu);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
         assert!(
             !runtime
                 .app
@@ -872,11 +1002,7 @@ mod tests {
         runtime.app.world_mut().write_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
         assert!(
             !runtime
                 .app
@@ -895,13 +1021,7 @@ mod tests {
         runtime.app.world_mut().write_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Editor
-        );
-        assert!(
-            runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Editor
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Editor);
         assert!(
             runtime
                 .app
@@ -933,10 +1053,7 @@ mod tests {
         runtime.app.world_mut().write_message(GameTurnRight);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Playing
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
         assert!(
             runtime
                 .app
@@ -950,10 +1067,7 @@ mod tests {
             !runtime.app.world().resource::<GameplayResetRes>().pending,
             "menu TurnRight reset must be consumed during the same App frame"
         );
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Playing
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
     }
 
     #[test]
@@ -987,10 +1101,7 @@ mod tests {
         runtime.app.world_mut().write_message(Playtest);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Playing
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
         assert!(
             runtime
                 .app
@@ -1106,12 +1217,7 @@ mod tests {
         let runtime = Runtime::new_test();
 
         // The App's World has the plugin resources.
-        let app_phase = runtime.app.world().resource::<AppPhaseRes>();
-        assert_eq!(app_phase.current, eg_types::AppPhase::Menu);
-
-        // Pin that the State is still in the Menu phase after
-        // the App was built (no setup cross-talk).
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
     }
 
     /// The production frame path advances the App-world gameplay entities.
@@ -1121,9 +1227,7 @@ mod tests {
 
         {
             let world = runtime.app.world_mut();
-            world
-                .resource_mut::<AppPhaseRes>()
-                .set(eg_types::AppPhase::Playing);
+            world.insert_resource(State::new(eg_types::AppPhase::Playing));
             world.resource_mut::<SessionStateRes>().playtesting_editor = false;
             world.resource_mut::<SessionStateRes>().game_paused = false;
             let mut clock = world.resource_mut::<eg_game::GameClock>();
@@ -1178,11 +1282,7 @@ mod tests {
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
         assert!(
             runtime
                 .app
@@ -1223,7 +1323,7 @@ mod tests {
 
         let world = runtime.app.world();
         assert_eq!(
-            world.resource::<AppPhaseRes>().current,
+            *world.resource::<State<eg_types::AppPhase>>().get(),
             eg_types::AppPhase::Playing
         );
         assert!(world.resource::<eg_game::GameClock>().game_over);
@@ -1306,13 +1406,7 @@ mod tests {
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Editor
-        );
-        assert!(
-            runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Editor
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Editor);
         assert!(
             !runtime
                 .app
@@ -1335,9 +1429,7 @@ mod tests {
 
         {
             let world = runtime.app.world_mut();
-            world
-                .resource_mut::<AppPhaseRes>()
-                .set(eg_types::AppPhase::Playing);
+            world.insert_resource(State::new(eg_types::AppPhase::Playing));
             world.resource_mut::<SessionStateRes>().playtesting_editor = false;
             world.resource_mut::<SessionStateRes>().game_paused = false;
             world.resource_mut::<eg_game::GameClock>().started = true;
@@ -3112,13 +3204,13 @@ mod tests {
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
+            current_phase(&runtime),
             eg_types::AppPhase::Menu,
-            "GameOver TurnRight must mutate AppPhaseRes directly"
+            "GameOver TurnRight must queue the App-owned Menu transition"
         );
         assert!(
-            runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu,
-            "sync_app_phase_state must mirror the direct game-over phase carve-out"
+            current_phase(&runtime) == eg_types::AppPhase::Menu,
+            "the App-owned phase must remain Menu after game-over return"
         );
     }
 
@@ -3244,7 +3336,7 @@ mod tests {
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
+            current_phase(&runtime),
             eg_types::AppPhase::Playing,
             "paused gameplay TurnRight must preserve the App phase"
         );
@@ -3458,7 +3550,7 @@ mod tests {
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
     }
 
     #[test]
@@ -3518,13 +3610,7 @@ mod tests {
                 .game_paused,
             "playtest Escape must not toggle the real-game pause flag"
         );
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Editor
-        );
-        assert!(
-            runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Editor
-        );
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Editor);
         assert!(
             !runtime
                 .app
@@ -3634,11 +3720,7 @@ mod tests {
         runtime.app.world_mut().write_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime.app.world().resource::<AppPhaseRes>().current,
-            eg_types::AppPhase::Menu
-        );
-        assert!(runtime.app.world().resource::<AppPhaseRes>().current == eg_types::AppPhase::Menu);
+        assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
         assert!(
             !runtime
                 .app

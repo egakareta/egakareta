@@ -23,6 +23,7 @@ use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{Schedule, SystemSet};
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::{
     TapDivisionPreviewRange, derive_timing_division_tap_previews, tap_time_is_timing_division,
@@ -63,9 +64,9 @@ use super::resources::{
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
 use crate::state::{
-    AppPhaseRes, BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, FrameTimeRes, MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    FrameTimeRes, MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
     editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
     evaluate_camera_track_for_objects,
 };
@@ -131,6 +132,7 @@ impl Plugin for RenderPlugin {
             .init_resource::<RenderBlockEffectVerticesRes>()
             .init_resource::<RenderPracticeCheckpointVerticesRes>()
             .init_resource::<RenderPlayingBlockMeshesRes>()
+            .init_resource::<RenderMenuPreviewBlockMeshesRes>()
             .init_resource::<RenderEditorBlockMeshesRes>()
             .init_resource::<RenderEditorSpawnMarkerVerticesRes>()
             .init_resource::<RenderEditorGizmoVerticesRes>()
@@ -160,6 +162,7 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderBlockEffectVerticesRes>();
     world.init_resource::<RenderPracticeCheckpointVerticesRes>();
     world.init_resource::<RenderPlayingBlockMeshesRes>();
+    world.init_resource::<RenderMenuPreviewBlockMeshesRes>();
     world.init_resource::<RenderEditorBlockMeshesRes>();
     world.init_resource::<RenderEditorSpawnMarkerVerticesRes>();
     world.init_resource::<RenderEditorGizmoVerticesRes>();
@@ -236,7 +239,7 @@ pub fn present_render_frame_system(
 /// draw passes are also scheduled in the App world.
 #[derive(SystemParam)]
 pub(crate) struct RenderFrameInputParams<'w, 's> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     input: Res<'w, EditorInputRes>,
     session: Res<'w, SessionStateRes>,
     camera: Res<'w, EditorCameraRes>,
@@ -250,7 +253,7 @@ pub(crate) struct RenderFrameInputParams<'w, 's> {
 
 /// Build the per-frame render input from the grouped App-world parameters.
 pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParams) {
-    let current_phase = params.phase.current;
+    let current_phase = *params.phase.get();
     let editor_is_playing = params.timeline.0.playback.playing;
     let player_position = params
         .player
@@ -293,7 +296,7 @@ pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParam
 /// The compatibility renderer still owns the GPU mesh slot, so Runtime
 /// uploads this extracted vertex list after the schedule completes.
 pub(crate) fn extract_trail_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     timeline: Res<EditorTimelineRes>,
     clock: Option<Res<eg_game::GameClock>>,
@@ -305,7 +308,7 @@ pub(crate) fn extract_trail_vertices_system(
     )>,
     mut trail_vertices: ResMut<RenderTrailVerticesRes>,
 ) {
-    if phase.current == AppPhase::Editor {
+    if *phase.get() == AppPhase::Editor {
         if input.0.mode == EditorMode::Timing {
             trail_vertices.0.clear();
         } else if timeline.0.playback.playing {
@@ -327,7 +330,7 @@ pub(crate) fn extract_trail_vertices_system(
         return;
     }
 
-    if !matches!(phase.current, AppPhase::Playing | AppPhase::GameOver) {
+    if !matches!(*phase.get(), AppPhase::Playing | AppPhase::GameOver) {
         trail_vertices.0.clear();
         return;
     }
@@ -421,11 +424,11 @@ pub(crate) fn extract_block_effect_vertices_system(
 /// The compatibility renderer receives the resulting vertices through the
 /// normal scheduled mesh upload path.
 pub(crate) fn extract_practice_checkpoint_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
     mut checkpoint_vertices: ResMut<RenderPracticeCheckpointVerticesRes>,
 ) {
-    if phase.current != AppPhase::Playing
+    if *phase.get() != AppPhase::Playing
         || session.playtesting_editor
         || !session.practice_mode_enabled
         || session.practice_checkpoints.is_empty()
@@ -536,7 +539,7 @@ fn editor_objects_for_render(
 /// entities. This is the scheduled replacement for the animated-block branch
 /// in the former legacy frame callback.
 pub(crate) fn extract_playing_block_meshes_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
     clock: Option<Res<eg_game::GameClock>>,
     editor_objects: Res<EditorObjectsRes>,
@@ -545,7 +548,7 @@ pub(crate) fn extract_playing_block_meshes_system(
 ) {
     block_meshes.result = None;
     block_meshes.chunked = None;
-    if !matches!(phase.current, AppPhase::Playing | AppPhase::GameOver) || session.game_paused {
+    if !matches!(*phase.get(), AppPhase::Playing | AppPhase::GameOver) || session.game_paused {
         return;
     }
     let Some(clock) = clock else {
@@ -595,12 +598,12 @@ pub(crate) fn extract_playing_block_meshes_system(
 /// The cache key is the selected preview index so an idle menu does not
 /// rebuild the same static chunk mesh every frame.
 pub(crate) fn extract_menu_preview_block_mesh_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     menu: Option<Res<MenuStateRes>>,
     preview_objects: Res<MenuPreviewObjectsRes>,
     mut block_meshes: ResMut<RenderMenuPreviewBlockMeshesRes>,
 ) {
-    if phase.current != AppPhase::Menu {
+    if *phase.get() != AppPhase::Menu {
         return;
     }
     let Some(menu) = menu else {
@@ -621,7 +624,7 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
 /// resources. This is the scheduled replacement for the editor block rebuild
 /// branches in the former legacy frame callback.
 pub(crate) fn extract_editor_block_meshes_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     objects: Res<EditorObjectsRes>,
     timeline: Res<EditorTimelineRes>,
@@ -629,7 +632,7 @@ pub(crate) fn extract_editor_block_meshes_system(
 ) {
     block_meshes.static_mesh = eg_mesh::ChunkedBlockMesh::default();
     block_meshes.selected_geometry = eg_mesh::MeshGeometry::default();
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         return;
     }
 
@@ -678,11 +681,11 @@ pub(crate) fn extract_editor_block_meshes_system(
 
 /// Extract the editor spawn marker from App-owned spawn metadata.
 pub(crate) fn extract_editor_spawn_marker_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     spawn: Res<EditorSpawnRes>,
     mut marker_vertices: ResMut<RenderEditorSpawnMarkerVerticesRes>,
 ) {
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         marker_vertices.0.clear();
         return;
     }
@@ -758,7 +761,7 @@ fn gizmo_pixels_to_world_scale(
 /// Extract the editor transform gizmo from App-owned selection, objects,
 /// interaction state, camera uniform, and viewport configuration.
 pub(crate) fn extract_editor_gizmo_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     objects: Res<EditorObjectsRes>,
     triggers: Res<EditorTriggerRes>,
@@ -768,7 +771,7 @@ pub(crate) fn extract_editor_gizmo_vertices_system(
     mut gizmo_vertices: ResMut<RenderEditorGizmoVerticesRes>,
 ) {
     gizmo_vertices.0.clear();
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         return;
     }
 
@@ -868,13 +871,13 @@ pub(crate) fn clear_editor_dirty_flags_system(mut runtime: ResMut<EditorRuntimeR
 /// Extract the editor camera arrow from App-owned camera/timeline resources.
 /// Runtime uploads the derived vertices into the compatibility mesh slot.
 pub(crate) fn extract_editor_camera_arrow_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     camera: Res<EditorCameraRes>,
     timeline: Res<EditorTimelineRes>,
     mut arrow_vertices: ResMut<RenderEditorCameraArrowVerticesRes>,
 ) {
-    if phase.current != AppPhase::Editor || timeline.0.playback.playing {
+    if *phase.get() != AppPhase::Editor || timeline.0.playback.playing {
         arrow_vertices.0.clear();
         return;
     }
@@ -904,14 +907,14 @@ pub(crate) fn extract_editor_camera_arrow_vertices_system(
 /// Extract the editor cursor from App-owned input/config/timeline resources.
 /// Runtime uploads the derived vertices into the compatibility mesh slot.
 pub(crate) fn extract_editor_cursor_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     config: Res<EditorConfigRes>,
     runtime: Res<EditorRuntimeRes>,
     timeline: Res<EditorTimelineRes>,
     mut cursor_vertices: ResMut<RenderEditorCursorVerticesRes>,
 ) {
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         cursor_vertices.0.clear();
         return;
     }
@@ -958,7 +961,7 @@ pub(crate) fn extract_editor_cursor_vertices_system(
 /// Extract editor hitbox visualization from App-owned editor resources.
 /// Runtime uploads the derived vertices into the compatibility mesh slot.
 pub(crate) fn extract_editor_hitbox_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     runtime: Res<EditorRuntimeRes>,
     objects: Res<EditorObjectsRes>,
@@ -970,7 +973,7 @@ pub(crate) fn extract_editor_hitbox_vertices_system(
     } else {
         input.0.mode
     };
-    if phase.current != AppPhase::Editor
+    if *phase.get() != AppPhase::Editor
         || effective_mode == EditorMode::Timing
         || !input.0.show_hitbox_visualization
     {
@@ -1005,7 +1008,7 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
 /// resources. Runtime uploads the derived vertices into the compatibility
 /// mesh slot.
 pub(crate) fn extract_editor_tap_indicator_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     runtime: Res<EditorRuntimeRes>,
     objects: Res<EditorObjectsRes>,
@@ -1019,7 +1022,7 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     } else {
         input.0.mode
     };
-    if phase.current != AppPhase::Editor || effective_mode == EditorMode::Timing {
+    if *phase.get() != AppPhase::Editor || effective_mode == EditorMode::Timing {
         tap_vertices.0.clear();
         return;
     }
@@ -1315,7 +1318,7 @@ fn selected_editor_group_bounds(
 /// Extract editor selection and hover outlines from App-owned objects/input.
 /// Runtime uploads the derived mesh data into the compatibility slots.
 pub(crate) fn extract_editor_selection_overlays_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     objects: Res<EditorObjectsRes>,
     mut selection: ResMut<RenderEditorSelectionOverlayRes>,
@@ -1327,7 +1330,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
     hover.stencil_vertices.clear();
     hover.outline_vertices.clear();
 
-    if phase.current != AppPhase::Editor || !input.0.mode.is_transform_mode() {
+    if *phase.get() != AppPhase::Editor || !input.0.mode.is_transform_mode() {
         return;
     }
 
@@ -1489,13 +1492,13 @@ fn transform_trigger_markers_for_triggers(
 /// timeline state. Runtime uploads the derived vertices into the
 /// compatibility mesh slot.
 pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     triggers: Res<EditorTriggerRes>,
     timeline: Res<EditorTimelineRes>,
     mut marker_vertices: ResMut<RenderEditorTransformTriggerMarkerVerticesRes>,
 ) {
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         marker_vertices.0.clear();
         return;
     }
@@ -1527,7 +1530,7 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
 
 #[derive(SystemParam)]
 pub(crate) struct RenderUniformsParams<'w, 's> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     camera: Res<'w, EditorCameraRes>,
     objects: Res<'w, EditorObjectsRes>,
     timeline: Res<'w, EditorTimelineRes>,
@@ -1569,7 +1572,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         .map(|clock| (clock.elapsed_seconds, clock.started, clock.game_over))
         .unwrap_or((0.0, false, false));
 
-    let (eye, target) = match params.phase.current {
+    let (eye, target) = match *params.phase.get() {
         AppPhase::Menu => params
             .menu
             .as_ref()
@@ -1612,7 +1615,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
     let aspect = width as f32 / height as f32;
     let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
     let mut line = params.uniforms.line;
-    if matches!(params.phase.current, AppPhase::Playing | AppPhase::GameOver) {
+    if matches!(*params.phase.get(), AppPhase::Playing | AppPhase::GameOver) {
         line = LineUniform {
             offset: [
                 (player_position[0] * 100.0).round() / 100.0,
@@ -1720,7 +1723,7 @@ pub fn apply_resize_surface_system(
 pub(crate) struct RenderMeshUploadParams<'w> {
     gpu: Option<NonSend<'w, RenderGpuRes>>,
     meshes: Option<NonSendMut<'w, RenderMeshesRes>>,
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     block_effects: Res<'w, RenderBlockEffectVerticesRes>,
     playing: Res<'w, RenderPlayingBlockMeshesRes>,
     menu_preview: Res<'w, RenderMenuPreviewBlockMeshesRes>,
@@ -1796,7 +1799,7 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
         meshes.0.blocks_static_instanced.clear();
         meshes.0.blocks_selected.clear();
     }
-    if phase.current == AppPhase::Menu
+    if *phase.get() == AppPhase::Menu
         && let Some(chunked) = menu_preview.chunked.as_ref()
     {
         meshes.0.blocks_chunked.replace_with_chunked_mesh(
@@ -1811,7 +1814,7 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
         meshes.0.blocks_static_instanced.clear();
         meshes.0.blocks_selected.clear();
     }
-    if phase.current == AppPhase::Editor {
+    if *phase.get() == AppPhase::Editor {
         meshes.0.blocks_static_chunked.replace_with_chunked_mesh(
             device,
             "Chunked Block Static Buffer",
@@ -1930,7 +1933,7 @@ pub fn mark_mesh_dirty_system(
 /// Add the App-world render bookkeeping systems to a [`Schedule`].
 ///
 /// The schedule itself is added by the
-/// [`super::super::plugins::register_state_command_pipeline`] helper
+/// [`super::super::plugins::register_state_schedule`] helper
 /// or by the Phase 7 `App` work; this function only adds the systems
 /// that populate the POD render resources.
 ///
@@ -1956,11 +1959,10 @@ pub fn add_state_render_systems(schedule: &mut Schedule) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::render::resources::{
-        render_heavy_resources_present, render_pod_resources_present,
-    };
-    use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes, SessionStateRes};
+    use crate::state::render::resources::render_pod_resources_present;
+    use crate::state::{EditorCameraRes, EditorInputRes, SessionStateRes};
     use bevy_ecs::world::World;
+    use bevy_state::prelude::State;
     use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize};
 
     #[test]
@@ -1983,14 +1985,14 @@ mod tests {
     #[test]
     fn render_frame_input_system_reads_app_resources() {
         let mut world = World::new();
-        world.init_resource::<AppPhaseRes>();
+        world.init_resource::<State<AppPhase>>();
         world.init_resource::<EditorInputRes>();
         world.init_resource::<SessionStateRes>();
         world.init_resource::<EditorCameraRes>();
         world.init_resource::<EditorTimelineRes>();
         world.init_resource::<RenderFrameInputRes>();
         world.init_resource::<RenderConfigRes>();
-        world.resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+        world.insert_resource(State::new(AppPhase::Editor));
         world.resource_mut::<EditorInputRes>().0.mode = EditorMode::Timing;
         world.resource_mut::<EditorCameraRes>().0.editor_pan = [4.0, -2.0];
         world.resource_mut::<SessionStateRes>().editor_sky_color = [0.2, 0.4, 0.6];
@@ -2016,15 +2018,6 @@ mod tests {
         assert!(world.contains_non_send::<RenderMeshesRes>());
         assert!(world.contains_non_send::<RenderSurfaceHostRes>());
         assert!(!world.contains_non_send::<RenderGpuRes>());
-    }
-
-    /// Bare worlds do not fabricate a GPU resource; `State` construction
-    /// inserts the real `RenderGpuRes` once wgpu initialization succeeds.
-    #[test]
-    fn render_heavy_resources_present_returns_false_for_bare_world() {
-        let mut world = World::new();
-        register_render_pod_resources(&mut world);
-        assert!(!render_heavy_resources_present(&world));
     }
 
     /// Phase 4d: changed authored object components emit rebuild events.
@@ -2109,7 +2102,7 @@ mod tests {
         objects: Vec<LevelObject>,
     ) -> (RenderEditorSelectionOverlayRes, RenderEditorHoverOverlayRes) {
         let mut world = World::new();
-        world.insert_resource(AppPhaseRes::new(AppPhase::Editor));
+        world.insert_resource(State::new(AppPhase::Editor));
         world.insert_resource(EditorInputRes(input));
         world.insert_resource(EditorObjectsRes { objects });
         world.init_resource::<RenderEditorSelectionOverlayRes>();
@@ -2198,8 +2191,7 @@ mod tests {
     fn editor_cursor_extraction_hides_cursor_over_selected_tap() {
         let mut app = crate::state::test_support::TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         {
             let mut input = app.world_mut().resource_mut::<EditorInputRes>();
             input.0.mode = EditorMode::Tapping;
@@ -2245,8 +2237,7 @@ mod tests {
     fn editor_tap_indicator_extraction_respects_phase_and_mode() {
         let mut app = crate::state::test_support::TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         {
             let mut input = app.world_mut().resource_mut::<EditorInputRes>();
             input.0.mode = EditorMode::Tapping;
@@ -2281,8 +2272,7 @@ mod tests {
     fn editor_transform_marker_extraction_is_app_owned_and_phase_gated() {
         let mut app = crate::state::test_support::TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
             LevelObject::new("core/stone"),
             LevelObject {
@@ -2311,9 +2301,7 @@ mod tests {
                 .is_empty()
         );
 
-        app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Menu);
+        app.world_mut().insert_resource(State::new(AppPhase::Menu));
         schedule.run(app.world_mut());
         assert!(
             app.world()
@@ -2327,8 +2315,7 @@ mod tests {
     fn editor_block_mesh_extraction_reads_app_objects_and_selection() {
         let mut app = crate::state::test_support::TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
         {
             let mut input = app.world_mut().resource_mut::<EditorInputRes>();

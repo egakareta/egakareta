@@ -34,7 +34,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use bevy_state::prelude::NextState;
+use bevy_state::prelude::{NextState, State};
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
     derive_timeline_elapsed_seconds, remove_tap_with_indicator,
@@ -43,7 +43,7 @@ use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AppPhaseRes, AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes,
     EditorDirtyFlags, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
     EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
     RuntimeAudioPreloadRes, SessionStateRes, start_audio_source_at_seconds_for_resources,
@@ -128,7 +128,7 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_toggle_timeline_playback(
     mut events: MessageReader<ToggleTimelinePlayback>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut input: ResMut<EditorInputRes>,
     mut runtime: ResMut<EditorRuntimeRes>,
     mut timeline: ResMut<EditorTimelineRes>,
@@ -140,7 +140,7 @@ pub fn handle_toggle_timeline_playback(
     session: Res<SessionStateRes>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
 
@@ -358,12 +358,12 @@ pub fn handle_set_selected_tap(
 
 pub fn handle_set_selected_tap_time(
     mut events: MessageReader<SetSelectedTapTime>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut input: ResMut<EditorInputRes>,
     mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for event in events.read() {
-        if phase.current != AppPhase::Editor || !event.0.is_finite() {
+        if *phase.get() != AppPhase::Editor || !event.0.is_finite() {
             continue;
         }
 
@@ -439,7 +439,7 @@ pub fn handle_set_waveform_scroll(
 
 pub fn handle_playtest(
     mut events: MessageReader<Playtest>,
-    mut phase: ResMut<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut next_phase: ResMut<NextState<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     spawn: Res<EditorSpawnRes>,
@@ -450,7 +450,7 @@ pub fn handle_playtest(
     mut gameplay_reset: ResMut<GameplayResetRes>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Editor {
+        if *phase.get() != AppPhase::Editor {
             continue;
         }
 
@@ -468,7 +468,6 @@ pub fn handle_playtest(
 
         timeline.0.playback.playing = false;
         timeline.0.playback.runtime = None;
-        phase.set(AppPhase::Playing);
         next_phase.set(AppPhase::Playing);
         session.game_paused = false;
         session.playtesting_editor = true;

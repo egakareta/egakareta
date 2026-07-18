@@ -24,6 +24,7 @@ benchmarks = []
 [dependencies]
 bevy_app = { workspace = true }
 bevy_ecs = { workspace = true }
+bevy_state = { workspace = true }
 eg-blocks = { workspace = true }
 eg-types = { workspace = true }
 eg-game = { workspace = true }

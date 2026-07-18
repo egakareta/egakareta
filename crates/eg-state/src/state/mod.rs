@@ -85,8 +85,8 @@ pub use input_bridge::{
 pub use lifecycle::AppBootstrap;
 pub use perf::PerfState;
 pub use plugins::{
-    EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins,
-    register_state_command_pipeline, run_state_schedule_system, setup_state_app,
+    EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins, register_state_schedule,
+    run_state_schedule_system, setup_state_app,
 };
 pub use render::resources::{
     RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
@@ -102,7 +102,7 @@ pub use render::resources::{
 pub use runtime::{BlockVisualEffect, EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
 pub use sets::StateSet;
 pub use state_resources::{
-    AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+    AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
     EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,

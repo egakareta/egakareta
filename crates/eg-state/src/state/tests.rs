@@ -7,9 +7,9 @@
 */
 use super::EditorDirtyFlags;
 use crate::state::{
-    AppPhaseRes, EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes,
-    SessionStateRes,
+    EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
 };
+use bevy_state::prelude::State;
 use eg_editor_domain::derive_timeline_position;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 // ── EditorDirtyFlags contract tests ─────────────────────────────
@@ -24,9 +24,9 @@ fn app_world_is_seeded_with_default_resources() {
     let app = crate::state::test_support::TestApp::minimal();
     let world = app.world();
     assert_eq!(
-        world.resource::<AppPhaseRes>().get(),
+        *world.resource::<State<eg_types::AppPhase>>().get(),
         eg_types::AppPhase::Menu,
-        "AppPhaseRes should default to Menu"
+        "State<AppPhase> should default to Menu"
     );
     assert!(
         world.get_resource::<SessionStateRes>().is_some(),
@@ -98,31 +98,27 @@ fn tick_state_is_safe_to_call_with_empty_schedule() {
 
 #[test]
 fn tick_state_runs_phase_transition_system() {
-    // The Bevy State resource is authoritative; AppPhaseRes remains a
-    // compatibility mirror for handlers that have not moved to State yet.
     let mut app = crate::state::test_support::TestApp::minimal();
 
     app.tick_state();
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().get(),
+        *app.world().resource::<State<eg_types::AppPhase>>().get(),
         eg_types::AppPhase::Menu
     );
 
-    // Change the phase manually (in later phases this happens via
-    // a `NavigationEvent`; for Phase 2c we set it directly).
+    // Change the phase manually in this direct App-world fixture.
     app.world_mut()
-        .resource_mut::<AppPhaseRes>()
-        .set(eg_types::AppPhase::Playing);
+        .insert_resource(State::new(eg_types::AppPhase::Playing));
 
     app.tick_state();
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().get(),
+        *app.world().resource::<State<eg_types::AppPhase>>().get(),
         eg_types::AppPhase::Playing
     );
 
     app.tick_state();
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().get(),
+        *app.world().resource::<State<eg_types::AppPhase>>().get(),
         eg_types::AppPhase::Playing
     );
 }
@@ -130,15 +126,12 @@ fn tick_state_runs_phase_transition_system() {
 // ── Phase 3 — command / event fragmentation tests ───────────────
 #[test]
 fn test_app_tick_state_writes_command_messages_to_app_resources() {
-    // TurnRight and SetEditorMode are handled through App-world resources.
+    // SetEditorMode is handled through App-world resources.
     use crate::events::editor_mode::SetEditorMode;
-    use crate::events::navigation::TurnRight;
     use eg_types::EditorMode;
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
-    // Write a TurnRight message while the default test phase is Menu.
-    app.world_mut().write_message(TurnRight);
     // Write a SetEditorMode(Place) message. Phase 3.13 carved
     // this out: the handler mutates `EditorInputRes.0.mode`
     // directly instead of staging a legacy
@@ -156,9 +149,8 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
         "SetEditorMode handler must mutate EditorInputRes.mode"
     );
     assert_eq!(
-        app.world().resource::<AppPhaseRes>().get(),
-        AppPhase::Menu,
-        "The minimal menu test world has no selected level to start"
+        *app.world().resource::<State<eg_types::AppPhase>>().get(),
+        AppPhase::Menu
     );
 }
 
@@ -183,10 +175,10 @@ fn test_app_tick_state_writes_input_state_directly() {
 #[test]
 fn test_app_camera_pan_system_owns_key_motion() {
     use crate::state::editor_camera::update_editor_camera_pan_system;
-    use crate::state::{AppPhaseRes, EditorCameraRes, EditorInputRes};
+    use crate::state::{EditorCameraRes, EditorInputRes};
 
     let mut world = bevy_ecs::world::World::new();
-    world.insert_resource(AppPhaseRes::new(AppPhase::Editor));
+    world.insert_resource(State::new(AppPhase::Editor));
     world.insert_resource(crate::state::FrameTimeRes {
         delta_seconds: 0.1,
         ..Default::default()
@@ -208,10 +200,11 @@ fn test_app_camera_pan_system_owns_key_motion() {
 #[test]
 fn test_app_tick_state_writes_pointer_state_directly() {
     use crate::events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick};
-    use crate::state::{AppPhaseRes, EditorCameraRes};
+    use crate::state::EditorCameraRes;
 
     let mut app = crate::state::test_support::TestApp::minimal();
-    app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
 
     app.world_mut()
         .write_message(PointerMoved { x: 10.0, y: 20.0 });
@@ -244,8 +237,7 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut()
-        .resource_mut::<AppPhaseRes>()
-        .set(AppPhase::Editor);
+        .insert_resource(State::new(AppPhase::Editor));
 
     let undo_object = LevelObject {
         id: "undo".to_string(),
@@ -322,7 +314,8 @@ fn test_app_tick_state_builds_frame_input_from_world() {
     use crate::state::render::resources::RenderFrameInputRes;
 
     let mut app = crate::state::test_support::TestApp::minimal();
-    app.world_mut().resource_mut::<AppPhaseRes>().current = AppPhase::Editor;
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
     app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
     app.world_mut()
         .resource_mut::<SessionStateRes>()
@@ -409,7 +402,9 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
-    app.tick_state();
+    let mut poll_schedule = bevy_ecs::schedule::Schedule::default();
+    poll_schedule.add_systems(crate::state::async_bridge::poll_channels_system);
+    poll_schedule.run(app.world_mut());
 
     let messages = app.world().resource::<Messages<LevelImportResultEvent>>();
     let mut cursor = messages.get_cursor();
@@ -485,7 +480,7 @@ fn test_app_render_extract_builds_menu_and_editor_uniforms() {
     );
 
     app.world_mut()
-        .insert_resource(AppPhaseRes::new(AppPhase::Editor));
+        .insert_resource(State::new(AppPhase::Editor));
     {
         let mut camera = app.world_mut().resource_mut::<EditorCameraRes>();
         camera.0.editor_pan = [4.0, 8.0];
@@ -521,14 +516,21 @@ fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut()
-        .insert_resource(AppPhaseRes::new(AppPhase::Playing));
+        .insert_resource(State::new(AppPhase::Playing));
     app.world_mut().insert_resource(RenderConfigRes {
         width: 1280,
         height: 720,
         apply_gamma_correction: false,
     });
     let position = [12.0, 3.0, 7.0];
-    app.world_mut().spawn((
+    let player_entity = {
+        let world = app.world_mut();
+        world
+            .query_filtered::<bevy_ecs::entity::Entity, bevy_ecs::prelude::With<eg_game::PlayerPosition>>()
+            .single(world)
+            .expect("TestApp should seed one player entity")
+    };
+    app.world_mut().entity_mut(player_entity).insert((
         eg_game::PlayerPosition(position),
         eg_game::PlayerDirection(Direction::Right),
     ));

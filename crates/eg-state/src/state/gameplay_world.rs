@@ -27,8 +27,8 @@ use eg_game::{
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
-    AppPhaseRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, GameplayResetRes,
-    GameplayResetSeed, MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
+    EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, GameplayResetRes, GameplayResetSeed,
+    MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -93,9 +93,9 @@ pub(super) fn prepare_app_gameplay_fixed_system(
 /// through the existing Runtime resource mirrors.
 pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     let (playtesting_editor, level_name, progress) = {
-        let phase = world.resource::<AppPhaseRes>();
+        let phase = world.resource::<State<eg_types::AppPhase>>();
         let clock = world.resource::<GameClock>();
-        if phase.current != eg_types::AppPhase::Playing
+        if *phase.get() != eg_types::AppPhase::Playing
             || !clock.level_complete
             || clock.completion_hold_seconds > 0.0
         {
@@ -139,9 +139,6 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
 
     if playtesting_editor {
         world
-            .resource_mut::<AppPhaseRes>()
-            .set(eg_types::AppPhase::Editor);
-        world
             .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Editor);
         let mut session = world.resource_mut::<SessionStateRes>();
@@ -153,9 +150,6 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
         session.practice_checkpoints.clear();
         session.audio_stop_pending = true;
     } else {
-        world
-            .resource_mut::<AppPhaseRes>()
-            .set(eg_types::AppPhase::Menu);
         world
             .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Menu);
@@ -193,9 +187,9 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
 /// checkpoint presentation is also world-owned.
 pub fn apply_game_over_transition_system(world: &mut World) {
     let (playtesting_editor, practice_mode_enabled, progress) = {
-        let phase = world.resource::<AppPhaseRes>();
+        let phase = world.resource::<State<eg_types::AppPhase>>();
         let clock = world.resource::<GameClock>();
-        if phase.current != eg_types::AppPhase::Playing || !clock.game_over {
+        if *phase.get() != eg_types::AppPhase::Playing || !clock.game_over {
             return;
         }
 

@@ -343,7 +343,6 @@ impl AppBootstrap {
         world.insert_resource(super::MenuPreviewObjectsRes {
             objects: Vec::new(),
         });
-        world.insert_resource(super::AppPhaseRes::new(phase));
         world.insert_resource(bevy_state::prelude::State::new(phase));
         world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
         world.insert_resource(super::MenuStateRes::new(menu));

@@ -586,7 +586,6 @@ mod tests {
         let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
-        view.level_name = Some("Compose Test".to_owned());
         view.place_preview_position = [2.0, 1.0, 3.0];
         view.place_preview_size = [1.0, 2.0, 1.0];
         view

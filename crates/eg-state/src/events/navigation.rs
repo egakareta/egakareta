@@ -25,7 +25,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::NextState;
+use bevy_state::prelude::{NextState, State};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
@@ -37,7 +37,7 @@ use eg_game::{
 use eg_types::{AppPhase, EditorMode, LevelMetadata};
 
 use crate::state::{
-    AppPhaseRes, AudioBackendRes, BuiltinLevelCatalogRes, EditorAudioCacheRes, EditorConfigRes,
+    AudioBackendRes, BuiltinLevelCatalogRes, EditorAudioCacheRes, EditorConfigRes,
     EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, GameplayResetRes,
     GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
@@ -116,11 +116,10 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: TurnRightResources) {
     for _ in events.read() {
-        match resources.phase.current {
+        match *resources.phase.get() {
             AppPhase::Editor => place_editor_block_from_turn_right(&mut resources),
             AppPhase::Menu => start_gameplay_from_menu(&mut resources),
             AppPhase::GameOver => {
-                resources.phase.set(AppPhase::Menu);
                 resources.next_phase.set(AppPhase::Menu);
             }
             AppPhase::Playing if resources.session.game_paused => {}
@@ -156,7 +155,7 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
 
 #[derive(SystemParam)]
 pub struct TurnRightResources<'w> {
-    phase: ResMut<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     next_phase: ResMut<'w, NextState<AppPhase>>,
     session: ResMut<'w, SessionStateRes>,
     menu: Option<Res<'w, MenuStateRes>>,
@@ -282,7 +281,6 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
     });
     let objects = metadata.objects.clone();
 
-    resources.phase.set(AppPhase::Playing);
     resources.next_phase.set(AppPhase::Playing);
     resources.session.playtesting_editor = false;
     resources.session.game_paused = false;
@@ -392,13 +390,13 @@ fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_>) {
 
 pub fn handle_next_level(
     mut events: MessageReader<NextLevel>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     config: Res<EditorConfigRes>,
     mut input: ResMut<EditorInputRes>,
     mut menu: Option<ResMut<MenuStateRes>>,
 ) {
     for _ in events.read() {
-        match phase.current {
+        match *phase.get() {
             AppPhase::Menu => {
                 if let Some(menu) = menu.as_deref_mut() {
                     let level_count = menu.0.levels.len();
@@ -415,13 +413,13 @@ pub fn handle_next_level(
 
 pub fn handle_prev_level(
     mut events: MessageReader<PrevLevel>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     config: Res<EditorConfigRes>,
     mut input: ResMut<EditorInputRes>,
     mut menu: Option<ResMut<MenuStateRes>>,
 ) {
     for _ in events.read() {
-        match phase.current {
+        match *phase.get() {
             AppPhase::Menu => {
                 if let Some(menu) = menu.as_deref_mut() {
                     let level_count = menu.0.levels.len();
@@ -457,9 +455,8 @@ pub fn handle_toggle_editor(world: &mut World) {
         .drain()
         .collect();
     for _ in events {
-        match world.resource::<AppPhaseRes>().current {
+        match *world.resource::<State<AppPhase>>().get() {
             AppPhase::Editor => {
-                world.resource_mut::<AppPhaseRes>().set(AppPhase::Menu);
                 world
                     .resource_mut::<NextState<AppPhase>>()
                     .set(AppPhase::Menu);
@@ -469,8 +466,6 @@ pub fn handle_toggle_editor(world: &mut World) {
                 }
             }
             AppPhase::Playing if world.resource::<SessionStateRes>().playtesting_editor => {
-                let mut phase = world.resource_mut::<AppPhaseRes>();
-                phase.set(AppPhase::Editor);
                 world
                     .resource_mut::<NextState<AppPhase>>()
                     .set(AppPhase::Editor);
@@ -503,7 +498,6 @@ fn enter_editor_from_menu(world: &mut World) {
         });
     apply_imported_level_to_world(world, metadata);
 
-    world.resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
     world
         .resource_mut::<NextState<AppPhase>>()
         .set(AppPhase::Editor);
@@ -578,12 +572,12 @@ pub fn handle_game_resume(
 // playtests ignore this pause-menu command.
 pub fn handle_game_restart_level(
     mut events: MessageReader<GameRestartLevel>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
     mut gameplay_reset: ResMut<GameplayResetRes>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Playing || session.playtesting_editor {
+        if *phase.get() != AppPhase::Playing || session.playtesting_editor {
             continue;
         }
 
@@ -596,7 +590,7 @@ pub fn handle_game_restart_level(
 /// App-world gameplay reset, matching the legacy restart behavior.
 pub fn handle_game_set_practice_mode(
     mut events: MessageReader<GameSetPracticeMode>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut session: ResMut<SessionStateRes>,
     mut gameplay_reset: ResMut<GameplayResetRes>,
 ) {
@@ -605,7 +599,7 @@ pub fn handle_game_set_practice_mode(
             session.practice_mode_enabled = event.enabled;
             session.practice_checkpoints.clear();
             session.game_paused = false;
-            if phase.current == AppPhase::Playing && !session.playtesting_editor && !event.enabled {
+            if *phase.get() == AppPhase::Playing && !session.playtesting_editor && !event.enabled {
                 gameplay_reset.request();
             }
         }
@@ -614,7 +608,7 @@ pub fn handle_game_set_practice_mode(
 
 #[derive(SystemParam)]
 pub struct PracticeCheckpointResources<'w, 's> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     clock: Res<'w, GameClock>,
     progress: Res<'w, PlayerProgress>,
     players: Query<
@@ -642,7 +636,7 @@ pub fn handle_game_set_practice_checkpoint(
     mut resources: PracticeCheckpointResources,
 ) {
     for _ in events.read() {
-        if resources.phase.current != AppPhase::Playing
+        if *resources.phase.get() != AppPhase::Playing
             || resources.session.playtesting_editor
             || !resources.session.practice_mode_enabled
             || resources.session.game_paused
@@ -700,11 +694,11 @@ pub fn handle_game_set_practice_checkpoint(
 /// reads the old presentation path.
 pub fn handle_game_remove_practice_checkpoint(
     mut events: MessageReader<GameRemovePracticeCheckpoint>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut session: ResMut<SessionStateRes>,
 ) {
     for _ in events.read() {
-        if phase.current == AppPhase::Playing
+        if *phase.get() == AppPhase::Playing
             && !session.playtesting_editor
             && session.practice_mode_enabled
             && !session.game_paused
@@ -718,17 +712,16 @@ pub fn handle_game_remove_practice_checkpoint(
 // editor playtests ignore this pause-menu command.
 pub fn handle_game_quit_to_menu(
     mut events: MessageReader<GameQuitToMenu>,
-    mut phase: ResMut<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     mut next_phase: ResMut<NextState<AppPhase>>,
     mut session: ResMut<SessionStateRes>,
     mut menu: Option<ResMut<MenuStateRes>>,
 ) {
     for _ in events.read() {
-        if phase.current != AppPhase::Playing || session.playtesting_editor {
+        if *phase.get() != AppPhase::Playing || session.playtesting_editor {
             continue;
         }
 
-        phase.set(AppPhase::Menu);
         next_phase.set(AppPhase::Menu);
         session.transition_to_menu();
         if let Some(menu) = menu.as_deref_mut() {

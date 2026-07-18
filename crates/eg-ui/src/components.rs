@@ -9,7 +9,7 @@ use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
-use eg_types::EditorMode;
+use eg_types::{AppSettings, EditorMode};
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
@@ -156,6 +156,7 @@ fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
 
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
+    app_settings: &AppSettings,
     view: &UiStateData,
     duration_seconds: f32,
     commands: &mut impl UiCommandSink,
@@ -213,7 +214,7 @@ pub(crate) fn show_timeline_bar(
             .on_hover_text(format!(
                 "{}{}",
                 play_tooltip,
-                view.app_settings.hotkey_hint("toggle_timeline_playback")
+                app_settings.hotkey_hint("toggle_timeline_playback")
             ))
             .clicked()
         {
@@ -227,7 +228,7 @@ pub(crate) fn show_timeline_bar(
             )
             .on_hover_text(format!(
                 "Zoom Out{}",
-                view.app_settings.hotkey_hint_or("zoom_out", "-")
+                app_settings.hotkey_hint_or("zoom_out", "-")
             ))
             .clicked()
         {
@@ -241,7 +242,7 @@ pub(crate) fn show_timeline_bar(
             )
             .on_hover_text(format!(
                 "Zoom In{}",
-                view.app_settings.hotkey_hint_or("zoom_in", "+")
+                app_settings.hotkey_hint_or("zoom_in", "+")
             ))
             .clicked()
         {
@@ -488,7 +489,7 @@ pub(crate) fn show_timeline_bar(
             )
             .on_hover_text(format!(
                 "Start playtesting{}",
-                view.app_settings.hotkey_hint_or("playtest", "Enter")
+                app_settings.hotkey_hint_or("playtest", "Enter")
             ))
             .clicked()
         {
@@ -988,7 +989,7 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(ui, &view, 60.0, &mut commands);
+                show_timeline_bar(ui, &app_settings, &view, 60.0, &mut commands);
             });
         });
 
@@ -1074,7 +1075,7 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(ui, &view, 20.0, &mut commands);
+                show_timeline_bar(ui, &app_settings, &view, 20.0, &mut commands);
             });
         });
 

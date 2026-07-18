@@ -46,7 +46,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 ## 3. Code Architecture & Layout
 
 - `crates/eg-app/src/platform/runtime.rs`: `Runtime` is the current frame owner and owns only a `bevy_app::App`. `Runtime::run_app_frame(raw_input)` queues platform input, runs App Update for the frame-local egui view, then lets App PostUpdate drive `StateSchedule` and the post-gameplay `RenderExtractSchedule`; presentation reads App-owned render resources, and no legacy State/update/render callback or persistent UI snapshot remains.
-- `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. New Bevy-facing command work should add a semantic `Message` type whose handler mutates App-world resources directly or writes a typed request resource for a scheduled system to consume. Runtime request consumption is only for remaining legacy side effects that have not moved into `StateSchedule`.
+- `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. New Bevy-facing command work should add a semantic `Message` type whose handler mutates App-world resources directly or writes a typed request resource for a scheduled system to consume. Runtime should only handle platform ingress and presentation; typed requests are consumed inside `StateSchedule` unless they require an unavoidable external service boundary.
 - `crates/eg-state/src/commands.rs`: `AppCommand` is the legacy UI/input intent enum. It is translated at App-world ingress into typed Bevy messages by `eg-state::events` and `state::input_bridge`; do not add new top-level variants when an editor-specific `EditorCommand` + message bridge is enough.
 - `crates/eg-codec/src/lib.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
 - `crates/eg-level/src/import_export.rs`: Public API for level import/export: JSON ↔ binary conversion, `.egz` archive handling, format normalization.
@@ -55,7 +55,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - `crates/eg-state/src/`: Application State & Editor Logic. This crate owns the Bevy schedule/resource boundary (`StateSchedule`, `StatePlugins`, async/result bridges, and render extraction) plus the App-owned editor/session resources.
 - `crates/eg-state/src/state/editor_command.rs`: `EditorCommand` sub-enum for all editor-specific commands. New editor features should add variants here, not in `AppCommand`.
 - `crates/eg-state/src/state/input_bridge.rs`: Drains queued platform `InputEvent`s into App-world resources and typed Bevy messages before command handlers run.
-- `crates/eg-state/src/state/gameplay_compat.rs` / `escape_compat.rs`: Small remaining legacy side-effect adapters consumed by Runtime request sync while gameplay pause/practice and Escape state machines migrate fully into App-world systems.
+- `crates/eg-state/src/state/gameplay_world.rs` and `events/misc.rs`: App-world gameplay transition, pause, practice, and Escape systems. Keep compatibility logic behind typed resources/messages rather than adding a State owner.
 - `crates/eg-editor-domain/src/`: Editor Domain Logic
 - `crates/eg-ui/src/`: Egui UI Components
 - `crates/eg-mesh/src/`: Mesh Generation
@@ -149,7 +149,7 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 
 ### Async Tests
 
-- State construction is `async` (e.g., `State::new_test().await`). Use `#[tokio::test]` for async tests.
+- Production bootstrap is async (`AppBootstrap::new_native` / `AppBootstrap::new`); headless tests should use `TestApp` and direct App-world resources. Use `#[tokio::test]` only for tests that await actual async services.
 - Editor tests use `enter_editor_phase("name")` with minimal test data when built-in level metadata is not needed. Avoid `start_editor(0)` (which loads full built-in data) unless specifically testing built-in levels — it makes tests multi-second.
 
 ### Adding a New Serde Field

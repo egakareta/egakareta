@@ -23,13 +23,13 @@
 //!
 //! ```ignore
 //! use eg_state::state::test_support::TestApp;
-//! use eg_state::state::AppPhaseRes;
+//! use bevy_state::prelude::State;
 //! use eg_types::AppPhase;
 //!
 //! let mut app = TestApp::minimal();
-//! app.world_mut().resource_mut::<AppPhaseRes>().set(AppPhase::Editor);
+//! app.world_mut().insert_resource(State::new(AppPhase::Editor));
 //! app.tick();
-//! assert_eq!(app.world().resource::<AppPhaseRes>().get(), AppPhase::Editor);
+//! assert_eq!(*app.world().resource::<State<AppPhase>>().get(), AppPhase::Editor);
 //! ```
 //!
 //! REFACTOR POINT(full-bevy): in the full-Bevy migration, the harness
@@ -42,7 +42,7 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 
 use super::StateSchedule;
-use super::plugins::{register_state_command_pipeline, setup_state_app};
+use super::plugins::{register_state_schedule, setup_state_app};
 
 /// Test harness for the eg-state plugin graph.
 ///
@@ -69,7 +69,7 @@ impl TestApp {
     pub fn minimal() -> Self {
         let mut app = App::new();
         setup_state_app(&mut app);
-        register_state_command_pipeline(app.world_mut());
+        register_state_schedule(app.world_mut());
         app.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
 
         app.insert_resource(super::MenuStateRes::new(eg_types::MenuState {
@@ -173,20 +173,20 @@ impl Default for TestApp {
 mod tests {
     use super::*;
     use crate::state::{
-        AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        FrameTimeRes, MenuStateRes, PerfRes, RenderExtractSchedule, RenderTrailVerticesRes,
-        SessionStateRes, UiStateData,
+        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
+        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+        PerfRes, RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes, UiStateData,
     };
     use bevy_app::FixedUpdate;
+    use bevy_state::prelude::State;
     use eg_game::TimelineSimulationRuntime;
-    use eg_types::{AppPhase, Direction, EditorMode, MenuState};
+    use eg_types::{AppPhase, Direction, EditorMode};
 
     #[test]
     fn test_app_minimal_seeds_state_plugin_resources() {
         let app = TestApp::minimal();
         app.assert_resource_exists::<eg_game::GameClock>();
-        app.assert_resource_exists::<AppPhaseRes>();
+        app.assert_resource_exists::<State<AppPhase>>();
         app.assert_resource_exists::<SessionStateRes>();
         app.assert_resource_exists::<EditorInputRes>();
         app.assert_resource_exists::<EditorObjectsRes>();
@@ -202,23 +202,8 @@ mod tests {
     }
 
     #[test]
-    fn ui_state_resource_reads_authoritative_app_world_resources() {
+    fn ui_state_data_reads_authoritative_editor_resources() {
         let mut app = TestApp::minimal();
-        app.world_mut()
-            .insert_resource(MenuStateRes::new(MenuState {
-                selected_level: 1,
-                levels: vec!["First".to_string(), "Second".to_string()],
-                preview_level_index: None,
-                preview_sky_color: [0.1, 0.2, 0.3],
-                preview_camera_position: [1.0, 2.0, 3.0],
-                preview_camera_target: [0.0, 0.0, 0.0],
-            }));
-        app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
-        app.world_mut()
-            .resource_mut::<SessionStateRes>()
-            .editor_level_name = Some("World-owned level".to_string());
         app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [4.0, 5.0, 6.0];
         app.world_mut()
             .resource_mut::<EditorTimelineRes>()
@@ -229,13 +214,6 @@ mod tests {
         let data = UiStateData::from_world(app.world());
         let view = data;
 
-        assert!(view.is_editor);
-        assert_eq!(
-            view.available_levels,
-            ["First".to_string(), "Second".to_string()]
-        );
-        assert_eq!(view.menu_level_name.as_deref(), Some("Second"));
-        assert_eq!(view.level_name.as_deref(), Some("World-owned level"));
         assert_eq!(view.place_preview_position, [4.0, 5.0, 6.0]);
         assert_eq!(view.timeline_time_seconds, 2.5);
     }
@@ -243,7 +221,10 @@ mod tests {
     #[test]
     fn test_app_minimal_defaults_app_phase_to_menu() {
         let app = TestApp::minimal();
-        assert_eq!(app.world().resource::<AppPhaseRes>().get(), AppPhase::Menu,);
+        assert_eq!(
+            *app.world().resource::<State<AppPhase>>().get(),
+            AppPhase::Menu,
+        );
     }
 
     #[test]
@@ -251,8 +232,8 @@ mod tests {
         let a = TestApp::default();
         let b = TestApp::minimal();
         assert_eq!(
-            a.world().resource::<AppPhaseRes>().get(),
-            b.world().resource::<AppPhaseRes>().get(),
+            a.world().resource::<State<AppPhase>>().get(),
+            b.world().resource::<State<AppPhase>>().get(),
         );
     }
 
@@ -281,22 +262,24 @@ mod tests {
         let mut app = TestApp::minimal();
 
         app.tick_state();
-        assert_eq!(app.world().resource::<AppPhaseRes>().get(), AppPhase::Menu);
+        assert_eq!(
+            *app.world().resource::<State<AppPhase>>().get(),
+            AppPhase::Menu
+        );
 
         // Change the phase manually.
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Playing);
+            .insert_resource(State::new(AppPhase::Playing));
 
         app.tick_state();
         assert_eq!(
-            app.world().resource::<AppPhaseRes>().get(),
+            *app.world().resource::<State<AppPhase>>().get(),
             AppPhase::Playing
         );
 
         app.tick_state();
         assert_eq!(
-            app.world().resource::<AppPhaseRes>().get(),
+            *app.world().resource::<State<AppPhase>>().get(),
             AppPhase::Playing
         );
     }
@@ -304,8 +287,7 @@ mod tests {
     fn test_app_state_schedule_stops_editor_playback_without_audio() {
         let mut app = TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Null;
         app.world_mut()
             .resource_mut::<EditorRuntimeRes>()
@@ -341,8 +323,7 @@ mod tests {
     fn test_app_render_extract_builds_editor_playback_trail() {
         let mut app = TestApp::minimal();
         app.world_mut()
-            .resource_mut::<AppPhaseRes>()
-            .set(AppPhase::Editor);
+            .insert_resource(State::new(AppPhase::Editor));
         app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Place;
 
         let mut playback_runtime =

@@ -7,8 +7,9 @@
 */
 //! Egui user-interface layer for egakareta.
 //!
-//! This crate renders editor, menu, settings, and profiler UI from read-only
-//! state view models and returns `AppCommand` values for callers to dispatch.
+//! This crate renders editor, menu, settings, and profiler UI from the owned
+//! App-world `UiStateData` read model. Production UI writes semantic commands
+//! directly to the App world's typed message buffers through `WorldUiCommandSink`.
 
 #![warn(missing_docs)]
 
@@ -32,7 +33,10 @@ use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
-use eg_types::{EditorMode, SettingsSection, essential_keybind_actions, format_key_chord};
+use eg_types::{
+    AppSettings, BasicLevelMetadata, EditorMode, MusicMetadata, SettingsSection,
+    essential_keybind_actions, format_key_chord,
+};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
@@ -44,8 +48,7 @@ pub use plugin::{UiPlugin, register_ui_resources_world, write_ui_command, write_
 /// Destination for semantic UI commands emitted while egui is running.
 ///
 /// Production uses [`WorldUiCommandSink`] so commands become Bevy messages
-/// immediately. `Vec<AppCommand>` remains an adapter for focused UI tests and
-/// the compatibility helper that still exposes the old return shape.
+/// immediately. `Vec<AppCommand>` remains useful for focused UI tests.
 pub trait UiCommandSink {
     /// Emit one semantic UI command.
     fn push(&mut self, command: AppCommand);
@@ -365,6 +368,7 @@ fn context_menu_button_impl(
 
 fn show_editor_context_menu(
     ctx: &egui::Context,
+    app_settings: &AppSettings,
     view: &UiStateData,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
     commands: &mut impl UiCommandSink,
@@ -398,7 +402,7 @@ fn show_editor_context_menu(
     };
 
     let hint = |action: &str| -> Option<String> {
-        let h = view.app_settings.hotkey_hint(action);
+        let h = app_settings.hotkey_hint(action);
         if h.is_empty() { None } else { Some(h) }
     };
 
@@ -639,6 +643,9 @@ fn show_editor_context_menu(
 
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
+    app_settings: &AppSettings,
+    settings_section: SettingsSection,
+    keybind_capture_action: Option<&(String, usize)>,
     view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
@@ -651,13 +658,25 @@ fn show_settings_sidebar_area(
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
             egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
-                show_settings_sidebar_panel(ui, view, commands, sidebar_width, viewport_height);
+                show_settings_sidebar_panel(
+                    ui,
+                    app_settings,
+                    settings_section,
+                    keybind_capture_action,
+                    view,
+                    commands,
+                    sidebar_width,
+                    viewport_height,
+                );
             });
         })
 }
 
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
+    app_settings: &AppSettings,
+    settings_section: SettingsSection,
+    keybind_capture_action: Option<&(String, usize)>,
     view: &UiStateData,
     commands: &mut impl UiCommandSink,
     sidebar_width: f32,
@@ -667,13 +686,15 @@ fn show_settings_sidebar_panel(
     ui.set_min_height(viewport_height);
 
     show_settings_sidebar_header(ui, commands);
-    show_settings_section_tabs(ui, view.settings_section, commands);
+    show_settings_section_tabs(ui, settings_section, commands);
 
     ui.separator();
 
-    match view.settings_section {
-        SettingsSection::Backends => show_backend_settings(ui, view, commands),
-        SettingsSection::Keybinds => show_keybind_settings(ui, view, commands),
+    match settings_section {
+        SettingsSection::Backends => show_backend_settings(ui, app_settings, view, commands),
+        SettingsSection::Keybinds => {
+            show_keybind_settings(ui, app_settings, keybind_capture_action, commands)
+        }
     }
 }
 
@@ -737,7 +758,12 @@ fn show_settings_section_tab(
     }
 }
 
-fn show_backend_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
+fn show_backend_settings(
+    ui: &mut egui::Ui,
+    app_settings: &AppSettings,
+    view: &UiStateData,
+    commands: &mut impl UiCommandSink,
+) {
     show_backend_selector(
         ui,
         commands,
@@ -776,7 +802,7 @@ fn show_backend_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut i
     );
 
     ui.separator();
-    show_ui_scale_setting(ui, view, commands);
+    show_ui_scale_setting(ui, app_settings, commands);
 }
 
 struct BackendSelector<'a> {
@@ -816,9 +842,13 @@ fn show_backend_selector(
     }
 }
 
-fn show_ui_scale_setting(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
+fn show_ui_scale_setting(
+    ui: &mut egui::Ui,
+    app_settings: &AppSettings,
+    commands: &mut impl UiCommandSink,
+) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
-    let mut ui_scale_multiplier = view.app_settings.normalized_ui_scale_multiplier();
+    let mut ui_scale_multiplier = app_settings.normalized_ui_scale_multiplier();
     if ui
         .add(
             egui::DragValue::new(&mut ui_scale_multiplier)
@@ -834,7 +864,12 @@ fn show_ui_scale_setting(ui: &mut egui::Ui, view: &UiStateData, commands: &mut i
     }
 }
 
-fn show_keybind_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut impl UiCommandSink) {
+fn show_keybind_settings(
+    ui: &mut egui::Ui,
+    app_settings: &AppSettings,
+    keybind_capture_action: Option<&(String, usize)>,
+    commands: &mut impl UiCommandSink,
+) {
     let mut grouped_actions: BTreeMap<&'static str, Vec<&'static eg_types::KeybindActionMetadata>> =
         BTreeMap::new();
     for metadata in essential_keybind_actions() {
@@ -857,7 +892,7 @@ fn show_keybind_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut i
                     for metadata in actions {
                         let action = metadata.action;
 
-                        let current_chords = view.app_settings.keybinds_for_action(action);
+                        let current_chords = app_settings.keybinds_for_action(action);
                         let default_chords: Vec<_> = default_keybinds
                             .iter()
                             .filter(|b| b.action == action)
@@ -870,7 +905,7 @@ fn show_keybind_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut i
                             metadata,
                             &current_chords,
                             &default_chords,
-                            view.keybind_capture_action.as_ref(),
+                            keybind_capture_action,
                         );
                         ui.separator();
                     }
@@ -889,18 +924,32 @@ fn show_keybind_settings(ui: &mut egui::Ui, view: &UiStateData, commands: &mut i
 /// Renders from [`UiStateData`] and queues commands for the caller to dispatch.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
+    show_settings: bool,
+    is_menu: bool,
+    is_editor: bool,
+    is_game_paused: bool,
+    app_settings: &AppSettings,
+    settings_section: SettingsSection,
+    keybind_capture_action: Option<&(String, usize)>,
     view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
-    if !view.show_settings {
+    if !show_settings {
         return;
     }
     // Hide settings during active gameplay (not menu, not editor, not paused)
-    if !view.is_menu && !view.is_editor && !view.is_game_paused {
+    if !is_menu && !is_editor && !is_game_paused {
         return;
     }
 
-    show_settings_sidebar_area(ctx, view, commands);
+    show_settings_sidebar_area(
+        ctx,
+        app_settings,
+        settings_section,
+        keybind_capture_action,
+        view,
+        commands,
+    );
 }
 
 /// Render the editor UI from an App-owned view and write semantic commands to
@@ -908,11 +957,23 @@ pub fn show_settings_sidebar(
 #[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
+    is_editor: bool,
+    show_settings: bool,
+    available_levels: &[String],
+    level_name: Option<&str>,
+    music_metadata: &MusicMetadata,
+    creator_metadata: &BasicLevelMetadata,
+    sky_color: [f32; 3],
+    app_settings: &AppSettings,
+    show_metadata: bool,
+    show_place_window: bool,
+    settings_section: SettingsSection,
+    keybind_capture_action: Option<&(String, usize)>,
     view: &UiStateData,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut impl UiCommandSink,
 ) -> Vec<[f32; 4]> {
-    if !view.is_editor {
+    if !is_editor {
         return Vec::new();
     }
 
@@ -929,8 +990,15 @@ pub fn show_editor_ui(
     let viewport_width = content_rect.width();
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
-    if view.show_settings {
-        let settings_response = show_settings_sidebar_area(ctx, view, commands);
+    if show_settings {
+        let settings_response = show_settings_sidebar_area(
+            ctx,
+            app_settings,
+            settings_section,
+            keybind_capture_action,
+            view,
+            commands,
+        );
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
@@ -941,7 +1009,7 @@ pub fn show_editor_ui(
                 .selectable_label(is_compose, "Compose")
                 .on_hover_text(format!(
                     "Compose Tab{}",
-                    view.app_settings.hotkey_hint("tab_compose")
+                    app_settings.hotkey_hint("tab_compose")
                 ))
                 .clicked()
                 && !is_compose
@@ -954,7 +1022,7 @@ pub fn show_editor_ui(
                 .selectable_label(is_timing, "Timing")
                 .on_hover_text(format!(
                     "Timing Tab{}",
-                    view.app_settings.hotkey_hint("tab_timing")
+                    app_settings.hotkey_hint("tab_timing")
                 ))
                 .clicked()
                 && !is_timing
@@ -967,7 +1035,7 @@ pub fn show_editor_ui(
                 .selectable_label(is_tapping, "Tapping")
                 .on_hover_text(format!(
                     "Tapping Tab{}",
-                    view.app_settings.hotkey_hint("tab_tapping")
+                    app_settings.hotkey_hint("tab_tapping")
                 ))
                 .clicked()
                 && !is_tapping
@@ -981,13 +1049,12 @@ pub fn show_editor_ui(
 
             ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
 
-            let levels = &view.available_levels;
-            let selected = view.level_name.as_deref().unwrap_or("Untitled");
+            let selected = level_name.unwrap_or("Untitled");
 
             egui::ComboBox::from_id_salt("level_select")
                 .selected_text(selected)
                 .show_ui(ui, |ui| {
-                    for level in levels {
+                    for level in available_levels {
                         if ui.selectable_label(selected == level, level).clicked() {
                             commands
                                 .push(AppCommand::Editor(EditorCommand::LoadLevel(level.clone())));
@@ -1016,7 +1083,7 @@ pub fn show_editor_ui(
                 .clicked()
             {
                 commands.push(AppCommand::Editor(EditorCommand::SetShowMetadata(
-                    !view.show_metadata,
+                    !show_metadata,
                 )));
             }
 
@@ -1024,7 +1091,7 @@ pub fn show_editor_ui(
                 .button(format!("{} Settings", egui_phosphor::regular::GEAR))
                 .on_hover_text(format!(
                     "Settings{}",
-                    view.app_settings.hotkey_hint("toggle_settings")
+                    app_settings.hotkey_hint("toggle_settings")
                 ))
                 .clicked()
             {
@@ -1038,7 +1105,7 @@ pub fn show_editor_ui(
     });
     ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
 
-    if view.show_metadata {
+    if show_metadata {
         let mut metadata_open = true;
 
         let metadata_response =
@@ -1047,13 +1114,13 @@ pub fn show_editor_ui(
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
-                        let mut name = view.level_name.as_deref().unwrap_or("Untitled").to_string();
+                        let mut name = level_name.unwrap_or("Untitled").to_string();
                         if ui.text_edit_singleline(&mut name).changed() {
                             commands.push(AppCommand::Editor(EditorCommand::RenameLevel(name)));
                         }
                     });
 
-                    let mut creator_metadata = view.creator_metadata.clone();
+                    let mut creator_metadata = creator_metadata.clone();
                     let mut creator_metadata_changed = false;
 
                     ui.horizontal(|ui| {
@@ -1067,7 +1134,7 @@ pub fn show_editor_ui(
 
                     ui.separator();
 
-                    let mut music = view.music_metadata.clone();
+                    let mut music = music_metadata.clone();
                     let mut changed = false;
 
                     ui.horizontal(|ui| {
@@ -1155,7 +1222,7 @@ pub fn show_editor_ui(
                     ui.heading(format!("{} Visuals", egui_phosphor::regular::IMAGE));
                     ui.horizontal(|ui| {
                         ui.label(format!("{} Sky:", egui_phosphor::regular::CIRCLE));
-                        let mut sky_color = view.sky_color;
+                        let mut sky_color = sky_color;
                         if ui.color_edit_button_rgb(&mut sky_color).changed() {
                             commands
                                 .push(AppCommand::Editor(EditorCommand::UpdateSkyColor(sky_color)));
@@ -1202,7 +1269,7 @@ pub fn show_editor_ui(
     }
 
     // Floating place window with block catalog
-    if view.show_place_window {
+    if show_place_window {
         let mut place_open = true;
         let place_category_id = egui::Id::new("editor_place_block_catalog_category");
         let mut selected_place_category = ctx.data_mut(|data| {
@@ -1297,7 +1364,7 @@ pub fn show_editor_ui(
                     show_tapping_mode_bottom_panel(ui, view, commands);
                 }
 
-                show_timeline_bar(ui, view, duration_seconds, commands);
+                show_timeline_bar(ui, app_settings, view, duration_seconds, commands);
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1313,7 +1380,7 @@ pub fn show_editor_ui(
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
-                    let hotkey_hint = view.app_settings.hotkey_hint("toggle_place_window");
+                    let hotkey_hint = app_settings.hotkey_hint("toggle_place_window");
                     if show_recent_block_quick_strip(ui, view, block_icon_texture_ids, commands) {
                         ui.add_space(6.0);
                     }
@@ -1321,7 +1388,7 @@ pub fn show_editor_ui(
                     egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
                         if ui
                             .selectable_label(
-                                view.show_place_window,
+                                show_place_window,
                                 egui::RichText::new(egui_phosphor::regular::PLUS).size(28.0),
                             )
                             .on_hover_text(format!("Place Block{}", hotkey_hint))
@@ -1336,7 +1403,7 @@ pub fn show_editor_ui(
         show_selected_block_properties_window(ctx, view, bottom_bar_height, commands);
         show_place_block_properties_window(ctx, view, bottom_bar_height);
         let top_bar_height = top_bar_response.response.rect.height();
-        show_mode_selector_popup(ctx, view, top_bar_height, commands);
+        show_mode_selector_popup(ctx, app_settings, view, top_bar_height, commands);
     }
 
     // Selected tap properties floating window
@@ -1393,36 +1460,31 @@ pub fn show_editor_ui(
         );
     }
 
-    show_editor_context_menu(ctx, view, &mut ui_input_blocking_rects, commands);
+    show_editor_context_menu(
+        ctx,
+        app_settings,
+        view,
+        &mut ui_input_blocking_rects,
+        commands,
+    );
 
     ui_input_blocking_rects
-}
-
-/// Compatibility adapter returning the old command vector shape.
-#[allow(deprecated)]
-pub fn show_editor_ui_commands(
-    ctx: &egui::Context,
-    view: &UiStateData,
-    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
-) -> (Vec<AppCommand>, Vec<[f32; 4]>) {
-    let mut commands = Vec::new();
-    let ui_input_blocking_rects = show_editor_ui(ctx, view, block_icon_texture_ids, &mut commands);
-    (commands, ui_input_blocking_rects)
 }
 
 /// Shows the app-wide profiler window when the performance overlay is enabled.
 pub fn show_perf_overlay(
     ctx: &egui::Context,
-    view: &UiStateData,
+    perf_overlay_enabled: bool,
+    perf_graphics_backend: &str,
+    perf_audio_backend: &str,
+    fps: f32,
+    perf_has_latest_frame: bool,
     commands: &mut impl UiCommandSink,
 ) {
-    if !view.perf_overlay_enabled {
+    if !perf_overlay_enabled {
         return;
     }
 
-    let graphics_backend = &view.perf_graphics_backend;
-    let audio_backend = &view.perf_audio_backend;
-    let fps = view.fps;
     let mut profiler_open = true;
 
     egui::Window::new("Profiler")
@@ -1433,14 +1495,11 @@ pub fn show_perf_overlay(
             ui.horizontal(|ui| {
                 ui.monospace(format!(
                     "{} | {} | FPS {:.1}",
-                    graphics_backend, audio_backend, fps
+                    perf_graphics_backend, perf_audio_backend, fps
                 ));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .add_enabled(
-                            view.perf_has_latest_frame,
-                            egui::Button::new("📋 Copy Frame"),
-                        )
+                        .add_enabled(perf_has_latest_frame, egui::Button::new("📋 Copy Frame"))
                         .on_hover_text("Copy the latest profiling frame to clipboard")
                         .clicked()
                     {
@@ -1966,8 +2025,7 @@ mod tests {
         UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink, block_matches_catalog_category,
         combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
         perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui_commands, show_perf_overlay,
-        sort_quad_by_angle,
+        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
@@ -2003,12 +2061,36 @@ mod tests {
         sign != 0.0
     }
 
-    fn run_editor_ui_once(view: &UiStateData) {
+    fn run_editor_ui_once(
+        view: &UiStateData,
+        is_editor: bool,
+        show_settings: bool,
+        show_metadata: bool,
+        settings_section: SettingsSection,
+    ) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
-            let _ = show_editor_ui_commands(ctx, view, &block_icon_texture_ids);
+            let mut commands = Vec::new();
+            let _ = show_editor_ui(
+                ctx,
+                is_editor,
+                show_settings,
+                &[],
+                Some("Test Level"),
+                &MusicMetadata::default(),
+                &eg_types::BasicLevelMetadata::default(),
+                eg_types::LevelMetadata::default().sky_color,
+                &AppSettings::default(),
+                show_metadata,
+                false,
+                settings_section,
+                None,
+                view,
+                &block_icon_texture_ids,
+                &mut commands,
+            );
         });
     }
 
@@ -2219,27 +2301,18 @@ mod tests {
     fn show_editor_ui_returns_early_when_not_in_editor() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
-        view.is_editor = false;
-        view.is_menu = true;
+        let view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
 
-        run_editor_ui_once(&view);
+        run_editor_ui_once(&view, false, false, false, SettingsSection::Backends);
     }
 
     #[test]
     fn show_perf_overlay_renders_outside_editor() {
-        let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
-        view.is_editor = false;
-        view.is_menu = true;
-        view.perf_overlay_enabled = true;
-
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
             let mut commands = Vec::new();
-            show_perf_overlay(ctx, &view, &mut commands);
+            show_perf_overlay(ctx, true, "", "", 60.0, false, &mut commands);
             assert!(commands.is_empty());
         });
     }
@@ -2257,7 +2330,7 @@ mod tests {
         view.mode = EditorMode::Select;
         view.marquee_selection_rect_screen = Some(([10.0, 10.0], [100.0, 100.0], false));
 
-        run_editor_ui_once(&view);
+        run_editor_ui_once(&view, true, false, false, SettingsSection::Backends);
     }
 
     #[test]
@@ -2266,18 +2339,13 @@ mod tests {
         let music_metadata = MusicMetadata::default();
         let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
         view.mode = EditorMode::Timing;
-        view.show_settings = true;
-        view.settings_section = SettingsSection::Backends;
-        view.show_metadata = true;
-        view.perf_overlay_enabled = true;
-        run_editor_ui_once(&view);
+        run_editor_ui_once(&view, true, true, true, SettingsSection::Backends);
 
         view.mode = EditorMode::Place;
-        view.settings_section = SettingsSection::Keybinds;
-        run_editor_ui_once(&view);
+        run_editor_ui_once(&view, true, false, false, SettingsSection::Keybinds);
 
         view.mode = EditorMode::Tapping;
-        run_editor_ui_once(&view);
+        run_editor_ui_once(&view, true, false, false, SettingsSection::Keybinds);
     }
 }
 
@@ -2287,36 +2355,17 @@ mod test_utils {
 
     use eg_blocks::BlockId;
     use eg_state::state::UiStateData;
-    use eg_types::{
-        AppSettings, Direction, EditorMode, LevelMetadata, MusicMetadata, SettingsSection,
-    };
+    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
 
     static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
 
     pub fn editor_ui_view(
-        app_settings: &AppSettings,
-        music_metadata: &MusicMetadata,
+        _app_settings: &AppSettings,
+        _music_metadata: &MusicMetadata,
     ) -> UiStateData {
         UiStateData {
-            is_editor: true,
-            is_menu: false,
-            is_game_paused: false,
-            is_practice_mode_enabled: false,
             mode: EditorMode::Select,
             last_mode: Some(EditorMode::Select),
-            available_levels: Vec::new(),
-            level_name: Some("Test Level".to_owned()),
-            menu_level_name: None,
-            menu_selected_level_progress: None,
-            show_metadata: false,
-            show_place_window: false,
-            show_settings: false,
-            settings_section: SettingsSection::Backends,
-            keybind_capture_action: None,
-            music_metadata: music_metadata.clone(),
-            creator_metadata: eg_types::BasicLevelMetadata::default(),
-            sky_color: LevelMetadata::default().sky_color,
-            app_settings: app_settings.clone(),
             configured_graphics_backend: "Auto".to_owned(),
             configured_audio_backend: "Default".to_owned(),
             graphics_backend_locked: false,
@@ -2324,13 +2373,6 @@ mod test_utils {
             graphics_backend_options: Vec::new(),
             audio_backend_options: Vec::new(),
             settings_restart_required: false,
-            auth_display_name: None,
-            auth_pending: false,
-            auth_message: None,
-            perf_overlay_enabled: false,
-            perf_graphics_backend: String::new(),
-            perf_audio_backend: String::new(),
-            perf_has_latest_frame: false,
             snap_to_grid: true,
             snap_step: 1.0,
             snap_rotation: true,

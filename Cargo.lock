@@ -1318,6 +1318,7 @@ dependencies = [
  "approx",
  "bevy_app",
  "bevy_ecs",
+ "bevy_state",
  "console_error_panic_hook",
  "console_log",
  "criterion",

@@ -7,46 +7,12 @@
 */
 //! Bevy state transition wiring for the eg-state App.
 //!
-//! `State<AppPhase>` is authoritative. The `AppPhaseRes` resource remains a
-//! compatibility mirror for handlers whose signatures have not moved to
-//! `Res<State<AppPhase>>` yet.
+//! `State<AppPhase>` is authoritative. Transitions are queued through
+//! `NextState<AppPhase>` and observed through Bevy's enter/exit schedules.
 
 use bevy_app::App;
-use bevy_ecs::prelude::World;
-use bevy_state::prelude::{NextState, OnEnter, OnExit, State};
+use bevy_state::prelude::{OnEnter, OnExit};
 use eg_types::AppPhase;
-
-use super::state_resources::AppPhaseRes;
-
-/// Queue a transition requested through the temporary compatibility mirror.
-///
-/// This keeps existing fixture code that sets `AppPhaseRes` working while all
-/// production transitions move to `NextState<AppPhase>`.
-pub(super) fn queue_compatibility_phase_transition(world: &mut World) {
-    if !world.contains_resource::<State<AppPhase>>()
-        || !world.contains_resource::<NextState<AppPhase>>()
-        || !world.contains_resource::<AppPhaseRes>()
-    {
-        return;
-    }
-
-    let target = world.resource::<AppPhaseRes>().current;
-    let current = *world.resource::<State<AppPhase>>().get();
-    if target != current {
-        world.resource_mut::<NextState<AppPhase>>().set(target);
-    }
-}
-
-/// Refresh the compatibility mirror after Bevy applies a state transition.
-pub(super) fn sync_compatibility_phase_from_state(world: &mut World) {
-    if !world.contains_resource::<State<AppPhase>>() || !world.contains_resource::<AppPhaseRes>() {
-        return;
-    }
-
-    let current = *world.resource::<State<AppPhase>>().get();
-    let mut phase = world.resource_mut::<AppPhaseRes>();
-    phase.current = current;
-}
 
 /// Register the small remaining phase hooks on Bevy's transition schedules.
 pub(super) fn register_phase_transition_hooks(app: &mut App) {
@@ -95,37 +61,4 @@ fn on_exit_game_over() {
 fn log_phase_transition(kind: &str, phase: AppPhase) {
     puffin::profile_scope!("PhaseTransition", format!("{kind} {phase:?}"));
     log::debug!("phase transition: {} {:?}", kind, phase);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::state::plugins::register_state_resources;
-    use bevy_ecs::world::World;
-    use bevy_state::prelude::NextState;
-
-    #[test]
-    fn compatibility_phase_queues_a_bevy_transition() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        world.resource_mut::<AppPhaseRes>().set(AppPhase::Playing);
-
-        queue_compatibility_phase_transition(&mut world);
-
-        assert!(matches!(
-            world.resource::<NextState<AppPhase>>(),
-            NextState::Pending(AppPhase::Playing)
-        ));
-    }
-
-    #[test]
-    fn compatibility_phase_mirrors_the_authoritative_state() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        world.insert_resource(State::new(AppPhase::Editor));
-
-        sync_compatibility_phase_from_state(&mut world);
-
-        assert_eq!(world.resource::<AppPhaseRes>().current, AppPhase::Editor);
-    }
 }

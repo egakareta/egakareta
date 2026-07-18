@@ -6,21 +6,15 @@
 
 */
 use super::{
-    AuthStateRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    MenuStateRes, PerfRes, SessionStateRes, evaluate_camera_track_for_objects,
+    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
+    EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
+    SessionStateRes, evaluate_camera_track_for_objects,
 };
 
-use bevy_ecs::{prelude::Resource, world::World};
-use bevy_state::prelude::State;
+use bevy_ecs::world::World;
 use eg_blocks::{BlockDefinition, BlockId};
-use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, Direction, EditorMode, LevelObject, MusicMetadata,
-    PlayerLevelProgress, SettingsSection, TimingPoint,
-};
+use eg_types::{Direction, EditorMode, LevelObject, SettingsSection, TimingPoint};
 use glam::Vec3;
-
-use super::render::resources::RenderGpuRes;
 
 #[derive(Clone, Copy)]
 pub struct SelectedTapViewModel {
@@ -29,27 +23,10 @@ pub struct SelectedTapViewModel {
     pub position: [f32; 3],
 }
 
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct UiStateData {
-    pub is_editor: bool,
-    pub is_menu: bool,
-    pub is_game_paused: bool,
-    pub is_practice_mode_enabled: bool,
     pub mode: EditorMode,
     pub last_mode: Option<EditorMode>,
-    pub available_levels: Vec<String>,
-    pub level_name: Option<String>,
-    pub menu_level_name: Option<String>,
-    pub menu_selected_level_progress: Option<PlayerLevelProgress>,
-    pub show_metadata: bool,
-    pub show_place_window: bool,
-    pub show_settings: bool,
-    pub settings_section: SettingsSection,
-    pub keybind_capture_action: Option<(String, usize)>,
-    pub music_metadata: MusicMetadata,
-    pub creator_metadata: BasicLevelMetadata,
-    pub sky_color: [f32; 3],
-    pub app_settings: AppSettings,
     pub configured_graphics_backend: String,
     pub configured_audio_backend: String,
     pub graphics_backend_locked: bool,
@@ -57,13 +34,6 @@ pub struct UiStateData {
     pub graphics_backend_options: Vec<String>,
     pub audio_backend_options: Vec<String>,
     pub settings_restart_required: bool,
-    pub auth_display_name: Option<String>,
-    pub auth_pending: bool,
-    pub auth_message: Option<String>,
-    pub perf_overlay_enabled: bool,
-    pub perf_graphics_backend: String,
-    pub perf_audio_backend: String,
-    pub perf_has_latest_frame: bool,
     pub snap_to_grid: bool,
     pub snap_step: f32,
     pub snap_rotation: bool,
@@ -107,15 +77,8 @@ pub struct UiStateData {
     pub object_count: usize,
 }
 
-/// Rebuild the App-owned UI read model after state and command systems finish.
-pub(super) fn refresh_ui_state_resource_system(world: &mut World) {
-    let ui_state = UiStateData::from_world(world);
-    world.insert_resource(ui_state);
-}
-
 impl UiStateData {
     pub fn from_world(world: &World) -> Self {
-        let phase = *world.resource::<State<AppPhase>>().get();
         let session = world.resource::<SessionStateRes>();
         let input = &world.resource::<EditorInputRes>().0;
         let objects = &world.resource::<EditorObjectsRes>().objects;
@@ -127,26 +90,6 @@ impl UiStateData {
         let runtime = &world.resource::<EditorRuntimeRes>().0;
         let history = &world.resource::<EditorHistoryRes>().0;
         let perf = &world.resource::<PerfRes>().0;
-        let auth = world.resource::<AuthStateRes>();
-        let menu = world
-            .get_resource::<MenuStateRes>()
-            .map(|resource| &resource.0);
-
-        let is_editor = phase == eg_types::AppPhase::Editor;
-        let is_menu = phase == eg_types::AppPhase::Menu;
-        let is_real_gameplay = phase == eg_types::AppPhase::Playing && !session.playtesting_editor;
-
-        let available_levels = menu.map(|state| state.levels.clone()).unwrap_or_default();
-        let menu_level_name = menu.and_then(|state| {
-            state
-                .levels
-                .get(state.selected_level)
-                .map(ToOwned::to_owned)
-        });
-        let menu_selected_level_progress = menu_level_name
-            .as_deref()
-            .and_then(|level_name| session.app_settings.level_progress.get(level_name).copied());
-
         let mut selected_indices = input
             .selected_block_indices
             .iter()
@@ -203,8 +146,6 @@ impl UiStateData {
             true,
         );
 
-        let auth_display_name = auth.display_name().map(ToOwned::to_owned);
-
         let marquee_selection_rect_screen = input.marquee_start_screen.map(|start| {
             let current = input.marquee_current_screen.unwrap_or(start);
             let dx = current[0] - start[0];
@@ -212,32 +153,9 @@ impl UiStateData {
             (start, current, (dx * dx + dy * dy) >= 16.0)
         });
 
-        let perf_graphics_backend = world
-            .get_non_send::<RenderGpuRes>()
-            .map(|gpu| format!("{:?}", gpu.0.adapter_info.backend))
-            .unwrap_or_else(|| "Unknown".to_string());
-        let perf_has_latest_frame = perf.global_frame_view.lock().latest_frame().is_some();
-
         Self {
-            is_editor,
-            is_menu,
-            is_game_paused: is_real_gameplay && session.game_paused,
-            is_practice_mode_enabled: is_real_gameplay && session.practice_mode_enabled,
             mode: input.mode,
             last_mode: runtime.interaction.last_mode,
-            available_levels,
-            level_name: session.editor_level_name.clone(),
-            menu_level_name,
-            menu_selected_level_progress,
-            show_metadata: session.editor_show_metadata,
-            show_place_window: session.editor_show_place_window,
-            show_settings: session.editor_show_settings,
-            settings_section: session.editor_settings_section,
-            keybind_capture_action: session.editor_keybind_capture_action.clone(),
-            music_metadata: session.editor_music_metadata.clone(),
-            creator_metadata: session.editor_creator_metadata.clone(),
-            sky_color: session.editor_sky_color,
-            app_settings: session.app_settings.clone(),
             configured_graphics_backend: session.app_settings.graphics_backend.clone(),
             configured_audio_backend: session.app_settings.audio_backend.clone(),
             graphics_backend_locked: session.graphics_backend_locked,
@@ -245,13 +163,6 @@ impl UiStateData {
             graphics_backend_options: session.available_graphics_backends.clone(),
             audio_backend_options: session.available_audio_backends.clone(),
             settings_restart_required: session.settings_restart_required,
-            auth_display_name,
-            auth_pending: auth.pending,
-            auth_message: auth.message.clone(),
-            perf_overlay_enabled: perf.overlay_enabled,
-            perf_graphics_backend,
-            perf_audio_backend: session.app_settings.audio_backend.clone(),
-            perf_has_latest_frame,
             snap_to_grid: config.snap_to_grid,
             snap_step: config.snap_step,
             snap_rotation: config.snap_rotation,

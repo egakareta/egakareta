@@ -9,7 +9,7 @@ use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
 use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
-use eg_types::{Direction, EditorMode};
+use eg_types::{AppSettings, Direction, EditorMode};
 
 const PROPERTY_POPUP_MARGIN: f32 = 12.0;
 const MODE_SELECTOR_WIDTH: f32 = 48.0;
@@ -85,6 +85,7 @@ pub(crate) fn show_editor_property_popup(
 
 pub(crate) fn show_mode_selector_popup(
     ctx: &egui::Context,
+    app_settings: &AppSettings,
     view: &UiStateData,
     top_bar_height: f32,
     commands: &mut impl UiCommandSink,
@@ -99,10 +100,7 @@ pub(crate) fn show_mode_selector_popup(
                 mode == EditorMode::Select,
                 big_icon(egui_phosphor::regular::CURSOR_CLICK),
             )
-            .on_hover_text(format!(
-                "Select{}",
-                view.app_settings.hotkey_hint("mode_select")
-            ))
+            .on_hover_text(format!("Select{}", app_settings.hotkey_hint("mode_select")))
             .clicked()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetMode(
@@ -114,10 +112,7 @@ pub(crate) fn show_mode_selector_popup(
                 mode == EditorMode::Move,
                 big_icon(egui_phosphor::regular::ARROWS_OUT),
             )
-            .on_hover_text(format!(
-                "Move{}",
-                view.app_settings.hotkey_hint("mode_move")
-            ))
+            .on_hover_text(format!("Move{}", app_settings.hotkey_hint("mode_move")))
             .clicked()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
@@ -127,10 +122,7 @@ pub(crate) fn show_mode_selector_popup(
                 mode == EditorMode::Scale,
                 big_icon(egui_phosphor::regular::CORNERS_OUT),
             )
-            .on_hover_text(format!(
-                "Scale{}",
-                view.app_settings.hotkey_hint("mode_scale")
-            ))
+            .on_hover_text(format!("Scale{}", app_settings.hotkey_hint("mode_scale")))
             .clicked()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetMode(
@@ -142,10 +134,7 @@ pub(crate) fn show_mode_selector_popup(
                 mode == EditorMode::Rotate,
                 big_icon(egui_phosphor::regular::ARROWS_CLOCKWISE),
             )
-            .on_hover_text(format!(
-                "Rotate{}",
-                view.app_settings.hotkey_hint("mode_rotate")
-            ))
+            .on_hover_text(format!("Rotate{}", app_settings.hotkey_hint("mode_rotate")))
             .clicked()
         {
             commands.push(AppCommand::Editor(EditorCommand::SetMode(
@@ -162,10 +151,10 @@ pub(crate) fn show_mode_selector_popup(
             ui.spacing_mut().button_padding = egui::Vec2::new(4.0, 2.0);
             match mode {
                 EditorMode::Move | EditorMode::Scale => {
-                    show_grid_snap_controls(ui, view, commands);
+                    show_grid_snap_controls(ui, app_settings, view, commands);
                 }
                 EditorMode::Rotate => {
-                    show_rotation_snap_controls(ui, view, commands);
+                    show_rotation_snap_controls(ui, app_settings, view, commands);
                 }
                 _ => {}
             }
@@ -175,6 +164,7 @@ pub(crate) fn show_mode_selector_popup(
 
 fn show_grid_snap_controls(
     ui: &mut egui::Ui,
+    app_settings: &AppSettings,
     view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
@@ -187,7 +177,7 @@ fn show_grid_snap_controls(
         let changed = checkbox.changed();
         checkbox.on_hover_text(format!(
             "Grid Snap{}",
-            view.app_settings.hotkey_hint("toggle_grid_snap")
+            app_settings.hotkey_hint("toggle_grid_snap")
         ));
         if changed {
             commands.push(AppCommand::Editor(EditorCommand::SetSnapToGrid(snap)));
@@ -209,6 +199,7 @@ fn show_grid_snap_controls(
 
 fn show_rotation_snap_controls(
     ui: &mut egui::Ui,
+    app_settings: &AppSettings,
     view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
@@ -221,7 +212,7 @@ fn show_rotation_snap_controls(
         let changed = checkbox.changed();
         checkbox.on_hover_text(format!(
             "Rotation Snap{}",
-            view.app_settings.hotkey_hint("toggle_rotation_snap")
+            app_settings.hotkey_hint("toggle_rotation_snap")
         ));
         if changed {
             commands.push(AppCommand::Editor(EditorCommand::SetSnapRotation(
@@ -292,7 +283,6 @@ mod tests {
         let mut view = editor_ui_view(app_settings, music_metadata);
         view.mode = mode;
         view.last_mode = Some(mode);
-        view.level_name = Some("Shared Test".to_owned());
         view.timeline_time_seconds = 1.0;
         view.timeline_preview_position = [2.0, 1.0, 0.0];
         view.timeline_preview_direction = preview_direction;
@@ -361,7 +351,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
         });
 
         assert!(commands.is_empty());
@@ -381,7 +371,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
         });
     }
 
@@ -399,7 +389,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
         });
     }
 
@@ -417,7 +407,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &view, 28.0, &mut commands);
+            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
         });
     }
 

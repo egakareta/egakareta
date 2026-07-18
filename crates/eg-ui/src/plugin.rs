@@ -5,10 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Bevy UI plugin and command bridge.
+//! Bevy UI plugin and direct message ingress.
 //!
-//! REFACTOR POINT(full-bevy): the manual command bridge
-//! are replaced by `bevy_egui` systems writing Bevy input/events directly.
+//! REFACTOR POINT(full-bevy): the custom egui presentation and semantic
+//! command adapter are replaced by `bevy_egui` systems writing Bevy input/events directly.
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;

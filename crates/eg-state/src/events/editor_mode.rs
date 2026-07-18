@@ -10,14 +10,14 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
+use bevy_state::prelude::State;
 use eg_blocks::BlockId;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
 use crate::state::{
-    AppPhaseRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes,
-    EditorRuntimeRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    RenderUniformsRes,
+    EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
+    EditorSubsystem, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
 };
 
 /// Switch the editor mode.
@@ -109,7 +109,7 @@ pub fn handle_select_recent_block(
 // ids, and updates the selected id, recent list, and effective Place mode.
 pub fn handle_pick_selected_block(
     mut events: MessageReader<PickSelectedBlock>,
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<AppPhase>>,
     objects: Res<EditorObjectsRes>,
     mut config: ResMut<EditorConfigRes>,
     mut input: ResMut<EditorInputRes>,
@@ -142,7 +142,7 @@ pub fn handle_pick_block_at(
 
 #[derive(SystemParam)]
 pub struct PickBlockAtResources<'w> {
-    phase: Res<'w, AppPhaseRes>,
+    phase: Res<'w, State<AppPhase>>,
     objects: Res<'w, EditorObjectsRes>,
     camera: Res<'w, EditorCameraRes>,
     triggers: Res<'w, EditorTriggerRes>,
@@ -155,7 +155,7 @@ pub struct PickBlockAtResources<'w> {
 }
 
 fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<'_>) -> bool {
-    if resources.phase.current != AppPhase::Editor {
+    if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
@@ -205,14 +205,14 @@ fn input_pointer_over_ui_input(input: &EditorInputState, x: f64, y: f64) -> bool
 }
 
 fn pick_selected_block_for_place(
-    phase: &AppPhaseRes,
+    phase: &State<AppPhase>,
     objects: &EditorObjectsRes,
     config: &mut EditorConfigRes,
     input: &mut EditorInputRes,
     runtime: &mut EditorRuntimeRes,
     timeline: &EditorTimelineRes,
 ) -> bool {
-    if phase.current != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor {
         return false;
     }
 

@@ -7,11 +7,9 @@
 */
 //! Plugin shells for the eg-state `App`.
 //!
-//! Each plugin owns the resources + systems for one logical domain. Today
-//! (Phase 2a) the plugins only register the resources from
-//! [`super::state_resources`]; the systems that use those resources land
-//! in Phase 2c/3+. The plugin skeleton establishes the boundaries so
-//! subsystems can be moved into systems one at a time.
+//! Each plugin owns the resources and systems for one logical domain. The
+//! plugin graph establishes the App-world ownership boundaries; schedule
+//! systems consume those resources directly.
 //!
 //! Plugin graph:
 //! - [`GameplayPlugin`] — wraps `eg_game::GamePlugin` + owns
@@ -21,8 +19,8 @@
 //!   camera, triggers, timeline, timing, runtime, history, perf).
 //! - [`SessionPlugin`] — owns `SessionStateRes` (level/music/creator
 //!   metadata, settings, practice mode).
-//! - [`MenuPlugin`] — owns `MenuStateRes` + `AppPhaseRes` (top-level
-//!   navigation state).
+//! - [`MenuPlugin`] — owns `MenuStateRes`; top-level navigation uses Bevy's
+//!   `State<AppPhase>` resource.
 //! - [`StatePlugins`] — aggregator that registers all of the above in
 //!   dependency order.
 //!
@@ -41,7 +39,7 @@ use bevy_time::{Fixed, Time, TimePlugin};
 use super::StateSchedule;
 use super::render::plugin::RenderPlugin;
 use super::state_resources::{
-    AppPhaseRes, AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+    AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
     EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
@@ -84,10 +82,9 @@ impl Plugin for GameplayPlugin {
     }
 }
 
-/// Registers the editor-domain resources. No systems yet — the editor
-/// mutation loop stays on `State` until Phase 2c, then moves into systems
-/// here. The resources are registered so the resource mirror is
-/// observable from the start.
+/// Registers the editor-domain resources. Editor mutation systems consume
+/// these App-owned resources through `StateSchedule` and the standard Bevy
+/// gameplay/render schedules.
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
@@ -131,13 +128,13 @@ impl Plugin for EditorPlugin {
 pub struct SessionPlugin;
 
 fn sync_gameplay_audio_pause_system(
-    phase: Res<AppPhaseRes>,
+    phase: Res<State<eg_types::AppPhase>>,
     session: Res<SessionStateRes>,
     audio: AudioBackendSystemParam<'_>,
     mut pending_turn_inputs: ResMut<eg_game::PendingTurnInputs>,
 ) {
     if !session.is_changed()
-        || phase.current != eg_types::AppPhase::Playing
+        || *phase.get() != eg_types::AppPhase::Playing
         || session.playtesting_editor
     {
         return;
@@ -166,19 +163,16 @@ impl Plugin for SessionPlugin {
     }
 }
 
-/// Registers menu + app-phase resources. Owns the [`AppPhaseRes`] so
-/// the top-level navigation state is the first thing initialized.
+/// Registers menu resources and preview/render defaults.
 ///
 /// `MenuStateRes` doesn't have a `Default` impl (`MenuState` itself does
 /// not derive `Default`), so it must be inserted explicitly by the
-/// `State` constructor. [`AppPhaseRes`] is auto-initialized to
-/// `AppPhase::Menu`.
+/// `AppBootstrap` constructor.
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AppPhaseRes>()
-            .init_resource::<MenuPreviewObjectsRes>()
+        app.init_resource::<MenuPreviewObjectsRes>()
             .init_resource::<BlockEffectsRes>();
         // `MenuStateRes` is added by the `State` constructor because it
         // needs level names from `eg-level`.
@@ -232,11 +226,9 @@ pub fn setup_state_app(app: &mut App) {
 /// App `PostUpdate` and the headless test harness use this system to run the
 /// state, gameplay, and render-extraction schedules in one canonical order.
 pub fn run_state_schedule_system(world: &mut World) {
-    super::transitions::queue_compatibility_phase_transition(world);
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
     let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
-    super::transitions::sync_compatibility_phase_from_state(world);
     let manual_driver = world
         .remove_resource::<super::gameplay_world::ManualGameplayDriverRes>()
         .is_some();
@@ -248,8 +240,9 @@ pub fn run_state_schedule_system(world: &mut World) {
     }
     super::gameplay_world::apply_completed_gameplay_transition_system(world);
     super::gameplay_world::apply_game_over_transition_system(world);
-    super::ui_state::refresh_ui_state_resource_system(world);
-    let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
+    if super::render::resources::render_pod_resources_present(world) {
+        let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
+    }
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
@@ -261,7 +254,6 @@ pub fn run_state_schedule_system(world: &mut World) {
 /// must be inserted by the caller with [`MenuStateRes::new`].
 #[allow(dead_code)]
 pub fn register_state_resources(world: &mut World) {
-    world.init_resource::<AppPhaseRes>();
     world.insert_resource(State::new(eg_types::AppPhase::Menu));
     world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
     world.init_resource::<MenuPreviewObjectsRes>();
@@ -303,7 +295,7 @@ pub fn register_state_resources(world: &mut World) {
     super::render::plugin::register_render_pod_resources(world);
 }
 
-/// Register the per-message command-pipeline resources + the
+/// Register the App-owned state schedule resources + the
 /// [`StateSchedule`] on a `World`.
 ///
 /// Phase 3: alongside the eg-state resources, this also initializes
@@ -312,9 +304,9 @@ pub fn register_state_resources(world: &mut World) {
 /// handlers that mutate App-world resources directly or write typed request
 /// resources for unavoidable platform side effects.
 ///
-/// Phase 6a: the schedule also contains the
+/// The schedule also contains the
 /// `poll_channels_system` from `state::async_bridge` that drains
-/// the five legacy `mpsc` receivers (auth, audio import,
+/// the five external `mpsc` receivers (auth, audio import,
 /// waveform, audio preload, level import) and emits the
 /// corresponding async-result events into the World. The channel
 /// wrappers themselves are inserted lazily by
@@ -322,7 +314,7 @@ pub fn register_state_resources(world: &mut World) {
 ///
 /// Runtime and tests call this for the App-owned world before running
 /// [`StateSchedule`].
-pub fn register_state_command_pipeline(world: &mut World) {
+pub fn register_state_schedule(world: &mut World) {
     // Message resources for every command event type. The
     // `register_command_events` helper takes an `App`; we use the
     // `World`-flavoured helper to keep this function working on a
