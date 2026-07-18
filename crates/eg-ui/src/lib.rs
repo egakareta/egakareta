@@ -7,9 +7,9 @@
 */
 //! Egui user-interface layer for egakareta.
 //!
-//! This crate renders editor, menu, settings, and profiler UI from the owned
-//! App-world `UiStateData` read model. Production UI writes semantic commands
-//! directly to the App world's typed message buffers through `WorldUiCommandSink`.
+//! This crate renders editor, menu, settings, and profiler UI from App-world
+//! resources. Production UI writes semantic commands directly to the App
+//! world's typed message buffers through `WorldUiCommandSink`.
 
 #![warn(missing_docs)]
 
@@ -644,9 +644,15 @@ fn show_editor_context_menu(
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
     app_settings: &AppSettings,
+    graphics_backend: &str,
+    graphics_backend_options: &[String],
+    graphics_backend_locked: bool,
+    settings_restart_required: bool,
+    audio_backend: &str,
+    audio_backend_options: &[String],
+    audio_backend_locked: bool,
     settings_section: SettingsSection,
     keybind_capture_action: Option<&(String, usize)>,
-    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
@@ -661,9 +667,15 @@ fn show_settings_sidebar_area(
                 show_settings_sidebar_panel(
                     ui,
                     app_settings,
+                    graphics_backend,
+                    graphics_backend_options,
+                    graphics_backend_locked,
+                    settings_restart_required,
+                    audio_backend,
+                    audio_backend_options,
+                    audio_backend_locked,
                     settings_section,
                     keybind_capture_action,
-                    view,
                     commands,
                     sidebar_width,
                     viewport_height,
@@ -675,9 +687,15 @@ fn show_settings_sidebar_area(
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
     app_settings: &AppSettings,
+    graphics_backend: &str,
+    graphics_backend_options: &[String],
+    graphics_backend_locked: bool,
+    settings_restart_required: bool,
+    audio_backend: &str,
+    audio_backend_options: &[String],
+    audio_backend_locked: bool,
     settings_section: SettingsSection,
     keybind_capture_action: Option<&(String, usize)>,
-    view: &UiStateData,
     commands: &mut impl UiCommandSink,
     sidebar_width: f32,
     viewport_height: f32,
@@ -691,7 +709,18 @@ fn show_settings_sidebar_panel(
     ui.separator();
 
     match settings_section {
-        SettingsSection::Backends => show_backend_settings(ui, app_settings, view, commands),
+        SettingsSection::Backends => show_backend_settings(
+            ui,
+            app_settings,
+            graphics_backend,
+            graphics_backend_options,
+            graphics_backend_locked,
+            settings_restart_required,
+            audio_backend,
+            audio_backend_options,
+            audio_backend_locked,
+            commands,
+        ),
         SettingsSection::Keybinds => {
             show_keybind_settings(ui, app_settings, keybind_capture_action, commands)
         }
@@ -761,7 +790,13 @@ fn show_settings_section_tab(
 fn show_backend_settings(
     ui: &mut egui::Ui,
     app_settings: &AppSettings,
-    view: &UiStateData,
+    graphics_backend: &str,
+    graphics_backend_options: &[String],
+    graphics_backend_locked: bool,
+    settings_restart_required: bool,
+    audio_backend: &str,
+    audio_backend_options: &[String],
+    audio_backend_locked: bool,
     commands: &mut impl UiCommandSink,
 ) {
     show_backend_selector(
@@ -770,14 +805,14 @@ fn show_backend_settings(
         BackendSelector {
             label: format!("{} Graphics backend", egui_phosphor::regular::DESKTOP),
             id_salt: "settings_graphics_backend",
-            configured_backend: &view.configured_graphics_backend,
-            backend_options: &view.graphics_backend_options,
-            locked: view.graphics_backend_locked,
+            configured_backend: graphics_backend,
+            backend_options: graphics_backend_options,
+            locked: graphics_backend_locked,
         },
         EditorCommand::SetGraphicsBackend,
     );
 
-    if view.settings_restart_required {
+    if settings_restart_required {
         ui.colored_label(
             egui::Color32::from_rgb(255, 196, 96),
             format!(
@@ -794,9 +829,9 @@ fn show_backend_settings(
         BackendSelector {
             label: format!("{} Audio backend", egui_phosphor::regular::SPEAKER_HIGH),
             id_salt: "settings_audio_backend",
-            configured_backend: &view.configured_audio_backend,
-            backend_options: &view.audio_backend_options,
-            locked: view.audio_backend_locked,
+            configured_backend: audio_backend,
+            backend_options: audio_backend_options,
+            locked: audio_backend_locked,
         },
         EditorCommand::SetAudioBackend,
     );
@@ -921,7 +956,6 @@ fn show_keybind_settings(
 
 /// Shows the settings sidebar overlay. Works in menu, editor, and paused phases.
 /// Hidden during active gameplay.
-/// Renders from [`UiStateData`] and queues commands for the caller to dispatch.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
     show_settings: bool,
@@ -929,9 +963,15 @@ pub fn show_settings_sidebar(
     is_editor: bool,
     is_game_paused: bool,
     app_settings: &AppSettings,
+    graphics_backend: &str,
+    graphics_backend_options: &[String],
+    graphics_backend_locked: bool,
+    settings_restart_required: bool,
+    audio_backend: &str,
+    audio_backend_options: &[String],
+    audio_backend_locked: bool,
     settings_section: SettingsSection,
     keybind_capture_action: Option<&(String, usize)>,
-    view: &UiStateData,
     commands: &mut impl UiCommandSink,
 ) {
     if !show_settings {
@@ -945,9 +985,15 @@ pub fn show_settings_sidebar(
     show_settings_sidebar_area(
         ctx,
         app_settings,
+        graphics_backend,
+        graphics_backend_options,
+        graphics_backend_locked,
+        settings_restart_required,
+        audio_backend,
+        audio_backend_options,
+        audio_backend_locked,
         settings_section,
         keybind_capture_action,
-        view,
         commands,
     );
 }
@@ -965,6 +1011,13 @@ pub fn show_editor_ui(
     creator_metadata: &BasicLevelMetadata,
     sky_color: [f32; 3],
     app_settings: &AppSettings,
+    graphics_backend: &str,
+    graphics_backend_options: &[String],
+    graphics_backend_locked: bool,
+    settings_restart_required: bool,
+    audio_backend: &str,
+    audio_backend_options: &[String],
+    audio_backend_locked: bool,
     show_metadata: bool,
     show_place_window: bool,
     settings_section: SettingsSection,
@@ -994,9 +1047,15 @@ pub fn show_editor_ui(
         let settings_response = show_settings_sidebar_area(
             ctx,
             app_settings,
+            graphics_backend,
+            graphics_backend_options,
+            graphics_backend_locked,
+            settings_restart_required,
+            audio_backend,
+            audio_backend_options,
+            audio_backend_locked,
             settings_section,
             keybind_capture_action,
-            view,
             commands,
         );
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
@@ -2083,6 +2142,13 @@ mod tests {
                 &eg_types::BasicLevelMetadata::default(),
                 eg_types::LevelMetadata::default().sky_color,
                 &AppSettings::default(),
+                "Auto",
+                &[],
+                false,
+                false,
+                "Default",
+                &[],
+                false,
                 show_metadata,
                 false,
                 settings_section,
@@ -2366,13 +2432,6 @@ mod test_utils {
         UiStateData {
             mode: EditorMode::Select,
             last_mode: Some(EditorMode::Select),
-            configured_graphics_backend: "Auto".to_owned(),
-            configured_audio_backend: "Default".to_owned(),
-            graphics_backend_locked: false,
-            audio_backend_locked: false,
-            graphics_backend_options: Vec::new(),
-            audio_backend_options: Vec::new(),
-            settings_restart_required: false,
             snap_to_grid: true,
             snap_step: 1.0,
             snap_rotation: true,

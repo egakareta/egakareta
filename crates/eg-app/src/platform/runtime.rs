@@ -134,7 +134,28 @@ fn run_egui_ui_system(world: &mut World) {
             session.editor_sky_color,
         )
     };
-    let app_settings = world.resource::<SessionStateRes>().app_settings.clone();
+    let (
+        app_settings,
+        graphics_backend,
+        graphics_backend_options,
+        graphics_backend_locked,
+        settings_restart_required,
+        audio_backend,
+        audio_backend_options,
+        audio_backend_locked,
+    ) = {
+        let session = world.resource::<SessionStateRes>();
+        (
+            session.app_settings.clone(),
+            session.app_settings.graphics_backend.clone(),
+            session.available_graphics_backends.clone(),
+            session.graphics_backend_locked,
+            session.settings_restart_required,
+            session.app_settings.audio_backend.clone(),
+            session.available_audio_backends.clone(),
+            session.audio_backend_locked,
+        )
+    };
     let (auth_display_name, auth_pending, auth_message) = {
         let auth = world.resource::<AuthStateRes>();
         (
@@ -201,6 +222,13 @@ fn run_egui_ui_system(world: &mut World) {
                     &editor_creator_metadata,
                     editor_sky_color,
                     &app_settings,
+                    &graphics_backend,
+                    &graphics_backend_options,
+                    graphics_backend_locked,
+                    settings_restart_required,
+                    &audio_backend,
+                    &audio_backend_options,
+                    audio_backend_locked,
                     editor_show_metadata,
                     editor_show_place_window,
                     editor_settings_section,
@@ -218,6 +246,13 @@ fn run_egui_ui_system(world: &mut World) {
                         is_editor,
                         is_game_paused,
                         &app_settings,
+                        &graphics_backend,
+                        &graphics_backend_options,
+                        graphics_backend_locked,
+                        settings_restart_required,
+                        &audio_backend,
+                        &audio_backend_options,
+                        audio_backend_locked,
                         editor_settings_section,
                         editor_keybind_capture_action.as_ref(),
                         &ui_state,

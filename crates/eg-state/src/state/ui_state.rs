@@ -8,7 +8,7 @@
 use super::{
     EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
     EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, PerfRes,
-    SessionStateRes, evaluate_camera_track_for_objects,
+    evaluate_camera_track_for_objects,
 };
 
 use bevy_ecs::world::World;
@@ -27,13 +27,6 @@ pub struct SelectedTapViewModel {
 pub struct UiStateData {
     pub mode: EditorMode,
     pub last_mode: Option<EditorMode>,
-    pub configured_graphics_backend: String,
-    pub configured_audio_backend: String,
-    pub graphics_backend_locked: bool,
-    pub audio_backend_locked: bool,
-    pub graphics_backend_options: Vec<String>,
-    pub audio_backend_options: Vec<String>,
-    pub settings_restart_required: bool,
     pub snap_to_grid: bool,
     pub snap_step: f32,
     pub snap_rotation: bool,
@@ -79,7 +72,6 @@ pub struct UiStateData {
 
 impl UiStateData {
     pub fn from_world(world: &World) -> Self {
-        let session = world.resource::<SessionStateRes>();
         let input = &world.resource::<EditorInputRes>().0;
         let objects = &world.resource::<EditorObjectsRes>().objects;
         let config = &world.resource::<EditorConfigRes>().0;
@@ -156,13 +148,6 @@ impl UiStateData {
         Self {
             mode: input.mode,
             last_mode: runtime.interaction.last_mode,
-            configured_graphics_backend: session.app_settings.graphics_backend.clone(),
-            configured_audio_backend: session.app_settings.audio_backend.clone(),
-            graphics_backend_locked: session.graphics_backend_locked,
-            audio_backend_locked: session.audio_backend_locked,
-            graphics_backend_options: session.available_graphics_backends.clone(),
-            audio_backend_options: session.available_audio_backends.clone(),
-            settings_restart_required: session.settings_restart_required,
             snap_to_grid: config.snap_to_grid,
             snap_step: config.snap_step,
             snap_rotation: config.snap_rotation,
