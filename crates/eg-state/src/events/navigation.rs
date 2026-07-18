@@ -34,15 +34,15 @@ use eg_game::{
     Player, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, TimedTurnInput, Trail,
     TurnInputKind, VerticalVelocity,
 };
-use eg_types::{AppPhase, EditorMode, LevelMetadata};
+use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
 use crate::state::{
-    AudioBackendRes, BuiltinLevelCatalogRes, EditorAudioCacheRes, EditorConfigRes,
-    EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, GameplayResetRes,
-    GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
+    AudioBackendRes, BuiltinLevelCatalogRes, EditorAudioCacheRes, EditorAuthoredObject,
+    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectOrder,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    GameplayResetRes, GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
     RuntimeAudioPreloadSenderRes, SessionStateRes, apply_imported_level_to_world,
-    with_audio_backend,
+    collect_editor_object_data, replace_editor_objects_commands, with_audio_backend,
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -115,6 +115,8 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: TurnRightResources) {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    let before = resources.objects.objects.clone();
     for _ in events.read() {
         let phase = *resources.phase.get();
         let practice_game_over = phase == AppPhase::Playing
@@ -157,10 +159,17 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
             _ => {}
         }
     }
+    if resources.objects.objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &resources.objects.objects,
+        );
+    }
 }
 
 #[derive(SystemParam)]
-pub struct TurnRightResources<'w> {
+pub struct TurnRightResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     next_phase: ResMut<'w, NextState<AppPhase>>,
     session: ResMut<'w, SessionStateRes>,
@@ -177,7 +186,15 @@ pub struct TurnRightResources<'w> {
     clock: ResMut<'w, GameClock>,
     level_meta: Res<'w, LevelMeta>,
     pending_turns: ResMut<'w, PendingTurnInputs>,
-    objects: ResMut<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    commands: Commands<'w, 's>,
+    objects: Local<'s, EditorObjectScratch>,
     input: ResMut<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
     spawn: Res<'w, EditorSpawnRes>,
@@ -187,7 +204,12 @@ pub struct TurnRightResources<'w> {
     history: ResMut<'w, EditorHistoryRes>,
 }
 
-fn start_gameplay_from_turn_right(resources: &mut TurnRightResources<'_>) {
+#[derive(Default)]
+struct EditorObjectScratch {
+    objects: Vec<LevelObject>,
+}
+
+fn start_gameplay_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     let start_seconds = resources.clock.elapsed_seconds;
     resources.clock.started = true;
 
@@ -227,7 +249,7 @@ fn start_gameplay_from_turn_right(resources: &mut TurnRightResources<'_>) {
     }
 }
 
-fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_>) -> bool {
+fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_, '_>) -> bool {
     let Some(checkpoint) = resources.session.practice_checkpoints.last().cloned() else {
         return false;
     };
@@ -253,7 +275,7 @@ fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_>) -> b
     true
 }
 
-fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_>) {
+fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     resources.audio.stop();
     resources.pending_turns.taps.clear();
     resources.session.practice_checkpoints.clear();
@@ -273,7 +295,7 @@ fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_>) {
         });
 }
 
-fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_>) {
+fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
     let Some(menu) = resources.menu.as_ref() else {
         return;
     };
@@ -340,7 +362,7 @@ fn queue_runtime_audio_preload(
     eg_audio::service::start_audio_preload(source_key, level_name.to_owned(), sender.0.clone());
 }
 
-fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
+fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     record_editor_history_for_placement(resources);
 
     let default_size = BlockDefinition::get(&resources.config.0.selected_block_id)
@@ -369,7 +391,7 @@ fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_>) {
     }
 }
 
-fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_>) {
+fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_, '_>) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);

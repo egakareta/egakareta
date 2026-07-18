@@ -27,8 +27,8 @@ use eg_game::{
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
-    EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, GameplayResetRes, GameplayResetSeed,
-    MenuStateRes, RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
+    EditorSpawnRes, EditorTimelineRes, GameplayResetRes, GameplayResetSeed, MenuStateRes,
+    RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
 };
 
 const DEAD_SFX: &[u8] = include_bytes!(concat!(
@@ -125,11 +125,26 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     }
 
     let (objects, position, direction, duration) = if playtesting_editor {
-        let spawn = &world.resource::<EditorSpawnRes>().0;
+        let (position, direction) = {
+            let spawn = &world.resource::<EditorSpawnRes>().0;
+            (spawn.position, spawn.direction)
+        };
         (
-            world.resource::<EditorObjectsRes>().objects.clone(),
-            spawn.position,
-            spawn.direction,
+            {
+                let mut query = world.query_filtered::<(
+                    &super::editor_objects::EditorObjectOrder,
+                    &eg_game::ObjectData,
+                ), With<super::editor_objects::EditorAuthoredObject>>(
+                );
+                let mut objects = query
+                    .iter(world)
+                    .map(|(order, data)| (order.0, data.0.clone()))
+                    .collect::<Vec<_>>();
+                objects.sort_by_key(|(order, _)| *order);
+                objects.into_iter().map(|(_, object)| object).collect()
+            },
+            position,
+            direction,
             world
                 .resource::<EditorTimelineRes>()
                 .0

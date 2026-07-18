@@ -64,9 +64,9 @@ use super::resources::{
 };
 use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
 use crate::state::{
-    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    FrameTimeRes, MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+    MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
     editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
     evaluate_camera_track_for_objects,
 };
@@ -457,9 +457,18 @@ fn gameplay_object_order_key(id: &str) -> (u8, usize, &str) {
         .unwrap_or((1, 0, id))
 }
 
-fn editor_trigger_objects_for_render(objects: &EditorObjectsRes) -> Vec<LevelObject> {
+type GameplayRenderObjects<'w, 's> = Query<
+    'w,
+    's,
+    (&'static eg_game::ObjectId, &'static eg_game::ObjectData),
+    (
+        With<eg_game::Object>,
+        Without<super::super::editor_objects::EditorAuthoredObject>,
+    ),
+>;
+
+fn editor_trigger_objects_for_render(objects: &[LevelObject]) -> Vec<LevelObject> {
     let mut triggers = objects
-        .objects
         .iter()
         .filter(|object| object.trigger.is_some())
         .cloned()
@@ -503,19 +512,19 @@ fn has_camera_timeline_triggers(triggers: &[LevelObject]) -> bool {
 }
 
 fn editor_objects_for_render(
-    objects: &EditorObjectsRes,
+    objects: &[LevelObject],
     timeline: &EditorTimelineRes,
     trigger_objects: &[LevelObject],
 ) -> Vec<LevelObject> {
     if !timeline.0.playback.playing {
         if has_object_transform_triggers(trigger_objects) {
             return trigger_transformed_objects_at_time(
-                &objects.objects,
+                objects,
                 trigger_objects,
                 timeline.0.clock.time_seconds,
             );
         }
-        return objects.objects.clone();
+        return objects.to_vec();
     }
 
     if !has_object_transform_triggers(trigger_objects) {
@@ -525,14 +534,10 @@ fn editor_objects_for_render(
             .runtime
             .as_ref()
             .map(|runtime| runtime.objects().to_vec())
-            .unwrap_or_else(|| objects.objects.clone());
+            .unwrap_or_else(|| objects.to_vec());
     }
 
-    trigger_transformed_objects_at_time(
-        &objects.objects,
-        trigger_objects,
-        timeline.0.clock.time_seconds,
-    )
+    trigger_transformed_objects_at_time(objects, trigger_objects, timeline.0.clock.time_seconds)
 }
 
 /// Extract time-dependent gameplay block batches from App-owned gameplay
@@ -542,8 +547,14 @@ pub(crate) fn extract_playing_block_meshes_system(
     phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
     clock: Option<Res<eg_game::GameClock>>,
-    editor_objects: Res<EditorObjectsRes>,
-    objects: Query<(&eg_game::ObjectId, &eg_game::ObjectData), With<eg_game::Object>>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
+    objects: GameplayRenderObjects<'_, '_>,
     mut block_meshes: ResMut<RenderPlayingBlockMeshesRes>,
 ) {
     block_meshes.result = None;
@@ -564,7 +575,9 @@ pub(crate) fn extract_playing_block_meshes_system(
         .into_iter()
         .map(|(_, object)| object)
         .collect::<Vec<_>>();
-    let trigger_objects = editor_trigger_objects_for_render(&editor_objects);
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
     let has_object_transform_triggers = has_object_transform_triggers(&trigger_objects);
     let has_camera_timeline_triggers = has_camera_timeline_triggers(&trigger_objects);
     let has_animated_blocks = gameplay_objects.iter().any(|object| {
@@ -626,7 +639,13 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
 pub(crate) fn extract_editor_block_meshes_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     timeline: Res<EditorTimelineRes>,
     mut block_meshes: ResMut<RenderEditorBlockMeshesRes>,
 ) {
@@ -636,8 +655,10 @@ pub(crate) fn extract_editor_block_meshes_system(
         return;
     }
 
-    let trigger_objects = editor_trigger_objects_for_render(&objects);
-    let object_source = editor_objects_for_render(&objects, &timeline, &trigger_objects);
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
+    let object_source = editor_objects_for_render(&authored_objects, &timeline, &trigger_objects);
     let selected_indices = normalized_editor_selection_indices(&input, object_source.len());
     let selected_mask = selected_indices
         .iter()
@@ -761,10 +782,18 @@ fn gizmo_pixels_to_world_scale(
 /// Extract the editor transform gizmo from App-owned selection, objects,
 /// interaction state, camera uniform, and viewport configuration.
 #[derive(SystemParam)]
-pub(crate) struct EditorGizmoExtractionParams<'w> {
+pub(crate) struct EditorGizmoExtractionParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     input: Res<'w, EditorInputRes>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static super::super::editor_objects::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     triggers: Res<'w, EditorTriggerRes>,
     runtime: Res<'w, EditorRuntimeRes>,
     uniforms: Res<'w, RenderUniformsRes>,
@@ -778,11 +807,11 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
         return;
     }
 
-    let trigger_objects = editor_trigger_objects_for_render(&params.objects);
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
+    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
     let trigger_target =
-        if normalized_editor_selection_indices(&params.input, params.objects.objects.len())
-            .is_empty()
-        {
+        if normalized_editor_selection_indices(&params.input, authored_objects.len()).is_empty() {
             params
                 .triggers
                 .0
@@ -793,12 +822,10 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
             None
         };
     let selected_indices =
-        normalized_editor_selection_indices(&params.input, params.objects.objects.len());
-    let Some((bounds_position, bounds_size)) = editor_selection_bounds_for_gizmo(
-        &params.objects.objects,
-        &selected_indices,
-        trigger_target,
-    ) else {
+        normalized_editor_selection_indices(&params.input, authored_objects.len());
+    let Some((bounds_position, bounds_size)) =
+        editor_selection_bounds_for_gizmo(&authored_objects, &selected_indices, trigger_target)
+    else {
         return;
     };
     let visibility = if selected_indices.is_empty() {
@@ -808,7 +835,7 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
     } else {
         selected_indices
             .iter()
-            .filter_map(|index| params.objects.objects.get(*index))
+            .filter_map(|index| authored_objects.get(*index))
             .map(LevelObject::transform_field_visibility)
             .fold(
                 TransformVisibility::all(),
@@ -838,7 +865,7 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
     ];
     let rotation = selected_indices
         .first()
-        .and_then(|index| params.objects.objects.get(*index))
+        .and_then(|index| authored_objects.get(*index))
         .map(|object| object.rotation)
         .or_else(|| trigger_target.map(|object| object.rotation))
         .unwrap_or([0.0, 0.0, 0.0]);
@@ -883,7 +910,13 @@ pub(crate) fn clear_editor_dirty_flags_system(mut runtime: ResMut<EditorRuntimeR
 /// Runtime uploads the derived vertices into the compatibility mesh slot.
 pub(crate) fn extract_editor_camera_arrow_vertices_system(
     phase: Res<State<AppPhase>>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     camera: Res<EditorCameraRes>,
     timeline: Res<EditorTimelineRes>,
     mut arrow_vertices: ResMut<RenderEditorCameraArrowVerticesRes>,
@@ -893,10 +926,12 @@ pub(crate) fn extract_editor_camera_arrow_vertices_system(
         return;
     }
 
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
     let target = Vec3::from_array(timeline.0.preview.position);
     let sample = evaluate_camera_track_for_objects(
         &camera.0,
-        &objects.objects,
+        &authored_objects,
         timeline.0.clock.time_seconds,
         target,
         true,
@@ -975,7 +1010,13 @@ pub(crate) fn extract_editor_hitbox_vertices_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     runtime: Res<EditorRuntimeRes>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     timeline: Res<EditorTimelineRes>,
     mut hitbox_vertices: ResMut<RenderEditorHitboxVerticesRes>,
 ) {
@@ -993,8 +1034,10 @@ pub(crate) fn extract_editor_hitbox_vertices_system(
     }
 
     let player_hitbox = editor_preview_player_hitbox(timeline.0.preview.position);
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
     hitbox_vertices.0 =
-        build_editor_hitbox_visualization_vertices(&objects.objects, Some(player_hitbox));
+        build_editor_hitbox_visualization_vertices(&authored_objects, Some(player_hitbox));
 }
 
 fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
@@ -1019,11 +1062,19 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
 /// resources. Runtime uploads the derived vertices into the compatibility
 /// mesh slot.
 #[derive(SystemParam)]
-pub(crate) struct EditorTapIndicatorExtractionParams<'w> {
+pub(crate) struct EditorTapIndicatorExtractionParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     input: Res<'w, EditorInputRes>,
     runtime: Res<'w, EditorRuntimeRes>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static super::super::editor_objects::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     spawn: Res<'w, EditorSpawnRes>,
     timeline: Res<'w, EditorTimelineRes>,
     timing: Res<'w, EditorTimingRes>,
@@ -1054,6 +1105,8 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     let selected_tap_index = params.timeline.0.taps.selected_index;
     let hovered_division = params.runtime.0.interaction.hovered_tap_division;
     let duration_seconds = params.timeline.0.clock.duration_seconds.max(0.0);
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
     let preview_indicators: Vec<([f32; 3], [f32; 4])> = if show_timing_division_previews {
         let previews = derive_timing_division_tap_previews(
             params.spawn.0.position,
@@ -1065,7 +1118,7 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
                 start_seconds: 0.0,
                 end_seconds: duration_seconds,
             },
-            &params.objects.objects,
+            &authored_objects,
         );
         let tap_positions = &params.timeline.0.taps.tap_indicator_positions;
         let mut indicators: Vec<([f32; 3], [f32; 4])> = previews
@@ -1347,7 +1400,13 @@ fn selected_editor_group_bounds(
 pub(crate) fn extract_editor_selection_overlays_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     mut selection: ResMut<RenderEditorSelectionOverlayRes>,
     mut hover: ResMut<RenderEditorHoverOverlayRes>,
 ) {
@@ -1371,10 +1430,12 @@ pub(crate) fn extract_editor_selection_overlays_system(
         outline_vertices: hover_outline,
     } = &mut *hover;
 
-    let selected_indices = normalized_editor_selection_indices(&input, objects.objects.len());
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let selected_indices = normalized_editor_selection_indices(&input, authored_objects.len());
     if selected_indices.len() <= SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
         for index in selected_indices.iter().copied() {
-            if let Some(object) = objects.objects.get(index) {
+            if let Some(object) = authored_objects.get(index) {
                 append_outline_instance(
                     selection_stencil,
                     selection_outline,
@@ -1385,7 +1446,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
             }
         }
     } else if let Some((position, size)) =
-        selected_editor_group_bounds(&objects.objects, &selected_indices)
+        selected_editor_group_bounds(&authored_objects, &selected_indices)
     {
         let bounds_object = LevelObject {
             position,
@@ -1401,7 +1462,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
         );
     }
     append_transform_trigger_target_outline_instances(
-        &objects.objects,
+        &authored_objects,
         selected_indices.iter().copied(),
         selection_stencil,
         selection_outline,
@@ -1411,14 +1472,14 @@ pub(crate) fn extract_editor_selection_overlays_system(
     let hovered_index = input
         .0
         .hovered_block_index
-        .filter(|index| *index < objects.objects.len());
+        .filter(|index| *index < authored_objects.len());
     let selected_mask = selected_indices
         .iter()
         .copied()
         .collect::<std::collections::HashSet<_>>();
     if let Some(index) = hovered_index
         && !selected_mask.contains(&index)
-        && let Some(object) = objects.objects.get(index)
+        && let Some(object) = authored_objects.get(index)
     {
         let mut hover_instances = Vec::new();
         append_outline_instance(
@@ -1432,13 +1493,13 @@ pub(crate) fn extract_editor_selection_overlays_system(
 
     let mut target_indices = hovered_index
         .into_iter()
-        .flat_map(|index| transform_trigger_target_indices_for_block(&objects.objects, index))
+        .flat_map(|index| transform_trigger_target_indices_for_block(&authored_objects, index))
         .collect::<Vec<_>>();
     target_indices.sort_unstable();
     target_indices.dedup();
     let mut target_instances = Vec::new();
     for target_index in target_indices {
-        if let Some(object) = objects.objects.get(target_index) {
+        if let Some(object) = authored_objects.get(target_index) {
             append_outline_instance(
                 hover_stencil,
                 hover_outline,
@@ -1520,7 +1581,13 @@ fn transform_trigger_markers_for_triggers(
 /// compatibility mesh slot.
 pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
     phase: Res<State<AppPhase>>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     triggers: Res<EditorTriggerRes>,
     timeline: Res<EditorTimelineRes>,
     mut marker_vertices: ResMut<RenderEditorTransformTriggerMarkerVerticesRes>,
@@ -1530,14 +1597,15 @@ pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
         return;
     }
 
-    let trigger_objects = objects
-        .objects
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let trigger_objects = authored_objects
         .iter()
         .filter(|object| object.trigger.is_some())
         .cloned()
         .collect::<Vec<_>>();
     let markers = transform_trigger_markers_for_triggers(
-        &objects.objects,
+        &authored_objects,
         &trigger_objects,
         triggers.0.selected_index,
     );
@@ -1559,7 +1627,15 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
 pub(crate) struct RenderUniformsParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     camera: Res<'w, EditorCameraRes>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static super::super::editor_objects::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<super::super::editor_objects::EditorAuthoredObject>,
+    >,
     timeline: Res<'w, EditorTimelineRes>,
     frame_time: Res<'w, FrameTimeRes>,
     clock: Option<Res<'w, eg_game::GameClock>>,
@@ -1598,6 +1674,8 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         .as_ref()
         .map(|clock| (clock.elapsed_seconds, clock.started, clock.game_over))
         .unwrap_or((0.0, false, false));
+    let authored_objects =
+        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
 
     let (eye, target) = match *params.phase.get() {
         AppPhase::Menu => params
@@ -1614,7 +1692,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
             let target = Vec3::from_array(player_position);
             let sample = evaluate_camera_track_for_objects(
                 &params.camera.0,
-                &params.objects.objects,
+                &authored_objects,
                 elapsed_seconds,
                 target,
                 started && !game_over,
@@ -1625,7 +1703,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
             let target = Vec3::from_array(params.timeline.0.preview.position);
             let sample = evaluate_camera_track_for_objects(
                 &params.camera.0,
-                &params.objects.objects,
+                &authored_objects,
                 params.timeline.0.clock.time_seconds,
                 target,
                 true,
@@ -2131,7 +2209,7 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(State::new(AppPhase::Editor));
         world.insert_resource(EditorInputRes(input));
-        world.insert_resource(EditorObjectsRes { objects });
+        crate::state::editor_objects::replace_editor_objects(&mut world, objects);
         world.init_resource::<RenderEditorSelectionOverlayRes>();
         world.init_resource::<RenderEditorHoverOverlayRes>();
 
@@ -2300,26 +2378,29 @@ mod tests {
         let mut app = crate::state::test_support::TestApp::minimal();
         app.world_mut()
             .insert_resource(State::new(AppPhase::Editor));
-        app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
-            LevelObject {
-                id: "object_0_0_0".to_string(),
-                ..LevelObject::new("core/stone")
-            },
-            LevelObject {
-                position: [2.0, 0.0, 0.0],
-                trigger: Some(eg_types::TimedTrigger {
-                    time_seconds: 0.0,
-                    duration_seconds: 0.0,
-                    easing: eg_types::EasingDirection::Linear,
-                    target: eg_types::TriggerTarget::Objects {
-                        object_ids: vec!["object_0_0_0".to_string()],
-                    },
-                    transform: true,
-                    camera: None,
-                }),
-                ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
-            },
-        ];
+        crate::state::editor_objects::replace_editor_objects(
+            app.world_mut(),
+            vec![
+                LevelObject {
+                    id: "object_0_0_0".to_string(),
+                    ..LevelObject::new("core/stone")
+                },
+                LevelObject {
+                    position: [2.0, 0.0, 0.0],
+                    trigger: Some(eg_types::TimedTrigger {
+                        time_seconds: 0.0,
+                        duration_seconds: 0.0,
+                        easing: eg_types::EasingDirection::Linear,
+                        target: eg_types::TriggerTarget::Objects {
+                            object_ids: vec!["object_0_0_0".to_string()],
+                        },
+                        transform: true,
+                        camera: None,
+                    }),
+                    ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+                },
+            ],
+        );
 
         let mut schedule = Schedule::default();
         schedule.add_systems(extract_editor_transform_trigger_marker_vertices_system);
@@ -2352,13 +2433,16 @@ mod tests {
             input.0.selected_block_index = Some(0);
             input.0.selected_block_indices = vec![0];
         }
-        app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
-            LevelObject::new("core/stone"),
-            LevelObject {
-                position: [2.0, 0.0, 0.0],
-                ..LevelObject::new("core/grass")
-            },
-        ];
+        crate::state::editor_objects::replace_editor_objects(
+            app.world_mut(),
+            vec![
+                LevelObject::new("core/stone"),
+                LevelObject {
+                    position: [2.0, 0.0, 0.0],
+                    ..LevelObject::new("core/grass")
+                },
+            ],
+        );
 
         let mut schedule = Schedule::default();
         schedule.add_systems(extract_editor_block_meshes_system);
@@ -2388,15 +2472,13 @@ mod tests {
             }),
             ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
         };
-        let objects = EditorObjectsRes {
-            objects: vec![authored.clone()],
-        };
+        let objects = vec![authored.clone()];
         let mut timeline = EditorTimelineRes::default();
         timeline.0.clock.time_seconds = 0.5;
 
         let rendered = editor_objects_for_render(&objects, &timeline, &[trigger]);
 
         assert_eq!(rendered[0].position, [2.0, 0.0, 0.0]);
-        assert_eq!(objects.objects[0].position, authored.position);
+        assert_eq!(objects[0].position, authored.position);
     }
 }

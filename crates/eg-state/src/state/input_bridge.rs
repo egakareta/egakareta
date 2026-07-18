@@ -13,7 +13,7 @@ use bevy_state::prelude::State;
 use crate::commands::{AppCommand, InputEvent};
 use crate::state::editor_command::EditorCommand;
 use crate::state::{
-    EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorTimelineRes,
+    EditorAuthoredObject, EditorConfigRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes,
     EditorTimingRes, SessionStateRes,
 };
 use eg_editor_domain::{TimingDivisionDirection, timing_division_time_in_direction};
@@ -536,7 +536,10 @@ fn selected_tap(world: &World) -> Option<(usize, f32, [f32; 3])> {
 
 fn has_block_selection(world: &World) -> bool {
     let input = world.resource::<EditorInputRes>();
-    let object_count = world.resource::<EditorObjectsRes>().objects.len();
+    let object_count = world
+        .iter_entities()
+        .filter(|entity| entity.contains::<EditorAuthoredObject>())
+        .count();
     input
         .0
         .selected_block_indices

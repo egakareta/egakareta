@@ -5,7 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::EditorSubsystem;
 use std::collections::HashMap;
 
 use eg_block_geometry::{
@@ -295,7 +294,7 @@ fn min_axis(values: [f32; 3]) -> usize {
     }
 }
 
-impl EditorSubsystem {
+super::super::editor_context_methods! {
     pub fn pick_from_screen(
         &mut self,
         x: f64,

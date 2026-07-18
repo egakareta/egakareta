@@ -88,6 +88,7 @@ fn run_egui_ui_system(world: &mut World) {
         .expect("RenderEguiRes must be installed before App update");
 
     let phase = *world.resource::<State<eg_types::AppPhase>>().get();
+    let editor_objects = eg_state::state::collect_editor_objects_from_world(world);
     let is_menu = phase == eg_types::AppPhase::Menu;
     let is_editor = phase == eg_types::AppPhase::Editor;
     let show_settings = world.resource::<SessionStateRes>().editor_show_settings;
@@ -196,13 +197,7 @@ fn run_egui_ui_system(world: &mut World) {
             let dy = current[1] - start[1];
             (start, current, (dx * dx + dy * dy) >= 16.0)
         });
-        (
-            world
-                .resource::<eg_state::state::EditorObjectsRes>()
-                .objects
-                .len(),
-            marquee_selection_rect_screen,
-        )
+        (editor_objects.len(), marquee_selection_rect_screen)
     };
     let (editor_config, editor_place_preview_position) = (
         world
@@ -227,16 +222,13 @@ fn run_egui_ui_system(world: &mut World) {
         editor_camera_pitch,
     ) = {
         let camera = &world.resource::<eg_state::state::EditorCameraRes>().0;
-        let objects = &world
-            .resource::<eg_state::state::EditorObjectsRes>()
-            .objects;
         let timeline = &world.resource::<eg_state::state::EditorTimelineRes>().0;
         let camera_position =
             (camera.editor_camera_target() + camera.editor_camera_offset()).to_array();
         let (camera_preview_position, camera_preview_target) =
             eg_state::state::editor_camera_preview_for_objects(
                 camera,
-                objects,
+                &editor_objects,
                 timeline.clock.time_seconds,
                 timeline.preview.position,
                 true,
@@ -257,18 +249,15 @@ fn run_egui_ui_system(world: &mut World) {
         editor_can_redo,
     ) = {
         let input = &world.resource::<EditorInputRes>().0;
-        let objects = &world
-            .resource::<eg_state::state::EditorObjectsRes>()
-            .objects;
         let mut selected_indices = input
             .selected_block_indices
             .iter()
             .copied()
-            .filter(|index| *index < objects.len())
+            .filter(|index| *index < editor_objects.len())
             .collect::<Vec<_>>();
         if let Some(index) = input
             .selected_block_index
-            .filter(|index| *index < objects.len())
+            .filter(|index| *index < editor_objects.len())
         {
             selected_indices.push(index);
         }
@@ -279,7 +268,7 @@ fn run_egui_ui_system(world: &mut World) {
         (
             selected_indices
                 .first()
-                .and_then(|index| objects.get(*index).cloned()),
+                .and_then(|index| editor_objects.get(*index).cloned()),
             selected_indices.len(),
             runtime
                 .interaction
@@ -326,9 +315,7 @@ fn run_egui_ui_system(world: &mut World) {
                 *timeline.taps.tap_indicator_positions.get(index)?,
             ))
         });
-        let mut trigger_objects = world
-            .resource::<eg_state::state::EditorObjectsRes>()
-            .objects
+        let mut trigger_objects = editor_objects
             .iter()
             .filter(|object| object.trigger.is_some())
             .cloned()
@@ -788,10 +775,10 @@ mod tests {
     use bevy_state::prelude::State;
     use eg_state::state::{
         AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
-        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-        GameplayResetRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue,
-        RenderResizeRequest, SessionStateRes,
+        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+        MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
+        SessionStateRes,
     };
 
     fn runtime_in_phase(phase: eg_types::AppPhase) -> Runtime {
@@ -806,6 +793,14 @@ mod tests {
             .world()
             .resource::<State<eg_types::AppPhase>>()
             .get()
+    }
+
+    fn replace_authored_objects(runtime: &mut Runtime, objects: Vec<eg_types::LevelObject>) {
+        eg_state::state::replace_editor_objects(runtime.app.world_mut(), objects);
+    }
+
+    fn authored_objects(runtime: &mut Runtime) -> Vec<eg_types::LevelObject> {
+        eg_state::state::collect_editor_objects_from_world(runtime.app.world_mut())
     }
 
     fn runtime_in_playing(playtesting_editor: bool, game_paused: bool) -> Runtime {
@@ -878,10 +873,6 @@ mod tests {
             "EditorInputRes registered by EditorPlugin"
         );
 
-        assert!(
-            world.contains_resource::<EditorObjectsRes>(),
-            "EditorObjectsRes registered by EditorPlugin"
-        );
         assert!(
             world.contains_resource::<EditorConfigRes>(),
             "EditorConfigRes registered by EditorPlugin"
@@ -1771,22 +1762,21 @@ mod tests {
         use eg_state::events::block::{CopyBlock, RemoveBlock};
 
         let mut runtime = runtime_in_editor("BlockRuntimeCarveOut");
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![
-            eg_types::LevelObject {
-                id: "removed".to_string(),
-                position: [0.0, 0.0, 0.0],
-                ..eg_types::LevelObject::default()
-            },
-            eg_types::LevelObject {
-                id: "kept".to_string(),
-                position: [2.0, 0.0, 0.0],
-                ..eg_types::LevelObject::default()
-            },
-        ];
+        replace_authored_objects(
+            &mut runtime,
+            vec![
+                eg_types::LevelObject {
+                    id: "removed".to_string(),
+                    position: [0.0, 0.0, 0.0],
+                    ..eg_types::LevelObject::default()
+                },
+                eg_types::LevelObject {
+                    id: "kept".to_string(),
+                    position: [2.0, 0.0, 0.0],
+                    ..eg_types::LevelObject::default()
+                },
+            ],
+        );
         {
             let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1811,36 +1801,9 @@ mod tests {
         runtime.app.world_mut().write_message(RemoveBlock);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()
-                .len(),
-            1
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()[0]
-                .id,
-            "kept"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .len(),
-            1,
-            "App object resource must converge with legacy State after presentation sync"
-        );
+        let objects = authored_objects(&mut runtime);
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].id, "kept");
     }
 
     #[test]
@@ -1855,15 +1818,14 @@ mod tests {
             .0
             .clock
             .time_seconds = 2.5;
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![eg_types::LevelObject {
-            id: "object_0".to_string(),
-            position: [0.0, 0.0, 0.0],
-            ..eg_types::LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut runtime,
+            vec![eg_types::LevelObject {
+                id: "object_0".to_string(),
+                position: [0.0, 0.0, 0.0],
+                ..eg_types::LevelObject::default()
+            }],
+        );
         {
             let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1879,22 +1841,9 @@ mod tests {
         runtime.app.world_mut().write_message(AddTransformTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()
-                .len(),
-            2
-        );
-        let trigger_object = &runtime
-            .app
-            .world()
-            .resource::<EditorObjectsRes>()
-            .objects
-            .as_slice()[1];
+        let objects = authored_objects(&mut runtime);
+        assert_eq!(objects.len(), 2);
+        let trigger_object = &objects[1];
         assert_eq!(
             trigger_object.block_id,
             eg_types::TRANSFORM_TRIGGER_BLOCK_ID
@@ -1917,16 +1866,6 @@ mod tests {
                 .resource::<SessionStateRes>()
                 .editor_show_place_window,
             "selection handler must close the App-owned place window"
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .len(),
-            2,
-            "App object resource must converge with legacy State after presentation sync"
         );
     }
 
@@ -1953,22 +1892,9 @@ mod tests {
         runtime.app.world_mut().write_message(AddCameraTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()
-                .len(),
-            1
-        );
-        let trigger_object = &runtime
-            .app
-            .world()
-            .resource::<EditorObjectsRes>()
-            .objects
-            .as_slice()[0];
+        let objects = authored_objects(&mut runtime);
+        assert_eq!(objects.len(), 1);
+        let trigger_object = &objects[0];
         assert_eq!(trigger_object.block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
         let trigger = trigger_object.trigger.as_ref().expect("camera trigger");
         approx::assert_abs_diff_eq!(trigger.time_seconds, 2.5, epsilon = 1e-6);
@@ -1978,16 +1904,6 @@ mod tests {
         assert_eq!(camera.target_position, [12.0, 4.5, -7.0]);
         approx::assert_abs_diff_eq!(camera.yaw, 0.9, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(camera.pitch, 0.3, epsilon = 1e-6);
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .len(),
-            1,
-            "App object resource must converge with legacy State after presentation sync"
-        );
     }
 
     #[test]
@@ -2001,22 +1917,21 @@ mod tests {
             .resource_mut::<EditorConfigRes>()
             .0
             .snap_step = 1.0;
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![
-            eg_types::LevelObject {
-                id: "first".to_string(),
-                position: [0.2, 0.0, 0.7],
-                ..eg_types::LevelObject::default()
-            },
-            eg_types::LevelObject {
-                id: "second".to_string(),
-                position: [3.1, 0.0, 3.6],
-                ..eg_types::LevelObject::default()
-            },
-        ];
+        replace_authored_objects(
+            &mut runtime,
+            vec![
+                eg_types::LevelObject {
+                    id: "first".to_string(),
+                    position: [0.2, 0.0, 0.7],
+                    ..eg_types::LevelObject::default()
+                },
+                eg_types::LevelObject {
+                    id: "second".to_string(),
+                    position: [3.1, 0.0, 3.6],
+                    ..eg_types::LevelObject::default()
+                },
+            ],
+        );
         {
             let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -2027,26 +1942,9 @@ mod tests {
         runtime.app.world_mut().write_message(SnapSelectionToGrid);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()[0]
-                .position,
-            [0.0, 0.0, 1.0]
-        );
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()[1]
-                .position,
-            [3.0, 0.0, 4.0]
-        );
+        let objects = authored_objects(&mut runtime);
+        assert_eq!(objects[0].position, [0.0, 0.0, 1.0]);
+        assert_eq!(objects[1].position, [3.0, 0.0, 4.0]);
     }
 
     #[test]
@@ -2109,15 +2007,14 @@ mod tests {
         use eg_state::events::selection::FocusCameraTarget;
 
         let mut runtime = runtime_in_editor("SelectionFocusCamera");
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![eg_types::LevelObject {
-            position: [10.0, 2.0, 30.0],
-            size: [2.0, 4.0, 6.0],
-            ..eg_types::LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut runtime,
+            vec![eg_types::LevelObject {
+                position: [10.0, 2.0, 30.0],
+                size: [2.0, 4.0, 6.0],
+                ..eg_types::LevelObject::default()
+            }],
+        );
         {
             let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -3237,9 +3134,9 @@ mod tests {
     }
 
     /// `AddCameraTrigger` and `AddCameraFollowTrigger` are now
-    /// carve-outs: they mutate `EditorObjectsRes` and mark object
-    /// sync pending instead of staging legacy commands. The runtime
-    /// test near the editor-object carve-outs pins the end-to-end
+    /// handlers mutate authored editor entities directly instead of
+    /// staging legacy commands. The runtime test near the editor-object
+    /// handlers pins the end-to-end
     /// path into the legacy `State` object store while that store
     /// still owns presentation side effects.
     #[test]
@@ -3417,19 +3314,9 @@ mod tests {
         );
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        let objects = runtime.app.world().resource::<EditorObjectsRes>();
-        assert_eq!(objects.objects.len(), 1);
-        assert_eq!(objects.objects[0].position, [2.0, 0.0, 3.0]);
-        assert_eq!(
-            runtime
-                .app
-                .world()
-                .resource::<EditorObjectsRes>()
-                .objects
-                .as_slice()
-                .len(),
-            1
-        );
+        let objects = authored_objects(&mut runtime);
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].position, [2.0, 0.0, 3.0]);
         assert_eq!(
             runtime.app.world().resource::<EditorInputRes>().0.mode,
             eg_types::EditorMode::Scale,
@@ -3869,11 +3756,7 @@ mod tests {
         use eg_state::events::misc::Escape;
 
         let mut runtime = runtime_in_phase(eg_types::AppPhase::Editor);
-        runtime
-            .app
-            .world_mut()
-            .resource_mut::<EditorObjectsRes>()
-            .objects = vec![eg_types::LevelObject::default()];
+        replace_authored_objects(&mut runtime, vec![eg_types::LevelObject::default()]);
         {
             let mut input = runtime.app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);

@@ -5,10 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(test)]
 use super::EditorSubsystem;
 use eg_types::LevelObject;
 
-impl EditorSubsystem {
+super::editor_context_methods! {
+    #[cfg(test)]
     pub fn clear_pan_keys(&mut self) {
         self.input.pan_up_held = false;
         self.input.pan_down_held = false;
@@ -48,6 +50,7 @@ impl EditorSubsystem {
     /// Returns `true` when any currently-selected block is a transform
     /// trigger block. Used by editor actions to know when a mutation
     /// requires refreshing the transform trigger marker overlay.
+    #[cfg(test)]
     pub fn has_selected_transform_trigger_block(&self) -> bool {
         self.selected_indices_normalized().into_iter().any(|index| {
             self.objects

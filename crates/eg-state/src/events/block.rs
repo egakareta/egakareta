@@ -21,9 +21,10 @@ use eg_types::LevelObject;
 use eg_types::{AppPhase, EditorInputState, EditorMode, TriggerTarget, next_level_object_id};
 
 use crate::state::{
-    EditorClipboard, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
-    EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes,
+    EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,
+    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
+    replace_editor_objects_commands,
 };
 
 /// Remove the block under cursor or selected blocks.
@@ -59,9 +60,16 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 #[derive(SystemParam)]
-pub struct BlockResources<'w> {
+pub struct BlockResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
-    objects: ResMut<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    commands: Commands<'w, 's>,
     input: ResMut<'w, EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,
     spawn: Res<'w, EditorSpawnRes>,
@@ -73,13 +81,22 @@ pub struct BlockResources<'w> {
 }
 
 pub fn handle_remove_block(mut events: MessageReader<RemoveBlock>, mut resources: BlockResources) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
+    let before = objects.clone();
     for _ in events.read() {
         if *resources.phase.get() != AppPhase::Editor
             || effective_editor_mode(&resources) == EditorMode::Tapping
         {
             continue;
         }
-        remove_selected_or_topmost(&mut resources);
+        remove_selected_or_topmost(&mut resources, &mut objects);
+    }
+    if objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &objects,
+        );
     }
 }
 
@@ -87,26 +104,45 @@ pub fn handle_duplicate_block(
     mut events: MessageReader<DuplicateBlock>,
     mut resources: BlockResources,
 ) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
+    let before = objects.clone();
     for _ in events.read() {
         if *resources.phase.get() == AppPhase::Editor {
-            duplicate_selected(&mut resources);
+            duplicate_selected(&mut resources, &mut objects);
         }
+    }
+    if objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &objects,
+        );
     }
 }
 
 pub fn handle_copy_block(mut events: MessageReader<CopyBlock>, mut resources: BlockResources) {
+    let objects = collect_editor_object_data(&resources.authored_objects);
     for _ in events.read() {
         if *resources.phase.get() == AppPhase::Editor {
-            copy_selected(&mut resources);
+            copy_selected(&mut resources, &objects);
         }
     }
 }
 
 pub fn handle_paste_block(mut events: MessageReader<PasteBlock>, mut resources: BlockResources) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
+    let before = objects.clone();
     for _ in events.read() {
         if *resources.phase.get() == AppPhase::Editor {
-            paste_from_clipboard(&mut resources);
+            paste_from_clipboard(&mut resources, &mut objects);
         }
+    }
+    if objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &objects,
+        );
     }
 }
 
@@ -114,14 +150,23 @@ pub fn handle_update_selected_block(
     mut events: MessageReader<UpdateSelectedBlock>,
     mut resources: BlockResources,
 ) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
+    let before = objects.clone();
     for event in events.read() {
         if *resources.phase.get() == AppPhase::Editor {
-            update_selected_block(&mut resources, &event.0);
+            update_selected_block(&mut resources, &mut objects, &event.0);
         }
+    }
+    if objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &objects,
+        );
     }
 }
 
-fn effective_editor_mode(resources: &BlockResources<'_>) -> EditorMode {
+fn effective_editor_mode(resources: &BlockResources<'_, '_>) -> EditorMode {
     if resources.timeline.0.playback.playing && resources.input.0.mode == EditorMode::Null {
         resources
             .runtime
@@ -134,45 +179,39 @@ fn effective_editor_mode(resources: &BlockResources<'_>) -> EditorMode {
     }
 }
 
-fn remove_selected_or_topmost(resources: &mut BlockResources<'_>) -> bool {
-    let selected_indices =
-        selected_indices_normalized(&resources.input.0, resources.objects.objects.len());
+fn remove_selected_or_topmost(
+    resources: &mut BlockResources<'_, '_>,
+    objects: &mut Vec<LevelObject>,
+) -> bool {
+    let selected_indices = selected_indices_normalized(&resources.input.0, objects.len());
     if !selected_indices.is_empty() {
-        record_history_state(resources);
-        let removed_object_ids =
-            object_ids_for_removed_indices(&resources.objects.objects, &selected_indices);
-        dereference_removed_transform_trigger_targets(
-            &mut resources.objects.objects,
-            &removed_object_ids,
-        );
+        record_history_state(resources, objects);
+        let removed_object_ids = object_ids_for_removed_indices(objects, &selected_indices);
+        dereference_removed_transform_trigger_targets(objects, &removed_object_ids);
         for index in selected_indices.iter().rev() {
-            resources.objects.objects.remove(*index);
+            objects.remove(*index);
         }
         clear_block_selection(&mut resources.input.0);
-        sync_trigger_selection_from_objects(resources);
+        sync_trigger_selection_from_objects(resources, objects);
         return true;
     }
 
     let cursor = resources.input.0.cursor;
-    let Some(index) = topmost_block_index_at_cursor(&resources.objects.objects, cursor) else {
+    let Some(index) = topmost_block_index_at_cursor(objects, cursor) else {
         return false;
     };
-    record_history_state(resources);
-    let removed_object_ids = object_ids_for_removed_indices(&resources.objects.objects, &[index]);
-    dereference_removed_transform_trigger_targets(
-        &mut resources.objects.objects,
-        &removed_object_ids,
-    );
-    if remove_topmost_block_at_cursor(&mut resources.objects.objects, cursor) {
-        sync_trigger_selection_from_objects(resources);
+    record_history_state(resources, objects);
+    let removed_object_ids = object_ids_for_removed_indices(objects, &[index]);
+    dereference_removed_transform_trigger_targets(objects, &removed_object_ids);
+    if remove_topmost_block_at_cursor(objects, cursor) {
+        sync_trigger_selection_from_objects(resources, objects);
         return true;
     }
     false
 }
 
-fn copy_selected(resources: &mut BlockResources<'_>) {
-    let selected_indices =
-        selected_indices_normalized(&resources.input.0, resources.objects.objects.len());
+fn copy_selected(resources: &mut BlockResources<'_, '_>, objects: &[LevelObject]) {
+    let selected_indices = selected_indices_normalized(&resources.input.0, objects.len());
     if !selected_indices.is_empty() {
         let anchor_index = resources
             .input
@@ -180,19 +219,17 @@ fn copy_selected(resources: &mut BlockResources<'_>) {
             .selected_block_index
             .filter(|index| selected_indices.contains(index))
             .unwrap_or(selected_indices[0]);
-        let anchor = resources.objects.objects[anchor_index].position;
+        let anchor = objects[anchor_index].position;
         let objects = selected_indices
             .into_iter()
-            .map(|index| resources.objects.objects[index].clone())
+            .map(|index| objects[index].clone())
             .collect();
         resources.runtime.0.interaction.clipboard = Some(EditorClipboard { objects, anchor });
         return;
     }
 
-    if let Some(index) =
-        topmost_block_index_at_cursor(&resources.objects.objects, resources.input.0.cursor)
-    {
-        let block = resources.objects.objects[index].clone();
+    if let Some(index) = topmost_block_index_at_cursor(objects, resources.input.0.cursor) {
+        let block = objects[index].clone();
         resources.runtime.0.interaction.clipboard = Some(EditorClipboard {
             anchor: block.position,
             objects: vec![block],
@@ -200,7 +237,10 @@ fn copy_selected(resources: &mut BlockResources<'_>) {
     }
 }
 
-fn paste_from_clipboard(resources: &mut BlockResources<'_>) -> bool {
+fn paste_from_clipboard(
+    resources: &mut BlockResources<'_, '_>,
+    objects: &mut Vec<LevelObject>,
+) -> bool {
     let Some(clipboard) = resources.runtime.0.interaction.clipboard.clone() else {
         return false;
     };
@@ -208,13 +248,13 @@ fn paste_from_clipboard(resources: &mut BlockResources<'_>) -> bool {
         return false;
     }
 
-    record_history_state(resources);
+    record_history_state(resources, objects);
     let paste_anchor = resources.input.0.cursor;
-    let base_len = resources.objects.objects.len();
+    let base_len = objects.len();
     let mut new_indices = Vec::with_capacity(clipboard.objects.len());
 
     let mut pasted_objects = clipboard.objects;
-    regenerate_object_ids_for_clipboard(&mut pasted_objects, &resources.objects.objects);
+    regenerate_object_ids_for_clipboard(&mut pasted_objects, objects);
 
     for mut block in pasted_objects {
         block.position = [
@@ -223,21 +263,23 @@ fn paste_from_clipboard(resources: &mut BlockResources<'_>) -> bool {
             paste_anchor[2] + (block.position[2] - clipboard.anchor[2]),
         ];
         resources.config.0.selected_block_id = block.block_id.clone();
-        resources.objects.objects.push(block);
+        objects.push(block);
         new_indices.push(base_len + new_indices.len());
     }
 
     resources.input.0.selected_block_index = new_indices.first().copied();
     resources.input.0.selected_block_indices = new_indices;
-    normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
+    normalize_block_selection(&mut resources.input.0, objects.len());
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
-    sync_trigger_selection_from_objects(resources);
+    sync_trigger_selection_from_objects(resources, objects);
     true
 }
 
-fn duplicate_selected(resources: &mut BlockResources<'_>) -> bool {
-    let selected_indices =
-        selected_indices_normalized(&resources.input.0, resources.objects.objects.len());
+fn duplicate_selected(
+    resources: &mut BlockResources<'_, '_>,
+    objects: &mut Vec<LevelObject>,
+) -> bool {
+    let selected_indices = selected_indices_normalized(&resources.input.0, objects.len());
     if selected_indices.is_empty() {
         return false;
     }
@@ -248,45 +290,49 @@ fn duplicate_selected(resources: &mut BlockResources<'_>) -> bool {
         .selected_block_index
         .filter(|index| selected_indices.contains(index))
         .unwrap_or(selected_indices[0]);
-    let anchor = resources.objects.objects[anchor_index].position;
+    let anchor = objects[anchor_index].position;
     let mut duplicates = selected_indices
         .iter()
-        .map(|index| resources.objects.objects[*index].clone())
+        .map(|index| objects[*index].clone())
         .collect::<Vec<_>>();
-    regenerate_object_ids_for_clipboard(&mut duplicates, &resources.objects.objects);
+    regenerate_object_ids_for_clipboard(&mut duplicates, objects);
 
     resources.runtime.0.interaction.clipboard = Some(EditorClipboard {
         objects: duplicates.clone(),
         anchor,
     });
-    record_history_state(resources);
+    record_history_state(resources, objects);
 
-    let base_len = resources.objects.objects.len();
+    let base_len = objects.len();
     let mut new_indices = Vec::with_capacity(duplicates.len());
     for duplicated in duplicates {
         resources.config.0.selected_block_id = duplicated.block_id.clone();
-        resources.objects.objects.push(duplicated);
+        objects.push(duplicated);
         new_indices.push(base_len + new_indices.len());
     }
 
     resources.input.0.selected_block_index = new_indices.first().copied();
     resources.input.0.selected_block_indices = new_indices;
-    normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
+    normalize_block_selection(&mut resources.input.0, objects.len());
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
-    sync_trigger_selection_from_objects(resources);
+    sync_trigger_selection_from_objects(resources, objects);
     true
 }
 
-fn update_selected_block(resources: &mut BlockResources<'_>, updated: &LevelObject) -> bool {
-    normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
+fn update_selected_block(
+    resources: &mut BlockResources<'_, '_>,
+    objects: &mut [LevelObject],
+    updated: &LevelObject,
+) -> bool {
+    normalize_block_selection(&mut resources.input.0, objects.len());
     let Some(index) = resources.input.0.selected_block_index else {
         return false;
     };
-    if index >= resources.objects.objects.len() {
+    if index >= objects.len() {
         return false;
     }
 
-    record_history_state(resources);
+    record_history_state(resources, objects);
     let snap_step = resources.config.0.snap_step.max(0.05);
     let position = if resources.config.0.snap_to_grid && !resources.input.0.ctrl_held {
         snap_cell_to_step(updated.position, snap_step)
@@ -318,7 +364,7 @@ fn update_selected_block(resources: &mut BlockResources<'_>, updated: &LevelObje
         updated.rotation
     };
 
-    let object = &mut resources.objects.objects[index];
+    let object = &mut objects[index];
     object.position = position;
     object.size = [
         snapped_size[0].max(min_size),
@@ -333,7 +379,7 @@ fn update_selected_block(resources: &mut BlockResources<'_>, updated: &LevelObje
     object.trigger = updated.trigger.clone();
 
     resources.input.0.cursor = [position[0], position[1].max(0.0), position[2]];
-    sync_trigger_selection_from_objects(resources);
+    sync_trigger_selection_from_objects(resources, objects);
     true
 }
 
@@ -385,10 +431,11 @@ fn clear_block_selection(input: &mut EditorInputState) {
     input.hovered_block_index = None;
 }
 
-fn sync_trigger_selection_from_objects(resources: &mut BlockResources<'_>) {
-    let trigger_count = resources
-        .objects
-        .objects
+fn sync_trigger_selection_from_objects(
+    resources: &mut BlockResources<'_, '_>,
+    objects: &[LevelObject],
+) {
+    let trigger_count = objects
         .iter()
         .filter(|object| object.trigger.is_some())
         .count();
@@ -399,19 +446,22 @@ fn sync_trigger_selection_from_objects(resources: &mut BlockResources<'_>) {
         .filter(|index| *index < trigger_count);
 }
 
-fn record_history_state(resources: &mut BlockResources<'_>) {
+fn record_history_state(resources: &mut BlockResources<'_, '_>, objects: &[LevelObject]) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
     }
-    let snapshot = history_snapshot_from_resources(resources);
+    let snapshot = history_snapshot_from_resources(resources, objects);
     resources.history.0.undo.push(snapshot);
     resources.history.0.redo.clear();
 }
 
-fn history_snapshot_from_resources(resources: &BlockResources<'_>) -> EditorHistorySnapshot {
+fn history_snapshot_from_resources(
+    resources: &BlockResources<'_, '_>,
+    objects: &[LevelObject],
+) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
-        objects: resources.objects.objects.clone(),
+        objects: objects.to_vec(),
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

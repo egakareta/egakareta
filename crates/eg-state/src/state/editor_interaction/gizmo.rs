@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem};
+use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag};
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
@@ -14,7 +14,7 @@ const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
 const GIZMO_ROTATE_PICK_RADIUS_PIXELS: f32 = 18.0;
 
-impl EditorSubsystem {
+super::super::editor_context_methods! {
     fn selected_gizmo_rotation(&self) -> glam::Quat {
         let rotation = self
             .selected_indices_normalized()

@@ -41,10 +41,10 @@ use super::render::plugin::RenderPlugin;
 use super::state_resources::{
     AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-    GameplayResetRes, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
-    PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+    LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest,
+    PerfRes, SessionStateRes,
 };
 use super::{
     AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
@@ -90,7 +90,6 @@ pub struct EditorPlugin;
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorInputRes>()
-            .init_resource::<EditorObjectsRes>()
             .init_resource::<EditorConfigRes>()
             .init_resource::<EditorCameraRes>()
             .init_resource::<EditorSpawnRes>()
@@ -265,7 +264,6 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<BlockEffectsRes>();
     world.init_resource::<SessionStateRes>();
     world.init_resource::<EditorInputRes>();
-    world.init_resource::<EditorObjectsRes>();
     world.init_resource::<EditorConfigRes>();
     world.init_resource::<EditorCameraRes>();
     world.init_resource::<EditorSpawnRes>();
@@ -348,6 +346,7 @@ pub fn register_state_schedule(world: &mut World) {
     );
     schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
     crate::events::add_command_systems(&mut schedule);
+    schedule.add_systems(bevy_ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
     schedule.add_systems(consume_audio_stop_request_system.after(crate::events::CommandHandlerSet));
     schedule.add_systems(sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system));
     schedule.add_systems(

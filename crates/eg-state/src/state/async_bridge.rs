@@ -77,8 +77,8 @@ use crate::events::async_results::{
 };
 use crate::state::{
     AuthStateRes, EditorAudioCacheRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
-    EditorObjectsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState,
-    EditorTriggerRes, RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState, EditorTriggerRes,
+    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, replace_editor_objects,
 };
 
 // ---------------------------------------------------------------------------
@@ -661,10 +661,7 @@ pub(crate) fn apply_imported_level_to_world(
         &init.objects,
     );
 
-    {
-        let mut objects = world.resource_mut::<EditorObjectsRes>();
-        objects.objects = init.objects;
-    }
+    replace_editor_objects(world, init.objects);
     {
         let mut input = world.resource_mut::<EditorInputRes>();
         input.0.cursor = init.cursor;
@@ -1043,9 +1040,10 @@ mod tests {
 
         let session = world.resource::<SessionStateRes>();
         assert_eq!(session.editor_level_name.as_deref(), Some("Imported"));
-        let objects = world.resource::<EditorObjectsRes>();
-        assert_eq!(objects.objects.len(), 1);
-        assert_eq!(objects.objects[0].position, [6.0, 2.0, 1.0]);
+        let mut query = world
+            .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+        let object = query.single(&world).expect("imported authored object");
+        assert_eq!(object.0.position, [6.0, 2.0, 1.0]);
         assert_eq!(world.resource::<EditorSpawnRes>().0, metadata.spawn);
         let timeline = &world.resource::<EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.2, 0.8]);

@@ -45,10 +45,9 @@ use eg_types::{
 
 use crate::state::{
     AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes, EditorAudioCacheRes,
-    EditorCameraRes, EditorInputRes, EditorObjectsRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes, RuntimeAudioPreloadRes,
-    SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
-    load_waveform_for_level_resources,
+    EditorCameraRes, EditorInputRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    LevelExportServiceRes, LevelImportSenderRes, RuntimeAudioPreloadRes, SessionStateRes,
+    WaveformLoadSenderRes, apply_imported_level_to_world, load_waveform_for_level_resources,
 };
 
 /// Load a level from a builtin resource name.
@@ -228,7 +227,10 @@ pub fn handle_rename_level(
 pub fn handle_export_level(
     mut events: MessageReader<ExportLevel>,
     session: Res<SessionStateRes>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (&crate::state::EditorObjectOrder, &eg_game::ObjectData),
+        With<crate::state::EditorAuthoredObject>,
+    >,
     spawn: Res<EditorSpawnRes>,
     timeline: Res<EditorTimelineRes>,
     timing: Res<EditorTimingRes>,
@@ -236,6 +238,7 @@ pub fn handle_export_level(
     mut export_service: ResMut<LevelExportServiceRes>,
 ) {
     for _ in events.read() {
+        let objects = crate::state::collect_editor_object_data(&authored_objects);
         let mut basic = session.editor_creator_metadata.clone();
         if let Some(level_name) = &session.editor_level_name {
             basic.name = level_name.clone();
@@ -250,7 +253,7 @@ pub fn handle_export_level(
             timeline_time_seconds: timeline.0.clock.time_seconds,
             timeline_duration_seconds: timeline.0.clock.duration_seconds,
             menu_preview_camera: session.editor_menu_preview_camera.clone(),
-            objects: objects.objects.clone(),
+            objects,
         });
         let audio_bytes = audio_cache
             .bytes_for_level_audio(&metadata.basic.name)

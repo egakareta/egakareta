@@ -6,7 +6,9 @@
 
 */
 
-use super::{EditorDirtyFlags, EditorSubsystem};
+use super::EditorDirtyFlags;
+#[cfg(test)]
+use super::EditorSubsystem;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 #[cfg(test)]
@@ -175,7 +177,7 @@ fn transform_trigger_marker_source_objects<'a>(
     }
 }
 
-impl EditorSubsystem {
+super::editor_context_methods! {
     pub fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
         self.runtime.dirty.merge(dirty);
     }
@@ -265,6 +267,7 @@ impl EditorSubsystem {
         )
     }
 
+    #[cfg(test)]
     pub fn topmost_block_index_at_cursor(&self, cursor: [f32; 3]) -> Option<usize> {
         let mut top_index: Option<usize> = None;
         let mut top_height = f32::NEG_INFINITY;

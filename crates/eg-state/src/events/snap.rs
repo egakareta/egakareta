@@ -14,12 +14,13 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use bevy_state::prelude::State;
+use eg_editor_domain::{snap_cell_to_step, snap_component_to_step};
 use eg_types::AppPhase;
 
 use crate::events::session::persist_app_settings;
 use crate::state::{
-    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectsRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes,
+    EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
+    EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
     EditorTriggerRes, SessionStateRes,
 };
 
@@ -47,12 +48,23 @@ pub fn register_events(app: &mut App) {
 }
 
 #[derive(SystemParam)]
-pub struct SnapResources<'w> {
+pub struct SnapResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     config: ResMut<'w, EditorConfigRes>,
     input: ResMut<'w, EditorInputRes>,
-    objects: ResMut<'w, EditorObjectsRes>,
-    runtime: Res<'w, EditorRuntimeRes>,
+    objects: Query<
+        'w,
+        's,
+        (
+            &'static EditorObjectOrder,
+            &'static mut eg_game::ObjectData,
+            &'static mut eg_game::Position,
+            &'static mut eg_game::Rotation,
+            &'static mut eg_game::Size,
+        ),
+        With<EditorAuthoredObject>,
+    >,
+    runtime: ResMut<'w, EditorRuntimeRes>,
     history: ResMut<'w, EditorHistoryRes>,
     spawn: Res<'w, EditorSpawnRes>,
     timeline: Res<'w, EditorTimelineRes>,
@@ -130,7 +142,17 @@ enum SelectedSnap {
     Rotation,
 }
 
-fn resnap_selected_object(resources: &mut SnapResources<'_>, selected_snap: SelectedSnap) {
+fn resnap_selected_object(resources: &mut SnapResources<'_, '_>, selected_snap: SelectedSnap) {
+    let mut authored_objects = resources
+        .objects
+        .iter_mut()
+        .map(|(order, data, ..)| (order.0, data.0.clone()))
+        .collect::<Vec<_>>();
+    authored_objects.sort_by_key(|(order, _)| *order);
+    let authored_objects = authored_objects
+        .into_iter()
+        .map(|(_, object)| object)
+        .collect::<Vec<_>>();
     if *resources.phase.get() != AppPhase::Editor {
         return;
     }
@@ -138,38 +160,51 @@ fn resnap_selected_object(resources: &mut SnapResources<'_>, selected_snap: Sele
         .input
         .0
         .selected_block_index
-        .filter(|index| *index < resources.objects.objects.len())
+        .filter(|index| *index < authored_objects.len())
     else {
         return;
     };
 
-    let mut editor = EditorSubsystem {
-        input: resources.input.0.clone(),
-        config: resources.config.0.clone(),
-        objects: resources.objects.objects.clone(),
-        ..Default::default()
-    };
-    let selected = editor.objects[index].clone();
+    let before = authored_objects[index].clone();
+    let mut selected = before.clone();
     match selected_snap {
         SelectedSnap::PositionAndSize => {
-            editor.set_selected_block_position(selected.position);
-            editor.set_selected_block_size(selected.size);
+            selected.position = snap_cell_to_step(selected.position, resources.config.0.snap_step);
+            selected.size = snap_cell_to_step(selected.size, resources.config.0.snap_step)
+                .map(|component| component.max(resources.config.0.snap_step));
         }
-        SelectedSnap::Rotation => editor.set_selected_block_rotation(selected.rotation),
+        SelectedSnap::Rotation => {
+            selected.rotation = selected.rotation.map(|component| {
+                snap_component_to_step(component, resources.config.0.snap_rotation_step_degrees)
+            });
+        }
     }
 
-    if editor.objects[index] == resources.objects.objects[index]
-        && editor.input.cursor == resources.input.0.cursor
-    {
+    if selected == before {
         return;
     }
 
-    record_history_state(resources);
-    resources.objects.objects[index] = editor.objects[index].clone();
-    resources.input.0.cursor = editor.input.cursor;
+    record_history_state(resources, &authored_objects);
+    let Some((_, mut data, mut position, mut rotation, mut size)) = resources
+        .objects
+        .iter_mut()
+        .find(|(order, ..)| order.0 == index)
+    else {
+        return;
+    };
+    data.0 = selected.clone();
+    position.0 = selected.position;
+    rotation.0 = selected.rotation;
+    size.0 = selected.size;
+    resources.input.0.cursor = selected.position;
+    resources
+        .runtime
+        .0
+        .dirty
+        .merge(crate::state::EditorDirtyFlags::drag_object_sync());
 }
 
-fn record_history_state(resources: &mut SnapResources<'_>) {
+fn record_history_state(resources: &mut SnapResources<'_, '_>, objects: &[eg_types::LevelObject]) {
     if resources.runtime.0.interaction.gizmo_drag.is_some()
         || resources.runtime.0.interaction.block_drag.is_some()
     {
@@ -181,7 +216,7 @@ fn record_history_state(resources: &mut SnapResources<'_>) {
         resources.history.0.undo.remove(0);
     }
     resources.history.0.undo.push(EditorHistorySnapshot {
-        objects: resources.objects.objects.clone(),
+        objects: objects.to_vec(),
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

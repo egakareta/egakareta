@@ -16,8 +16,10 @@ use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
 use crate::state::{
-    EditorCameraRes, EditorConfigRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorSubsystem, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
+    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
+    EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
+    collect_editor_object_data,
 };
 
 /// Switch the editor mode.
@@ -110,7 +112,7 @@ pub fn handle_select_recent_block(
 pub fn handle_pick_selected_block(
     mut events: MessageReader<PickSelectedBlock>,
     phase: Res<State<AppPhase>>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<(&EditorObjectOrder, &eg_game::ObjectData), With<EditorAuthoredObject>>,
     mut config: ResMut<EditorConfigRes>,
     mut input: ResMut<EditorInputRes>,
     mut runtime: ResMut<EditorRuntimeRes>,
@@ -119,7 +121,7 @@ pub fn handle_pick_selected_block(
     for _ in events.read() {
         pick_selected_block_for_place(
             &phase,
-            &objects,
+            &collect_editor_object_data(&authored_objects),
             &mut config,
             &mut input,
             &mut runtime,
@@ -141,40 +143,54 @@ pub fn handle_pick_block_at(
 }
 
 #[derive(SystemParam)]
-pub struct PickBlockAtResources<'w> {
+pub struct PickBlockAtResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
-    objects: Res<'w, EditorObjectsRes>,
-    camera: Res<'w, EditorCameraRes>,
-    triggers: Res<'w, EditorTriggerRes>,
-    timing: Res<'w, EditorTimingRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    camera: ResMut<'w, EditorCameraRes>,
+    triggers: ResMut<'w, EditorTriggerRes>,
+    timing: ResMut<'w, EditorTimingRes>,
     uniforms: Res<'w, RenderUniformsRes>,
     config: ResMut<'w, EditorConfigRes>,
     input: ResMut<'w, EditorInputRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
-    timeline: Res<'w, EditorTimelineRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+    spawn: ResMut<'w, EditorSpawnRes>,
 }
 
-fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<'_>) -> bool {
+fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<'_, '_>) -> bool {
     if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
     let viewport_size = Vec2::from_array(resources.uniforms.color_space.viewport_size);
-    let mut editor = EditorSubsystem {
-        input: resources.input.0.clone(),
-        config: resources.config.0.clone(),
-        objects: resources.objects.objects.clone(),
-        camera: resources.camera.0.clone(),
-        triggers: resources.triggers.0.clone(),
-        timing: resources.timing.0.clone(),
-        ..Default::default()
-    };
-    let Some(block_id) = editor
-        .pick_from_screen(x, y, viewport_size)
-        .and_then(|pick| pick.hit_block_index)
-        .and_then(|index| resources.objects.objects.get(index))
-        .map(|object| object.block_id.clone())
-    else {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
+    let Some(block_id) = ({
+        let mut editor = EditorInteractionContext {
+            input: &mut resources.input.0,
+            config: &mut resources.config.0,
+            objects: EditorObjectsBorrow(&mut objects),
+            spawn: &mut resources.spawn.0,
+            camera: &mut resources.camera.0,
+            triggers: &mut resources.triggers.0,
+            timeline: &mut resources.timeline.0,
+            runtime: &mut resources.runtime.0,
+            timing: &mut resources.timing.0,
+            selected_mask_cache: None,
+            block_static_vertex_cache: Default::default(),
+            block_static_vertex_cache_complete_len: None,
+            pick_spatial_index: Default::default(),
+        };
+        editor
+            .pick_from_screen(x, y, viewport_size)
+            .and_then(|pick| pick.hit_block_index)
+            .and_then(|index| editor.objects.get(index))
+            .map(|object| object.block_id.clone())
+    }) else {
         return false;
     };
 
@@ -206,7 +222,7 @@ fn input_pointer_over_ui_input(input: &EditorInputState, x: f64, y: f64) -> bool
 
 fn pick_selected_block_for_place(
     phase: &State<AppPhase>,
-    objects: &EditorObjectsRes,
+    objects: &[eg_types::LevelObject],
     config: &mut EditorConfigRes,
     input: &mut EditorInputRes,
     runtime: &mut EditorRuntimeRes,
@@ -216,7 +232,7 @@ fn pick_selected_block_for_place(
         return false;
     }
 
-    let selected_indices = selected_indices_normalized(&input.0, objects.objects.len());
+    let selected_indices = selected_indices_normalized(&input.0, objects.len());
     let block_index = input
         .0
         .selected_block_index
@@ -224,7 +240,7 @@ fn pick_selected_block_for_place(
         .or_else(|| selected_indices.first().copied());
 
     let Some(block_id) = block_index
-        .and_then(|index| objects.objects.get(index))
+        .and_then(|index| objects.get(index))
         .map(|object| object.block_id.clone())
     else {
         return false;

@@ -20,8 +20,8 @@ use super::editor_timeline::EditorTimelineState;
 use super::runtime::BlockVisualEffect;
 use super::{
     AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
+    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
 };
 
 const METRONOME_MAJOR_SFX: &[u8] = include_bytes!(concat!(
@@ -36,11 +36,19 @@ const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
 /// Advance editor playback from App-owned clock/audio state and publish only
 /// presentation invalidations for the compatibility renderer.
 #[derive(SystemParam)]
-pub(crate) struct EditorTimelinePlaybackParams<'w> {
+pub(crate) struct EditorTimelinePlaybackParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     frame_time: Res<'w, FrameTimeRes>,
     input: ResMut<'w, EditorInputRes>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static super::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<super::EditorAuthoredObject>,
+    >,
     spawn: Res<'w, EditorSpawnRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     timing: Res<'w, EditorTimingRes>,
@@ -59,6 +67,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
     puffin::profile_scope!("EditorTimelinePlayback");
     let mode = effective_playback_mode(&params.input, &params.runtime_state, &params.timeline);
     let simulate_preview = mode != EditorMode::Timing;
+    let objects = super::collect_editor_object_data(&params.authored_objects);
 
     if let Some(target_time) =
         take_ready_pending_seek(&mut params.timeline.0, params.frame_time.delta_seconds)
@@ -67,7 +76,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
         let start_seconds = rebuild_playback_runtime(
             mode,
             target_time,
-            &params.objects.objects,
+            &objects,
             &params.spawn.0,
             &mut params.timeline,
         );
@@ -92,7 +101,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
     if (clamped_time - old_time).abs() > 1e-4 {
         params.timeline.0.clock.time_seconds = clamped_time;
 
-        if simulate_preview && has_timeline_preview_triggers(&params.objects.objects) {
+        if simulate_preview && has_timeline_preview_triggers(&objects) {
             params
                 .runtime_state
                 .0
@@ -103,7 +112,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
         if simulate_preview {
             let (position, direction, events) = advance_simulation_preview(
                 clamped_time,
-                &params.objects.objects,
+                &objects,
                 &params.spawn.0,
                 &mut params.timeline,
             );

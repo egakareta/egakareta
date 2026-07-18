@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+#[cfg(test)]
 use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
@@ -38,35 +39,35 @@ pub(crate) fn camera_trigger_object_pose(camera: &CameraTrigger) -> ([f32; 3], [
     )
 }
 
-impl EditorSubsystem {
-    pub fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
-        matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
+pub(crate) fn sync_camera_follow_trigger_object_pose(
+    object: &mut LevelObject,
+    trigger: &TimedTrigger,
+    target_position: [f32; 3],
+) {
+    let Some(camera) = &trigger.camera else {
+        return;
+    };
+    if camera.mode != CameraMode::Follow {
+        return;
     }
 
-    pub fn sync_camera_follow_trigger_object_pose(
-        object: &mut LevelObject,
-        trigger: &TimedTrigger,
-        target_position: [f32; 3],
-    ) {
-        let Some(camera) = &trigger.camera else {
-            return;
-        };
-        if camera.mode != CameraMode::Follow {
-            return;
-        }
+    let size = [1.0, 1.0, 1.0];
+    let eye = CameraTrigger {
+        target_position,
+        yaw: camera.yaw,
+        pitch: camera.pitch,
+        distance: camera.distance,
+        ..CameraTrigger::default()
+    }
+    .eye();
+    object.size = size;
+    object.position = camera_trigger_object_position_from_eye(eye, size);
+    object.rotation = camera_trigger_rotation_degrees(camera.yaw, camera.pitch);
+}
 
-        let size = [1.0, 1.0, 1.0];
-        let eye = CameraTrigger {
-            target_position,
-            yaw: camera.yaw,
-            pitch: camera.pitch,
-            distance: camera.distance,
-            ..CameraTrigger::default()
-        }
-        .eye();
-        object.size = size;
-        object.position = camera_trigger_object_position_from_eye(eye, size);
-        object.rotation = camera_trigger_rotation_degrees(camera.yaw, camera.pitch);
+super::editor_context_methods! {
+    pub fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
+        matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
     }
 
     fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
@@ -127,6 +128,7 @@ impl EditorSubsystem {
             .filter(|index| *index < trigger_count)
     }
 
+    #[cfg(test)]
     pub fn trigger_object_index_for_trigger_index(&self, trigger_index: usize) -> Option<usize> {
         let mut indexed: Vec<(usize, f32)> = self
             .objects
@@ -173,6 +175,7 @@ impl EditorSubsystem {
         })
     }
 
+    #[cfg(test)]
     pub fn has_camera_timeline_triggers(&self) -> bool {
         self.trigger_objects()
             .iter()
@@ -205,6 +208,7 @@ impl EditorSubsystem {
         })
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
         let Some(index) = self
             .input
@@ -216,7 +220,7 @@ impl EditorSubsystem {
 
         self.objects[index].trigger = trigger;
         if let Some(trigger) = self.objects[index].trigger.clone() {
-            Self::sync_camera_follow_trigger_object_pose(
+            sync_camera_follow_trigger_object_pose(
                 &mut self.objects[index],
                 &trigger,
                 CameraTrigger::default().target_position,
@@ -234,6 +238,7 @@ impl EditorSubsystem {
     /// level. Used by tests that verify the legacy
     /// `AddCameraTrigger` / `AddCameraFollowTrigger` path still
     /// grows the object store.
+    #[cfg(test)]
     pub fn trigger_object_count(&self) -> usize {
         self.trigger_objects().len()
     }

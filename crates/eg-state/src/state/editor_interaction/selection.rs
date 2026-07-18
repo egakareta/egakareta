@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem};
+use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
 use eg_types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
@@ -49,7 +49,7 @@ fn drag_anchor_position(drag: &EditorBlockDrag) -> [f32; 3] {
     }
 }
 
-impl EditorSubsystem {
+super::super::editor_context_methods! {
     fn marquee_has_dragged_far_enough(&self) -> bool {
         let Some(start) = self.input.marquee_start_screen else {
             return false;
@@ -60,6 +60,7 @@ impl EditorSubsystem {
         (dx * dx + dy * dy) >= MARQUEE_DRAG_THRESHOLD_PX * MARQUEE_DRAG_THRESHOLD_PX
     }
 
+    #[cfg(test)]
     pub fn marquee_selection_rect_screen(&self) -> Option<([f64; 2], [f64; 2], bool)> {
         let start = self.input.marquee_start_screen?;
         let current = self.input.marquee_current_screen.unwrap_or(start);

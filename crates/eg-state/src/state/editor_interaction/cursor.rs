@@ -5,12 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::EditorSubsystem;
 use eg_types::AppPhase;
 use eg_types::EditorInteractionChange;
 use glam::Vec2;
 
-impl EditorSubsystem {
+super::super::editor_context_methods! {
+    #[cfg(test)]
     pub fn force_cursor_from_screen(
         &mut self,
         x: f64,

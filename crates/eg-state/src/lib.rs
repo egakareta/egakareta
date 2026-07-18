@@ -8,6 +8,7 @@
 //! Integration state for egakareta gameplay, editor, audio, platform, and render state.
 
 #![allow(missing_docs)]
+#![recursion_limit = "512"]
 
 pub mod commands;
 pub mod events;

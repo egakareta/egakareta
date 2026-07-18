@@ -22,9 +22,10 @@ use eg_types::{
 use glam::Vec3;
 
 use crate::state::{
-    CameraViewSample, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, SessionStateRes, evaluate_camera_track_for_objects,
+    CameraViewSample, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
+    collect_editor_object_data, evaluate_camera_track_for_objects, replace_editor_objects_commands,
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -55,8 +56,17 @@ pub fn handle_snap_selection_to_grid(
     mut events: MessageReader<SnapSelectionToGrid>,
     mut resources: SelectionResources,
 ) {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    let before = resources.objects.objects.clone();
     for _ in events.read() {
         snap_selection_to_grid(&mut resources);
+    }
+    if resources.objects.objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &resources.objects.objects,
+        );
     }
 }
 
@@ -64,6 +74,7 @@ pub fn handle_focus_camera_target(
     mut events: MessageReader<FocusCameraTarget>,
     mut resources: SelectionResources,
 ) {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
     for _ in events.read() {
         focus_camera_target(&mut resources);
     }
@@ -73,15 +84,37 @@ pub fn handle_add_transform_trigger(
     mut events: MessageReader<AddTransformTrigger>,
     mut resources: SelectionResources,
 ) {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    let before = resources.objects.objects.clone();
     for _ in events.read() {
         add_transform_trigger(&mut resources);
     }
+    if resources.objects.objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &resources.objects.objects,
+        );
+    }
+}
+
+#[derive(Default)]
+struct EditorObjectScratch {
+    objects: Vec<LevelObject>,
 }
 
 #[derive(SystemParam)]
-pub struct SelectionResources<'w> {
+pub struct SelectionResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
-    objects: ResMut<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    commands: Commands<'w, 's>,
+    objects: Local<'s, EditorObjectScratch>,
     input: ResMut<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
     spawn: Res<'w, EditorSpawnRes>,
@@ -94,7 +127,7 @@ pub struct SelectionResources<'w> {
     session: ResMut<'w, SessionStateRes>,
 }
 
-fn snap_selection_to_grid(resources: &mut SelectionResources<'_>) -> bool {
+fn snap_selection_to_grid(resources: &mut SelectionResources<'_, '_>) -> bool {
     if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
@@ -108,7 +141,7 @@ fn snap_selection_to_grid(resources: &mut SelectionResources<'_>) -> bool {
     snap_selected_tap_to_grid(resources)
 }
 
-fn focus_camera_target(resources: &mut SelectionResources<'_>) -> bool {
+fn focus_camera_target(resources: &mut SelectionResources<'_, '_>) -> bool {
     if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
@@ -138,7 +171,7 @@ fn focus_camera_target(resources: &mut SelectionResources<'_>) -> bool {
 }
 
 fn snap_selected_blocks_to_grid(
-    resources: &mut SelectionResources<'_>,
+    resources: &mut SelectionResources<'_, '_>,
     selected_indices: &[usize],
 ) -> bool {
     let step = resources.config.0.snap_step.max(0.05);
@@ -183,7 +216,7 @@ fn snap_selected_blocks_to_grid(
     changed
 }
 
-fn editor_preview_camera_view(resources: &SelectionResources<'_>) -> CameraViewSample {
+fn editor_preview_camera_view(resources: &SelectionResources<'_, '_>) -> CameraViewSample {
     let target = Vec3::from_array(resources.timeline.0.preview.position);
     evaluate_camera_track_for_objects(
         &resources.camera.0,
@@ -195,7 +228,7 @@ fn editor_preview_camera_view(resources: &SelectionResources<'_>) -> CameraViewS
 }
 
 fn set_editor_camera_focus(
-    resources: &mut SelectionResources<'_>,
+    resources: &mut SelectionResources<'_, '_>,
     target: [f32; 3],
     orientation: Option<(f32, f32)>,
 ) {
@@ -209,7 +242,7 @@ fn set_editor_camera_focus(
     }
 }
 
-fn editor_effective_mode_for_playback(resources: &SelectionResources<'_>) -> EditorMode {
+fn editor_effective_mode_for_playback(resources: &SelectionResources<'_, '_>) -> EditorMode {
     if resources.timeline.0.playback.playing && resources.input.0.mode == EditorMode::Null {
         resources
             .runtime
@@ -222,7 +255,7 @@ fn editor_effective_mode_for_playback(resources: &SelectionResources<'_>) -> Edi
     }
 }
 
-fn selected_tap(resources: &SelectionResources<'_>) -> Option<(usize, f32, [f32; 3])> {
+fn selected_tap(resources: &SelectionResources<'_, '_>) -> Option<(usize, f32, [f32; 3])> {
     let selected_index = resources.timeline.0.taps.selected_index?;
     let time_seconds = *resources.timeline.0.taps.tap_times.get(selected_index)?;
     let position = *resources
@@ -234,7 +267,7 @@ fn selected_tap(resources: &SelectionResources<'_>) -> Option<(usize, f32, [f32;
     Some((selected_index, time_seconds, position))
 }
 
-fn selected_group_bounds(resources: &SelectionResources<'_>) -> Option<([f32; 3], [f32; 3])> {
+fn selected_group_bounds(resources: &SelectionResources<'_, '_>) -> Option<([f32; 3], [f32; 3])> {
     let indices = selected_indices_normalized(&resources.input.0, resources.objects.objects.len());
     if indices.is_empty() {
         return selected_transform_trigger_target(resources)
@@ -264,7 +297,9 @@ fn selected_group_bounds(resources: &SelectionResources<'_>) -> Option<([f32; 3]
     Some((min, [max[0] - min[0], max[1] - min[1], max[2] - min[2]]))
 }
 
-fn selected_transform_trigger_target(resources: &SelectionResources<'_>) -> Option<LevelObject> {
+fn selected_transform_trigger_target(
+    resources: &SelectionResources<'_, '_>,
+) -> Option<LevelObject> {
     let selected_index = resources.trigger.0.selected_index?;
     let object = trigger_objects_sorted(&resources.objects.objects)
         .get(selected_index)?
@@ -319,7 +354,7 @@ fn camera_orientation_from_eye_target(eye: [f32; 3], target: [f32; 3]) -> Option
     Some((rotation, pitch))
 }
 
-fn snap_selected_tap_to_grid(resources: &mut SelectionResources<'_>) -> bool {
+fn snap_selected_tap_to_grid(resources: &mut SelectionResources<'_, '_>) -> bool {
     let taps = &resources.timeline.0.taps;
     let Some(selected_index) = taps.selected_index else {
         return false;
@@ -379,7 +414,7 @@ fn snap_selected_tap_to_grid(resources: &mut SelectionResources<'_>) -> bool {
     true
 }
 
-fn add_transform_trigger(resources: &mut SelectionResources<'_>) -> bool {
+fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
     if *resources.phase.get() != AppPhase::Editor || resources.timeline.0.playback.playing {
         return false;
     }
@@ -468,7 +503,7 @@ fn selected_indices_normalized(input: &EditorInputState, object_count: usize) ->
     indices
 }
 
-fn sync_trigger_selection_from_objects(resources: &mut SelectionResources<'_>) {
+fn sync_trigger_selection_from_objects(resources: &mut SelectionResources<'_, '_>) {
     let trigger_count = resources
         .objects
         .objects
@@ -509,7 +544,7 @@ fn remove_replaced_transform_trigger_targets(
     }
 }
 
-fn record_history_state(resources: &mut SelectionResources<'_>) {
+fn record_history_state(resources: &mut SelectionResources<'_, '_>) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
@@ -519,7 +554,9 @@ fn record_history_state(resources: &mut SelectionResources<'_>) {
     resources.history.0.redo.clear();
 }
 
-fn history_snapshot_from_resources(resources: &SelectionResources<'_>) -> EditorHistorySnapshot {
+fn history_snapshot_from_resources(
+    resources: &SelectionResources<'_, '_>,
+) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
         objects: resources.objects.objects.clone(),
         selected_block_index: resources.input.0.selected_block_index,

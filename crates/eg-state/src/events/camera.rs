@@ -19,8 +19,8 @@
 //! - `SetTriggerSelected` mutates the authoritative
 //!   `EditorTriggerRes.0.selected_index` directly.
 //!
-//! - `AddCameraTrigger` / `AddCameraFollowTrigger` append generated
-//!   camera trigger objects to `EditorObjectsRes`, record
+//! - `AddCameraTrigger` / `AddCameraFollowTrigger` spawn generated
+//!   camera trigger entities, record
 //!   App-world editor history, sync trigger selection against the
 //!   App-world object list, and set `object_mutation_pending` so the
 //!   runtime compatibility sync rebuilds legacy presentation once.
@@ -38,9 +38,10 @@ use eg_types::{
 };
 
 use crate::state::{
-    EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
-    EditorObjectsRes, EditorSpawnRes, EditorSubsystem, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, camera_trigger_object_pose,
+    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose, collect_editor_object_data,
+    spawn_editor_object_commands, sync_camera_follow_trigger_object_pose,
 };
 
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
@@ -160,8 +161,9 @@ pub fn handle_add_camera_trigger(
     mut events: MessageReader<AddCameraTrigger>,
     mut resources: CameraResources,
 ) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
     for _ in events.read() {
-        add_camera_trigger(&mut resources);
+        add_camera_trigger(&mut resources, &mut objects);
     }
 }
 
@@ -169,15 +171,22 @@ pub fn handle_add_camera_follow_trigger(
     mut events: MessageReader<AddCameraFollowTrigger>,
     mut resources: CameraResources,
 ) {
+    let mut objects = collect_editor_object_data(&resources.authored_objects);
     for _ in events.read() {
-        add_camera_follow_trigger(&mut resources);
+        add_camera_follow_trigger(&mut resources, &mut objects);
     }
 }
 
 #[derive(SystemParam)]
-pub struct CameraResources<'w> {
+pub struct CameraResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
-    objects: ResMut<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    commands: Commands<'w, 's>,
     input: Res<'w, EditorInputRes>,
     config: Res<'w, EditorConfigRes>,
     spawn: Res<'w, EditorSpawnRes>,
@@ -192,28 +201,39 @@ pub struct CameraResources<'w> {
 // Local helpers
 // -----------------------------------------------------------------------
 
-fn add_camera_trigger(resources: &mut CameraResources<'_>) -> bool {
+fn add_camera_trigger(
+    resources: &mut CameraResources<'_, '_>,
+    objects: &mut Vec<LevelObject>,
+) -> bool {
     if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
-    record_history_state(resources);
+    record_history_state(resources, objects);
     let trigger_object = capture_current_camera_trigger(
         &resources.camera.0,
         resources.timeline.0.clock.time_seconds,
     )
-    .with_generated_id(&resources.objects.objects);
-    resources.objects.objects.push(trigger_object);
-    sync_trigger_selection_from_objects(resources);
+    .with_generated_id(objects);
+    spawn_editor_object_commands(
+        &mut resources.commands,
+        objects.len(),
+        trigger_object.clone(),
+    );
+    objects.push(trigger_object);
+    sync_trigger_selection_from_objects(resources, objects);
     true
 }
 
-fn add_camera_follow_trigger(resources: &mut CameraResources<'_>) -> bool {
+fn add_camera_follow_trigger(
+    resources: &mut CameraResources<'_, '_>,
+    objects: &mut Vec<LevelObject>,
+) -> bool {
     if *resources.phase.get() != AppPhase::Editor {
         return false;
     }
 
-    record_history_state(resources);
+    record_history_state(resources, objects);
     let camera = CameraTrigger {
         mode: CameraMode::Follow,
         ..CameraTrigger::default()
@@ -228,19 +248,20 @@ fn add_camera_follow_trigger(resources: &mut CameraResources<'_>) -> bool {
         }),
         ..LevelObject::default()
     }
-    .with_generated_id(&resources.objects.objects);
+    .with_generated_id(objects);
     if let Some(trigger) = trigger_object.trigger.clone() {
         let target_position =
             timeline_position_at_seconds(&resources.timeline.0, trigger.time_seconds);
-        EditorSubsystem::sync_camera_follow_trigger_object_pose(
-            &mut trigger_object,
-            &trigger,
-            target_position,
-        );
+        sync_camera_follow_trigger_object_pose(&mut trigger_object, &trigger, target_position);
     }
 
-    resources.objects.objects.push(trigger_object);
-    sync_trigger_selection_from_objects(resources);
+    spawn_editor_object_commands(
+        &mut resources.commands,
+        objects.len(),
+        trigger_object.clone(),
+    );
+    objects.push(trigger_object);
+    sync_trigger_selection_from_objects(resources, objects);
     true
 }
 
@@ -302,10 +323,11 @@ fn timeline_position_at_seconds(
     )
 }
 
-fn sync_trigger_selection_from_objects(resources: &mut CameraResources<'_>) {
-    let trigger_count = resources
-        .objects
-        .objects
+fn sync_trigger_selection_from_objects(
+    resources: &mut CameraResources<'_, '_>,
+    objects: &[LevelObject],
+) {
+    let trigger_count = objects
         .iter()
         .filter(|object| object.trigger.is_some())
         .count();
@@ -316,19 +338,22 @@ fn sync_trigger_selection_from_objects(resources: &mut CameraResources<'_>) {
         .filter(|index| *index < trigger_count);
 }
 
-fn record_history_state(resources: &mut CameraResources<'_>) {
+fn record_history_state(resources: &mut CameraResources<'_, '_>, objects: &[LevelObject]) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
     }
-    let snapshot = history_snapshot_from_resources(resources);
+    let snapshot = history_snapshot_from_resources(resources, objects);
     resources.history.0.undo.push(snapshot);
     resources.history.0.redo.clear();
 }
 
-fn history_snapshot_from_resources(resources: &CameraResources<'_>) -> EditorHistorySnapshot {
+fn history_snapshot_from_resources(
+    resources: &CameraResources<'_, '_>,
+    objects: &[LevelObject],
+) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
-        objects: resources.objects.objects.clone(),
+        objects: objects.to_vec(),
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

@@ -269,12 +269,6 @@ pub struct BlockEffectsRes {
 #[derive(Resource, Default)]
 pub struct EditorInputRes(pub eg_types::EditorInputState);
 
-/// Authoritative App-world ordered editor object list.
-#[derive(Resource, Default, Clone)]
-pub struct EditorObjectsRes {
-    pub objects: Vec<LevelObject>,
-}
-
 /// `EditorConfigState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorConfigRes(pub EditorConfigState);

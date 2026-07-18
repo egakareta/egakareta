@@ -16,8 +16,9 @@ use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, EditorInputState, LevelObject};
 
 use crate::state::{
-    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorObjectsRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
+    EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, collect_editor_object_data, replace_editor_objects_commands,
 };
 
 /// Undo the last editor action.
@@ -48,8 +49,15 @@ pub fn register_events(app: &mut App) {
 }
 
 #[derive(SystemParam)]
-pub struct HistoryResources<'w> {
-    objects: ResMut<'w, EditorObjectsRes>,
+pub struct HistoryResources<'w, 's> {
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    commands: Commands<'w, 's>,
     input: ResMut<'w, crate::state::EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,
     spawn: ResMut<'w, EditorSpawnRes>,
@@ -72,7 +80,8 @@ pub fn handle_undo(
         let Some(snapshot) = resources.history.0.undo.pop() else {
             continue;
         };
-        let current = history_snapshot_from_resources(&resources);
+        let current_objects = collect_editor_object_data(&resources.authored_objects);
+        let current = history_snapshot_from_resources(&resources, &current_objects);
         resources.history.0.redo.push(current);
         apply_history_snapshot_to_resources(snapshot, &mut resources);
     }
@@ -90,15 +99,19 @@ pub fn handle_redo(
         let Some(snapshot) = resources.history.0.redo.pop() else {
             continue;
         };
-        let current = history_snapshot_from_resources(&resources);
+        let current_objects = collect_editor_object_data(&resources.authored_objects);
+        let current = history_snapshot_from_resources(&resources, &current_objects);
         resources.history.0.undo.push(current);
         apply_history_snapshot_to_resources(snapshot, &mut resources);
     }
 }
 
-fn history_snapshot_from_resources(resources: &HistoryResources<'_>) -> EditorHistorySnapshot {
+fn history_snapshot_from_resources(
+    resources: &HistoryResources<'_, '_>,
+    objects: &[LevelObject],
+) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
-        objects: resources.objects.objects.clone(),
+        objects: objects.to_vec(),
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,
@@ -118,13 +131,18 @@ fn history_snapshot_from_resources(resources: &HistoryResources<'_>) -> EditorHi
 
 fn apply_history_snapshot_to_resources(
     snapshot: EditorHistorySnapshot,
-    resources: &mut HistoryResources<'_>,
+    resources: &mut HistoryResources<'_, '_>,
 ) {
-    resources.objects.objects = snapshot.objects;
+    let objects = snapshot.objects;
+    replace_editor_objects_commands(
+        &mut resources.commands,
+        &resources.existing_objects,
+        &objects,
+    );
 
     resources.input.0.selected_block_index = snapshot.selected_block_index;
     resources.input.0.selected_block_indices = snapshot.selected_block_indices;
-    normalize_block_selection(&mut resources.input.0, resources.objects.objects.len());
+    normalize_block_selection(&mut resources.input.0, objects.len());
     resources.input.0.hovered_block_index = resources.input.0.selected_block_index;
     resources.input.0.cursor = snapshot.cursor;
 
@@ -138,18 +156,12 @@ fn apply_history_snapshot_to_resources(
     resources.timeline.0.taps.tap_times = snapshot.tap_times;
     resources.timeline.0.taps.tap_indicator_positions = snapshot.tap_indicator_positions;
     resources.timeline.0.taps.selected_index = snapshot.selected_tap_index;
-    normalize_taps(
-        &mut resources.timeline.0,
-        &resources.spawn.0,
-        &resources.objects.objects,
-    );
+    normalize_taps(&mut resources.timeline.0, &resources.spawn.0, &objects);
 
     resources.timing.0.timing_points = snapshot.timing_points;
     resources.timing.0.mark_timing_points_changed();
 
-    let trigger_count = resources
-        .objects
-        .objects
+    let trigger_count = objects
         .iter()
         .filter(|object| object.trigger.is_some())
         .count();

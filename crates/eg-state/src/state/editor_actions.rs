@@ -6,19 +6,24 @@
 
 */
 
+#[cfg(test)]
 use super::EditorSubsystem;
 #[cfg(test)]
 use eg_editor_domain::add_tap_with_indicator;
 use eg_editor_domain::{
     TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
-    derive_tap_indicator_positions, derive_timeline_time_for_world_target_near_time,
-    derive_timing_division_tap_previews, remove_topmost_block_at_cursor, snap_cell_to_step,
+    derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
+};
+#[cfg(test)]
+use eg_editor_domain::{
+    derive_tap_indicator_positions, remove_topmost_block_at_cursor, snap_cell_to_step,
     toggle_spawn_direction, topmost_block_index_at_cursor,
 };
-use eg_types::LevelObject;
-use eg_types::TriggerTarget;
+#[cfg(test)]
+use eg_types::{LevelObject, TriggerTarget};
 
+#[cfg(test)]
 fn object_ids_for_removed_indices(
     objects: &[LevelObject],
     removed_indices: &[usize],
@@ -43,6 +48,7 @@ fn object_ids_for_removed_indices(
         .collect()
 }
 
+#[cfg(test)]
 fn dereference_removed_transform_trigger_targets(
     objects: &mut [LevelObject],
     removed_object_ids: &[String],
@@ -132,7 +138,8 @@ pub struct TapPathPick {
     pub time_seconds: f32,
 }
 
-impl EditorSubsystem {
+super::editor_context_methods! {
+    #[cfg(test)]
     pub fn sync_tap_indicators_to_spawn(&mut self) {
         let selected_index = self.timeline.taps.selected_index;
         self.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
@@ -402,6 +409,7 @@ impl EditorSubsystem {
         (Some(derived_time), true)
     }
 
+    #[cfg(test)]
     pub fn nudge_selected(&mut self, world_dx: f32, world_dz: f32) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
@@ -429,6 +437,7 @@ impl EditorSubsystem {
         true
     }
 
+    #[cfg(test)]
     pub fn snap_selected_blocks_to_grid(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
@@ -463,6 +472,7 @@ impl EditorSubsystem {
         changed
     }
 
+    #[cfg(test)]
     pub fn remove_selected(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if !selected_indices.is_empty() {
@@ -494,18 +504,21 @@ impl EditorSubsystem {
         false
     }
 
+    #[cfg(test)]
     pub fn set_spawn_here(&mut self) {
         self.spawn.position = self.input.cursor;
         self.sync_tap_indicators_to_spawn();
         self.invalidate_samples();
     }
 
+    #[cfg(test)]
     pub fn rotate_spawn_direction(&mut self) {
         self.spawn.direction = toggle_spawn_direction(self.spawn.direction);
         self.sync_tap_indicators_to_spawn();
         self.invalidate_samples();
     }
 
+    #[cfg(test)]
     pub fn move_cursor(&mut self, dx: i32, dy: i32) {
         let step = if self.effective_snap_to_grid() {
             self.config.snap_step.max(0.05)

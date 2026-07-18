@@ -70,6 +70,7 @@ impl TestApp {
         let mut app = App::new();
         setup_state_app(&mut app);
         register_state_schedule(app.world_mut());
+        super::editor_objects::replace_editor_objects(app.world_mut(), Vec::new());
         app.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
 
         app.insert_resource(super::MenuStateRes::new(eg_types::MenuState {
@@ -82,6 +83,7 @@ impl TestApp {
         }));
 
         super::gameplay_world::seed_app_gameplay_world(app.world_mut());
+        app.world_mut().clear_trackers();
 
         Self { app }
     }
@@ -173,9 +175,9 @@ impl Default for TestApp {
 mod tests {
     use super::*;
     use crate::state::{
-        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
-        EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-        PerfRes, RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes,
+        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, PerfRes,
+        RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes,
     };
     use bevy_app::FixedUpdate;
     use bevy_state::prelude::State;
@@ -189,7 +191,6 @@ mod tests {
         app.assert_resource_exists::<State<AppPhase>>();
         app.assert_resource_exists::<SessionStateRes>();
         app.assert_resource_exists::<EditorInputRes>();
-        app.assert_resource_exists::<EditorObjectsRes>();
         app.assert_resource_exists::<EditorConfigRes>();
         app.assert_resource_exists::<EditorCameraRes>();
         app.assert_resource_exists::<EditorTriggerRes>();

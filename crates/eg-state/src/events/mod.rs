@@ -837,6 +837,23 @@ mod tests {
         EditorMode, LevelMetadata, LevelObject, MenuState,
     };
 
+    fn replace_authored_objects(world: &mut bevy_ecs::world::World, objects: Vec<LevelObject>) {
+        crate::state::replace_editor_objects(world, objects);
+    }
+
+    fn authored_objects(world: &mut bevy_ecs::world::World) -> Vec<LevelObject> {
+        let mut query = world.query_filtered::<
+            (&crate::state::EditorObjectOrder, &eg_game::ObjectData),
+            With<crate::state::EditorAuthoredObject>,
+        >();
+        let mut objects = query
+            .iter(world)
+            .map(|(order, data)| (order.0, data.0.clone()))
+            .collect::<Vec<_>>();
+        objects.sort_by_key(|(order, _)| *order);
+        objects.into_iter().map(|(_, object)| object).collect()
+    }
+
     fn set_test_phase(world: &mut bevy_ecs::world::World, phase: AppPhase) {
         world.insert_resource(State::new(phase));
     }
@@ -868,7 +885,7 @@ mod tests {
         // carve-out handlers (input_state, pointer) reach for
         // `EditorInputRes`, `EditorCameraRes`, and `State<AppPhase>`; the
         // `snap` carve-out reaches for `EditorConfigRes`; the `history`
-        // carve-out reaches for `EditorObjectsRes` + the editor mirrors; the `timeline`
+        // carve-out queries authored entities plus the editor mirrors; the `timeline`
         // carve-out reaches for `EditorTimelineRes` + `EditorRuntimeRes`; the `bpm`
         // carve-out reaches for `EditorTimingRes`; the `session`
         // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
@@ -882,7 +899,6 @@ mod tests {
         // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
         // reads message buffers and App-world resources.
         world.init_resource::<crate::state::EditorInputRes>();
-        world.init_resource::<crate::state::EditorObjectsRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
         world.init_resource::<crate::state::EditorConfigRes>();
         world.init_resource::<crate::state::EditorSpawnRes>();
@@ -891,6 +907,7 @@ mod tests {
         world.init_resource::<crate::state::EditorTimingRes>();
         world.init_resource::<crate::state::EditorRuntimeRes>();
         world.init_resource::<crate::state::EditorHistoryRes>();
+        crate::state::replace_editor_objects(&mut world, Vec::new());
         world.init_resource::<crate::state::SessionStateRes>();
         world.init_resource::<eg_game::GameClock>();
         world.init_resource::<eg_game::PendingTurnInputs>();
@@ -938,7 +955,10 @@ mod tests {
         }));
         register_command_events_world(&mut world);
         let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
+        schedule.configure_sets(crate::events::CommandHandlerSet);
         add_command_systems(&mut schedule);
+        schedule
+            .add_systems(bevy_ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
         schedule.add_systems(apply_test_phase_transition.after(crate::events::CommandHandlerSet));
         schedule.add_systems(
             crate::state::gameplay_world::apply_pending_gameplay_reset_system
@@ -947,6 +967,7 @@ mod tests {
                 .after(crate::events::timeline::handle_playtest),
         );
         world.add_schedule(schedule);
+        world.clear_trackers();
         world
     }
 
@@ -1174,9 +1195,9 @@ mod tests {
         world.write_message(TurnRight);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = world.resource::<crate::state::EditorObjectsRes>();
-        assert_eq!(objects.objects.len(), 1);
-        assert_eq!(objects.objects[0].position, [2.0, 0.0, 3.0]);
+        let objects = authored_objects(&mut world);
+        assert_eq!(objects.len(), 1);
+        assert_eq!(objects[0].position, [2.0, 0.0, 3.0]);
         let input = &world.resource::<crate::state::EditorInputRes>().0;
         assert_eq!(input.selected_block_index, Some(0));
         assert_eq!(input.selected_block_indices, vec![0]);
@@ -1531,9 +1552,7 @@ mod tests {
             position: [3.0, 0.0, 4.0],
             ..LevelObject::default()
         };
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![current_object.clone()];
+        replace_authored_objects(&mut world, vec![current_object.clone()]);
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1565,10 +1584,16 @@ mod tests {
         world.write_message(Undo);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::EditorObjectsRes>().objects,
-            vec![undo_object.clone()]
-        );
+        let object = {
+            let mut query = world
+                .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+            query
+                .single(&world)
+                .expect("restored authored object")
+                .0
+                .clone()
+        };
+        assert_eq!(object, undo_object.clone());
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.cursor,
             [3.0, 0.0, 4.0]
@@ -1592,10 +1617,7 @@ mod tests {
         world.write_message(Redo);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert_eq!(
-            world.resource::<crate::state::EditorObjectsRes>().objects,
-            vec![current_object]
-        );
+        assert_eq!(authored_objects(&mut world), vec![current_object]);
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.cursor,
             [8.0, 0.0, 8.0]
@@ -1623,20 +1645,21 @@ mod tests {
 
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![
-            LevelObject {
-                id: "removed".to_string(),
-                position: [0.0, 0.0, 0.0],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                id: "kept".to_string(),
-                position: [2.0, 0.0, 0.0],
-                ..LevelObject::default()
-            },
-        ];
+        replace_authored_objects(
+            &mut world,
+            vec![
+                LevelObject {
+                    id: "removed".to_string(),
+                    position: [0.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    id: "kept".to_string(),
+                    position: [2.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+            ],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1646,7 +1669,21 @@ mod tests {
         world.write_message(RemoveBlock);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        let mut objects = {
+            let mut query = world.query_filtered::<
+                (&crate::state::EditorObjectOrder, &eg_game::ObjectData),
+                With<crate::state::EditorAuthoredObject>,
+            >();
+            query
+                .iter(&world)
+                .map(|(order, data)| (order.0, data.0.clone()))
+                .collect::<Vec<_>>()
+        };
+        objects.sort_by_key(|(order, _)| *order);
+        let objects = objects
+            .into_iter()
+            .map(|(_, object)| object)
+            .collect::<Vec<_>>();
         assert_eq!(objects.len(), 1);
         assert_eq!(objects[0].id, "kept");
         assert_eq!(
@@ -1665,13 +1702,14 @@ mod tests {
 
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            id: "source".to_string(),
-            position: [1.0, 0.0, 1.0],
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                id: "source".to_string(),
+                position: [1.0, 0.0, 1.0],
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1692,18 +1730,31 @@ mod tests {
 
         world.write_message(DuplicateBlock);
         world.run_schedule(crate::state::StateSchedule);
-        assert_eq!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .objects
-                .len(),
-            2
-        );
+        let authored_count = {
+            let mut query =
+                world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
+            query.iter(&world).count()
+        };
+        assert_eq!(authored_count, 2);
 
         world.write_message(PasteBlock);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        let mut objects = {
+            let mut query = world.query_filtered::<
+                (&crate::state::EditorObjectOrder, &eg_game::ObjectData),
+                With<crate::state::EditorAuthoredObject>,
+            >();
+            query
+                .iter(&world)
+                .map(|(order, data)| (order.0, data.0.clone()))
+                .collect::<Vec<_>>()
+        };
+        objects.sort_by_key(|(order, _)| *order);
+        let objects = objects
+            .into_iter()
+            .map(|(_, object)| object)
+            .collect::<Vec<_>>();
         assert_eq!(objects.len(), 3);
         assert_eq!(objects[2].position, [6.0, 0.0, 6.0]);
         assert_eq!(
@@ -1722,12 +1773,13 @@ mod tests {
 
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            id: "selected".to_string(),
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                id: "selected".to_string(),
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1750,7 +1802,15 @@ mod tests {
         }));
         world.run_schedule(crate::state::StateSchedule);
 
-        let object = &world.resource::<crate::state::EditorObjectsRes>().objects[0];
+        let object = {
+            let mut query = world
+                .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+            query
+                .single(&world)
+                .expect("selected authored object")
+                .0
+                .clone()
+        };
         assert_eq!(object.position, [1.5, 0.0, 3.0]);
         assert_eq!(object.size, [0.25, 2.0, 3.0]);
         assert_eq!(object.rotation, [4.0, 5.0, 6.0]);
@@ -1776,20 +1836,21 @@ mod tests {
             .resource_mut::<crate::state::EditorConfigRes>()
             .0
             .snap_step = 1.0;
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![
-            LevelObject {
-                id: "first".to_string(),
-                position: [0.2, 0.0, 0.7],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                id: "second".to_string(),
-                position: [3.1, 0.0, 3.6],
-                ..LevelObject::default()
-            },
-        ];
+        replace_authored_objects(
+            &mut world,
+            vec![
+                LevelObject {
+                    id: "first".to_string(),
+                    position: [0.2, 0.0, 0.7],
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    id: "second".to_string(),
+                    position: [3.1, 0.0, 3.6],
+                    ..LevelObject::default()
+                },
+            ],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1800,7 +1861,7 @@ mod tests {
         world.write_message(SnapSelectionToGrid);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        let objects = authored_objects(&mut world);
         assert_eq!(objects[0].position, [0.0, 0.0, 1.0]);
         assert_eq!(objects[1].position, [3.0, 0.0, 4.0]);
         assert_eq!(
@@ -1865,20 +1926,21 @@ mod tests {
 
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![
-            LevelObject {
-                position: [10.0, 2.0, 30.0],
-                size: [2.0, 4.0, 6.0],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                position: [50.0, 4.0, 70.0],
-                size: [4.0, 2.0, 8.0],
-                ..LevelObject::new("core/grass")
-            },
-        ];
+        replace_authored_objects(
+            &mut world,
+            vec![
+                LevelObject {
+                    position: [10.0, 2.0, 30.0],
+                    size: [2.0, 4.0, 6.0],
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    position: [50.0, 4.0, 70.0],
+                    size: [4.0, 2.0, 8.0],
+                    ..LevelObject::new("core/grass")
+                },
+            ],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -1900,13 +1962,14 @@ mod tests {
 
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            position: [10.0, 2.0, 30.0],
-            size: [2.0, 4.0, 6.0],
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                position: [10.0, 2.0, 30.0],
+                size: [2.0, 4.0, 6.0],
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.mode = EditorMode::Tapping;
@@ -1939,23 +2002,24 @@ mod tests {
             .0
             .clock
             .time_seconds = 0.5;
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            trigger: Some(eg_types::TimedTrigger {
-                time_seconds: 0.0,
-                target: eg_types::TriggerTarget::Camera,
-                camera: Some(eg_types::CameraTrigger {
-                    mode: eg_types::CameraMode::Static,
-                    target_position: [3.0, 4.0, 5.0],
-                    yaw: 0.4,
-                    pitch: 0.2,
-                    ..eg_types::CameraTrigger::default()
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                trigger: Some(eg_types::TimedTrigger {
+                    time_seconds: 0.0,
+                    target: eg_types::TriggerTarget::Camera,
+                    camera: Some(eg_types::CameraTrigger {
+                        mode: eg_types::CameraMode::Static,
+                        target_position: [3.0, 4.0, 5.0],
+                        yaw: 0.4,
+                        pitch: 0.2,
+                        ..eg_types::CameraTrigger::default()
+                    }),
+                    ..eg_types::TimedTrigger::default()
                 }),
-                ..eg_types::TimedTrigger::default()
-            }),
-            ..LevelObject::new(eg_types::CAMERA_TRIGGER_BLOCK_ID)
-        }];
+                ..LevelObject::new(eg_types::CAMERA_TRIGGER_BLOCK_ID)
+            }],
+        );
 
         world.write_message(FocusCameraTarget);
         world.run_schedule(crate::state::StateSchedule);
@@ -1981,32 +2045,33 @@ mod tests {
         world
             .resource_mut::<crate::state::SessionStateRes>()
             .editor_show_place_window = true;
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![
-            LevelObject {
-                id: "object_0".to_string(),
-                position: [0.0, 0.0, 0.0],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                id: "object_4".to_string(),
-                position: [4.0, 0.0, 0.0],
-                ..LevelObject::default()
-            },
-            LevelObject {
-                id: "existing_trigger".to_string(),
-                trigger: Some(eg_types::TimedTrigger {
-                    time_seconds: 2.5,
-                    target: eg_types::TriggerTarget::Objects {
-                        object_ids: vec!["object_0".to_string(), "object_8".to_string()],
-                    },
-                    transform: true,
-                    ..eg_types::TimedTrigger::default()
-                }),
-                ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
-            },
-        ];
+        replace_authored_objects(
+            &mut world,
+            vec![
+                LevelObject {
+                    id: "object_0".to_string(),
+                    position: [0.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    id: "object_4".to_string(),
+                    position: [4.0, 0.0, 0.0],
+                    ..LevelObject::default()
+                },
+                LevelObject {
+                    id: "existing_trigger".to_string(),
+                    trigger: Some(eg_types::TimedTrigger {
+                        time_seconds: 2.5,
+                        target: eg_types::TriggerTarget::Objects {
+                            object_ids: vec!["object_0".to_string(), "object_8".to_string()],
+                        },
+                        transform: true,
+                        ..eg_types::TimedTrigger::default()
+                    }),
+                    ..LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+                },
+            ],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -2017,7 +2082,7 @@ mod tests {
         world.write_message(AddTransformTrigger);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
+        let objects = authored_objects(&mut world);
         assert_eq!(objects.len(), 5);
         assert_eq!(objects[3].block_id, eg_types::TRANSFORM_TRIGGER_BLOCK_ID);
         assert_eq!(objects[3].position, [0.0, 0.0, 0.0]);
@@ -2099,13 +2164,14 @@ mod tests {
             .resource_mut::<crate::state::SessionStateRes>()
             .app_settings
             .editor_snap_to_grid = false;
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            position: [0.26, 0.2, 0.74],
-            size: [0.2, 0.7, 0.76],
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                position: [0.26, 0.2, 0.74],
+                size: [0.2, 0.7, 0.76],
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.selected_block_index = Some(0);
@@ -2127,7 +2193,15 @@ mod tests {
                 .app_settings
                 .editor_snap_to_grid
         );
-        let object = &world.resource::<crate::state::EditorObjectsRes>().objects[0];
+        let object = {
+            let mut query = world
+                .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+            query
+                .single(&world)
+                .expect("selected authored object")
+                .0
+                .clone()
+        };
         assert_eq!(object.position, [0.5, 0.0, 0.5]);
         assert_eq!(object.size, [0.5, 0.5, 1.0]);
         assert_eq!(
@@ -3086,7 +3160,7 @@ mod tests {
     //
     // All 5 `events::camera::*` messages are carve-outs: their handlers
     // mutate `EditorCameraRes.0`, `EditorTriggerRes.0.selected_index`, or
-    // `EditorObjectsRes` directly instead of staging legacy editor commands.
+    // authored object entities directly instead of staging legacy editor commands.
 
     use crate::events::camera::{
         AddCameraFollowTrigger, AddCameraTrigger, AdjustZoom, SetCameraOrientation,
@@ -3196,7 +3270,7 @@ mod tests {
     /// static camera trigger object, records App-world history, and avoids
     /// staging a legacy command.
     #[test]
-    fn carve_out_add_camera_trigger_mutates_editor_objects_resource() {
+    fn add_camera_trigger_spawns_authored_entity() {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
         world.resource_mut::<EditorCameraRes>().0.editor_pan = [12.0, -7.0];
@@ -3212,10 +3286,17 @@ mod tests {
         world.write_message(AddCameraTrigger);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
-        assert_eq!(objects.len(), 1);
-        assert_eq!(objects[0].block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
-        let trigger = objects[0].trigger.as_ref().expect("camera trigger");
+        let object = {
+            let mut query = world
+                .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+            query
+                .single(&world)
+                .expect("one authored camera trigger")
+                .0
+                .clone()
+        };
+        assert_eq!(object.block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
+        let trigger = object.trigger.as_ref().expect("camera trigger");
         approx::assert_abs_diff_eq!(trigger.time_seconds, 8.0, epsilon = 1e-6);
         assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
         let camera = trigger.camera.as_ref().expect("camera payload");
@@ -3237,7 +3318,7 @@ mod tests {
     /// `AddCameraFollowTrigger` appends a follow-mode camera trigger and uses
     /// the App-world timeline sample cache to derive the visible trigger pose.
     #[test]
-    fn carve_out_add_camera_follow_trigger_mutates_editor_objects_resource() {
+    fn add_camera_follow_trigger_spawns_authored_entity() {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
         {
@@ -3268,15 +3349,22 @@ mod tests {
         world.write_message(AddCameraFollowTrigger);
         world.run_schedule(crate::state::StateSchedule);
 
-        let objects = &world.resource::<crate::state::EditorObjectsRes>().objects;
-        assert_eq!(objects.len(), 1);
-        assert_eq!(objects[0].block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
+        let object = {
+            let mut query = world
+                .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+            query
+                .single(&world)
+                .expect("one authored camera trigger")
+                .0
+                .clone()
+        };
+        assert_eq!(object.block_id, eg_types::CAMERA_TRIGGER_BLOCK_ID);
         assert_ne!(
-            objects[0].position,
+            object.position,
             [0.0, 0.0, 0.0],
             "follow trigger object pose must be derived from the timeline sample"
         );
-        let trigger = objects[0].trigger.as_ref().expect("camera follow trigger");
+        let trigger = object.trigger.as_ref().expect("camera follow trigger");
         let camera = trigger.camera.as_ref().expect("camera payload");
         assert_eq!(camera.mode, eg_types::CameraMode::Follow);
         assert_eq!(trigger.target, eg_types::TriggerTarget::Camera);
@@ -3291,11 +3379,10 @@ mod tests {
         world.write_message(AddCameraFollowTrigger);
         world.run_schedule(crate::state::StateSchedule);
 
-        assert!(
-            world
-                .resource::<crate::state::EditorObjectsRes>()
-                .objects
-                .is_empty(),
+        let mut query = world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
+        assert_eq!(
+            query.iter(&world).count(),
+            0,
             "camera trigger creation must no-op outside editor phase"
         );
     }
@@ -3713,7 +3800,7 @@ mod tests {
     }
 
     /// `PickSelectedBlock` is a carve-out: the handler reads the
-    /// selected object from `EditorObjectsRes` / `EditorInputRes`,
+    /// selected authored entity through `EditorInputRes`,
     /// writes the selected block id into `EditorConfigRes`, and enters
     /// Place mode without staging `EditorCommand::PickSelectedBlock`.
     #[test]
@@ -3723,12 +3810,13 @@ mod tests {
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/lava");
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            block_id: picked.clone(),
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                block_id: picked.clone(),
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.mode = EditorMode::Select;
@@ -3771,12 +3859,13 @@ mod tests {
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/stone");
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            block_id: picked.clone(),
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                block_id: picked.clone(),
+                ..LevelObject::default()
+            }],
+        );
         {
             let mut input = world.resource_mut::<crate::state::EditorInputRes>();
             input.0.mode = EditorMode::Null;
@@ -3826,12 +3915,13 @@ mod tests {
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/grass");
         set_test_phase(&mut world, AppPhase::Editor);
-        world
-            .resource_mut::<crate::state::EditorObjectsRes>()
-            .objects = vec![LevelObject {
-            block_id: picked.clone(),
-            ..LevelObject::default()
-        }];
+        replace_authored_objects(
+            &mut world,
+            vec![LevelObject {
+                block_id: picked.clone(),
+                ..LevelObject::default()
+            }],
+        );
         world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Select;
         world
             .resource_mut::<crate::state::EditorConfigRes>()
@@ -3941,12 +4031,9 @@ mod tests {
         let session = world.resource::<crate::state::SessionStateRes>();
         assert_eq!(session.editor_level_name.as_deref(), Some("Flowerfield"));
         assert!(session.audio_stop_pending);
-        assert!(
-            !world
-                .resource::<crate::state::EditorObjectsRes>()
-                .objects
-                .is_empty()
-        );
+        let mut authored =
+            world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
+        assert!(authored.iter(&world).next().is_some());
         let timing = &world.resource::<crate::state::EditorTimingRes>().0;
         assert_eq!(timing.waveform_samples, vec![0.25, 0.75]);
         assert!(timing.waveform_complete);

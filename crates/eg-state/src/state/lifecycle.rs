@@ -5,8 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use super::editor_objects::replace_editor_objects;
 use super::runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState};
-use super::{AudioState, AuthStateRes, EditorConfigState, EditorSubsystem};
+use super::{AudioState, AuthStateRes, EditorConfigState};
 use bevy_ecs::world::World;
 use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use glam::Mat4;
@@ -219,7 +220,16 @@ fn default_grid_uniform() -> GridUniform {
 struct AppInitialization {
     auth: AuthStateRes,
     auth_receiver: crate::state::async_bridge::SharedAuthReceiver,
-    editor: EditorSubsystem,
+    editor_input: eg_types::EditorInputState,
+    editor_config: EditorConfigState,
+    editor_objects: Vec<eg_types::LevelObject>,
+    editor_spawn: eg_types::SpawnMetadata,
+    editor_camera: super::EditorCameraState,
+    editor_triggers: super::EditorTriggerState,
+    editor_timeline: super::EditorTimelineState,
+    editor_runtime: EditorRuntimeState,
+    editor_timing: super::EditorTimingState,
+    editor_history: super::EditorHistoryState,
     audio: AudioState,
     session: super::SessionStateRes,
     level_import_channel: (
@@ -295,7 +305,16 @@ impl AppBootstrap {
             auth,
             auth_receiver,
 
-            editor,
+            editor_input,
+            editor_config,
+            editor_objects,
+            editor_spawn,
+            editor_camera,
+            editor_triggers,
+            editor_timeline,
+            editor_runtime,
+            editor_timing,
+            editor_history,
             audio,
             session,
             level_import_channel,
@@ -348,39 +367,16 @@ impl AppBootstrap {
         world.insert_resource(super::MenuStateRes::new(menu));
         world.insert_resource(auth);
 
-        world.insert_resource(super::EditorConfigRes(editor.config.clone()));
-        world.insert_resource(super::EditorInputRes(editor.input.clone()));
-        world.insert_resource(super::EditorObjectsRes {
-            objects: editor.objects.clone(),
-        });
-        world.insert_resource(super::EditorTimingRes(editor.timing.clone()));
-
-        let mut timeline = super::EditorTimelineRes::default();
-        timeline.0.clock.time_seconds = editor.timeline.clock.time_seconds;
-        timeline.0.clock.duration_seconds = editor.timeline.clock.duration_seconds;
-        timeline.0.preview.position = editor.timeline.preview.position;
-        timeline.0.preview.direction = editor.timeline.preview.direction;
-        timeline.0.taps.tap_times = editor.timeline.taps.tap_times.clone();
-        timeline.0.taps.tap_indicator_positions =
-            editor.timeline.taps.tap_indicator_positions.clone();
-        timeline.0.taps.selected_index = editor.timeline.taps.selected_index;
-        timeline.0.playback.playing = editor.timeline.playback.playing;
-        timeline.0.playback.pending_seek_time_seconds =
-            editor.timeline.playback.pending_seek_time_seconds;
-        timeline.0.playback.seek_resync_cooldown_seconds =
-            editor.timeline.playback.seek_resync_cooldown_seconds;
-        world.insert_resource(timeline);
-
-        let mut runtime = super::EditorRuntimeRes::default();
-        runtime.0.interaction.last_mode = editor.runtime.interaction.last_mode;
-        runtime.0.interaction.clipboard = editor.runtime.interaction.clipboard.clone();
-        world.insert_resource(runtime);
-        world.insert_resource(super::EditorHistoryRes(editor.runtime.history.clone()));
-        world.insert_resource(super::EditorSpawnRes(editor.spawn.clone()));
-        world.insert_resource(super::EditorCameraRes(editor.camera.clone()));
-        world.insert_resource(super::EditorTriggerRes(super::EditorTriggerState {
-            selected_index: editor.triggers.selected_index,
-        }));
+        world.insert_resource(super::EditorConfigRes(editor_config));
+        world.insert_resource(super::EditorInputRes(editor_input));
+        replace_editor_objects(world, editor_objects);
+        world.insert_resource(super::EditorTimingRes(editor_timing));
+        world.insert_resource(super::EditorTimelineRes(editor_timeline));
+        world.insert_resource(super::EditorRuntimeRes(editor_runtime));
+        world.insert_resource(super::EditorHistoryRes(editor_history));
+        world.insert_resource(super::EditorSpawnRes(editor_spawn));
+        world.insert_resource(super::EditorCameraRes(editor_camera));
+        world.insert_resource(super::EditorTriggerRes(editor_triggers));
 
         let mut session = session;
         session.practice_mode_enabled = phase == AppPhase::Playing
@@ -1296,20 +1292,25 @@ impl AppInitialization {
                 audio_stop_pending: false,
             },
             level_import_channel,
-            editor: EditorSubsystem {
-                config: EditorConfigState {
-                    snap_to_grid: app_settings.editor_snap_to_grid,
-                    snap_step: app_settings.editor_snap_step.max(0.05),
-                    snap_rotation: app_settings.editor_rotation_snap,
-                    snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
-                    ..EditorConfigState::default()
-                },
-                runtime: EditorRuntimeState {
-                    dirty: EditorDirtyFlags::from_object_sync(),
-                    ..EditorRuntimeState::default()
-                },
-                ..EditorSubsystem::default()
+            editor_input: eg_types::EditorInputState::default(),
+            editor_config: EditorConfigState {
+                snap_to_grid: app_settings.editor_snap_to_grid,
+                snap_step: app_settings.editor_snap_step.max(0.05),
+                snap_rotation: app_settings.editor_rotation_snap,
+                snap_rotation_step_degrees: app_settings.editor_rotation_snap_step.max(1.0),
+                ..EditorConfigState::default()
             },
+            editor_objects: Vec::new(),
+            editor_spawn: eg_types::SpawnMetadata::default(),
+            editor_camera: super::EditorCameraState::default(),
+            editor_triggers: super::EditorTriggerState::default(),
+            editor_timeline: super::EditorTimelineState::default(),
+            editor_runtime: EditorRuntimeState {
+                dirty: EditorDirtyFlags::from_object_sync(),
+                ..EditorRuntimeState::default()
+            },
+            editor_timing: super::EditorTimingState::default(),
+            editor_history: super::EditorHistoryState::default(),
         })
     }
 }

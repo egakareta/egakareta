@@ -45,8 +45,8 @@ use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
     AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
-    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
     start_audio_source_at_seconds_for_resources,
 };
 
@@ -128,7 +128,7 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 #[derive(SystemParam)]
-pub struct TimelinePlaybackResources<'w> {
+pub struct TimelinePlaybackResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     input: ResMut<'w, EditorInputRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
@@ -136,7 +136,15 @@ pub struct TimelinePlaybackResources<'w> {
     audio: AudioBackendSystemParam<'w>,
     editor_audio: Res<'w, EditorAudioCacheRes>,
     runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static crate::state::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<crate::state::EditorAuthoredObject>,
+    >,
     spawn: Res<'w, EditorSpawnRes>,
     session: Res<'w, SessionStateRes>,
 }
@@ -196,7 +204,8 @@ pub(crate) fn stop_editor_timeline_playback(
     true
 }
 
-fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_>) {
+fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_, '_>) {
+    let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
     let start_mode = resources.input.0.mode;
     resources.timeline.0.playback.playing = true;
     resources.timeline.0.playback.pending_seek_time_seconds = None;
@@ -211,13 +220,13 @@ fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_>)
             resources.spawn.0.direction,
             &resources.timeline.0.taps.tap_times,
             resources.timeline.0.clock.time_seconds,
-            &resources.objects.objects,
+            &objects,
         )
     } else {
         let mut playback_runtime = TimelineSimulationRuntime::new(
             resources.spawn.0.position,
             resources.spawn.0.direction,
-            &resources.objects.objects,
+            &objects,
             &resources.timeline.0.taps.tap_times,
         );
         playback_runtime.advance_to(resources.timeline.0.clock.time_seconds);
@@ -434,10 +443,18 @@ pub fn handle_set_waveform_scroll(
 }
 
 #[derive(SystemParam)]
-pub struct PlaytestResources<'w> {
+pub struct PlaytestResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     next_phase: ResMut<'w, NextState<AppPhase>>,
-    objects: Res<'w, EditorObjectsRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static crate::state::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<crate::state::EditorAuthoredObject>,
+    >,
     spawn: Res<'w, EditorSpawnRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     session: ResMut<'w, SessionStateRes>,
@@ -452,8 +469,9 @@ pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: Playt
             continue;
         }
 
+        let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
         let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
-            objects: &resources.objects.objects,
+            objects: &objects,
             level_name: resources.session.editor_level_name.as_deref(),
             spawn: resources.spawn.0.clone(),
             sky_color: resources.session.editor_sky_color,

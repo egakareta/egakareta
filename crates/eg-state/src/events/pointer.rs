@@ -15,14 +15,15 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemParam;
 use bevy_state::prelude::State;
-use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick};
+use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 use glam::Vec2;
 
 use crate::events::navigation::TurnRight;
 use crate::state::{
-    EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes, EditorInputRes,
-    EditorInteractionState, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorSubsystem,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
+    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
+    EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    RenderConfigRes, collect_editor_object_data, replace_editor_objects_commands,
 };
 
 /// Mouse button state update for editor interaction routing.
@@ -69,73 +70,94 @@ pub fn register_events(app: &mut App) {
 }
 
 #[derive(SystemParam)]
-pub struct PointerResources<'w> {
+pub struct PointerResources<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     input: ResMut<'w, EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,
-    objects: ResMut<'w, EditorObjectsRes>,
-    camera: Res<'w, EditorCameraRes>,
-    spawn: Res<'w, EditorSpawnRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (&'static EditorObjectOrder, &'static eg_game::ObjectData),
+        With<EditorAuthoredObject>,
+    >,
+    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    commands: Commands<'w, 's>,
+    objects: Local<'s, EditorObjectScratch>,
+    camera: ResMut<'w, EditorCameraRes>,
+    spawn: ResMut<'w, EditorSpawnRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
-    timing: Res<'w, EditorTimingRes>,
-    triggers: Res<'w, EditorTriggerRes>,
+    timing: ResMut<'w, EditorTimingRes>,
+    triggers: ResMut<'w, EditorTriggerRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
     history: ResMut<'w, EditorHistoryRes>,
     render: Res<'w, RenderConfigRes>,
 }
 
-fn viewport(resources: &PointerResources<'_>) -> Vec2 {
+#[derive(Default)]
+struct EditorObjectScratch {
+    objects: Vec<LevelObject>,
+}
+
+fn load_objects(resources: &mut PointerResources<'_, '_>) -> Vec<LevelObject> {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    resources.objects.objects.clone()
+}
+
+fn commit_objects(resources: &mut PointerResources<'_, '_>, before: Vec<LevelObject>) {
+    if resources.objects.objects != before {
+        replace_editor_objects_commands(
+            &mut resources.commands,
+            &resources.existing_objects,
+            &resources.objects.objects,
+        );
+    }
+}
+
+/// The interaction helpers retain a small compatibility-facing history field
+/// on `EditorRuntimeState` while unit fixtures are being retired. Keep it in
+/// lockstep with the authoritative history resource at the direct-handler
+/// boundary so pointer edits, undo, and redo observe one stack.
+fn load_history(resources: &mut PointerResources<'_, '_>) {
+    resources.runtime.0.history = resources.history.0.clone();
+}
+
+fn store_history(resources: &mut PointerResources<'_, '_>) {
+    resources.history.0 = resources.runtime.0.history.clone();
+}
+
+fn viewport(resources: &PointerResources<'_, '_>) -> Vec2 {
     Vec2::new(
         resources.render.width.max(1) as f32,
         resources.render.height.max(1) as f32,
     )
 }
 
-fn temporary_editor(resources: &PointerResources<'_>) -> EditorSubsystem {
-    let mut runtime = crate::state::EditorRuntimeState::default();
-    runtime.dirty = resources.runtime.0.dirty;
-    runtime.history = resources.history.0.clone();
-    runtime.interaction = clone_interaction(&resources.runtime.0.interaction);
-
-    EditorSubsystem {
-        input: resources.input.0.clone(),
-        config: resources.config.0.clone(),
-        objects: resources.objects.objects.clone(),
-        spawn: resources.spawn.0.clone(),
-        camera: resources.camera.0.clone(),
-        triggers: resources.triggers.0.clone(),
-        timeline: resources.timeline.0.clone_for_interaction(),
-        timing: resources.timing.0.clone(),
-        runtime,
-        ..Default::default()
+fn interaction_context<'a, 'w, 's>(
+    resources: &'a mut PointerResources<'w, 's>,
+) -> EditorInteractionContext<'a> {
+    EditorInteractionContext {
+        input: &mut resources.input.0,
+        config: &mut resources.config.0,
+        objects: EditorObjectsBorrow(&mut resources.objects.objects),
+        spawn: &mut resources.spawn.0,
+        camera: &mut resources.camera.0,
+        triggers: &mut resources.triggers.0,
+        timeline: &mut resources.timeline.0,
+        runtime: &mut resources.runtime.0,
+        timing: &mut resources.timing.0,
+        selected_mask_cache: None,
+        block_static_vertex_cache: Default::default(),
+        block_static_vertex_cache_complete_len: None,
+        pick_spatial_index: Default::default(),
     }
 }
 
-fn clone_interaction(source: &EditorInteractionState) -> EditorInteractionState {
-    EditorInteractionState {
-        gizmo_drag: source.gizmo_drag.clone(),
-        hovered_gizmo: source.hovered_gizmo,
-        hovered_tap_index: source.hovered_tap_index,
-        hovered_tap_division: source.hovered_tap_division,
-        pending_tap_click: source.pending_tap_click,
-        block_drag: source.block_drag.clone(),
-        clipboard: source.clipboard.clone(),
-        last_mode: source.last_mode,
-    }
-}
-
-fn commit_editor(resources: &mut PointerResources<'_>, mut editor: EditorSubsystem) {
-    resources.input.0 = editor.input;
-    resources.config.0 = editor.config;
-    resources.objects.objects = editor.objects;
-    resources.timeline.0 = std::mem::take(&mut editor.timeline);
-    resources.runtime.0.interaction = editor.runtime.interaction;
-    resources.history.0 = editor.runtime.history.clone();
-    resources.runtime.0.history = editor.runtime.history;
-    resources.runtime.0.dirty.merge(editor.runtime.dirty);
-}
-
-fn handle_tapping_click(editor: &mut EditorSubsystem, x: f64, y: f64, viewport: Vec2) -> bool {
+fn handle_tapping_click(
+    editor: &mut EditorInteractionContext<'_>,
+    x: f64,
+    y: f64,
+    viewport: Vec2,
+) -> bool {
     const ADD_EPSILON_SECONDS: f32 = 0.001;
 
     let Some(pick) = editor.pick_from_screen(x, y, viewport) else {
@@ -208,6 +230,8 @@ pub fn handle_mouse_button(
     mut turn_right: MessageWriter<TurnRight>,
     mut primary_click: MessageWriter<PrimaryClick>,
 ) {
+    let before = load_objects(&mut resources);
+    load_history(&mut resources);
     for event in events.read() {
         match event.button {
             0 => {
@@ -227,23 +251,20 @@ pub fn handle_mouse_button(
                     }
                 }
                 if !event.pressed {
-                    let mut editor = temporary_editor(&resources);
-                    if *resources.phase.get() == AppPhase::Editor
-                        && let Some(pointer) = resources.input.0.pointer_screen
+                    let phase = *resources.phase.get();
+                    let pointer = resources.input.0.pointer_screen;
+                    let viewport = viewport(&resources);
+                    if phase == AppPhase::Editor
+                        && let Some(pointer) = pointer
                     {
-                        editor.finish_marquee_selection(
-                            pointer[0],
-                            pointer[1],
-                            viewport(&resources),
-                            *resources.phase.get(),
-                        );
+                        let mut editor = interaction_context(&mut resources);
+                        editor.finish_marquee_selection(pointer[0], pointer[1], viewport, phase);
                         let had_drag = editor.runtime.interaction.gizmo_drag.is_some()
                             || editor.runtime.interaction.block_drag.is_some();
                         editor.clear_interaction_drags();
                         if had_drag {
                             editor.sync_objects_after_drag_release();
                         }
-                        commit_editor(&mut resources, editor);
                     } else {
                         resources.input.0.marquee_start_screen = None;
                         resources.input.0.marquee_current_screen = None;
@@ -256,6 +277,8 @@ pub fn handle_mouse_button(
             _ => {}
         }
     }
+    store_history(&mut resources);
+    commit_objects(&mut resources, before);
 }
 
 pub fn handle_primary_click(
@@ -263,6 +286,8 @@ pub fn handle_primary_click(
     mut resources: PointerResources,
     mut turn_right: MessageWriter<TurnRight>,
 ) {
+    let before = load_objects(&mut resources);
+    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         resources.input.0.left_mouse_down = true;
@@ -273,28 +298,30 @@ pub fn handle_primary_click(
             continue;
         }
 
-        let mut editor = temporary_editor(&resources);
         let viewport = viewport(&resources);
-        if editor.input.ui_input_blocking_rects.iter().any(|rect| {
-            let pixels_per_point = editor.input.ui_input_pixels_per_point.max(1.0) as f64;
-            let point_x = event.x / pixels_per_point;
-            let point_y = event.y / pixels_per_point;
-            point_x >= rect[0] as f64
-                && point_x <= rect[2] as f64
-                && point_y >= rect[1] as f64
-                && point_y <= rect[3] as f64
-        }) {
+        if resources
+            .input
+            .0
+            .ui_input_blocking_rects
+            .iter()
+            .any(|rect| {
+                let pixels_per_point = resources.input.0.ui_input_pixels_per_point.max(1.0) as f64;
+                let point_x = event.x / pixels_per_point;
+                let point_y = event.y / pixels_per_point;
+                point_x >= rect[0] as f64
+                    && point_x <= rect[2] as f64
+                    && point_y >= rect[1] as f64
+                    && point_y <= rect[3] as f64
+            })
+        {
             continue;
         }
 
+        let phase = *resources.phase.get();
+        let mut editor = interaction_context(&mut resources);
         match editor.input.mode {
             EditorMode::Place => {
-                editor.update_cursor_from_screen_ext(
-                    event.x,
-                    event.y,
-                    viewport,
-                    *resources.phase.get(),
-                );
+                editor.update_cursor_from_screen_ext(event.x, event.y, viewport, phase);
                 let place_mode = if editor.input.shift_held {
                     eg_types::EditorPlaceMode::Stamp
                 } else {
@@ -304,28 +331,18 @@ pub fn handle_primary_click(
                 if place_mode == eg_types::EditorPlaceMode::SelectPlaced {
                     editor.input.mode = EditorMode::Scale;
                 }
-                commit_editor(&mut resources, editor);
             }
             EditorMode::Tapping => {
-                if handle_tapping_click(&mut editor, event.x, event.y, viewport) {
-                    commit_editor(&mut resources, editor);
-                }
+                handle_tapping_click(&mut editor, event.x, event.y, viewport);
             }
             EditorMode::Timing | EditorMode::Null => {}
             EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate => {
-                if editor.begin_gizmo_drag_ext(event.x, event.y, viewport, *resources.phase.get()) {
-                    commit_editor(&mut resources, editor);
+                if editor.begin_gizmo_drag_ext(event.x, event.y, viewport, phase) {
                     continue;
                 }
                 if !editor.input.shift_held
-                    && editor.begin_selected_block_drag_ext(
-                        event.x,
-                        event.y,
-                        viewport,
-                        *resources.phase.get(),
-                    )
+                    && editor.begin_selected_block_drag_ext(event.x, event.y, viewport, phase)
                 {
-                    commit_editor(&mut resources, editor);
                     continue;
                 }
 
@@ -335,73 +352,62 @@ pub fn handle_primary_click(
                         pick.hit_block_index.is_some() || pick.hit_trigger_index.is_some()
                     });
                 if !editor.input.shift_held && hit_selectable {
-                    editor.select_block_from_screen(
-                        event.x,
-                        event.y,
-                        viewport,
-                        *resources.phase.get(),
-                    );
+                    editor.select_block_from_screen(event.x, event.y, viewport, phase);
                 } else {
-                    editor.begin_marquee_selection(event.x, event.y, *resources.phase.get());
+                    editor.begin_marquee_selection(event.x, event.y, phase);
                 }
-                commit_editor(&mut resources, editor);
             }
         }
     }
+    store_history(&mut resources);
+    commit_objects(&mut resources, before);
 }
 
 pub fn handle_pointer_moved(
     mut events: MessageReader<PointerMoved>,
     mut resources: PointerResources,
 ) {
+    let before = load_objects(&mut resources);
+    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor {
             continue;
         }
 
-        let mut editor = temporary_editor(&resources);
+        let phase = *resources.phase.get();
+        let viewport = viewport(&resources);
+        let mut editor = interaction_context(&mut resources);
         let mut handled = false;
         if editor.input.left_mouse_down && !editor.input.right_dragging {
-            handled =
-                editor.drag_gizmo_from_screen(
-                    event.x,
-                    event.y,
-                    viewport(&resources),
-                    *resources.phase.get(),
-                ) || editor.drag_selection_from_screen(
-                    event.x,
-                    event.y,
-                    viewport(&resources),
-                    *resources.phase.get(),
-                ) || editor.update_marquee_selection(event.x, event.y, *resources.phase.get());
+            handled = editor.drag_gizmo_from_screen(event.x, event.y, viewport, phase)
+                || editor.drag_selection_from_screen(event.x, event.y, viewport, phase)
+                || editor.update_marquee_selection(event.x, event.y, phase);
         }
         if !handled {
             if editor.input.mode == EditorMode::Tapping {
-                let pick = editor.pick_from_screen(event.x, event.y, viewport(&resources));
+                let pick = editor.pick_from_screen(event.x, event.y, viewport);
                 editor.runtime.interaction.hovered_tap_index =
                     pick.and_then(|pick| pick.hit_tap_index);
                 editor.runtime.interaction.hovered_tap_division =
                     pick.and_then(|pick| pick.hit_tap_division);
             } else {
                 editor.runtime.interaction.hovered_gizmo =
-                    editor.pick_gizmo_handle(event.x, event.y, viewport(&resources));
-                editor.update_cursor_from_screen_ext(
-                    event.x,
-                    event.y,
-                    viewport(&resources),
-                    *resources.phase.get(),
-                );
+                    editor.pick_gizmo_handle(event.x, event.y, viewport);
+                editor.update_cursor_from_screen_ext(event.x, event.y, viewport, phase);
             }
         }
-        commit_editor(&mut resources, editor);
     }
+    store_history(&mut resources);
+    commit_objects(&mut resources, before);
 }
 
 pub fn handle_update_cursor_from_screen(
     mut events: MessageReader<UpdateCursorFromScreen>,
     mut resources: PointerResources,
 ) {
+    let before = load_objects(&mut resources);
+    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor
@@ -410,15 +416,13 @@ pub fn handle_update_cursor_from_screen(
         {
             continue;
         }
-        let mut editor = temporary_editor(&resources);
-        editor.update_cursor_from_screen_ext(
-            event.x,
-            event.y,
-            viewport(&resources),
-            *resources.phase.get(),
-        );
-        commit_editor(&mut resources, editor);
+        let phase = *resources.phase.get();
+        let viewport = viewport(&resources);
+        let mut editor = interaction_context(&mut resources);
+        editor.update_cursor_from_screen_ext(event.x, event.y, viewport, phase);
     }
+    store_history(&mut resources);
+    commit_objects(&mut resources, before);
 }
 
 pub fn handle_camera_drag(

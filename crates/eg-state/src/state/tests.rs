@@ -9,6 +9,7 @@ use super::EditorDirtyFlags;
 use crate::state::{
     EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
 };
+use bevy_ecs::prelude::With;
 use bevy_state::prelude::State;
 use eg_editor_domain::derive_timeline_position;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
@@ -269,12 +270,17 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
     app.world_mut().write_message(Undo);
     app.tick_state();
 
-    assert_eq!(
-        app.world()
-            .resource::<crate::state::EditorObjectsRes>()
-            .objects,
-        vec![undo_object]
-    );
+    let object = {
+        let mut query = app
+            .world_mut()
+            .query_filtered::<&eg_game::ObjectData, With<crate::state::EditorAuthoredObject>>();
+        query
+            .single(app.world())
+            .expect("restored authored object")
+            .0
+            .clone()
+    };
+    assert_eq!(object, undo_object);
 }
 
 #[test]

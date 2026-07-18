@@ -5,6 +5,32 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+macro_rules! editor_context_methods {
+    (@collect [$($context:item)*] [$($tests:item)*]) => {
+        impl $crate::state::EditorInteractionContext<'_> {
+            $($context)*
+        }
+
+        #[cfg(test)]
+        impl $crate::state::EditorSubsystem {
+            $($context)*
+            $($tests)*
+        }
+    };
+    (@collect [$($context:item)*] [$($tests:item)*] #[cfg(test)] $test:item $($rest:tt)*) => {
+        editor_context_methods!(
+            @collect [$($context)*] [$($tests)* #[cfg(test)] $test] $($rest)*
+        );
+    };
+    (@collect [$($context:item)*] [$($tests:item)*] $item:item $($rest:tt)*) => {
+        editor_context_methods!(@collect [$($context)* $item] [$($tests)*] $($rest)*);
+    };
+    ($($tokens:tt)*) => {
+        editor_context_methods!(@collect [] [] $($tokens)*);
+    };
+}
+pub(crate) use editor_context_methods;
+
 mod async_bridge;
 mod audio_state;
 mod auth_state;
@@ -13,6 +39,12 @@ mod editor_camera;
 pub mod editor_command;
 mod editor_config_state;
 mod editor_interaction;
+mod editor_objects;
+pub(crate) use editor_objects::{
+    EditorAuthoredObject, EditorObjectOrder, collect_editor_object_data,
+    replace_editor_objects_commands, spawn_editor_object_commands,
+};
+pub use editor_objects::{collect_editor_objects_from_world, replace_editor_objects};
 mod editor_playback;
 mod editor_scene;
 mod editor_state;
@@ -77,7 +109,9 @@ pub(crate) use editor_timeline::EditorTimelineSnapshot;
 pub use editor_timeline::EditorTimelineState;
 pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
-pub(crate) use editor_triggers::camera_trigger_object_pose;
+pub(crate) use editor_triggers::{
+    camera_trigger_object_pose, sync_camera_follow_trigger_object_pose,
+};
 pub use history::EditorHistoryState;
 pub use input_bridge::{
     PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
@@ -104,23 +138,59 @@ pub use sets::StateSet;
 pub use state_resources::{
     AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-    GameplayResetRes, GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes,
-    MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+    GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
+    MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 
 use eg_game::GameCheckpointState;
 use eg_mesh::MeshGeometry;
 use eg_types::{EditorInputState, LevelObject, SpawnMetadata};
+use std::ops::{Deref, DerefMut};
 
 #[derive(Clone)]
 pub struct PracticeCheckpoint {
     pub gameplay: GameCheckpointState,
     pub trigger_base_objects: Option<Vec<LevelObject>>,
 }
-/// Bundles all editor-related state into a single subsystem.
-/// Separates editor concern from the top-level application state.
+pub(crate) struct EditorObjectsBorrow<'a>(pub(crate) &'a mut Vec<LevelObject>);
+
+impl Deref for EditorObjectsBorrow<'_> {
+    type Target = Vec<LevelObject>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl DerefMut for EditorObjectsBorrow<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+    }
+}
+
+/// Borrowing editor interaction view used by systems that update several
+/// App-world resources atomically. It owns no editor state.
+pub(crate) struct EditorInteractionContext<'a> {
+    pub input: &'a mut EditorInputState,
+    pub config: &'a mut EditorConfigState,
+    pub objects: EditorObjectsBorrow<'a>,
+    pub spawn: &'a mut SpawnMetadata,
+    pub camera: &'a mut EditorCameraState,
+    pub triggers: &'a mut EditorTriggerState,
+    pub timeline: &'a mut EditorTimelineState,
+    pub runtime: &'a mut EditorRuntimeState,
+    pub timing: &'a mut EditorTimingState,
+    pub selected_mask_cache: Option<Vec<bool>>,
+    pub block_static_vertex_cache: MeshGeometry,
+    pub block_static_vertex_cache_complete_len: Option<usize>,
+    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
+}
+
+/// Owned editor fixture retained while unit tests are migrated to `TestApp`.
+/// Production systems use [`EditorInteractionContext`] instead.
+#[cfg(test)]
 #[derive(Default)]
 pub struct EditorSubsystem {
     pub input: EditorInputState,

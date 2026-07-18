@@ -5,11 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::EditorSubsystem;
+#[cfg(test)]
 use eg_types::AppPhase;
 use glam::{Mat4, Vec2, Vec3, Vec4};
 
-impl EditorSubsystem {
+super::super::editor_context_methods! {
+    #[cfg(test)]
     pub fn camera_axes_xy(&self) -> (Vec2, Vec2) {
         let right = Vec2::new(self.camera.editor_yaw.cos(), -self.camera.editor_yaw.sin());
         let up = Vec2::new(self.camera.editor_yaw.sin(), self.camera.editor_yaw.cos());
@@ -99,6 +100,7 @@ impl EditorSubsystem {
         Some(Vec2::new(screen_x, screen_y))
     }
 
+    #[cfg(test)]
     pub fn drag_camera_by_pixels(
         &mut self,
         dx: f64,
@@ -124,6 +126,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn set_editor_camera_orientation(
         &mut self,
         rotation: f32,
@@ -160,6 +163,7 @@ impl EditorSubsystem {
         self.camera.editor_pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
     }
 
+    #[cfg(test)]
     pub fn update_camera_transition(&mut self, frame_dt: f32) -> bool {
         self.camera.update_camera_transition(frame_dt)
     }

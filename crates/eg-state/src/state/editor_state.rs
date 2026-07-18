@@ -5,17 +5,29 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::{EditorDirtyFlags, EditorSubsystem};
+#[cfg(test)]
+use super::EditorDirtyFlags;
+#[cfg(test)]
+use super::EditorSubsystem;
+#[cfg(test)]
 use eg_blocks::BlockId;
+use eg_editor_domain::add_tap_with_indicator;
+#[cfg(test)]
 use eg_editor_domain::{
-    add_tap_with_indicator, clear_taps_with_indicators, remove_tap_with_indicator,
-    snap_cell_to_step, snap_component_to_step,
+    clear_taps_with_indicators, remove_tap_with_indicator, snap_cell_to_step,
+    snap_component_to_step,
 };
-use eg_types::{Direction, EditorMode, LevelObject, TimingPoint};
+#[cfg(test)]
+use eg_types::EditorMode;
+#[cfg(test)]
+use eg_types::{Direction, LevelObject, TimingPoint};
+#[cfg(test)]
 use eg_types::{EasingDirection, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget};
 
+#[cfg(test)]
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
+#[cfg(test)]
 fn remove_replaced_transform_trigger_targets(
     objects: &mut [LevelObject],
     time_seconds: f32,
@@ -43,47 +55,58 @@ fn remove_replaced_transform_trigger_targets(
     }
 }
 
-impl EditorSubsystem {
+super::editor_context_methods! {
+    #[cfg(test)]
     pub fn set_pan_up_held(&mut self, held: bool) {
         self.input.pan_up_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_pan_down_held(&mut self, held: bool) {
         self.input.pan_down_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_pan_left_held(&mut self, held: bool) {
         self.input.pan_left_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_pan_right_held(&mut self, held: bool) {
         self.input.pan_right_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_shift_held(&mut self, held: bool) {
         self.input.shift_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_ctrl_held(&mut self, held: bool) {
         self.input.ctrl_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_alt_held(&mut self, held: bool) {
         self.input.alt_held = held;
     }
 
+    #[cfg(test)]
     pub fn set_right_dragging(&mut self, dragging: bool) {
         self.input.right_dragging = dragging;
     }
 
+    #[cfg(test)]
     pub fn set_left_mouse_down(&mut self, pressed: bool) {
         self.input.left_mouse_down = pressed;
     }
 
+    #[cfg(test)]
     pub fn set_pointer_screen(&mut self, position: Option<[f64; 2]>) {
         self.input.pointer_screen = position;
     }
 
+    #[cfg(test)]
     pub fn set_ui_input_blocking_rects(&mut self, rects: Vec<[f32; 4]>, pixels_per_point: f32) {
         self.input.ui_input_blocking_rects = rects;
         self.input.ui_input_pixels_per_point =
@@ -94,11 +117,13 @@ impl EditorSubsystem {
             };
     }
 
+    #[cfg(test)]
     pub fn clear_ui_input_blocking_rects(&mut self) {
         self.input.ui_input_blocking_rects.clear();
         self.input.ui_input_pixels_per_point = 1.0;
     }
 
+    #[cfg(test)]
     pub fn pointer_over_ui_input(&self, x: f64, y: f64) -> bool {
         let pixels_per_point = self.input.ui_input_pixels_per_point as f64;
         let point_x = x / pixels_per_point;
@@ -117,32 +142,39 @@ impl EditorSubsystem {
         self.runtime.interaction.block_drag = None;
     }
 
+    #[cfg(test)]
     pub fn left_mouse_down(&self) -> bool {
         self.input.left_mouse_down
     }
 
+    #[cfg(test)]
     pub fn has_gizmo_drag(&self) -> bool {
         self.runtime.interaction.gizmo_drag.is_some()
     }
 
+    #[cfg(test)]
     pub fn has_block_drag(&self) -> bool {
         self.runtime.interaction.block_drag.is_some()
     }
 
+    #[cfg(test)]
     pub fn is_playing(&self) -> bool {
         self.timeline.playback.playing
     }
 
+    #[cfg(test)]
     pub fn timeline_time_seconds(&self) -> f32 {
         self.timeline.clock.time_seconds
     }
 
+    #[cfg(test)]
     pub fn set_block_id(&mut self, block_id: BlockId) {
         self.config.selected_block_id = block_id;
         self.config
             .remember_recent_block_id(self.config.selected_block_id.clone());
     }
 
+    #[cfg(test)]
     pub fn set_mode(&mut self, mode: EditorMode) {
         self.input.mode = mode;
         self.runtime.interaction.gizmo_drag = None;
@@ -154,10 +186,12 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn mode(&self) -> EditorMode {
         self.input.mode
     }
 
+    #[cfg(test)]
     pub fn snap_to_grid(&self) -> bool {
         self.config.snap_to_grid
     }
@@ -166,10 +200,12 @@ impl EditorSubsystem {
         self.config.snap_to_grid && !self.input.ctrl_held
     }
 
+    #[cfg(test)]
     pub fn snap_step(&self) -> f32 {
         self.config.snap_step
     }
 
+    #[cfg(test)]
     pub fn snap_rotation(&self) -> bool {
         self.config.snap_rotation
     }
@@ -178,10 +214,12 @@ impl EditorSubsystem {
         self.config.snap_rotation && !self.input.ctrl_held
     }
 
+    #[cfg(test)]
     pub fn snap_rotation_step_degrees(&self) -> f32 {
         self.config.snap_rotation_step_degrees
     }
 
+    #[cfg(test)]
     pub fn selected_block(&self) -> Option<LevelObject> {
         self.selected_indices_normalized()
             .first()
@@ -189,22 +227,27 @@ impl EditorSubsystem {
             .and_then(|index| self.objects.get(index).cloned())
     }
 
+    #[cfg(test)]
     pub fn set_snap_to_grid(&mut self, snap: bool) {
         self.config.snap_to_grid = snap;
     }
 
+    #[cfg(test)]
     pub fn set_snap_step(&mut self, step: f32) {
         self.config.snap_step = step.max(0.05);
     }
 
+    #[cfg(test)]
     pub fn set_snap_rotation(&mut self, snap: bool) {
         self.config.snap_rotation = snap;
     }
 
+    #[cfg(test)]
     pub fn set_snap_rotation_step_degrees(&mut self, step: f32) {
         self.config.snap_rotation_step_degrees = step.max(1.0);
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_position(&mut self, position: [f32; 3]) {
         if let Some(index) = self
             .input
@@ -226,6 +269,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_size(&mut self, size: [f32; 3]) {
         if let Some(index) = self
             .input
@@ -251,6 +295,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_id(&mut self, block_id: BlockId) {
         if let Some(index) = self
             .input
@@ -261,6 +306,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_rotation(&mut self, rotation: [f32; 3]) {
         if let Some(index) = self
             .input
@@ -277,11 +323,13 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn rotate_selected_block_preview(&mut self) {
         self.config.selected_block_rotation_degrees[1] =
             (self.config.selected_block_rotation_degrees[1] + 90.0).rem_euclid(360.0);
     }
 
+    #[cfg(test)]
     pub fn set_selected_block_color_tint(&mut self, color_tint: [f32; 3]) {
         if let Some(index) = self
             .input
@@ -292,14 +340,17 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn timeline_duration_seconds(&self) -> f32 {
         self.timeline.clock.duration_seconds
     }
 
+    #[cfg(test)]
     pub fn tap_times(&self) -> &[f32] {
         &self.timeline.taps.tap_times
     }
 
+    #[cfg(test)]
     pub fn selected_tap(&self) -> Option<(usize, f32, [f32; 3])> {
         let index = self.timeline.taps.selected_index?;
         let time_seconds = *self.timeline.taps.tap_times.get(index)?;
@@ -314,6 +365,7 @@ impl EditorSubsystem {
         });
     }
 
+    #[cfg(test)]
     pub fn adjust_selected_tap_after_removal(&mut self, removed_index: usize) {
         self.timeline.taps.selected_index = match self.timeline.taps.selected_index {
             Some(selected_index) if selected_index == removed_index => None,
@@ -329,6 +381,7 @@ impl EditorSubsystem {
         (self.timeline.clock.time_seconds - old_time).abs() > 0.0001
     }
 
+    #[cfg(test)]
     pub fn set_timeline_duration_seconds(&mut self, duration_seconds: f32) {
         self.timeline.clock.duration_seconds = duration_seconds.max(0.1);
         self.timeline.clock.time_seconds = self
@@ -353,6 +406,7 @@ impl EditorSubsystem {
         self.timeline.clock.time_seconds
     }
 
+    #[cfg(test)]
     pub fn remove_tap(&mut self) -> f32 {
         if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
@@ -364,6 +418,7 @@ impl EditorSubsystem {
         self.timeline.clock.time_seconds
     }
 
+    #[cfg(test)]
     pub fn remove_tap_at(&mut self, time_seconds: f32) -> f32 {
         if let Some(removed_index) = remove_tap_with_indicator(
             &mut self.timeline.taps.tap_times,
@@ -375,6 +430,7 @@ impl EditorSubsystem {
         time_seconds
     }
 
+    #[cfg(test)]
     pub fn clear_taps(&mut self) {
         clear_taps_with_indicators(
             &mut self.timeline.taps.tap_times,
@@ -393,6 +449,7 @@ impl EditorSubsystem {
         self.timeline.scrub_runtime_revision = 0;
     }
 
+    #[cfg(test)]
     pub fn invalidate_samples_from(&mut self, from_seconds: f32) {
         self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
 
@@ -430,6 +487,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     fn truncate_cached_timeline_trail_to_snapshot_prefix(&mut self) {
         let Some(snapshot) = self.timeline.snapshot_cache.last() else {
             self.timeline.trail_point_cache.clear();
@@ -445,6 +503,7 @@ impl EditorSubsystem {
             .truncate(snapshot.trail_segment_count);
     }
 
+    #[cfg(test)]
     pub fn timeline_preview(&self) -> ([f32; 3], Direction) {
         (
             self.timeline.preview.position,
@@ -452,67 +511,83 @@ impl EditorSubsystem {
         )
     }
 
+    #[cfg(test)]
     pub fn timing_points(&self) -> &[TimingPoint] {
         &self.timing.timing_points
     }
 
+    #[cfg(test)]
     pub fn playback_speed(&self) -> f32 {
         self.timing.playback_speed
     }
 
+    #[cfg(test)]
     pub fn set_playback_speed(&mut self, speed: f32) -> f32 {
         self.timing.playback_speed = speed.clamp(0.1, 2.0);
         self.timing.playback_speed
     }
 
+    #[cfg(test)]
     pub fn timing_selected_index(&self) -> Option<usize> {
         self.timing.timing_selected_index
     }
 
+    #[cfg(test)]
     pub fn set_timing_selected_index(&mut self, index: Option<usize>) {
         self.timing.timing_selected_index = index;
     }
 
+    #[cfg(test)]
     pub fn waveform_zoom(&self) -> f32 {
         self.timing.waveform_zoom
     }
 
+    #[cfg(test)]
     pub fn set_waveform_zoom(&mut self, zoom: f32) {
         self.timing.waveform_zoom = zoom.clamp(0.1, 10.0);
     }
 
+    #[cfg(test)]
     pub fn waveform_scroll(&self) -> f32 {
         self.timing.waveform_scroll
     }
 
+    #[cfg(test)]
     pub fn set_waveform_scroll(&mut self, scroll: f32) {
         self.timing.waveform_scroll = scroll;
     }
 
+    #[cfg(test)]
     pub fn waveform_samples(&self) -> &[f32] {
         &self.timing.waveform_samples
     }
 
+    #[cfg(test)]
     pub fn waveform_sample_rate(&self) -> u32 {
         self.timing.waveform_sample_rate
     }
 
+    #[cfg(test)]
     pub fn waveform_window_size(&self) -> usize {
         self.timing.waveform_window_size
     }
 
+    #[cfg(test)]
     pub fn waveform_loading(&self) -> bool {
         self.timing.waveform_loading
     }
 
+    #[cfg(test)]
     pub fn waveform_complete(&self) -> bool {
         self.timing.waveform_complete
     }
 
+    #[cfg(test)]
     pub fn bpm_tap_result(&self) -> Option<f32> {
         self.timing.bpm_tap_result
     }
 
+    #[cfg(test)]
     pub fn add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
         self.timing.timing_points.push(TimingPoint {
             time_seconds,
@@ -526,6 +601,7 @@ impl EditorSubsystem {
         self.timing.mark_timing_points_changed();
     }
 
+    #[cfg(test)]
     pub fn remove_timing_point(&mut self, index: usize) {
         if index < self.timing.timing_points.len() {
             self.timing.timing_points.remove(index);
@@ -533,6 +609,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn update_timing_point_time(&mut self, index: usize, time: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.time_seconds = time.max(0.0);
@@ -543,6 +620,7 @@ impl EditorSubsystem {
             .sort_by(|a, b| a.time_seconds.total_cmp(&b.time_seconds));
     }
 
+    #[cfg(test)]
     pub fn update_timing_point_bpm(&mut self, index: usize, bpm: f32) {
         if let Some(tp) = self.timing.timing_points.get_mut(index) {
             tp.bpm = bpm.max(1.0);
@@ -550,6 +628,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn update_timing_point_time_signature(
         &mut self,
         index: usize,
@@ -563,6 +642,7 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn bpm_tap(&mut self, now_secs: f64) {
         self.timing.bpm_tap_times.push(now_secs);
         if self.timing.bpm_tap_times.len() > 1 {
@@ -579,11 +659,13 @@ impl EditorSubsystem {
         }
     }
 
+    #[cfg(test)]
     pub fn bpm_tap_reset(&mut self) {
         self.timing.bpm_tap_times.clear();
         self.timing.bpm_tap_result = None;
     }
 
+    #[cfg(test)]
     pub fn add_transform_trigger(&mut self) -> bool {
         if self.timeline.playback.playing {
             return false;

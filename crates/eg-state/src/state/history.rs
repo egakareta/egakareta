@@ -7,7 +7,9 @@
 */
 #[cfg(test)]
 use super::EditorClipboard;
-use super::{EditorHistorySnapshot, EditorSubsystem};
+use super::EditorHistorySnapshot;
+#[cfg(test)]
+use super::EditorSubsystem;
 #[cfg(test)]
 use eg_editor_domain::derive_tap_indicator_positions;
 #[cfg(test)]
@@ -19,7 +21,7 @@ pub struct EditorHistoryState {
     pub redo: Vec<EditorHistorySnapshot>,
 }
 
-impl EditorSubsystem {
+super::editor_context_methods! {
     fn history_snapshot(&self) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
             objects: self.objects.clone(),

@@ -13,12 +13,18 @@ use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, LevelObject, SpawnMetadata};
 
 use super::editor_timeline::{EditorTimelineSnapshot, EditorTimelineState};
-use super::{EditorObjectsRes, EditorSpawnRes, EditorTimelineRes};
+use super::{EditorSpawnRes, EditorTimelineRes};
 
 /// Keep the App-owned timeline cache current before render extraction.
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
     phase: Res<State<AppPhase>>,
-    objects: Res<EditorObjectsRes>,
+    authored_objects: Query<
+        (
+            &super::editor_objects::EditorObjectOrder,
+            &eg_game::ObjectData,
+        ),
+        With<super::editor_objects::EditorAuthoredObject>,
+    >,
     spawn: Res<EditorSpawnRes>,
     mut timeline: ResMut<EditorTimelineRes>,
 ) {
@@ -26,7 +32,8 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
         return;
     }
 
-    rebuild_editor_timeline_snapshot_cache_if_needed(&mut timeline.0, &objects.objects, &spawn.0);
+    let objects = super::editor_objects::collect_editor_object_data(&authored_objects);
+    rebuild_editor_timeline_snapshot_cache_if_needed(&mut timeline.0, &objects, &spawn.0);
 }
 
 /// Rebuild the timeline snapshot/trail cache when the authored simulation
