@@ -16,7 +16,7 @@ const commands = [
             ".config/nodemon.json",
             "--exec",
             "bun run build",
-            "--profiling",
+            "--dev",
         ],
     ],
     ["dev:wrangler", ["bunx", "wrangler", "pages", "dev"]],

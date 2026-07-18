@@ -23,7 +23,7 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 - **Development Server:** `bun run dev` (`bun scripts/dev.ts`)
     - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`. If this is running, you have access to local Cloudflare services (KV, R2, D1, Durable Objects, and Workflows) for this app via the Explorer API.
     - Fetch the OpenAPI schema from http://127.0.0.1:8788/cdn-cgi/explorer/api to discover available operations. Use these endpoints to list, query, and manage local resources during development.
-- **Web Build:** `bun run build --profiling` (`bun scripts/build.ts`)
+- **Web Build:** `bun run build --dev` (`bun scripts/build.ts --dev`)
 - **CLI Tool:** The `egb` binary (`crates/egb/src/main.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build -p egb`.
 
 ### Linting & Formatting
@@ -173,7 +173,7 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 ## 6. Development Workflow Guidelines
 
 1. **Understand First:** Before modifying logic, always read `Cargo.toml` and `package.json` to understand the build chain. Check the relevant crate under `crates/` to see how the subsystem fits together.
-2. **Self-Verification:** Before finalizing a task, ensure the code builds (`bun run build --profiling`) and passes all strict lints (`bun run lint`). Unverified code will fail the CI.
+2. **Self-Verification:** Before finalizing a task, ensure the code builds (`bun run build --dev`) and passes all strict lints (`bun run lint`). Unverified code will fail the CI.
 3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `crates/eg-ui/src/`. For core mechanics, review `crates/eg-game/src/physics.rs`.
 4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified. Use `TODO:` comments to mark temporary workarounds and non-future-proof code.
