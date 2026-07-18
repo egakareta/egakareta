@@ -8,6 +8,7 @@
 //! App-world editor timeline playback.
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use bevy_state::prelude::State;
 use eg_blocks::BlockEffectColorMode;
 use eg_editor_domain::derive_timeline_elapsed_seconds;
@@ -34,87 +35,106 @@ const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
 
 /// Advance editor playback from App-owned clock/audio state and publish only
 /// presentation invalidations for the compatibility renderer.
-pub(crate) fn update_editor_timeline_playback_system(
-    phase: Res<State<AppPhase>>,
-    frame_time: Res<FrameTimeRes>,
-    mut input: ResMut<EditorInputRes>,
-    objects: Res<EditorObjectsRes>,
-    spawn: Res<EditorSpawnRes>,
-    mut timeline: ResMut<EditorTimelineRes>,
-    timing: Res<EditorTimingRes>,
-    mut runtime_state: ResMut<EditorRuntimeRes>,
-    audio: AudioBackendSystemParam<'_>,
-    editor_audio: Res<EditorAudioCacheRes>,
-    runtime_preload: Res<RuntimeAudioPreloadRes>,
-    session: Res<SessionStateRes>,
-) {
-    if *phase.get() != AppPhase::Editor || !timeline.0.playback.playing {
+#[derive(SystemParam)]
+pub(crate) struct EditorTimelinePlaybackParams<'w> {
+    phase: Res<'w, State<AppPhase>>,
+    frame_time: Res<'w, FrameTimeRes>,
+    input: ResMut<'w, EditorInputRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+    timing: Res<'w, EditorTimingRes>,
+    runtime_state: ResMut<'w, EditorRuntimeRes>,
+    audio: AudioBackendSystemParam<'w>,
+    editor_audio: Res<'w, EditorAudioCacheRes>,
+    runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
+    session: Res<'w, SessionStateRes>,
+}
+
+pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelinePlaybackParams) {
+    if *params.phase.get() != AppPhase::Editor || !params.timeline.0.playback.playing {
         return;
     }
 
     puffin::profile_scope!("EditorTimelinePlayback");
-    let mode = effective_playback_mode(&input, &runtime_state, &timeline);
+    let mode = effective_playback_mode(&params.input, &params.runtime_state, &params.timeline);
     let simulate_preview = mode != EditorMode::Timing;
 
-    if let Some(target_time) = take_ready_pending_seek(&mut timeline.0, frame_time.delta_seconds) {
-        audio.stop();
-        let start_seconds =
-            rebuild_playback_runtime(mode, target_time, &objects.objects, &spawn.0, &mut timeline);
+    if let Some(target_time) =
+        take_ready_pending_seek(&mut params.timeline.0, params.frame_time.delta_seconds)
+    {
+        params.audio.stop();
+        let start_seconds = rebuild_playback_runtime(
+            mode,
+            target_time,
+            &params.objects.objects,
+            &params.spawn.0,
+            &mut params.timeline,
+        );
         start_editor_audio(
-            &session,
+            &params.session,
             start_seconds,
-            &audio,
-            &editor_audio,
-            &runtime_preload,
+            &params.audio,
+            &params.editor_audio,
+            &params.runtime_preload,
         );
     }
 
-    let audio_time = audio
+    let audio_time = params
+        .audio
         .playback_time_seconds()
-        .unwrap_or(timeline.0.clock.time_seconds);
-    let clamped_time = audio_time.max(0.0).min(timeline.0.clock.duration_seconds);
-    let old_time = timeline.0.clock.time_seconds;
+        .unwrap_or(params.timeline.0.clock.time_seconds);
+    let clamped_time = audio_time
+        .max(0.0)
+        .min(params.timeline.0.clock.duration_seconds);
+    let old_time = params.timeline.0.clock.time_seconds;
 
     if (clamped_time - old_time).abs() > 1e-4 {
-        timeline.0.clock.time_seconds = clamped_time;
+        params.timeline.0.clock.time_seconds = clamped_time;
 
-        if simulate_preview && has_timeline_preview_triggers(&objects.objects) {
-            runtime_state
+        if simulate_preview && has_timeline_preview_triggers(&params.objects.objects) {
+            params
+                .runtime_state
                 .0
                 .dirty
                 .merge(EditorDirtyFlags::timeline_trigger_preview_changed());
         }
 
         if simulate_preview {
-            let (position, direction, events) =
-                advance_simulation_preview(clamped_time, &objects.objects, &spawn.0, &mut timeline);
+            let (position, direction, events) = advance_simulation_preview(
+                clamped_time,
+                &params.objects.objects,
+                &params.spawn.0,
+                &mut params.timeline,
+            );
             let consumed_objects = !events.is_empty();
-            queue_block_effects(events, &mut runtime_state);
+            queue_block_effects(events, &mut params.runtime_state);
             if consumed_objects {
-                runtime_state
+                params
+                    .runtime_state
                     .0
                     .dirty
                     .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
             }
-            timeline.0.preview.position = position;
-            timeline.0.preview.direction = direction;
+            params.timeline.0.preview.position = position;
+            params.timeline.0.preview.direction = direction;
         } else {
-            timeline.0.playback.runtime = None;
+            params.timeline.0.playback.runtime = None;
             play_metronome_for_crossed_beat(
                 old_time,
                 clamped_time,
-                &timing.0.timing_points,
-                &audio,
+                &params.timing.0.timing_points,
+                &params.audio,
             );
         }
     }
 
-    if clamped_time >= timeline.0.clock.duration_seconds || !audio.is_playing() {
+    if clamped_time >= params.timeline.0.clock.duration_seconds || !params.audio.is_playing() {
         stop_editor_playback(
-            &mut input,
-            &mut runtime_state,
-            &mut timeline,
-            &audio,
+            &mut params.input,
+            &mut params.runtime_state,
+            &mut params.timeline,
+            &params.audio,
             simulate_preview,
         );
     }

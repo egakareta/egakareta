@@ -125,12 +125,10 @@ fn clone_interaction(source: &EditorInteractionState) -> EditorInteractionState 
 }
 
 fn commit_editor(resources: &mut PointerResources<'_>, mut editor: EditorSubsystem) {
-    let objects_changed = resources.objects.objects != editor.objects;
     resources.input.0 = editor.input;
     resources.config.0 = editor.config;
     resources.objects.objects = editor.objects;
     resources.timeline.0 = std::mem::take(&mut editor.timeline);
-    if objects_changed {}
     resources.runtime.0.interaction = editor.runtime.interaction;
     resources.history.0 = editor.runtime.history.clone();
     resources.runtime.0.history = editor.runtime.history;

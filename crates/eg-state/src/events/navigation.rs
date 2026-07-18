@@ -116,7 +116,15 @@ pub fn register_events(app: &mut App) {
 
 pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: TurnRightResources) {
     for _ in events.read() {
-        match *resources.phase.get() {
+        let phase = *resources.phase.get();
+        let practice_game_over = phase == AppPhase::Playing
+            && resources.clock.game_over
+            && resources.session.practice_mode_enabled;
+        if practice_game_over && respawn_from_practice_checkpoint(&mut resources) {
+            continue;
+        }
+
+        match phase {
             AppPhase::Editor => place_editor_block_from_turn_right(&mut resources),
             AppPhase::Menu => start_gameplay_from_menu(&mut resources),
             AppPhase::GameOver => {
@@ -131,9 +139,7 @@ pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: Tu
             AppPhase::Playing
                 if resources.clock.game_over && resources.session.practice_mode_enabled =>
             {
-                if !respawn_from_practice_checkpoint(&mut resources) {
-                    restart_practice_from_turn_right(&mut resources);
-                }
+                restart_practice_from_turn_right(&mut resources);
             }
             AppPhase::Playing if !resources.clock.started => {
                 start_gameplay_from_turn_right(&mut resources);

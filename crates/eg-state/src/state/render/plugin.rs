@@ -760,25 +760,31 @@ fn gizmo_pixels_to_world_scale(
 
 /// Extract the editor transform gizmo from App-owned selection, objects,
 /// interaction state, camera uniform, and viewport configuration.
-pub(crate) fn extract_editor_gizmo_vertices_system(
-    phase: Res<State<AppPhase>>,
-    input: Res<EditorInputRes>,
-    objects: Res<EditorObjectsRes>,
-    triggers: Res<EditorTriggerRes>,
-    runtime: Res<EditorRuntimeRes>,
-    uniforms: Res<RenderUniformsRes>,
-    config: Res<RenderConfigRes>,
-    mut gizmo_vertices: ResMut<RenderEditorGizmoVerticesRes>,
-) {
-    gizmo_vertices.0.clear();
-    if *phase.get() != AppPhase::Editor {
+#[derive(SystemParam)]
+pub(crate) struct EditorGizmoExtractionParams<'w> {
+    phase: Res<'w, State<AppPhase>>,
+    input: Res<'w, EditorInputRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    triggers: Res<'w, EditorTriggerRes>,
+    runtime: Res<'w, EditorRuntimeRes>,
+    uniforms: Res<'w, RenderUniformsRes>,
+    config: Res<'w, RenderConfigRes>,
+    gizmo_vertices: ResMut<'w, RenderEditorGizmoVerticesRes>,
+}
+
+pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtractionParams) {
+    params.gizmo_vertices.0.clear();
+    if *params.phase.get() != AppPhase::Editor {
         return;
     }
 
-    let trigger_objects = editor_trigger_objects_for_render(&objects);
+    let trigger_objects = editor_trigger_objects_for_render(&params.objects);
     let trigger_target =
-        if normalized_editor_selection_indices(&input, objects.objects.len()).is_empty() {
-            triggers
+        if normalized_editor_selection_indices(&params.input, params.objects.objects.len())
+            .is_empty()
+        {
+            params
+                .triggers
                 .0
                 .selected_index
                 .and_then(|index| trigger_objects.get(index))
@@ -786,10 +792,13 @@ pub(crate) fn extract_editor_gizmo_vertices_system(
         } else {
             None
         };
-    let selected_indices = normalized_editor_selection_indices(&input, objects.objects.len());
-    let Some((bounds_position, bounds_size)) =
-        editor_selection_bounds_for_gizmo(&objects.objects, &selected_indices, trigger_target)
-    else {
+    let selected_indices =
+        normalized_editor_selection_indices(&params.input, params.objects.objects.len());
+    let Some((bounds_position, bounds_size)) = editor_selection_bounds_for_gizmo(
+        &params.objects.objects,
+        &selected_indices,
+        trigger_target,
+    ) else {
         return;
     };
     let visibility = if selected_indices.is_empty() {
@@ -799,14 +808,14 @@ pub(crate) fn extract_editor_gizmo_vertices_system(
     } else {
         selected_indices
             .iter()
-            .filter_map(|index| objects.objects.get(*index))
+            .filter_map(|index| params.objects.objects.get(*index))
             .map(LevelObject::transform_field_visibility)
             .fold(
                 TransformVisibility::all(),
                 TransformVisibility::intersection,
             )
     };
-    let mode = input.0.mode;
+    let mode = params.input.0.mode;
     let show_move_handles = mode.shows_move_gizmo() && visibility.position;
     let show_scale_handles = mode.shows_scale_gizmo() && visibility.size;
     let show_rotate_handles = mode.shows_rotate_gizmo() && visibility.rotation;
@@ -819,32 +828,34 @@ pub(crate) fn extract_editor_gizmo_vertices_system(
         bounds_position[1] + bounds_size[1] * 0.5,
         bounds_position[2] + bounds_size[2] * 0.5,
     );
-    let scale = gizmo_pixels_to_world_scale(center, 100.0, &uniforms, &config);
-    let axis_width = gizmo_pixels_to_world_scale(center, 4.5, &uniforms, &config);
-    let resize_radius = gizmo_pixels_to_world_scale(center, 8.5, &uniforms, &config);
+    let scale = gizmo_pixels_to_world_scale(center, 100.0, &params.uniforms, &params.config);
+    let axis_width = gizmo_pixels_to_world_scale(center, 4.5, &params.uniforms, &params.config);
+    let resize_radius = gizmo_pixels_to_world_scale(center, 8.5, &params.uniforms, &params.config);
     let resize_offsets = [
-        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
-        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
-        gizmo_pixels_to_world_scale(center, 9.0, &uniforms, &config),
+        gizmo_pixels_to_world_scale(center, 9.0, &params.uniforms, &params.config),
+        gizmo_pixels_to_world_scale(center, 9.0, &params.uniforms, &params.config),
+        gizmo_pixels_to_world_scale(center, 9.0, &params.uniforms, &params.config),
     ];
     let rotation = selected_indices
         .first()
-        .and_then(|index| objects.objects.get(*index))
+        .and_then(|index| params.objects.objects.get(*index))
         .map(|object| object.rotation)
         .or_else(|| trigger_target.map(|object| object.rotation))
         .unwrap_or([0.0, 0.0, 0.0]);
-    let dragged_part = runtime
+    let dragged_part = params
+        .runtime
         .0
         .interaction
         .gizmo_drag
         .as_ref()
         .map(|drag| GizmoPart::from_axis_kind(drag.axis, drag.kind));
-    let hovered_part = runtime
+    let hovered_part = params
+        .runtime
         .0
         .interaction
         .hovered_gizmo
         .map(|(kind, axis)| GizmoPart::from_axis_kind(axis, kind));
-    gizmo_vertices.0 = build_editor_gizmo_vertices(GizmoParams {
+    params.gizmo_vertices.0 = build_editor_gizmo_vertices(GizmoParams {
         position: bounds_position,
         size: bounds_size,
         rotation,
@@ -1007,45 +1018,56 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
 /// Extract editor tap indicators from App-owned timeline and interaction
 /// resources. Runtime uploads the derived vertices into the compatibility
 /// mesh slot.
+#[derive(SystemParam)]
+pub(crate) struct EditorTapIndicatorExtractionParams<'w> {
+    phase: Res<'w, State<AppPhase>>,
+    input: Res<'w, EditorInputRes>,
+    runtime: Res<'w, EditorRuntimeRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    timeline: Res<'w, EditorTimelineRes>,
+    timing: Res<'w, EditorTimingRes>,
+    tap_vertices: ResMut<'w, RenderEditorTapIndicatorVerticesRes>,
+}
+
 pub(crate) fn extract_editor_tap_indicator_vertices_system(
-    phase: Res<State<AppPhase>>,
-    input: Res<EditorInputRes>,
-    runtime: Res<EditorRuntimeRes>,
-    objects: Res<EditorObjectsRes>,
-    spawn: Res<EditorSpawnRes>,
-    timeline: Res<EditorTimelineRes>,
-    timing: Res<EditorTimingRes>,
-    mut tap_vertices: ResMut<RenderEditorTapIndicatorVerticesRes>,
+    mut params: EditorTapIndicatorExtractionParams,
 ) {
-    let effective_mode = if timeline.0.playback.playing && input.0.mode == EditorMode::Null {
-        runtime.0.interaction.last_mode.unwrap_or(input.0.mode)
-    } else {
-        input.0.mode
-    };
-    if *phase.get() != AppPhase::Editor || effective_mode == EditorMode::Timing {
-        tap_vertices.0.clear();
+    let effective_mode =
+        if params.timeline.0.playback.playing && params.input.0.mode == EditorMode::Null {
+            params
+                .runtime
+                .0
+                .interaction
+                .last_mode
+                .unwrap_or(params.input.0.mode)
+        } else {
+            params.input.0.mode
+        };
+    if *params.phase.get() != AppPhase::Editor || effective_mode == EditorMode::Timing {
+        params.tap_vertices.0.clear();
         return;
     }
 
     let show_timing_division_previews = effective_mode == EditorMode::Tapping;
-    let hovered_tap_index = runtime.0.interaction.hovered_tap_index;
-    let selected_tap_index = timeline.0.taps.selected_index;
-    let hovered_division = runtime.0.interaction.hovered_tap_division;
-    let duration_seconds = timeline.0.clock.duration_seconds.max(0.0);
+    let hovered_tap_index = params.runtime.0.interaction.hovered_tap_index;
+    let selected_tap_index = params.timeline.0.taps.selected_index;
+    let hovered_division = params.runtime.0.interaction.hovered_tap_division;
+    let duration_seconds = params.timeline.0.clock.duration_seconds.max(0.0);
     let preview_indicators: Vec<([f32; 3], [f32; 4])> = if show_timing_division_previews {
         let previews = derive_timing_division_tap_previews(
-            spawn.0.position,
-            spawn.0.direction,
-            &timeline.0.taps.tap_times,
-            &timing.0.timing_points,
+            params.spawn.0.position,
+            params.spawn.0.direction,
+            &params.timeline.0.taps.tap_times,
+            &params.timing.0.timing_points,
             duration_seconds,
             TapDivisionPreviewRange {
                 start_seconds: 0.0,
                 end_seconds: duration_seconds,
             },
-            &objects.objects,
+            &params.objects.objects,
         );
-        let tap_positions = &timeline.0.taps.tap_indicator_positions;
+        let tap_positions = &params.timeline.0.taps.tap_indicator_positions;
         let mut indicators: Vec<([f32; 3], [f32; 4])> = previews
             .iter()
             .copied()
@@ -1076,7 +1098,7 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
         Vec::new()
     };
 
-    let tap_positions = &timeline.0.taps.tap_indicator_positions;
+    let tap_positions = &params.timeline.0.taps.tap_indicator_positions;
     let mut indicators = tap_positions
         .iter()
         .copied()
@@ -1104,7 +1126,8 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     });
 
     let division_tap_indicators = if show_timing_division_previews {
-        timeline
+        params
+            .timeline
             .0
             .taps
             .tap_times
@@ -1112,7 +1135,11 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
             .copied()
             .zip(tap_positions.iter().copied())
             .filter(|(tap_time, _)| {
-                tap_time_is_timing_division(*tap_time, &timing.0.timing_points, duration_seconds)
+                tap_time_is_timing_division(
+                    *tap_time,
+                    &params.timing.0.timing_points,
+                    duration_seconds,
+                )
             })
             .map(|(_, position)| (position, [0.0, 0.0, 0.0, 1.0]))
             .collect::<Vec<_>>()
@@ -1122,12 +1149,12 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
 
     if indicators.is_empty() && preview_indicators.is_empty() && division_tap_indicators.is_empty()
     {
-        tap_vertices.0.clear();
+        params.tap_vertices.0.clear();
         return;
     }
 
     if indicators.is_empty() && division_tap_indicators.is_empty() {
-        tap_vertices.0 = build_tap_division_preview_vertices(&preview_indicators);
+        params.tap_vertices.0 = build_tap_division_preview_vertices(&preview_indicators);
         return;
     }
 
@@ -1136,7 +1163,7 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     vertices.extend(build_tap_division_tap_marker_vertices(
         &division_tap_indicators,
     ));
-    tap_vertices.0 = vertices;
+    params.tap_vertices.0 = vertices;
 }
 
 fn editor_tap_indicator_color(
@@ -2274,7 +2301,10 @@ mod tests {
         app.world_mut()
             .insert_resource(State::new(AppPhase::Editor));
         app.world_mut().resource_mut::<EditorObjectsRes>().objects = vec![
-            LevelObject::new("core/stone"),
+            LevelObject {
+                id: "object_0_0_0".to_string(),
+                ..LevelObject::new("core/stone")
+            },
             LevelObject {
                 position: [2.0, 0.0, 0.0],
                 trigger: Some(eg_types::TimedTrigger {

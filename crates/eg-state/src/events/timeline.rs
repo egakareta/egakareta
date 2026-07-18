@@ -34,6 +34,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use bevy_state::prelude::{NextState, State};
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
@@ -43,10 +44,10 @@ use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes,
-    EditorDirtyFlags, EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
-    RuntimeAudioPreloadRes, SessionStateRes, start_audio_source_at_seconds_for_resources,
+    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
+    EditorInputRes, EditorObjectsRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    start_audio_source_at_seconds_for_resources,
 };
 
 /// Toggle timeline playback.
@@ -126,45 +127,46 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems
 // -----------------------------------------------------------------------
 
+#[derive(SystemParam)]
+pub struct TimelinePlaybackResources<'w> {
+    phase: Res<'w, State<AppPhase>>,
+    input: ResMut<'w, EditorInputRes>,
+    runtime: ResMut<'w, EditorRuntimeRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+    audio: AudioBackendSystemParam<'w>,
+    editor_audio: Res<'w, EditorAudioCacheRes>,
+    runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
+    objects: Res<'w, EditorObjectsRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    session: Res<'w, SessionStateRes>,
+}
+
 pub fn handle_toggle_timeline_playback(
     mut events: MessageReader<ToggleTimelinePlayback>,
-    phase: Res<State<AppPhase>>,
-    mut input: ResMut<EditorInputRes>,
-    mut runtime: ResMut<EditorRuntimeRes>,
-    mut timeline: ResMut<EditorTimelineRes>,
-    audio: AudioBackendSystemParam<'_>,
-    editor_audio: Res<EditorAudioCacheRes>,
-    runtime_preload: Res<RuntimeAudioPreloadRes>,
-    objects: Res<EditorObjectsRes>,
-    spawn: Res<EditorSpawnRes>,
-    session: Res<SessionStateRes>,
+    mut resources: TimelinePlaybackResources,
 ) {
     for _ in events.read() {
-        if *phase.get() != AppPhase::Editor {
+        if *resources.phase.get() != AppPhase::Editor {
             continue;
         }
 
-        if timeline.0.playback.playing {
-            if stop_editor_timeline_playback(&mut input, &mut runtime, &mut timeline) {
-                audio.stop();
-                runtime
+        if resources.timeline.0.playback.playing {
+            if stop_editor_timeline_playback(
+                &mut resources.input,
+                &mut resources.runtime,
+                &mut resources.timeline,
+            ) {
+                resources.audio.stop();
+                resources
+                    .runtime
                     .0
                     .dirty
                     .merge(EditorDirtyFlags::playback_mode_changed());
             }
         } else {
-            start_editor_timeline_playback(
-                &mut input,
-                &mut runtime,
-                &mut timeline,
-                &audio,
-                &editor_audio,
-                &runtime_preload,
-                &objects,
-                &spawn,
-                &session,
-            );
-            runtime
+            start_editor_timeline_playback(&mut resources);
+            resources
+                .runtime
                 .0
                 .dirty
                 .merge(EditorDirtyFlags::playback_mode_changed());
@@ -194,55 +196,49 @@ pub(crate) fn stop_editor_timeline_playback(
     true
 }
 
-fn start_editor_timeline_playback(
-    input: &mut EditorInputRes,
-    runtime: &mut EditorRuntimeRes,
-    timeline: &mut EditorTimelineRes,
-    audio: &AudioBackendRes,
-    editor_audio: &EditorAudioCacheRes,
-    runtime_preload: &RuntimeAudioPreloadRes,
-    objects: &EditorObjectsRes,
-    spawn: &EditorSpawnRes,
-    session: &SessionStateRes,
-) {
-    let start_mode = input.0.mode;
-    timeline.0.playback.playing = true;
-    timeline.0.playback.pending_seek_time_seconds = None;
-    timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
-    runtime.0.interaction.last_mode = Some(start_mode);
-    input.0.mode = EditorMode::Null;
+fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_>) {
+    let start_mode = resources.input.0.mode;
+    resources.timeline.0.playback.playing = true;
+    resources.timeline.0.playback.pending_seek_time_seconds = None;
+    resources.timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+    resources.runtime.0.interaction.last_mode = Some(start_mode);
+    resources.input.0.mode = EditorMode::Null;
 
     let start_seconds = if start_mode == EditorMode::Timing {
-        timeline.0.playback.runtime = None;
+        resources.timeline.0.playback.runtime = None;
         derive_timeline_elapsed_seconds(
-            spawn.0.position,
-            spawn.0.direction,
-            &timeline.0.taps.tap_times,
-            timeline.0.clock.time_seconds,
-            &objects.objects,
+            resources.spawn.0.position,
+            resources.spawn.0.direction,
+            &resources.timeline.0.taps.tap_times,
+            resources.timeline.0.clock.time_seconds,
+            &resources.objects.objects,
         )
     } else {
         let mut playback_runtime = TimelineSimulationRuntime::new(
-            spawn.0.position,
-            spawn.0.direction,
-            &objects.objects,
-            &timeline.0.taps.tap_times,
+            resources.spawn.0.position,
+            resources.spawn.0.direction,
+            &resources.objects.objects,
+            &resources.timeline.0.taps.tap_times,
         );
-        playback_runtime.advance_to(timeline.0.clock.time_seconds);
+        playback_runtime.advance_to(resources.timeline.0.clock.time_seconds);
         let start_seconds = playback_runtime.elapsed_seconds();
-        timeline.0.playback.runtime = Some(playback_runtime);
+        resources.timeline.0.playback.runtime = Some(playback_runtime);
         start_seconds
     };
 
-    let level_name = session.editor_level_name.as_deref().unwrap_or("Untitled");
+    let level_name = resources
+        .session
+        .editor_level_name
+        .as_deref()
+        .unwrap_or("Untitled");
     start_audio_source_at_seconds_for_resources(
         true,
         false,
         level_name,
         start_seconds,
-        audio,
-        editor_audio,
-        runtime_preload,
+        &resources.audio,
+        &resources.editor_audio,
+        &resources.runtime_preload,
     );
 }
 
@@ -437,61 +433,66 @@ pub fn handle_set_waveform_scroll(
     }
 }
 
-pub fn handle_playtest(
-    mut events: MessageReader<Playtest>,
-    phase: Res<State<AppPhase>>,
-    mut next_phase: ResMut<NextState<AppPhase>>,
-    objects: Res<EditorObjectsRes>,
-    spawn: Res<EditorSpawnRes>,
-    mut timeline: ResMut<EditorTimelineRes>,
-    mut session: ResMut<SessionStateRes>,
-    mut camera: ResMut<EditorCameraRes>,
-    mut input: ResMut<EditorInputRes>,
-    mut gameplay_reset: ResMut<GameplayResetRes>,
-) {
+#[derive(SystemParam)]
+pub struct PlaytestResources<'w> {
+    phase: Res<'w, State<AppPhase>>,
+    next_phase: ResMut<'w, NextState<AppPhase>>,
+    objects: Res<'w, EditorObjectsRes>,
+    spawn: Res<'w, EditorSpawnRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+    session: ResMut<'w, SessionStateRes>,
+    camera: ResMut<'w, EditorCameraRes>,
+    input: ResMut<'w, EditorInputRes>,
+    gameplay_reset: ResMut<'w, GameplayResetRes>,
+}
+
+pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: PlaytestResources) {
     for _ in events.read() {
-        if *phase.get() != AppPhase::Editor {
+        if *resources.phase.get() != AppPhase::Editor {
             continue;
         }
 
         let transition = build_editor_playtest_transition(EditorPlaytestTransitionParams {
-            objects: &objects.objects,
-            level_name: session.editor_level_name.as_deref(),
-            spawn: spawn.0.clone(),
-            sky_color: session.editor_sky_color,
-            tap_times: &timeline.0.taps.tap_times,
+            objects: &resources.objects.objects,
+            level_name: resources.session.editor_level_name.as_deref(),
+            spawn: resources.spawn.0.clone(),
+            sky_color: resources.session.editor_sky_color,
+            tap_times: &resources.timeline.0.taps.tap_times,
             timeline_seconds: (
-                timeline.0.clock.time_seconds,
-                timeline.0.clock.duration_seconds,
+                resources.timeline.0.clock.time_seconds,
+                resources.timeline.0.clock.duration_seconds,
             ),
         });
 
-        timeline.0.playback.playing = false;
-        timeline.0.playback.runtime = None;
-        next_phase.set(AppPhase::Playing);
-        session.game_paused = false;
-        session.playtesting_editor = true;
-        session.playing_level_name = transition.playing_level_name.clone();
-        session.playtest_audio_start_seconds = Some(transition.playtest_audio_start_seconds);
-        session.playing_sky_color = transition.sky_color;
-        session.playing_trigger_base_objects = Some(transition.objects.clone());
-        session.practice_mode_enabled = false;
-        session.practice_checkpoints.clear();
-        session.audio_stop_pending = true;
-        camera.0.playing_rotation = transition.camera_rotation;
-        camera.0.playing_pitch = transition.camera_pitch;
-        input.0.right_dragging = false;
-        gameplay_reset.request_with_seed(GameplayResetSeed {
-            objects: transition.objects,
-            position: transition.spawn_position,
-            direction: transition.spawn_direction,
-            speed: transition.spawn_speed,
-            vertical_velocity: transition.spawn_vertical_velocity,
-            is_grounded: transition.spawn_is_grounded,
-            elapsed_seconds: transition.playtest_audio_start_seconds,
-            level_duration_seconds: transition.level_duration_seconds,
-            progress: None,
-            preserve_practice_state: false,
-        });
+        resources.timeline.0.playback.playing = false;
+        resources.timeline.0.playback.runtime = None;
+        resources.next_phase.set(AppPhase::Playing);
+        resources.session.game_paused = false;
+        resources.session.playtesting_editor = true;
+        resources.session.playing_level_name = transition.playing_level_name.clone();
+        resources.session.playtest_audio_start_seconds =
+            Some(transition.playtest_audio_start_seconds);
+        resources.session.playing_sky_color = transition.sky_color;
+        resources.session.playing_trigger_base_objects = Some(transition.objects.clone());
+        resources.session.practice_mode_enabled = false;
+        resources.session.practice_checkpoints.clear();
+        resources.session.audio_stop_pending = true;
+        resources.camera.0.playing_rotation = transition.camera_rotation;
+        resources.camera.0.playing_pitch = transition.camera_pitch;
+        resources.input.0.right_dragging = false;
+        resources
+            .gameplay_reset
+            .request_with_seed(GameplayResetSeed {
+                objects: transition.objects,
+                position: transition.spawn_position,
+                direction: transition.spawn_direction,
+                speed: transition.spawn_speed,
+                vertical_velocity: transition.spawn_vertical_velocity,
+                is_grounded: transition.spawn_is_grounded,
+                elapsed_seconds: transition.playtest_audio_start_seconds,
+                level_duration_seconds: transition.level_duration_seconds,
+                progress: None,
+                preserve_practice_state: false,
+            });
     }
 }

@@ -11,7 +11,7 @@ use crate::UiCommandSink;
 use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
+use eg_state::state::EditorConfigState;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget};
 
@@ -36,11 +36,11 @@ const ATLAS_AVERAGE_MAX_SAMPLES: usize = 1024;
 
 pub(crate) fn show_recent_block_quick_strip(
     ui: &mut egui::Ui,
-    view: &UiStateData,
+    config: &EditorConfigState,
     block_icon_texture_ids: &HashMap<String, egui::TextureId>,
     commands: &mut impl UiCommandSink,
 ) -> bool {
-    let blocks: Vec<_> = view
+    let blocks: Vec<_> = config
         .recent_block_ids
         .iter()
         .map(|id| BlockDefinition::get(id))
@@ -72,11 +72,11 @@ pub(crate) fn show_recent_block_quick_strip(
 
 pub(crate) fn show_selected_block_properties_window(
     ctx: &egui::Context,
-    view: &UiStateData,
+    mode: EditorMode,
+    selected_block: Option<&LevelObject>,
     bottom_bar_height: f32,
     commands: &mut impl UiCommandSink,
 ) {
-    let mode = view.mode;
     if !matches!(
         mode,
         EditorMode::Select | EditorMode::Move | EditorMode::Scale | EditorMode::Rotate
@@ -84,7 +84,7 @@ pub(crate) fn show_selected_block_properties_window(
         return;
     }
 
-    let Some(mut selected) = view.selected_block.clone() else {
+    let Some(mut selected) = selected_block.cloned() else {
         return;
     };
 
@@ -383,14 +383,16 @@ fn trigger_easing_label(easing: EasingDirection) -> &'static str {
 
 pub(crate) fn show_place_block_properties_window(
     ctx: &egui::Context,
-    view: &UiStateData,
+    mode: EditorMode,
+    config: &EditorConfigState,
+    place_preview_position: [f32; 3],
     bottom_bar_height: f32,
 ) {
-    if view.mode != EditorMode::Place {
+    if mode != EditorMode::Place {
         return;
     }
 
-    let block = BlockDefinition::get(&view.selected_block_id);
+    let block = BlockDefinition::get(&config.selected_block_id);
     show_editor_property_popup(
         ctx,
         EditorPropertyPopup::above_bottom_bar("place_block_properties", bottom_bar_height),
@@ -399,15 +401,13 @@ pub(crate) fn show_place_block_properties_window(
                 ui.label(block.display_name.as_str());
                 ui.label(format!(
                     "Position: ({:.2}, {:.2}, {:.2})",
-                    view.place_preview_position[0],
-                    view.place_preview_position[1],
-                    view.place_preview_position[2]
+                    place_preview_position[0], place_preview_position[1], place_preview_position[2]
                 ));
                 ui.label(format!(
                     "Size: ({:.2}, {:.2}, {:.2})",
-                    view.place_preview_size[0],
-                    view.place_preview_size[1],
-                    view.place_preview_size[2]
+                    block.render.default_size[0],
+                    block.render.default_size[1],
+                    block.render.default_size[2]
                 ));
             });
         },
@@ -570,26 +570,13 @@ mod tests {
         block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
         show_place_block_properties_window, show_selected_block_properties_window,
     };
-    use crate::test_utils::editor_ui_view;
     use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
+    use eg_state::state::EditorConfigState;
     use eg_types::{
-        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
-        MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
+        CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
+        TRANSFORM_TRIGGER_BLOCK_ID,
     };
     use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
-
-    fn make_compose_view<'a>(
-        app_settings: &'a AppSettings,
-        music_metadata: &'a MusicMetadata,
-        mode: EditorMode,
-    ) -> eg_state::state::UiStateData {
-        let mut view = editor_ui_view(app_settings, music_metadata);
-        view.mode = mode;
-        view.last_mode = Some(mode);
-        view.place_preview_position = [2.0, 1.0, 3.0];
-        view.place_preview_size = [1.0, 2.0, 1.0];
-        view
-    }
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {
@@ -670,31 +657,35 @@ mod tests {
 
     #[test]
     fn show_place_block_properties_window_handles_place_and_other_modes() {
-        let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let place_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Place);
-        let select_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
+        let config = EditorConfigState::default();
         let ctx = egui::Context::default();
 
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_place_block_properties_window(&ctx, &place_view, 48.0);
-            show_place_block_properties_window(&ctx, &select_view, 48.0);
+            show_place_block_properties_window(
+                &ctx,
+                EditorMode::Place,
+                &config,
+                [2.0, 1.0, 3.0],
+                48.0,
+            );
+            show_place_block_properties_window(
+                &ctx,
+                EditorMode::Select,
+                &config,
+                [2.0, 1.0, 3.0],
+                48.0,
+            );
         });
     }
 
     #[test]
     fn show_selected_block_properties_window_handles_normal_and_trigger_blocks() {
-        let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let mut normal_view = make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
-        normal_view.selected_block = Some(LevelObject {
+        let normal_selected = LevelObject {
             position: [1.0, 2.0, 3.0],
             ..LevelObject::default()
-        });
+        };
 
-        let mut trigger_view =
-            make_compose_view(&app_settings, &music_metadata, EditorMode::Select);
-        trigger_view.selected_block = Some(LevelObject {
+        let trigger_selected = LevelObject {
             id: "trigger".to_string(),
             position: [1.0, 0.0, 1.0],
             rotation: [0.0, 90.0, 0.0],
@@ -709,13 +700,25 @@ mod tests {
                 camera: None,
             }),
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
-        });
+        };
 
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_selected_block_properties_window(&ctx, &normal_view, 48.0, &mut commands);
-            show_selected_block_properties_window(&ctx, &trigger_view, 48.0, &mut commands);
+            show_selected_block_properties_window(
+                &ctx,
+                EditorMode::Select,
+                Some(&normal_selected),
+                48.0,
+                &mut commands,
+            );
+            show_selected_block_properties_window(
+                &ctx,
+                EditorMode::Select,
+                Some(&trigger_selected),
+                48.0,
+                &mut commands,
+            );
         });
 
         assert!(commands.is_empty());

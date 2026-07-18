@@ -254,10 +254,13 @@ impl TimelineSimulationRuntime {
 
             self.world.resource_mut::<FrameDelta>().0 = step_dt;
             self.schedule.run(&mut self.world);
-            self.sync_snapshot();
             self.elapsed_seconds = step_target;
             self.state.elapsed_seconds = step_target;
             self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
+            // A tap on the exact end of this step changes the player
+            // direction after the gameplay schedule has run. Snapshot after
+            // applying it so scrubbing at the boundary observes that turn.
+            self.sync_snapshot();
 
             if self.game_over {
                 return;

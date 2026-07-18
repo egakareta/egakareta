@@ -7,7 +7,7 @@
 */
 use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
+use eg_state::state::EditorConfigState;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{AppSettings, Direction, EditorMode};
 
@@ -86,14 +86,14 @@ pub(crate) fn show_editor_property_popup(
 pub(crate) fn show_mode_selector_popup(
     ctx: &egui::Context,
     app_settings: &AppSettings,
-    view: &UiStateData,
+    mode: EditorMode,
+    config: &EditorConfigState,
     top_bar_height: f32,
     commands: &mut impl UiCommandSink,
 ) {
     let popup = EditorPropertyPopup::top_left("mode_selector_popup", top_bar_height);
     show_editor_property_popup(ctx, popup, |ui| {
         ui.spacing_mut().button_padding = egui::Vec2::new(8.0, 6.0);
-        let mode = view.mode;
         let big_icon = |icon: &str| egui::RichText::new(icon).size(20.0);
         if ui
             .selectable_label(
@@ -143,7 +143,6 @@ pub(crate) fn show_mode_selector_popup(
         }
     });
 
-    let mode = view.mode;
     if mode == EditorMode::Move || mode == EditorMode::Scale || mode == EditorMode::Rotate {
         let secondary =
             EditorPropertyPopup::top_left_right_of("mode_secondary_popup", top_bar_height);
@@ -151,10 +150,10 @@ pub(crate) fn show_mode_selector_popup(
             ui.spacing_mut().button_padding = egui::Vec2::new(4.0, 2.0);
             match mode {
                 EditorMode::Move | EditorMode::Scale => {
-                    show_grid_snap_controls(ui, app_settings, view, commands);
+                    show_grid_snap_controls(ui, app_settings, config, commands);
                 }
                 EditorMode::Rotate => {
-                    show_rotation_snap_controls(ui, app_settings, view, commands);
+                    show_rotation_snap_controls(ui, app_settings, config, commands);
                 }
                 _ => {}
             }
@@ -165,11 +164,11 @@ pub(crate) fn show_mode_selector_popup(
 fn show_grid_snap_controls(
     ui: &mut egui::Ui,
     app_settings: &AppSettings,
-    view: &UiStateData,
+    config: &EditorConfigState,
     commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
-        let mut snap = view.snap_to_grid;
+        let mut snap = config.snap_to_grid;
         let saved_icon_width = ui.spacing().icon_width;
         ui.spacing_mut().icon_width = ui.spacing().interact_size.y;
         let checkbox = ui.add(egui::Checkbox::without_text(&mut snap));
@@ -182,7 +181,7 @@ fn show_grid_snap_controls(
         if changed {
             commands.push(AppCommand::Editor(EditorCommand::SetSnapToGrid(snap)));
         }
-        let mut snap_step = view.snap_step;
+        let mut snap_step = config.snap_step;
         let drag: egui::Response = ui
             .add(
                 egui::DragValue::new(&mut snap_step)
@@ -200,11 +199,11 @@ fn show_grid_snap_controls(
 fn show_rotation_snap_controls(
     ui: &mut egui::Ui,
     app_settings: &AppSettings,
-    view: &UiStateData,
+    config: &EditorConfigState,
     commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal(|ui| {
-        let mut snap_rotation = view.snap_rotation;
+        let mut snap_rotation = config.snap_rotation;
         let saved_icon_width = ui.spacing().icon_width;
         ui.spacing_mut().icon_width = ui.spacing().interact_size.y;
         let checkbox = ui.add(egui::Checkbox::without_text(&mut snap_rotation));
@@ -220,7 +219,7 @@ fn show_rotation_snap_controls(
             )));
         }
 
-        let mut snap_rotation_step = view.snap_rotation_step_degrees;
+        let mut snap_rotation_step = config.snap_rotation_step_degrees;
         let drag = ui
             .add(
                 egui::DragValue::new(&mut snap_rotation_step)
@@ -238,9 +237,13 @@ fn show_rotation_snap_controls(
     });
 }
 
-pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiStateData) {
-    let position = view.timeline_preview_position;
-    let direction = view.timeline_preview_direction;
+pub(crate) fn show_player_camera_status_row(
+    ui: &mut egui::Ui,
+    position: [f32; 3],
+    direction: Direction,
+    camera_preview_position: [f32; 3],
+    camera_preview_target: [f32; 3],
+) {
     let direction_label = match direction {
         Direction::Forward => "Forward",
         Direction::Right => "Right",
@@ -253,12 +256,12 @@ pub(crate) fn show_player_camera_status_row(ui: &mut egui::Ui, view: &UiStateDat
         ui.separator();
         ui.label(format!(
             "Player Camera: ({:.1}, {:.1}, {:.1}) -> ({:.1}, {:.1}, {:.1})",
-            view.camera_preview_position[0],
-            view.camera_preview_position[1],
-            view.camera_preview_position[2],
-            view.camera_preview_target[0],
-            view.camera_preview_target[1],
-            view.camera_preview_target[2],
+            camera_preview_position[0],
+            camera_preview_position[1],
+            camera_preview_position[2],
+            camera_preview_target[0],
+            camera_preview_target[1],
+            camera_preview_target[2],
         ));
     });
 }
@@ -269,28 +272,9 @@ mod tests {
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
         show_mode_selector_popup, show_player_camera_status_row,
     };
-    use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateData;
-    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata};
-
-    fn make_view<'a>(
-        app_settings: &'a AppSettings,
-        music_metadata: &'a MusicMetadata,
-        preview_direction: Direction,
-        mode: EditorMode,
-    ) -> UiStateData {
-        let mut view = editor_ui_view(app_settings, music_metadata);
-        view.mode = mode;
-        view.last_mode = Some(mode);
-        view.timeline_time_seconds = 1.0;
-        view.timeline_preview_position = [2.0, 1.0, 0.0];
-        view.timeline_preview_direction = preview_direction;
-        view.camera_position = [9.0, 8.0, 7.0];
-        view.camera_preview_position = [3.0, 2.0, 1.0];
-        view.fps = 90.0;
-        view
-    }
+    use eg_state::state::EditorConfigState;
+    use eg_types::{AppSettings, Direction, EditorMode};
 
     #[test]
     fn property_popup_runs_content_closure_with_bottom_bar_offset() {
@@ -313,26 +297,23 @@ mod tests {
 
     #[test]
     fn show_player_camera_status_row_renders_for_forward_and_right_directions() {
-        let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let forward_view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Forward,
-            EditorMode::Select,
-        );
-        let right_view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Right,
-            EditorMode::Select,
-        );
-
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_player_camera_status_row(ui, &forward_view);
-                show_player_camera_status_row(ui, &right_view);
+                show_player_camera_status_row(
+                    ui,
+                    [2.0, 1.0, 0.0],
+                    Direction::Forward,
+                    [3.0, 2.0, 1.0],
+                    [0.0, 0.0, 0.0],
+                );
+                show_player_camera_status_row(
+                    ui,
+                    [2.0, 1.0, 0.0],
+                    Direction::Right,
+                    [3.0, 2.0, 1.0],
+                    [0.0, 0.0, 0.0],
+                );
             });
         });
     }
@@ -340,18 +321,18 @@ mod tests {
     #[test]
     fn mode_selector_popup_uses_top_left_anchor_and_renders_modes() {
         let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Forward,
-            EditorMode::Select,
-        );
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
+            show_mode_selector_popup(
+                &ctx,
+                &app_settings,
+                EditorMode::Select,
+                &EditorConfigState::default(),
+                28.0,
+                &mut commands,
+            );
         });
 
         assert!(commands.is_empty());
@@ -360,54 +341,54 @@ mod tests {
     #[test]
     fn mode_selector_popup_shows_secondary_for_move_mode() {
         let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Forward,
-            EditorMode::Move,
-        );
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
+            show_mode_selector_popup(
+                &ctx,
+                &app_settings,
+                EditorMode::Move,
+                &EditorConfigState::default(),
+                28.0,
+                &mut commands,
+            );
         });
     }
 
     #[test]
     fn mode_selector_popup_shows_secondary_for_scale_mode() {
         let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Forward,
-            EditorMode::Scale,
-        );
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
+            show_mode_selector_popup(
+                &ctx,
+                &app_settings,
+                EditorMode::Scale,
+                &EditorConfigState::default(),
+                28.0,
+                &mut commands,
+            );
         });
     }
 
     #[test]
     fn mode_selector_popup_shows_secondary_for_rotate_mode() {
         let app_settings = AppSettings::default();
-        let music_metadata = MusicMetadata::default();
-        let view = make_view(
-            &app_settings,
-            &music_metadata,
-            Direction::Forward,
-            EditorMode::Rotate,
-        );
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(&ctx, &app_settings, &view, 28.0, &mut commands);
+            show_mode_selector_popup(
+                &ctx,
+                &app_settings,
+                EditorMode::Rotate,
+                &EditorConfigState::default(),
+                28.0,
+                &mut commands,
+            );
         });
     }
 

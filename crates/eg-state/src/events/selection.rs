@@ -180,7 +180,6 @@ fn snap_selected_blocks_to_grid(
         ];
     }
 
-    if changed {}
     changed
 }
 

@@ -8,19 +8,34 @@
 use crate::UiCommandSink;
 use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
+use eg_types::TimingPoint;
+
+/// Direct values needed only while rendering timing-mode controls.
+pub(crate) struct TimingModePanelInputs<'a> {
+    pub timeline_time_seconds: f32,
+    pub timeline_duration_seconds: f32,
+    pub timing_points: &'a [TimingPoint],
+    pub playback_speed: f32,
+    pub timing_selected_index: Option<usize>,
+    pub bpm_tap_result: Option<f32>,
+}
 
 pub(crate) fn show_timing_mode_bottom_panel(
     ui: &mut egui::Ui,
-    view: &UiStateData,
-    _duration_seconds: f32,
+    inputs: &TimingModePanelInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) {
+    let timeline_time_seconds = inputs.timeline_time_seconds;
+    let timeline_duration_seconds = inputs.timeline_duration_seconds;
+    let timing_points = inputs.timing_points;
+    let playback_speed = inputs.playback_speed;
+    let timing_selected_index = inputs.timing_selected_index;
+    let bpm_tap_result = inputs.bpm_tap_result;
     ui.horizontal(|ui| {
         // Playback speed control
         ui.label(format!("{} Speed:", egui_phosphor::regular::GAUGE));
-        let speed = view.playback_speed;
+        let speed = playback_speed;
         let speeds = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0];
         egui::ComboBox::from_id_salt("playback_speed")
             .selected_text(format!("{:.2}x", speed))
@@ -38,7 +53,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
         ui.separator();
 
-        let mut duration = view.timeline_duration_seconds;
+        let mut duration = timeline_duration_seconds;
         ui.label(format!("{} Duration:", egui_phosphor::regular::HOURGLASS));
         if ui
             .add(
@@ -65,7 +80,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                 egui_phosphor::regular::METRONOME
             ));
             ui.horizontal(|ui| {
-                if let Some(selected_idx) = view.timing_selected_index {
+                if let Some(selected_idx) = timing_selected_index {
                     if ui
                         .button(format!("{} Remove", egui_phosphor::regular::TRASH))
                         .clicked()
@@ -81,7 +96,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                         ))
                         .clicked()
                     {
-                        let time = view.timeline_time_seconds;
+                        let time = timeline_time_seconds;
                         commands.push(AppCommand::Editor(EditorCommand::SetTimingPointTime(
                             selected_idx,
                             time,
@@ -90,8 +105,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                 }
             });
 
-            let timing_points = &view.timing_points;
-            let selected_idx = view.timing_selected_index;
+            let selected_idx = timing_selected_index;
             egui::ScrollArea::vertical()
                 .max_height(80.0)
                 .show(ui, |ui| {
@@ -123,8 +137,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
         // Selected timing point editor
         ui.vertical(|ui| {
-            let timing_points = &view.timing_points;
-            if let Some(idx) = view.timing_selected_index {
+            if let Some(idx) = timing_selected_index {
                 if let Some(tp) = timing_points.get(idx) {
                     ui.label(format!("Editing Point #{}", idx + 1));
 
@@ -193,9 +206,9 @@ pub(crate) fn show_timing_mode_bottom_panel(
             if ui.button("Tap (click repeatedly)").clicked() {
                 commands.push(AppCommand::Editor(EditorCommand::BpmTap));
             }
-            if let Some(bpm) = view.bpm_tap_result {
+            if let Some(bpm) = bpm_tap_result {
                 ui.label(format!("Detected: {:.1} BPM", bpm));
-                if let Some(idx) = view.timing_selected_index
+                if let Some(idx) = timing_selected_index
                     && ui.button("Apply to selected").clicked()
                 {
                     commands.push(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
@@ -212,12 +225,11 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
 #[cfg(test)]
 mod tests {
-    use super::show_timing_mode_bottom_panel;
+    use super::{TimingModePanelInputs, show_timing_mode_bottom_panel};
     use crate::test_utils::editor_ui_view;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateData;
     use eg_types::LevelObject;
-    use eg_types::{AppSettings, EditorMode, MusicMetadata, TimingPoint};
+    use eg_types::{AppSettings, MusicMetadata, TimingPoint};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -226,18 +238,14 @@ mod tests {
         trigger_objects: &'a [LevelObject],
         timing_selected_index: Option<usize>,
         bpm_tap_result: Option<f32>,
-    ) -> UiStateData {
+    ) -> crate::test_utils::EditorUiTestInputs {
         let mut view = editor_ui_view(app_settings, music_metadata);
-        view.mode = EditorMode::Timing;
-        view.last_mode = Some(EditorMode::Timing);
         view.timeline_time_seconds = 2.5;
         view.timeline_preview_position = [1.0, 2.0, 3.0];
         view.timing_points = timing_points.to_vec();
         view.timing_selected_index = timing_selected_index;
         view.bpm_tap_result = bpm_tap_result;
         view.trigger_objects = trigger_objects.to_vec();
-        view.camera_preview_position = [0.0, 1.0, 2.0];
-        view.fps = 120.0;
         view
     }
 
@@ -264,7 +272,18 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timing_mode_bottom_panel(ui, &view, 16.0, &mut commands);
+                show_timing_mode_bottom_panel(
+                    ui,
+                    &TimingModePanelInputs {
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        timeline_duration_seconds: view.timeline_duration_seconds,
+                        timing_points: &view.timing_points,
+                        playback_speed: view.playback_speed,
+                        timing_selected_index: view.timing_selected_index,
+                        bpm_tap_result: view.bpm_tap_result,
+                    },
+                    &mut commands,
+                );
             });
         });
 
@@ -281,7 +300,18 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timing_mode_bottom_panel(ui, &view, 8.0, &mut commands);
+                show_timing_mode_bottom_panel(
+                    ui,
+                    &TimingModePanelInputs {
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        timeline_duration_seconds: view.timeline_duration_seconds,
+                        timing_points: &view.timing_points,
+                        playback_speed: view.playback_speed,
+                        timing_selected_index: view.timing_selected_index,
+                        bpm_tap_result: view.bpm_tap_result,
+                    },
+                    &mut commands,
+                );
             });
         });
 

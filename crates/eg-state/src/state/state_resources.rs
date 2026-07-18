@@ -73,7 +73,7 @@ impl FrameTimeRes {
     }
 
     fn apply_delta(&mut self, delta_seconds: f32, global_time_seconds: Option<f32>) {
-        let frame_dt = delta_seconds.max(0.0).min(0.25);
+        let frame_dt = delta_seconds.clamp(0.0, 0.25);
         self.delta_seconds = frame_dt;
 
         let instant_fps = 1.0 / frame_dt.max(1e-4);

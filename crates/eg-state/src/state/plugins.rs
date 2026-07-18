@@ -240,6 +240,11 @@ pub fn run_state_schedule_system(world: &mut World) {
     }
     super::gameplay_world::apply_completed_gameplay_transition_system(world);
     super::gameplay_world::apply_game_over_transition_system(world);
+    // Terminal transition systems write NextState after the first transition
+    // pass so gameplay can run with the newly-entered phase. Apply those
+    // terminal requests in the same frame rather than leaving a completed
+    // level in Playing until the next App update.
+    let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
     if super::render::resources::render_pod_resources_present(world) {
         let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
     }

@@ -81,7 +81,15 @@ pub(super) fn prepare_app_gameplay_fixed_system(
     mut delta: ResMut<FrameDelta>,
 ) {
     delta.0 = if *phase.get() == eg_types::AppPhase::Playing && !session.game_paused {
-        time.delta_secs().max(0.0)
+        // Direct FixedUpdate runs in the headless driver do not advance
+        // Time<Fixed>. Use its configured fixed timestep there so the same
+        // App-owned gameplay schedule remains deterministic in tests.
+        let fixed_delta = time.delta_secs();
+        if fixed_delta > 0.0 {
+            fixed_delta
+        } else {
+            time.timestep().as_secs_f32()
+        }
     } else {
         0.0
     };

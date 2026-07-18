@@ -42,7 +42,7 @@ pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::NonSend<'w, A
 pub(crate) fn with_audio_backend<R>(world: &World, f: impl FnOnce(&AudioBackendRes) -> R) -> R {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        return f(world.resource::<AudioBackendRes>());
+        f(world.resource::<AudioBackendRes>())
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -329,6 +329,7 @@ pub struct EditorAudioState {
     pub waveform_load_channel: (Sender<WaveformResult>, WaveformLoadChannelReceiver),
 }
 
+#[derive(Default)]
 pub struct AudioState {
     pub runtime: AudioBackendRes,
     pub runtime_preload: RuntimeAudioPreloadState,
@@ -403,16 +404,6 @@ impl Default for EditorAudioState {
             cache: EditorAudioCacheRes::default(),
             audio_import_channel: (audio_tx, arc_receiver(audio_rx)),
             waveform_load_channel: (waveform_tx, arc_receiver(waveform_rx)),
-        }
-    }
-}
-
-impl Default for AudioState {
-    fn default() -> Self {
-        Self {
-            runtime: AudioBackendRes::default(),
-            runtime_preload: RuntimeAudioPreloadState::default(),
-            editor: EditorAudioState::default(),
         }
     }
 }

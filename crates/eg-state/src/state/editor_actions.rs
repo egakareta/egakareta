@@ -556,6 +556,7 @@ mod tests {
         editor.input.selected_block_index = Some(0);
         editor.input.selected_block_indices = vec![0];
 
+        editor.record_history_state();
         editor.remove_selected();
         assert_eq!(editor.objects.len(), 1);
         assert_eq!(editor.objects[0].position, [2.0, 0.0, 0.0]);
@@ -798,6 +799,11 @@ mod tests {
         forward_editor.config.snap_step = 2.0;
         forward_editor.timeline.clock.duration_seconds = 4.0;
         forward_editor.set_timeline_time_seconds(0.4);
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
+            &mut forward_editor.timeline,
+            &forward_editor.objects,
+            &forward_editor.spawn,
+        );
 
         let forward_cursor = forward_editor.tap_path_cursor_near_world([4.5, 0.0, 3.4]);
         assert_eq!(forward_cursor[0], 1.0);
@@ -811,6 +817,11 @@ mod tests {
         right_editor.config.snap_step = 2.0;
         right_editor.timeline.clock.duration_seconds = 4.0;
         right_editor.set_timeline_time_seconds(0.4);
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
+            &mut right_editor.timeline,
+            &right_editor.objects,
+            &right_editor.spawn,
+        );
 
         let right_cursor = right_editor.tap_path_cursor_near_world([3.4, 0.0, 4.5]);
         assert_eq!(right_cursor[0], 2.0);
@@ -881,6 +892,11 @@ mod tests {
         editor.timeline.clock.duration_seconds = 8.0;
         editor.set_timeline_time_seconds(0.1);
         editor.input.cursor = [0.0, 0.0, 32.0];
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
+            &mut editor.timeline,
+            &editor.objects,
+            &editor.spawn,
+        );
 
         let (added_time, added) = editor.toggle_tap_at_cursor();
 

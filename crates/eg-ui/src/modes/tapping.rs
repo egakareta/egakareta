@@ -10,12 +10,14 @@ use crate::modes::shared::{
     EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
 };
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,
-    view: &UiStateData,
+    timeline_preview_position: [f32; 3],
+    timeline_preview_direction: eg_types::Direction,
+    camera_preview_position: [f32; 3],
+    camera_preview_target: [f32; 3],
     commands: &mut impl UiCommandSink,
 ) {
     ui.horizontal_wrapped(|ui| {
@@ -37,17 +39,25 @@ pub(crate) fn show_tapping_mode_bottom_panel(
 
         ui.separator();
 
-        show_player_camera_status_row(ui, view);
+        show_player_camera_status_row(
+            ui,
+            timeline_preview_position,
+            timeline_preview_direction,
+            camera_preview_position,
+            camera_preview_target,
+        );
     });
 }
 
 pub(crate) fn show_selected_tap_properties_window(
     ctx: &egui::Context,
-    view: &UiStateData,
+    selected_tap: Option<(usize, f32, [f32; 3])>,
+    timeline_duration_seconds: f32,
     bottom_bar_height: f32,
     commands: &mut impl UiCommandSink,
 ) {
-    let Some(selected_tap) = view.selected_tap else {
+    let Some((selected_tap_index, selected_tap_time_seconds, selected_tap_position)) = selected_tap
+    else {
         return;
     };
 
@@ -57,7 +67,7 @@ pub(crate) fn show_selected_tap_properties_window(
         |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label(format!("Tap #{}", selected_tap.index + 1));
+                    ui.label(format!("Tap #{}", selected_tap_index + 1));
                     if ui
                         .button(format!("{} Delete", egui_phosphor::regular::TRASH))
                         .clicked()
@@ -68,12 +78,12 @@ pub(crate) fn show_selected_tap_properties_window(
 
                 ui.horizontal(|ui| {
                     ui.label("Time (s):");
-                    let mut time_seconds = selected_tap.time_seconds;
+                    let mut time_seconds = selected_tap_time_seconds;
                     if ui
                         .add(
                             egui::DragValue::new(&mut time_seconds)
                                 .speed(0.01)
-                                .range(0.0..=view.timeline_duration_seconds.max(0.0)),
+                                .range(0.0..=timeline_duration_seconds.max(0.0)),
                         )
                         .changed()
                     {
@@ -85,7 +95,7 @@ pub(crate) fn show_selected_tap_properties_window(
 
                 ui.label(format!(
                     "Position: ({:.2}, {:.2}, {:.2})",
-                    selected_tap.position[0], selected_tap.position[1], selected_tap.position[2]
+                    selected_tap_position[0], selected_tap_position[1], selected_tap_position[2]
                 ));
             });
         },

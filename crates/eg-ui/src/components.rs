@@ -7,7 +7,6 @@
 */
 use crate::UiCommandSink;
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{AppSettings, EditorMode};
 
@@ -17,6 +16,35 @@ pub(crate) const DEFAULT_TIMELINE_WINDOW_SECONDS: f32 = 20.0;
 const TIMELINE_TAP_HIT_RADIUS_PIXELS: f32 = 8.0;
 const TIMELINE_CURRENT_TAP_EPSILON_SECONDS: f32 = 0.0001;
 const TIMELINE_CONTROL_HEIGHT_SCALE: f32 = 1.5;
+
+/// Direct values needed only while rendering the timeline bar.
+pub(crate) struct TimelineBarInputs<'a> {
+    pub app_settings: &'a AppSettings,
+    pub mode: EditorMode,
+    pub last_mode: Option<EditorMode>,
+    pub playing: bool,
+    pub timeline_time_seconds: f32,
+    pub tap_times: &'a [f32],
+    pub timing_points: &'a [eg_types::TimingPoint],
+    pub waveform_zoom: f32,
+    pub waveform_scroll: f32,
+    pub trigger_objects: &'a [eg_types::LevelObject],
+    pub trigger_selected_index: Option<usize>,
+    pub duration_seconds: f32,
+}
+
+/// Direct values needed only while rendering the timing waveform.
+pub(crate) struct WaveformPanelInputs<'a> {
+    pub timeline_time_seconds: f32,
+    pub timeline_duration_seconds: f32,
+    pub timing_points: &'a [eg_types::TimingPoint],
+    pub waveform_zoom: f32,
+    pub waveform_samples: &'a [f32],
+    pub waveform_sample_rate: u32,
+    pub waveform_window_size: usize,
+    pub waveform_loading: bool,
+    pub waveform_complete: bool,
+}
 
 pub(crate) fn show_shadowed_label(
     ui: &mut egui::Ui,
@@ -84,13 +112,13 @@ fn timeline_bar_nearest_tap_index(
         .map(|(index, _)| index)
 }
 
-fn timeline_bar_view_is_tapping(view: &UiStateData) -> bool {
-    view.mode == EditorMode::Tapping
-        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping))
+fn timeline_bar_is_tapping(mode: EditorMode, last_mode: Option<EditorMode>) -> bool {
+    mode == EditorMode::Tapping
+        || (mode == EditorMode::Null && last_mode == Some(EditorMode::Tapping))
 }
 
 fn timeline_bar_push_tap_click_commands(
-    view: &UiStateData,
+    inputs: &TimelineBarInputs<'_>,
     pointer_x: f32,
     rect: egui::Rect,
     view_start: f32,
@@ -98,7 +126,7 @@ fn timeline_bar_push_tap_click_commands(
     commands: &mut impl UiCommandSink,
 ) -> bool {
     let Some(index) = timeline_bar_nearest_tap_index(
-        &view.tap_times,
+        inputs.tap_times,
         pointer_x,
         rect,
         view_start,
@@ -108,9 +136,9 @@ fn timeline_bar_push_tap_click_commands(
     };
 
     commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-        view.tap_times[index],
+        inputs.tap_times[index],
     )));
-    if timeline_bar_view_is_tapping(view) {
+    if timeline_bar_is_tapping(inputs.mode, inputs.last_mode) {
         commands.push(AppCommand::Editor(EditorCommand::SetSelectedTap(Some(
             index,
         ))));
@@ -156,18 +184,26 @@ fn parse_timeline_time_seconds(text: &str) -> Option<f64> {
 
 pub(crate) fn show_timeline_bar(
     ui: &mut egui::Ui,
-    app_settings: &AppSettings,
-    view: &UiStateData,
-    duration_seconds: f32,
+    inputs: &TimelineBarInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) {
+    let app_settings = inputs.app_settings;
+    let playing = inputs.playing;
+    let timeline_time_seconds = inputs.timeline_time_seconds;
+    let tap_times = inputs.tap_times;
+    let timing_points = inputs.timing_points;
+    let waveform_zoom = inputs.waveform_zoom;
+    let waveform_scroll = inputs.waveform_scroll;
+    let trigger_objects = inputs.trigger_objects;
+    let trigger_selected_index = inputs.trigger_selected_index;
+    let duration_seconds = inputs.duration_seconds;
     puffin::profile_scope!("UiTimelineBar");
     let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
-    let timeline_zoom = view.waveform_zoom;
+    let timeline_zoom = waveform_zoom;
     let visible_duration = timeline_visible_duration(duration_seconds, timeline_zoom);
     // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
-    let centered_scroll = view.timeline_time_seconds - visible_duration * 0.5;
-    if (centered_scroll - view.waveform_scroll).abs() > 0.0001 {
+    let centered_scroll = timeline_time_seconds - visible_duration * 0.5;
+    if (centered_scroll - waveform_scroll).abs() > 0.0001 {
         commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
             centered_scroll,
         )));
@@ -177,7 +213,7 @@ pub(crate) fn show_timeline_bar(
 
     ui.horizontal(|ui| {
         let timeline_control_height = ui.spacing().interact_size.y * TIMELINE_CONTROL_HEIGHT_SCALE;
-        let mut time_seconds = view.timeline_time_seconds;
+        let mut time_seconds = timeline_time_seconds;
         let drag_value = egui::DragValue::new(&mut time_seconds)
             .speed(0.01)
             .range(0.0..=duration_seconds)
@@ -203,12 +239,12 @@ pub(crate) fn show_timeline_bar(
 
         let button_size = egui::vec2(timeline_control_height.max(22.0), timeline_control_height);
 
-        let play_icon = if view.playing {
+        let play_icon = if playing {
             egui_phosphor::regular::PAUSE
         } else {
             egui_phosphor::regular::PLAY
         };
-        let play_tooltip = if view.playing { "Pause" } else { "Play" };
+        let play_tooltip = if playing { "Pause" } else { "Play" };
         if ui
             .add_sized(button_size, egui::Button::new(play_icon).frame(false))
             .on_hover_text(format!(
@@ -277,7 +313,6 @@ pub(crate) fn show_timeline_bar(
         );
 
         // Draw beat lines from timing points
-        let timing_points = &view.timing_points;
         {
             puffin::profile_scope!("UiTimelineBeatLines");
             for (tp_idx, tp) in timing_points.iter().enumerate() {
@@ -316,11 +351,11 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw tap circles
-        for tap_time in &view.tap_times {
+        for tap_time in tap_times {
             if *tap_time >= view_start && *tap_time <= view_end {
                 let x = rect.left() + (*tap_time - view_start) / visible_duration * rect.width();
                 let center = egui::pos2(x, center_y);
-                if timeline_bar_tap_is_current(*tap_time, view.timeline_time_seconds) {
+                if timeline_bar_tap_is_current(*tap_time, timeline_time_seconds) {
                     painter.circle_stroke(
                         center,
                         3.0,
@@ -335,7 +370,7 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw timing point markers (red vertical lines)
-        for tp in &view.timing_points {
+        for tp in timing_points {
             if tp.time_seconds >= view_start && tp.time_seconds <= view_end {
                 let x =
                     rect.left() + (tp.time_seconds - view_start) / visible_duration * rect.width();
@@ -347,7 +382,7 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw trigger markers near the top edge.
-        for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
+        for (index, trigger_object) in trigger_objects.iter().enumerate() {
             let Some(trigger) = trigger_object.trigger.as_ref() else {
                 continue;
             };
@@ -362,7 +397,7 @@ pub(crate) fn show_timeline_bar(
                 Some(eg_types::CameraMode::Static) => egui::Color32::from_rgb(255, 210, 90),
                 None => egui::Color32::from_rgb(110, 140, 255),
             };
-            let stroke = if view.trigger_selected_index == Some(index) {
+            let stroke = if trigger_selected_index == Some(index) {
                 egui::Stroke::new(2.0, egui::Color32::WHITE)
             } else {
                 egui::Stroke::new(1.0, egui::Color32::from_rgba_premultiplied(20, 24, 30, 220))
@@ -376,9 +411,9 @@ pub(crate) fn show_timeline_bar(
         }
 
         // Draw playhead
-        if view.timeline_time_seconds >= view_start && view.timeline_time_seconds <= view_end {
+        if timeline_time_seconds >= view_start && timeline_time_seconds <= view_end {
             let current_x = rect.left()
-                + (view.timeline_time_seconds - view_start) / visible_duration * rect.width();
+                + (timeline_time_seconds - view_start) / visible_duration * rect.width();
             painter.line_segment(
                 [
                     egui::pos2(current_x, rect.top()),
@@ -393,7 +428,7 @@ pub(crate) fn show_timeline_bar(
             let pointer_delta_x = ui.input(|i| i.pointer.delta().x);
             if pointer_delta_x.abs() > 0.0 {
                 let time_per_pixel = visible_duration / rect.width().max(1.0);
-                let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
+                let new_time = (timeline_time_seconds - pointer_delta_x * time_per_pixel)
                     .clamp(0.0, duration_seconds);
                 commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(new_time)));
                 commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
@@ -415,7 +450,7 @@ pub(crate) fn show_timeline_bar(
         if response.clicked_by(egui::PointerButton::Secondary)
             && let Some(pointer) = response.interact_pointer_pos()
             && let Some(index) = timeline_bar_nearest_tap_index(
-                &view.tap_times,
+                tap_times,
                 pointer.x,
                 rect,
                 view_start,
@@ -423,14 +458,14 @@ pub(crate) fn show_timeline_bar(
             )
         {
             commands.push(AppCommand::Editor(EditorCommand::RemoveTapAt(
-                view.tap_times[index],
+                tap_times[index],
             )));
         }
 
         if response.clicked_by(egui::PointerButton::Primary)
             && let Some(pointer) = response.interact_pointer_pos()
             && !timeline_bar_push_tap_click_commands(
-                view,
+                inputs,
                 pointer.x,
                 rect,
                 view_start,
@@ -441,7 +476,7 @@ pub(crate) fn show_timeline_bar(
             let mut nearest_trigger_index = None;
             let mut nearest_distance = f32::INFINITY;
 
-            for (index, trigger_object) in view.trigger_objects.iter().enumerate() {
+            for (index, trigger_object) in trigger_objects.iter().enumerate() {
                 let Some(trigger) = trigger_object.trigger.as_ref() else {
                     continue;
                 };
@@ -463,7 +498,7 @@ pub(crate) fn show_timeline_bar(
                     index,
                 ))));
                 commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                    view.trigger_objects[index]
+                    trigger_objects[index]
                         .trigger
                         .as_ref()
                         .map(|trigger| trigger.time_seconds)
@@ -500,16 +535,22 @@ pub(crate) fn show_timeline_bar(
 
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
-    view: &UiStateData,
+    inputs: &WaveformPanelInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) {
+    let timeline_time_seconds = inputs.timeline_time_seconds;
+    let timeline_duration_seconds = inputs.timeline_duration_seconds;
+    let timing_points = inputs.timing_points;
+    let waveform_zoom = inputs.waveform_zoom;
+    let waveform_samples = inputs.waveform_samples;
+    let waveform_sample_rate = inputs.waveform_sample_rate;
+    let waveform_window_size = inputs.waveform_window_size;
+    let waveform_loading = inputs.waveform_loading;
+    let waveform_complete = inputs.waveform_complete;
     puffin::profile_scope!("UiWaveformPanel");
-    let duration_seconds = view
-        .timeline_duration_seconds
-        .max(MIN_TIMELINE_DURATION_SECONDS);
-    let waveform_samples = &view.waveform_samples;
-    let sample_rate = view.waveform_sample_rate;
-    let zoom = view.waveform_zoom;
+    let duration_seconds = timeline_duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
+    let sample_rate = waveform_sample_rate;
+    let zoom = waveform_zoom;
 
     let available_size = ui.available_size();
     let (rect, response) = ui.allocate_exact_size(available_size, egui::Sense::click_and_drag());
@@ -520,13 +561,13 @@ pub(crate) fn show_waveform_panel(
 
     // Visible time window (centered on playhead to prevent drift)
     let visible_duration = timeline_visible_duration(duration_seconds, zoom);
-    let view_start = view.timeline_time_seconds - visible_duration * 0.5;
+    let view_start = timeline_time_seconds - visible_duration * 0.5;
     let view_end = view_start + visible_duration;
 
     if !waveform_samples.is_empty() && sample_rate > 0 {
         puffin::profile_scope!("UiWaveformDrawSamples");
         // Waveform drawing
-        let waveform_window = view.waveform_window_size.max(1);
+        let waveform_window = waveform_window_size.max(1);
         let samples_per_second = sample_rate as f32 / waveform_window as f32;
         let pixels_per_second = rect.width() / visible_duration;
 
@@ -570,9 +611,9 @@ pub(crate) fn show_waveform_panel(
             }
         }
     } else {
-        let message = if view.waveform_loading {
+        let message = if waveform_loading {
             "Loading waveform..."
-        } else if view.waveform_complete {
+        } else if waveform_complete {
             "Waveform decoded with no visible peaks."
         } else {
             "No waveform data. Import audio to view waveform."
@@ -587,7 +628,6 @@ pub(crate) fn show_waveform_panel(
     }
 
     // Draw beat grid lines from timing points
-    let timing_points = &view.timing_points;
     {
         puffin::profile_scope!("UiWaveformBeatGrid");
         for (tp_idx, tp) in timing_points.iter().enumerate() {
@@ -661,7 +701,7 @@ pub(crate) fn show_waveform_panel(
     }
 
     // Draw playhead
-    let current_time = view.timeline_time_seconds;
+    let current_time = timeline_time_seconds;
     if current_time >= view_start && current_time <= view_end {
         let x = rect.left() + (current_time - view_start) / visible_duration * rect.width();
         painter.line_segment(
@@ -689,7 +729,7 @@ pub(crate) fn show_waveform_panel(
         let pointer_delta_x = ui.input(|i| i.pointer.delta().x);
         if pointer_delta_x.abs() > 0.0 {
             let time_per_pixel = visible_duration / rect.width().max(1.0);
-            let new_time = (view.timeline_time_seconds - pointer_delta_x * time_per_pixel)
+            let new_time = (timeline_time_seconds - pointer_delta_x * time_per_pixel)
                 .clamp(0.0, duration_seconds);
             commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(new_time)));
             commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
@@ -731,10 +771,8 @@ mod tests {
         waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
-    ) -> eg_state::state::UiStateData {
+    ) -> crate::test_utils::EditorUiTestInputs {
         let mut view = editor_ui_view(app_settings, music_metadata);
-        view.mode = EditorMode::Timing;
-        view.last_mode = Some(EditorMode::Timing);
         view.playing = playing;
         view.timeline_time_seconds = timeline_time_seconds;
         view.timeline_duration_seconds = timeline_duration_seconds;
@@ -747,7 +785,6 @@ mod tests {
         view.waveform_complete = true;
         view.trigger_objects = trigger_objects.to_vec();
         view.trigger_selected_index = trigger_selected_index;
-        view.fps = 120.0;
         view
     }
 
@@ -872,7 +909,20 @@ mod tests {
         let mut commands = Vec::new();
 
         assert!(timeline_bar_push_tap_click_commands(
-            &view,
+            &TimelineBarInputs {
+                app_settings: &app_settings,
+                mode: EditorMode::Timing,
+                last_mode: Some(EditorMode::Timing),
+                playing: view.playing,
+                timeline_time_seconds: view.timeline_time_seconds,
+                tap_times: &view.tap_times,
+                timing_points: &view.timing_points,
+                waveform_zoom: view.waveform_zoom,
+                waveform_scroll: view.waveform_scroll,
+                trigger_objects: &view.trigger_objects,
+                trigger_selected_index: view.trigger_selected_index,
+                duration_seconds: view.timeline_duration_seconds,
+            },
             198.0,
             rect,
             0.0,
@@ -895,7 +945,7 @@ mod tests {
         let music_metadata = MusicMetadata::default();
         let timing_points = Vec::new();
         let tap_times = [1.0, 5.0, 5.2, 12.0];
-        let mut view = make_view(
+        let view = make_view(
             &app_settings,
             &music_metadata,
             &timing_points,
@@ -909,13 +959,24 @@ mod tests {
             false,
             None,
         );
-        view.mode = EditorMode::Tapping;
-        view.last_mode = Some(EditorMode::Tapping);
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
         let mut commands = Vec::new();
 
         assert!(timeline_bar_push_tap_click_commands(
-            &view,
+            &TimelineBarInputs {
+                app_settings: &app_settings,
+                mode: EditorMode::Tapping,
+                last_mode: Some(EditorMode::Tapping),
+                playing: view.playing,
+                timeline_time_seconds: view.timeline_time_seconds,
+                tap_times: &view.tap_times,
+                timing_points: &view.timing_points,
+                waveform_zoom: view.waveform_zoom,
+                waveform_scroll: view.waveform_scroll,
+                trigger_objects: &view.trigger_objects,
+                trigger_selected_index: view.trigger_selected_index,
+                duration_seconds: view.timeline_duration_seconds,
+            },
             198.0,
             rect,
             0.0,
@@ -989,7 +1050,24 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(ui, &app_settings, &view, 60.0, &mut commands);
+                show_timeline_bar(
+                    ui,
+                    &TimelineBarInputs {
+                        app_settings: &app_settings,
+                        mode: EditorMode::Timing,
+                        last_mode: Some(EditorMode::Timing),
+                        playing: view.playing,
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        tap_times: &view.tap_times,
+                        timing_points: &view.timing_points,
+                        waveform_zoom: view.waveform_zoom,
+                        waveform_scroll: view.waveform_scroll,
+                        trigger_objects: &view.trigger_objects,
+                        trigger_selected_index: view.trigger_selected_index,
+                        duration_seconds: 60.0,
+                    },
+                    &mut commands,
+                );
             });
         });
 
@@ -1075,7 +1153,24 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(ui, &app_settings, &view, 20.0, &mut commands);
+                show_timeline_bar(
+                    ui,
+                    &TimelineBarInputs {
+                        app_settings: &app_settings,
+                        mode: EditorMode::Timing,
+                        last_mode: Some(EditorMode::Timing),
+                        playing: view.playing,
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        tap_times: &view.tap_times,
+                        timing_points: &view.timing_points,
+                        waveform_zoom: view.waveform_zoom,
+                        waveform_scroll: view.waveform_scroll,
+                        trigger_objects: &view.trigger_objects,
+                        trigger_selected_index: view.trigger_selected_index,
+                        duration_seconds: 20.0,
+                    },
+                    &mut commands,
+                );
             });
         });
 
@@ -1111,7 +1206,21 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_waveform_panel(ui, &view, &mut commands);
+                show_waveform_panel(
+                    ui,
+                    &WaveformPanelInputs {
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        timeline_duration_seconds: view.timeline_duration_seconds,
+                        timing_points: &view.timing_points,
+                        waveform_zoom: view.waveform_zoom,
+                        waveform_samples: &view.waveform_samples,
+                        waveform_sample_rate: view.waveform_sample_rate,
+                        waveform_window_size: view.waveform_window_size,
+                        waveform_loading: view.waveform_loading,
+                        waveform_complete: view.waveform_complete,
+                    },
+                    &mut commands,
+                );
             });
         });
 
@@ -1167,7 +1276,21 @@ mod tests {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_waveform_panel(ui, &view, &mut commands);
+                show_waveform_panel(
+                    ui,
+                    &WaveformPanelInputs {
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        timeline_duration_seconds: view.timeline_duration_seconds,
+                        timing_points: &view.timing_points,
+                        waveform_zoom: view.waveform_zoom,
+                        waveform_samples: &view.waveform_samples,
+                        waveform_sample_rate: view.waveform_sample_rate,
+                        waveform_window_size: view.waveform_window_size,
+                        waveform_loading: view.waveform_loading,
+                        waveform_complete: view.waveform_complete,
+                    },
+                    &mut commands,
+                );
             });
         });
 

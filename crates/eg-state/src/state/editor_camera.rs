@@ -343,6 +343,25 @@ pub(crate) fn evaluate_camera_track_for_objects(
     interpolate_camera_samples(start_sample, end_sample, eased)
 }
 
+/// Returns the editor preview camera pose for presentation code that owns no
+/// editor state itself.
+pub fn editor_camera_preview_for_objects(
+    camera: &EditorCameraState,
+    objects: &[LevelObject],
+    time_seconds: f32,
+    live_follow_target: [f32; 3],
+    is_game_active: bool,
+) -> ([f32; 3], [f32; 3]) {
+    let sample = evaluate_camera_track_for_objects(
+        camera,
+        objects,
+        time_seconds,
+        Vec3::from_array(live_follow_target),
+        is_game_active,
+    );
+    (sample.eye.to_array(), sample.target.to_array())
+}
+
 impl EditorSubsystem {
     fn static_camera_view_for_trigger(camera_trigger: &CameraTrigger) -> CameraViewSample {
         let target = Vec3::from_array(camera_trigger.target_position);

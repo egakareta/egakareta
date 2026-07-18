@@ -175,7 +175,7 @@ mod tests {
     use crate::state::{
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorObjectsRes,
         EditorRuntimeRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-        PerfRes, RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes, UiStateData,
+        PerfRes, RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes,
     };
     use bevy_app::FixedUpdate;
     use bevy_state::prelude::State;
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn ui_state_data_reads_authoritative_editor_resources() {
+    fn editor_timeline_resource_reads_remaining_timeline_data() {
         let mut app = TestApp::minimal();
         app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [4.0, 5.0, 6.0];
         app.world_mut()
@@ -211,11 +211,18 @@ mod tests {
             .clock
             .time_seconds = 2.5;
 
-        let data = UiStateData::from_world(app.world());
-        let view = data;
-
-        assert_eq!(view.place_preview_position, [4.0, 5.0, 6.0]);
-        assert_eq!(view.timeline_time_seconds, 2.5);
+        assert_eq!(
+            app.world().resource::<EditorInputRes>().0.cursor,
+            [4.0, 5.0, 6.0]
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorTimelineRes>()
+                .0
+                .clock
+                .time_seconds,
+            2.5
+        );
     }
 
     #[test]

@@ -46,6 +46,8 @@ use eg_state::state::setup_state_app;
 use eg_state::state::test_support::TestApp;
 use eg_ui::register_ui_resources_world;
 #[cfg(not(test))]
+use eg_ui::{EditorUiInputs, SettingsSidebarInputs};
+#[cfg(not(test))]
 use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
 #[cfg(not(test))]
 use egui_wgpu::ScreenDescriptor;
@@ -186,7 +188,188 @@ fn run_egui_ui_system(world: &mut World) {
             has_latest_frame,
         )
     };
-    let ui_state = eg_state::state::UiStateData::from_world(world);
+    let (editor_object_count, editor_marquee_selection_rect_screen) = {
+        let input = &world.resource::<EditorInputRes>().0;
+        let marquee_selection_rect_screen = input.marquee_start_screen.map(|start| {
+            let current = input.marquee_current_screen.unwrap_or(start);
+            let dx = current[0] - start[0];
+            let dy = current[1] - start[1];
+            (start, current, (dx * dx + dy * dy) >= 16.0)
+        });
+        (
+            world
+                .resource::<eg_state::state::EditorObjectsRes>()
+                .objects
+                .len(),
+            marquee_selection_rect_screen,
+        )
+    };
+    let (editor_config, editor_place_preview_position) = (
+        world
+            .resource::<eg_state::state::EditorConfigRes>()
+            .0
+            .clone(),
+        world.resource::<EditorInputRes>().0.cursor,
+    );
+    let (editor_mode, editor_last_mode) = (
+        world.resource::<EditorInputRes>().0.mode,
+        world
+            .resource::<eg_state::state::EditorRuntimeRes>()
+            .0
+            .interaction
+            .last_mode,
+    );
+    let (
+        editor_camera_position,
+        editor_camera_preview_position,
+        editor_camera_preview_target,
+        editor_camera_rotation,
+        editor_camera_pitch,
+    ) = {
+        let camera = &world.resource::<eg_state::state::EditorCameraRes>().0;
+        let objects = &world
+            .resource::<eg_state::state::EditorObjectsRes>()
+            .objects;
+        let timeline = &world.resource::<eg_state::state::EditorTimelineRes>().0;
+        let camera_position =
+            (camera.editor_camera_target() + camera.editor_camera_offset()).to_array();
+        let (camera_preview_position, camera_preview_target) =
+            eg_state::state::editor_camera_preview_for_objects(
+                camera,
+                objects,
+                timeline.clock.time_seconds,
+                timeline.preview.position,
+                true,
+            );
+        (
+            camera_position,
+            camera_preview_position,
+            camera_preview_target,
+            camera.editor_yaw,
+            camera.editor_pitch,
+        )
+    };
+    let (
+        editor_selected_block,
+        editor_selected_block_count,
+        editor_clipboard_block_count,
+        editor_can_undo,
+        editor_can_redo,
+    ) = {
+        let input = &world.resource::<EditorInputRes>().0;
+        let objects = &world
+            .resource::<eg_state::state::EditorObjectsRes>()
+            .objects;
+        let mut selected_indices = input
+            .selected_block_indices
+            .iter()
+            .copied()
+            .filter(|index| *index < objects.len())
+            .collect::<Vec<_>>();
+        if let Some(index) = input
+            .selected_block_index
+            .filter(|index| *index < objects.len())
+        {
+            selected_indices.push(index);
+        }
+        selected_indices.sort_unstable();
+        selected_indices.dedup();
+        let runtime = &world.resource::<eg_state::state::EditorRuntimeRes>().0;
+        let history = &world.resource::<eg_state::state::EditorHistoryRes>().0;
+        (
+            selected_indices
+                .first()
+                .and_then(|index| objects.get(*index).cloned()),
+            selected_indices.len(),
+            runtime
+                .interaction
+                .clipboard
+                .as_ref()
+                .map(|clipboard| clipboard.objects.len())
+                .unwrap_or(0),
+            !history.undo.is_empty(),
+            !history.redo.is_empty(),
+        )
+    };
+    let (
+        timeline_playing,
+        timeline_time_seconds,
+        timeline_duration_seconds,
+        timeline_tap_times,
+        timeline_selected_tap,
+        timeline_preview_position,
+        timeline_preview_direction,
+        timing_points,
+        playback_speed,
+        timing_selected_index,
+        waveform_zoom,
+        waveform_scroll,
+        waveform_samples,
+        waveform_sample_rate,
+        waveform_window_size,
+        waveform_loading,
+        waveform_complete,
+        bpm_tap_result,
+        trigger_objects,
+        trigger_selected_index,
+    ) = {
+        let timeline = &world.resource::<eg_state::state::EditorTimelineRes>().0;
+        let timing = &world.resource::<eg_state::state::EditorTimingRes>().0;
+        let trigger_selected_index = world
+            .resource::<eg_state::state::EditorTriggerRes>()
+            .0
+            .selected_index;
+        let selected_tap = timeline.taps.selected_index.and_then(|index| {
+            Some((
+                index,
+                *timeline.taps.tap_times.get(index)?,
+                *timeline.taps.tap_indicator_positions.get(index)?,
+            ))
+        });
+        let mut trigger_objects = world
+            .resource::<eg_state::state::EditorObjectsRes>()
+            .objects
+            .iter()
+            .filter(|object| object.trigger.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+        trigger_objects.sort_by(|left, right| {
+            f32::total_cmp(
+                &left
+                    .trigger
+                    .as_ref()
+                    .map(|trigger| trigger.time_seconds)
+                    .unwrap_or(0.0),
+                &right
+                    .trigger
+                    .as_ref()
+                    .map(|trigger| trigger.time_seconds)
+                    .unwrap_or(0.0),
+            )
+        });
+        (
+            timeline.playback.playing,
+            timeline.clock.time_seconds,
+            timeline.clock.duration_seconds,
+            timeline.taps.tap_times.clone(),
+            selected_tap,
+            timeline.preview.position,
+            timeline.preview.direction,
+            timing.timing_points.clone(),
+            timing.playback_speed,
+            timing.timing_selected_index,
+            timing.waveform_zoom,
+            timing.waveform_scroll,
+            timing.waveform_samples.clone(),
+            timing.waveform_sample_rate,
+            timing.waveform_window_size,
+            timing.waveform_loading,
+            timing.waveform_complete,
+            timing.bpm_tap_result,
+            trigger_objects,
+            trigger_selected_index,
+        )
+    };
     let render_config = *world.resource::<RenderConfigRes>();
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
@@ -212,52 +395,78 @@ fn run_egui_ui_system(world: &mut World) {
             let mut command_sink = WorldUiCommandSink::new(world);
             frame.egui_ctx.run_ui(raw_input.0, |root_ui| {
                 let ctx = root_ui.ctx().clone();
-                ui_input_blocking_rects = show_editor_ui(
-                    &ctx,
-                    is_editor,
+                let settings_inputs = SettingsSidebarInputs {
                     show_settings,
-                    &available_levels,
-                    editor_level_name.as_deref(),
-                    &editor_music_metadata,
-                    &editor_creator_metadata,
-                    editor_sky_color,
-                    &app_settings,
-                    &graphics_backend,
-                    &graphics_backend_options,
+                    is_menu,
+                    is_editor,
+                    is_game_paused,
+                    app_settings: &app_settings,
+                    graphics_backend: &graphics_backend,
+                    graphics_backend_options: &graphics_backend_options,
                     graphics_backend_locked,
                     settings_restart_required,
-                    &audio_backend,
-                    &audio_backend_options,
+                    audio_backend: &audio_backend,
+                    audio_backend_options: &audio_backend_options,
                     audio_backend_locked,
-                    editor_show_metadata,
-                    editor_show_place_window,
-                    editor_settings_section,
-                    editor_keybind_capture_action.as_ref(),
-                    &ui_state,
-                    &block_icon_texture_ids,
+                    settings_section: editor_settings_section,
+                    keybind_capture_action: editor_keybind_capture_action.as_ref(),
+                };
+                ui_input_blocking_rects = show_editor_ui(
+                    &ctx,
+                    EditorUiInputs {
+                        is_editor,
+                        available_levels: &available_levels,
+                        level_name: editor_level_name.as_deref(),
+                        music_metadata: &editor_music_metadata,
+                        creator_metadata: &editor_creator_metadata,
+                        sky_color: editor_sky_color,
+                        settings: settings_inputs,
+                        editor_fps: perf_fps,
+                        editor_object_count,
+                        editor_marquee_selection_rect_screen,
+                        editor_config: &editor_config,
+                        editor_place_preview_position,
+                        editor_selected_block: editor_selected_block.as_ref(),
+                        editor_selected_block_count,
+                        editor_clipboard_block_count,
+                        editor_can_undo,
+                        editor_can_redo,
+                        editor_mode,
+                        editor_last_mode,
+                        editor_camera_position,
+                        editor_camera_preview_position,
+                        editor_camera_preview_target,
+                        editor_camera_rotation,
+                        editor_camera_pitch,
+                        show_metadata: editor_show_metadata,
+                        show_place_window: editor_show_place_window,
+                        timeline_playing,
+                        timeline_time_seconds,
+                        timeline_duration_seconds,
+                        timeline_tap_times: &timeline_tap_times,
+                        timeline_selected_tap,
+                        timeline_preview_position,
+                        timeline_preview_direction,
+                        timing_points: &timing_points,
+                        playback_speed,
+                        timing_selected_index,
+                        waveform_zoom,
+                        waveform_scroll,
+                        waveform_samples: &waveform_samples,
+                        waveform_sample_rate,
+                        waveform_window_size,
+                        waveform_loading,
+                        waveform_complete,
+                        bpm_tap_result,
+                        trigger_objects: &trigger_objects,
+                        trigger_selected_index,
+                        block_icon_texture_ids: &block_icon_texture_ids,
+                    },
                     &mut command_sink,
                 );
                 ui_input_pixels_per_point = ctx.pixels_per_point();
                 if !is_editor {
-                    show_settings_sidebar(
-                        &ctx,
-                        show_settings,
-                        is_menu,
-                        is_editor,
-                        is_game_paused,
-                        &app_settings,
-                        &graphics_backend,
-                        &graphics_backend_options,
-                        graphics_backend_locked,
-                        settings_restart_required,
-                        &audio_backend,
-                        &audio_backend_options,
-                        audio_backend_locked,
-                        editor_settings_section,
-                        editor_keybind_capture_action.as_ref(),
-                        &ui_state,
-                        &mut command_sink,
-                    );
+                    show_settings_sidebar(&ctx, settings_inputs, &mut command_sink);
                 }
                 show_perf_overlay(
                     &ctx,

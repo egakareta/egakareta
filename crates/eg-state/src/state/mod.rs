@@ -36,7 +36,6 @@ mod sets;
 mod state_helpers;
 mod state_resources;
 mod transitions;
-mod ui_state;
 mod visual_effects;
 
 use crate::events as state_events;
@@ -65,6 +64,7 @@ pub(crate) use audio_state::{
 };
 
 pub use editor_camera::EditorCameraState;
+pub use editor_camera::editor_camera_preview_for_objects;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
 pub use editor_config_state::EditorConfigState;
 use editor_interaction::EditorPickSpatialIndex;
@@ -109,7 +109,6 @@ pub use state_resources::{
     GameplayResetRes, GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes,
     MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
-pub use ui_state::UiStateData;
 
 use eg_game::GameCheckpointState;
 use eg_mesh::MeshGeometry;

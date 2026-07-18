@@ -20,21 +20,24 @@ pub mod plugin;
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::components::{show_timeline_bar, show_waveform_panel, timeline_metrics};
+use crate::components::{
+    TimelineBarInputs, WaveformPanelInputs, show_timeline_bar, show_waveform_panel,
+    timeline_metrics,
+};
 use crate::modes::compose::{
     show_block_preview_button, show_place_block_properties_window, show_recent_block_quick_strip,
     show_selected_block_properties_window,
 };
 use crate::modes::shared::show_mode_selector_popup;
 use crate::modes::tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel};
-use crate::modes::timing::show_timing_mode_bottom_panel;
+use crate::modes::timing::{TimingModePanelInputs, show_timing_mode_bottom_panel};
 use bevy_ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::commands::AppCommand;
-use eg_state::state::UiStateData;
+use eg_state::state::EditorConfigState;
 use eg_state::state::editor_command::EditorCommand;
 use eg_types::{
-    AppSettings, BasicLevelMetadata, EditorMode, MusicMetadata, SettingsSection,
+    AppSettings, BasicLevelMetadata, EditorMode, LevelObject, MusicMetadata, SettingsSection,
     essential_keybind_actions, format_key_chord,
 };
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
@@ -366,13 +369,34 @@ fn context_menu_button_impl(
     }
 }
 
+#[derive(Clone, Copy)]
+struct EditorContextMenuInputs<'a> {
+    app_settings: &'a AppSettings,
+    selected_tap: Option<(usize, f32, [f32; 3])>,
+    editor_mode: EditorMode,
+    editor_last_mode: Option<EditorMode>,
+    selected_block_count: usize,
+    clipboard_block_count: usize,
+    can_undo: bool,
+    can_redo: bool,
+}
+
 fn show_editor_context_menu(
     ctx: &egui::Context,
-    app_settings: &AppSettings,
-    view: &UiStateData,
+    inputs: EditorContextMenuInputs<'_>,
     ui_input_blocking_rects: &mut Vec<[f32; 4]>,
     commands: &mut impl UiCommandSink,
 ) {
+    let EditorContextMenuInputs {
+        app_settings,
+        selected_tap,
+        editor_mode,
+        editor_last_mode,
+        selected_block_count,
+        clipboard_block_count,
+        can_undo,
+        can_redo,
+    } = inputs;
     let menu_id = egui::Id::new("editor_canvas_context_menu_position");
     let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
     let mut opened_this_frame = false;
@@ -389,13 +413,13 @@ fn show_editor_context_menu(
         return;
     };
 
-    let has_block_selection = view.selected_block_count > 0;
-    let has_clipboard = view.clipboard_block_count > 0;
-    let has_tap_selection = view.selected_tap.is_some();
+    let has_block_selection = selected_block_count > 0;
+    let has_clipboard = clipboard_block_count > 0;
+    let has_tap_selection = selected_tap.is_some();
     let has_focus_target = has_block_selection || has_tap_selection;
-    let is_tapping = view.mode == EditorMode::Tapping
-        || (view.mode == EditorMode::Null && view.last_mode == Some(EditorMode::Tapping));
-    let selected_label = if view.selected_block_count == 1 {
+    let is_tapping = editor_mode == EditorMode::Tapping
+        || (editor_mode == EditorMode::Null && editor_last_mode == Some(EditorMode::Tapping));
+    let selected_label = if selected_block_count == 1 {
         "selected block"
     } else {
         "selected blocks"
@@ -418,7 +442,7 @@ fn show_editor_context_menu(
                 close_menu |= context_menu_button(
                     ui,
                     commands,
-                    view.can_undo,
+                    can_undo,
                     egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
                     "Undo",
                     AppCommand::Editor(EditorCommand::Undo),
@@ -427,7 +451,7 @@ fn show_editor_context_menu(
                 close_menu |= context_menu_button(
                     ui,
                     commands,
-                    view.can_redo,
+                    can_redo,
                     egui_phosphor::regular::ARROW_CLOCKWISE,
                     "Redo",
                     AppCommand::Editor(EditorCommand::Redo),
@@ -505,14 +529,14 @@ fn show_editor_context_menu(
                     hint("duplicate").as_deref(),
                 );
 
-                if let Some(selected_tap) = view.selected_tap {
+                if let Some((_, selected_tap_time_seconds, _)) = selected_tap {
                     close_menu |= context_menu_button(
                         ui,
                         commands,
                         true,
                         egui_phosphor::regular::TRASH,
                         "Delete Tap",
-                        AppCommand::Editor(EditorCommand::RemoveTapAt(selected_tap.time_seconds)),
+                        AppCommand::Editor(EditorCommand::RemoveTapAt(selected_tap_time_seconds)),
                         hint("remove_block").as_deref(),
                     );
                 } else {
@@ -641,18 +665,28 @@ fn show_editor_context_menu(
     }
 }
 
+#[derive(Clone, Copy)]
+#[allow(missing_docs)]
+pub struct SettingsSidebarInputs<'a> {
+    pub show_settings: bool,
+    pub is_menu: bool,
+    pub is_editor: bool,
+    pub is_game_paused: bool,
+    pub app_settings: &'a AppSettings,
+    pub graphics_backend: &'a str,
+    pub graphics_backend_options: &'a [String],
+    pub graphics_backend_locked: bool,
+    pub settings_restart_required: bool,
+    pub audio_backend: &'a str,
+    pub audio_backend_options: &'a [String],
+    pub audio_backend_locked: bool,
+    pub settings_section: SettingsSection,
+    pub keybind_capture_action: Option<&'a (String, usize)>,
+}
+
 fn show_settings_sidebar_area(
     ctx: &egui::Context,
-    app_settings: &AppSettings,
-    graphics_backend: &str,
-    graphics_backend_options: &[String],
-    graphics_backend_locked: bool,
-    settings_restart_required: bool,
-    audio_backend: &str,
-    audio_backend_options: &[String],
-    audio_backend_locked: bool,
-    settings_section: SettingsSection,
-    keybind_capture_action: Option<&(String, usize)>,
+    inputs: SettingsSidebarInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) -> egui::InnerResponse<()> {
     let viewport_width = ctx.content_rect().width();
@@ -664,42 +698,24 @@ fn show_settings_sidebar_area(
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
             egui::Frame::side_top_panel(ui.style()).show(ui, |ui| {
-                show_settings_sidebar_panel(
-                    ui,
-                    app_settings,
-                    graphics_backend,
-                    graphics_backend_options,
-                    graphics_backend_locked,
-                    settings_restart_required,
-                    audio_backend,
-                    audio_backend_options,
-                    audio_backend_locked,
-                    settings_section,
-                    keybind_capture_action,
-                    commands,
-                    sidebar_width,
-                    viewport_height,
-                );
+                show_settings_sidebar_panel(ui, inputs, commands, sidebar_width, viewport_height);
             });
         })
 }
 
 fn show_settings_sidebar_panel(
     ui: &mut egui::Ui,
-    app_settings: &AppSettings,
-    graphics_backend: &str,
-    graphics_backend_options: &[String],
-    graphics_backend_locked: bool,
-    settings_restart_required: bool,
-    audio_backend: &str,
-    audio_backend_options: &[String],
-    audio_backend_locked: bool,
-    settings_section: SettingsSection,
-    keybind_capture_action: Option<&(String, usize)>,
+    inputs: SettingsSidebarInputs<'_>,
     commands: &mut impl UiCommandSink,
     sidebar_width: f32,
     viewport_height: f32,
 ) {
+    let SettingsSidebarInputs {
+        app_settings,
+        settings_section,
+        keybind_capture_action,
+        ..
+    } = inputs;
     ui.set_width(sidebar_width);
     ui.set_min_height(viewport_height);
 
@@ -709,18 +725,7 @@ fn show_settings_sidebar_panel(
     ui.separator();
 
     match settings_section {
-        SettingsSection::Backends => show_backend_settings(
-            ui,
-            app_settings,
-            graphics_backend,
-            graphics_backend_options,
-            graphics_backend_locked,
-            settings_restart_required,
-            audio_backend,
-            audio_backend_options,
-            audio_backend_locked,
-            commands,
-        ),
+        SettingsSection::Backends => show_backend_settings(ui, inputs, commands),
         SettingsSection::Keybinds => {
             show_keybind_settings(ui, app_settings, keybind_capture_action, commands)
         }
@@ -789,16 +794,20 @@ fn show_settings_section_tab(
 
 fn show_backend_settings(
     ui: &mut egui::Ui,
-    app_settings: &AppSettings,
-    graphics_backend: &str,
-    graphics_backend_options: &[String],
-    graphics_backend_locked: bool,
-    settings_restart_required: bool,
-    audio_backend: &str,
-    audio_backend_options: &[String],
-    audio_backend_locked: bool,
+    inputs: SettingsSidebarInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) {
+    let SettingsSidebarInputs {
+        app_settings,
+        graphics_backend,
+        graphics_backend_options,
+        graphics_backend_locked,
+        settings_restart_required,
+        audio_backend,
+        audio_backend_options,
+        audio_backend_locked,
+        ..
+    } = inputs;
     show_backend_selector(
         ui,
         commands,
@@ -958,44 +967,72 @@ fn show_keybind_settings(
 /// Hidden during active gameplay.
 pub fn show_settings_sidebar(
     ctx: &egui::Context,
-    show_settings: bool,
-    is_menu: bool,
-    is_editor: bool,
-    is_game_paused: bool,
-    app_settings: &AppSettings,
-    graphics_backend: &str,
-    graphics_backend_options: &[String],
-    graphics_backend_locked: bool,
-    settings_restart_required: bool,
-    audio_backend: &str,
-    audio_backend_options: &[String],
-    audio_backend_locked: bool,
-    settings_section: SettingsSection,
-    keybind_capture_action: Option<&(String, usize)>,
+    inputs: SettingsSidebarInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) {
-    if !show_settings {
+    if !inputs.show_settings {
         return;
     }
     // Hide settings during active gameplay (not menu, not editor, not paused)
-    if !is_menu && !is_editor && !is_game_paused {
+    if !inputs.is_menu && !inputs.is_editor && !inputs.is_game_paused {
         return;
     }
 
-    show_settings_sidebar_area(
-        ctx,
-        app_settings,
-        graphics_backend,
-        graphics_backend_options,
-        graphics_backend_locked,
-        settings_restart_required,
-        audio_backend,
-        audio_backend_options,
-        audio_backend_locked,
-        settings_section,
-        keybind_capture_action,
-        commands,
-    );
+    show_settings_sidebar_area(ctx, inputs, commands);
+}
+
+/// Direct values used while rendering a single editor frame. This is a
+/// borrowed function input, not an App-world resource or cached UI snapshot.
+#[derive(Clone, Copy)]
+#[allow(missing_docs)]
+pub struct EditorUiInputs<'a> {
+    pub is_editor: bool,
+    pub available_levels: &'a [String],
+    pub level_name: Option<&'a str>,
+    pub music_metadata: &'a MusicMetadata,
+    pub creator_metadata: &'a BasicLevelMetadata,
+    pub sky_color: [f32; 3],
+    pub settings: SettingsSidebarInputs<'a>,
+    pub editor_fps: f32,
+    pub editor_object_count: usize,
+    pub editor_marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
+    pub editor_config: &'a EditorConfigState,
+    pub editor_place_preview_position: [f32; 3],
+    pub editor_selected_block: Option<&'a LevelObject>,
+    pub editor_selected_block_count: usize,
+    pub editor_clipboard_block_count: usize,
+    pub editor_can_undo: bool,
+    pub editor_can_redo: bool,
+    pub editor_mode: EditorMode,
+    pub editor_last_mode: Option<EditorMode>,
+    pub editor_camera_position: [f32; 3],
+    pub editor_camera_preview_position: [f32; 3],
+    pub editor_camera_preview_target: [f32; 3],
+    pub editor_camera_rotation: f32,
+    pub editor_camera_pitch: f32,
+    pub show_metadata: bool,
+    pub show_place_window: bool,
+    pub timeline_playing: bool,
+    pub timeline_time_seconds: f32,
+    pub timeline_duration_seconds: f32,
+    pub timeline_tap_times: &'a [f32],
+    pub timeline_selected_tap: Option<(usize, f32, [f32; 3])>,
+    pub timeline_preview_position: [f32; 3],
+    pub timeline_preview_direction: eg_types::Direction,
+    pub timing_points: &'a [eg_types::TimingPoint],
+    pub playback_speed: f32,
+    pub timing_selected_index: Option<usize>,
+    pub waveform_zoom: f32,
+    pub waveform_scroll: f32,
+    pub waveform_samples: &'a [f32],
+    pub waveform_sample_rate: u32,
+    pub waveform_window_size: usize,
+    pub waveform_loading: bool,
+    pub waveform_complete: bool,
+    pub bpm_tap_result: Option<f32>,
+    pub trigger_objects: &'a [LevelObject],
+    pub trigger_selected_index: Option<usize>,
+    pub block_icon_texture_ids: &'a HashMap<String, egui::TextureId>,
 }
 
 /// Render the editor UI from an App-owned view and write semantic commands to
@@ -1003,37 +1040,68 @@ pub fn show_settings_sidebar(
 #[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
-    is_editor: bool,
-    show_settings: bool,
-    available_levels: &[String],
-    level_name: Option<&str>,
-    music_metadata: &MusicMetadata,
-    creator_metadata: &BasicLevelMetadata,
-    sky_color: [f32; 3],
-    app_settings: &AppSettings,
-    graphics_backend: &str,
-    graphics_backend_options: &[String],
-    graphics_backend_locked: bool,
-    settings_restart_required: bool,
-    audio_backend: &str,
-    audio_backend_options: &[String],
-    audio_backend_locked: bool,
-    show_metadata: bool,
-    show_place_window: bool,
-    settings_section: SettingsSection,
-    keybind_capture_action: Option<&(String, usize)>,
-    view: &UiStateData,
-    block_icon_texture_ids: &HashMap<String, egui::TextureId>,
+    inputs: EditorUiInputs<'_>,
     commands: &mut impl UiCommandSink,
 ) -> Vec<[f32; 4]> {
+    let EditorUiInputs {
+        is_editor,
+        available_levels,
+        level_name,
+        music_metadata,
+        creator_metadata,
+        sky_color,
+        settings,
+        editor_fps,
+        editor_object_count,
+        editor_marquee_selection_rect_screen,
+        editor_config,
+        editor_place_preview_position,
+        editor_selected_block,
+        editor_selected_block_count,
+        editor_clipboard_block_count,
+        editor_can_undo,
+        editor_can_redo,
+        editor_mode,
+        editor_last_mode,
+        editor_camera_position,
+        editor_camera_preview_position,
+        editor_camera_preview_target,
+        editor_camera_rotation,
+        editor_camera_pitch,
+        show_metadata,
+        show_place_window,
+        timeline_playing,
+        timeline_time_seconds,
+        timeline_duration_seconds,
+        timeline_tap_times,
+        timeline_selected_tap,
+        timeline_preview_position,
+        timeline_preview_direction,
+        timing_points,
+        playback_speed,
+        timing_selected_index,
+        waveform_zoom,
+        waveform_scroll,
+        waveform_samples,
+        waveform_sample_rate,
+        waveform_window_size,
+        waveform_loading,
+        waveform_complete,
+        bpm_tap_result,
+        trigger_objects,
+        trigger_selected_index,
+        block_icon_texture_ids,
+    } = inputs;
+    let app_settings = settings.app_settings;
+    let show_settings = settings.show_settings;
     if !is_editor {
         return Vec::new();
     }
 
     let mut ui_input_blocking_rects = Vec::<[f32; 4]>::new();
 
-    let mode = view.mode;
-    let last_mode = view.last_mode;
+    let mode = editor_mode;
+    let last_mode = editor_last_mode;
     let is_timing = mode == EditorMode::Timing
         || (mode == EditorMode::Null && last_mode == Some(EditorMode::Timing));
     let is_tapping = mode == EditorMode::Tapping
@@ -1044,20 +1112,7 @@ pub fn show_editor_ui(
     let is_compact_ui = is_compact_editor_ui(viewport_width);
 
     if show_settings {
-        let settings_response = show_settings_sidebar_area(
-            ctx,
-            app_settings,
-            graphics_backend,
-            graphics_backend_options,
-            graphics_backend_locked,
-            settings_restart_required,
-            audio_backend,
-            audio_backend_options,
-            audio_backend_locked,
-            settings_section,
-            keybind_capture_action,
-            commands,
-        );
+        let settings_response = show_settings_sidebar_area(ctx, settings, commands);
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
@@ -1158,7 +1213,7 @@ pub fn show_editor_ui(
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("{:.0}fps", view.fps));
+                ui.label(format!("{editor_fps:.0}fps"));
             });
         });
     });
@@ -1315,7 +1370,7 @@ pub fn show_editor_ui(
                     ui.label(format!(
                         "{} Objects: {}",
                         egui_phosphor::regular::CUBE,
-                        view.object_count
+                        editor_object_count
                     ));
                 });
         if let Some(metadata_response) = metadata_response {
@@ -1415,15 +1470,50 @@ pub fn show_editor_ui(
         .resizable(false)
         .show(ctx, |ui| {
             ui.vertical(|ui| {
-                let duration_seconds = timeline_metrics(view.timeline_duration_seconds);
+                let duration_seconds = timeline_metrics(timeline_duration_seconds);
 
                 if is_timing {
-                    show_timing_mode_bottom_panel(ui, view, duration_seconds, commands);
+                    show_timing_mode_bottom_panel(
+                        ui,
+                        &TimingModePanelInputs {
+                            timeline_time_seconds,
+                            timeline_duration_seconds,
+                            timing_points,
+                            playback_speed,
+                            timing_selected_index,
+                            bpm_tap_result,
+                        },
+                        commands,
+                    );
                 } else if is_tapping {
-                    show_tapping_mode_bottom_panel(ui, view, commands);
+                    show_tapping_mode_bottom_panel(
+                        ui,
+                        timeline_preview_position,
+                        timeline_preview_direction,
+                        editor_camera_preview_position,
+                        editor_camera_preview_target,
+                        commands,
+                    );
                 }
 
-                show_timeline_bar(ui, app_settings, view, duration_seconds, commands);
+                show_timeline_bar(
+                    ui,
+                    &TimelineBarInputs {
+                        app_settings,
+                        mode: editor_mode,
+                        last_mode: editor_last_mode,
+                        playing: timeline_playing,
+                        timeline_time_seconds,
+                        tap_times: timeline_tap_times,
+                        timing_points,
+                        waveform_zoom,
+                        waveform_scroll,
+                        trigger_objects,
+                        trigger_selected_index,
+                        duration_seconds,
+                    },
+                    commands,
+                );
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1440,7 +1530,12 @@ pub fn show_editor_ui(
             .show(ctx, |ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Max), |ui| {
                     let hotkey_hint = app_settings.hotkey_hint("toggle_place_window");
-                    if show_recent_block_quick_strip(ui, view, block_icon_texture_ids, commands) {
+                    if show_recent_block_quick_strip(
+                        ui,
+                        editor_config,
+                        block_icon_texture_ids,
+                        commands,
+                    ) {
                         ui.add_space(6.0);
                     }
 
@@ -1459,16 +1554,41 @@ pub fn show_editor_ui(
                 });
             });
 
-        show_selected_block_properties_window(ctx, view, bottom_bar_height, commands);
-        show_place_block_properties_window(ctx, view, bottom_bar_height);
+        show_selected_block_properties_window(
+            ctx,
+            editor_mode,
+            editor_selected_block,
+            bottom_bar_height,
+            commands,
+        );
+        show_place_block_properties_window(
+            ctx,
+            editor_mode,
+            editor_config,
+            editor_place_preview_position,
+            bottom_bar_height,
+        );
         let top_bar_height = top_bar_response.response.rect.height();
-        show_mode_selector_popup(ctx, app_settings, view, top_bar_height, commands);
+        show_mode_selector_popup(
+            ctx,
+            app_settings,
+            editor_mode,
+            editor_config,
+            top_bar_height,
+            commands,
+        );
     }
 
     // Selected tap properties floating window
     if is_tapping {
         let bottom_bar_height = bottom_bar_response.response.rect.height();
-        show_selected_tap_properties_window(ctx, view, bottom_bar_height, commands);
+        show_selected_tap_properties_window(
+            ctx,
+            timeline_selected_tap,
+            timeline_duration_seconds,
+            bottom_bar_height,
+            commands,
+        );
     }
 
     // Waveform visualization central panel (Timing mode only)
@@ -1479,7 +1599,21 @@ pub fn show_editor_ui(
                     .fill(egui::Color32::from_rgb(15, 20, 28)),
             )
             .show(ctx, |ui| {
-                show_waveform_panel(ui, view, commands);
+                show_waveform_panel(
+                    ui,
+                    &WaveformPanelInputs {
+                        timeline_time_seconds,
+                        timeline_duration_seconds,
+                        timing_points,
+                        waveform_zoom,
+                        waveform_samples,
+                        waveform_sample_rate,
+                        waveform_window_size,
+                        waveform_loading,
+                        waveform_complete,
+                    },
+                    commands,
+                );
             });
     }
 
@@ -1487,17 +1621,17 @@ pub fn show_editor_ui(
         && !is_compact_ui
         && let Some(rect) = show_view_selector_cube(
             ctx,
-            view.camera_rotation,
-            view.camera_pitch,
-            view.camera_position,
+            editor_camera_rotation,
+            editor_camera_pitch,
+            editor_camera_position,
             commands,
         )
     {
         ui_input_blocking_rects.push(rect_to_input_bounds(rect));
     }
 
-    if view.mode.is_transform_mode()
-        && let Some((start, current, is_active_drag)) = view.marquee_selection_rect_screen
+    if editor_mode.is_transform_mode()
+        && let Some((start, current, is_active_drag)) = editor_marquee_selection_rect_screen
         && is_active_drag
     {
         let pixels_per_point = ctx.pixels_per_point();
@@ -1521,8 +1655,16 @@ pub fn show_editor_ui(
 
     show_editor_context_menu(
         ctx,
-        app_settings,
-        view,
+        EditorContextMenuInputs {
+            app_settings,
+            selected_tap: timeline_selected_tap,
+            editor_mode,
+            editor_last_mode,
+            selected_block_count: editor_selected_block_count,
+            clipboard_block_count: editor_clipboard_block_count,
+            can_undo: editor_can_undo,
+            can_redo: editor_can_redo,
+        },
         &mut ui_input_blocking_rects,
         commands,
     );
@@ -2081,15 +2223,16 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use super::{
-        UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink, block_matches_catalog_category,
-        combined_ui_scale_factor, is_compact_editor_ui, marquee_screen_pos_to_egui_pos,
-        perf_overlay_window_order, push_command_when_clicked, responsive_ui_scale_multiplier,
-        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
+        EditorUiInputs, SettingsSidebarInputs, UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink,
+        block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
+        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
+        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
+        show_perf_overlay, sort_quad_by_angle,
     };
     use eg_blocks::BlockCategory;
     use eg_blocks::BlockDefinition;
     use eg_state::commands::AppCommand;
-    use eg_state::state::UiStateData;
+    use eg_state::state::EditorConfigState;
     use eg_state::state::editor_command::EditorCommand;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
     use glam::{Mat3, Vec3};
@@ -2121,40 +2264,89 @@ mod tests {
     }
 
     fn run_editor_ui_once(
-        view: &UiStateData,
+        view: &crate::test_utils::EditorUiTestInputs,
+        editor_mode: EditorMode,
         is_editor: bool,
         show_settings: bool,
         show_metadata: bool,
         settings_section: SettingsSection,
+        marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
     ) {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
+        let editor_config = EditorConfigState::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
             let mut commands = Vec::new();
+            let app_settings = AppSettings::default();
+            let music_metadata = MusicMetadata::default();
+            let creator_metadata = eg_types::BasicLevelMetadata::default();
             let _ = show_editor_ui(
                 ctx,
-                is_editor,
-                show_settings,
-                &[],
-                Some("Test Level"),
-                &MusicMetadata::default(),
-                &eg_types::BasicLevelMetadata::default(),
-                eg_types::LevelMetadata::default().sky_color,
-                &AppSettings::default(),
-                "Auto",
-                &[],
-                false,
-                false,
-                "Default",
-                &[],
-                false,
-                show_metadata,
-                false,
-                settings_section,
-                None,
-                view,
-                &block_icon_texture_ids,
+                EditorUiInputs {
+                    is_editor,
+                    available_levels: &[],
+                    level_name: Some("Test Level"),
+                    music_metadata: &music_metadata,
+                    creator_metadata: &creator_metadata,
+                    sky_color: eg_types::LevelMetadata::default().sky_color,
+                    settings: SettingsSidebarInputs {
+                        show_settings,
+                        is_menu: false,
+                        is_editor,
+                        is_game_paused: false,
+                        app_settings: &app_settings,
+                        graphics_backend: "Auto",
+                        graphics_backend_options: &[],
+                        graphics_backend_locked: false,
+                        settings_restart_required: false,
+                        audio_backend: "Default",
+                        audio_backend_options: &[],
+                        audio_backend_locked: false,
+                        settings_section,
+                        keybind_capture_action: None,
+                    },
+                    editor_fps: 60.0,
+                    editor_object_count: 0,
+                    editor_marquee_selection_rect_screen: marquee_selection_rect_screen,
+                    editor_config: &editor_config,
+                    editor_place_preview_position: [0.0, 0.0, 0.0],
+                    editor_selected_block: None,
+                    editor_selected_block_count: 0,
+                    editor_clipboard_block_count: 0,
+                    editor_can_undo: false,
+                    editor_can_redo: false,
+                    editor_mode,
+                    editor_last_mode: Some(editor_mode),
+                    editor_camera_position: [0.0, 0.0, 0.0],
+                    editor_camera_preview_position: [0.0, 0.0, 0.0],
+                    editor_camera_preview_target: [0.0, 0.0, 0.0],
+                    editor_camera_rotation: 0.0,
+                    editor_camera_pitch: 0.0,
+                    show_metadata,
+                    show_place_window: false,
+                    timeline_playing: view.playing,
+                    timeline_time_seconds: view.timeline_time_seconds,
+                    timeline_duration_seconds: view.timeline_duration_seconds,
+                    timeline_tap_times: &view.tap_times,
+                    timeline_selected_tap: view.selected_tap,
+                    timeline_preview_position: view.timeline_preview_position,
+                    timeline_preview_direction: view.timeline_preview_direction,
+                    timing_points: &view.timing_points,
+                    playback_speed: view.playback_speed,
+                    timing_selected_index: view.timing_selected_index,
+                    waveform_zoom: view.waveform_zoom,
+                    waveform_scroll: view.waveform_scroll,
+                    waveform_samples: &view.waveform_samples,
+                    waveform_sample_rate: view.waveform_sample_rate,
+                    waveform_window_size: view.waveform_window_size,
+                    waveform_loading: view.waveform_loading,
+                    waveform_complete: view.waveform_complete,
+                    bpm_tap_result: view.bpm_tap_result,
+                    trigger_objects: &view.trigger_objects,
+                    trigger_selected_index: view.trigger_selected_index,
+                    block_icon_texture_ids: &block_icon_texture_ids,
+                },
                 &mut commands,
             );
         });
@@ -2369,7 +2561,15 @@ mod tests {
         let music_metadata = MusicMetadata::default();
         let view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
 
-        run_editor_ui_once(&view, false, false, false, SettingsSection::Backends);
+        run_editor_ui_once(
+            &view,
+            EditorMode::Select,
+            false,
+            false,
+            false,
+            SettingsSection::Backends,
+            None,
+        );
     }
 
     #[test]
@@ -2392,59 +2592,87 @@ mod tests {
     fn show_editor_ui_renders_marquee_selection() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
-        view.mode = EditorMode::Select;
-        view.marquee_selection_rect_screen = Some(([10.0, 10.0], [100.0, 100.0], false));
-
-        run_editor_ui_once(&view, true, false, false, SettingsSection::Backends);
+        let view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
+        run_editor_ui_once(
+            &view,
+            EditorMode::Select,
+            true,
+            false,
+            false,
+            SettingsSection::Backends,
+            Some(([10.0, 10.0], [100.0, 100.0], false)),
+        );
     }
 
     #[test]
     fn show_editor_ui_composes_timing_tapping_compose_and_trigger_modes() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
-        let mut view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
-        view.mode = EditorMode::Timing;
-        run_editor_ui_once(&view, true, true, true, SettingsSection::Backends);
+        let view = crate::test_utils::editor_ui_view(&app_settings, &music_metadata);
+        run_editor_ui_once(
+            &view,
+            EditorMode::Timing,
+            true,
+            true,
+            true,
+            SettingsSection::Backends,
+            None,
+        );
 
-        view.mode = EditorMode::Place;
-        run_editor_ui_once(&view, true, false, false, SettingsSection::Keybinds);
+        run_editor_ui_once(
+            &view,
+            EditorMode::Place,
+            true,
+            false,
+            false,
+            SettingsSection::Keybinds,
+            None,
+        );
 
-        view.mode = EditorMode::Tapping;
-        run_editor_ui_once(&view, true, false, false, SettingsSection::Keybinds);
+        run_editor_ui_once(
+            &view,
+            EditorMode::Tapping,
+            true,
+            false,
+            false,
+            SettingsSection::Keybinds,
+            None,
+        );
     }
 }
 
 #[cfg(test)]
 mod test_utils {
-    use std::sync::LazyLock;
+    use eg_types::{AppSettings, Direction, LevelObject, MusicMetadata, TimingPoint};
 
-    use eg_blocks::BlockId;
-    use eg_state::state::UiStateData;
-    use eg_types::{AppSettings, Direction, EditorMode, MusicMetadata, SettingsSection};
-
-    static DEFAULT_BLOCK_ID: LazyLock<BlockId> = LazyLock::new(BlockId::default);
+    pub struct EditorUiTestInputs {
+        pub playing: bool,
+        pub timeline_time_seconds: f32,
+        pub timeline_duration_seconds: f32,
+        pub tap_times: Vec<f32>,
+        pub selected_tap: Option<(usize, f32, [f32; 3])>,
+        pub timeline_preview_position: [f32; 3],
+        pub timeline_preview_direction: Direction,
+        pub timing_points: Vec<TimingPoint>,
+        pub playback_speed: f32,
+        pub timing_selected_index: Option<usize>,
+        pub waveform_zoom: f32,
+        pub waveform_scroll: f32,
+        pub waveform_samples: Vec<f32>,
+        pub waveform_sample_rate: u32,
+        pub waveform_window_size: usize,
+        pub waveform_loading: bool,
+        pub waveform_complete: bool,
+        pub bpm_tap_result: Option<f32>,
+        pub trigger_objects: Vec<LevelObject>,
+        pub trigger_selected_index: Option<usize>,
+    }
 
     pub fn editor_ui_view(
         _app_settings: &AppSettings,
         _music_metadata: &MusicMetadata,
-    ) -> UiStateData {
-        UiStateData {
-            mode: EditorMode::Select,
-            last_mode: Some(EditorMode::Select),
-            snap_to_grid: true,
-            snap_step: 1.0,
-            snap_rotation: true,
-            snap_rotation_step_degrees: 15.0,
-            selected_block_id: DEFAULT_BLOCK_ID.clone(),
-            place_preview_position: [0.0, 0.0, 0.0],
-            place_preview_size: [1.0, 1.0, 1.0],
-            recent_block_ids: Vec::new(),
-            selected_block: None,
-            selected_block_count: 0,
-            clipboard_block_count: 0,
-            can_undo: false,
-            can_redo: false,
+    ) -> EditorUiTestInputs {
+        EditorUiTestInputs {
             playing: false,
             timeline_time_seconds: 0.0,
             timeline_duration_seconds: 16.0,
@@ -2465,14 +2693,6 @@ mod test_utils {
             bpm_tap_result: None,
             trigger_objects: vec![],
             trigger_selected_index: None,
-            camera_position: [0.0, 0.0, 0.0],
-            camera_preview_position: [0.0, 0.0, 0.0],
-            camera_preview_target: [0.0, 0.0, 0.0],
-            camera_rotation: 0.0,
-            camera_pitch: 0.0,
-            fps: 60.0,
-            marquee_selection_rect_screen: None,
-            object_count: 0,
         }
     }
 }
