@@ -16,10 +16,11 @@ use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
 use crate::state::{
-    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
+    EditorAudioCacheRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
     EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
-    collect_editor_object_data,
+    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, collect_editor_object_data,
+    load_waveform_for_level_resources,
 };
 
 /// Switch the editor mode.
@@ -64,9 +65,28 @@ pub fn register_events(app: &mut App) {
 pub fn handle_set_editor_mode(
     mut events: MessageReader<SetEditorMode>,
     mut input: ResMut<EditorInputRes>,
+    session: Res<SessionStateRes>,
+    cache: Res<EditorAudioCacheRes>,
+    preload: Res<RuntimeAudioPreloadRes>,
+    sender: Res<WaveformLoadSenderRes>,
+    mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
+        let entering_timing = input.0.mode != EditorMode::Timing && event.0 == EditorMode::Timing;
         input.0.mode = event.0;
+        if entering_timing {
+            let level_name = session
+                .editor_level_name
+                .clone()
+                .unwrap_or_else(|| "Untitled".to_string());
+            load_waveform_for_level_resources(
+                level_name,
+                &cache,
+                &preload,
+                &mut timing.0,
+                sender.0.clone(),
+            );
+        }
     }
 }
 

@@ -50,7 +50,7 @@ fn drag_anchor_position(drag: &EditorBlockDrag) -> [f32; 3] {
 }
 
 super::super::editor_context_methods! {
-    fn marquee_has_dragged_far_enough(&self) -> bool {
+    pub(crate) fn marquee_has_dragged_far_enough(&self) -> bool {
         let Some(start) = self.input.marquee_start_screen else {
             return false;
         };
@@ -191,7 +191,7 @@ super::super::editor_context_methods! {
         best_hit.map(|(index, _)| index)
     }
 
-    fn apply_marquee_selection(&mut self, viewport: Vec2, additive: bool) {
+    pub(crate) fn apply_marquee_selection(&mut self, viewport: Vec2, additive: bool) {
         let Some(start) = self.input.marquee_start_screen else {
             return;
         };
@@ -281,6 +281,16 @@ super::super::editor_context_methods! {
 
         self.input.marquee_start_screen = None;
         self.input.marquee_current_screen = None;
+        if !additive {
+            self.clear_block_selection();
+            self.set_trigger_selected(None);
+            self.sync_primary_selection_from_indices();
+            self.input.hovered_block_index = None;
+            self.runtime.interaction.gizmo_drag = None;
+            self.runtime.interaction.block_drag = None;
+            self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(false));
+            return true;
+        }
         false
     }
 
@@ -905,10 +915,12 @@ mod tests {
     }
 
     #[test]
-    fn finish_marquee_clears_state_when_not_dragged_far_enough() {
+    fn click_only_marquee_deselects_without_requiring_drag_motion() {
         let mut editor = EditorSubsystem::default();
 
         editor.input.mode = EditorMode::Select;
+        editor.input.selected_block_indices = vec![0];
+        editor.input.selected_block_index = Some(0);
         assert!(editor.begin_marquee_selection(100.0, 100.0, AppPhase::Editor));
         assert!(editor.update_marquee_selection(101.0, 101.0, AppPhase::Editor));
 
@@ -918,9 +930,11 @@ mod tests {
             Vec2::new(1280.0, 720.0),
             AppPhase::Editor,
         );
-        assert!(!changed);
+        assert!(changed);
         assert!(editor.input.marquee_start_screen.is_none());
         assert!(editor.input.marquee_current_screen.is_none());
+        assert!(editor.input.selected_block_indices.is_empty());
+        assert_eq!(editor.input.selected_block_index, None);
     }
 
     #[test]

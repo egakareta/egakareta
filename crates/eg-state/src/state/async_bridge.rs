@@ -1107,6 +1107,39 @@ mod tests {
     }
 
     #[test]
+    fn waveform_channel_results_reach_timing_state_in_the_same_schedule() {
+        let mut world = build_world();
+        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Level1".to_string());
+
+        let (sender, receiver) = mpsc::channel::<WaveformResult>();
+        world.insert_resource(WaveformLoadChannelRes(std::sync::Arc::new(Mutex::new(
+            receiver,
+        ))));
+        sender
+            .send((
+                "audio.mp3".to_string(),
+                "Level1".to_string(),
+                WaveformLoadMessage::Cached {
+                    samples: vec![0.2, 0.8],
+                    sample_rate: 44_100,
+                    window_size: 256,
+                    bytes: None,
+                },
+            ))
+            .expect("waveform channel remains connected");
+
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        schedule.add_systems((poll_channels_system, waveform_handler_system).chain());
+        schedule.run(&mut world);
+
+        let timing = &world.resource::<EditorTimingRes>().0;
+        assert_eq!(timing.waveform_samples, vec![0.2, 0.8]);
+        assert_eq!(timing.waveform_sample_rate, 44_100);
+        assert!(timing.waveform_complete);
+        assert!(!timing.waveform_loading);
+    }
+
+    #[test]
     fn waveform_handler_system_keeps_stale_results_out_of_app_timing_state() {
         use crate::events::async_results::WaveformResultEvent;
         let mut world = build_world();

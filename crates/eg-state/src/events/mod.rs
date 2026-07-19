@@ -2152,6 +2152,22 @@ mod tests {
     }
 
     #[test]
+    fn entering_timing_mode_starts_waveform_loading() {
+        let mut world = build_event_world();
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_level_name = Some("missing-test-audio".to_string());
+        world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Place;
+
+        world.write_message(SetEditorMode(EditorMode::Timing));
+        world.run_schedule(crate::state::StateSchedule);
+
+        let timing = &world.resource::<crate::state::EditorTimingRes>().0;
+        assert!(timing.waveform_loading);
+        assert!(!timing.waveform_complete);
+    }
+
+    #[test]
     fn set_snap_to_grid_updates_settings_and_resnaps_selected_object() {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
@@ -4297,10 +4313,16 @@ mod tests {
     #[test]
     fn carve_out_set_timeline_time_mutates_editor_timeline_resource() {
         let mut world = build_event_world();
+        set_test_phase(&mut world, AppPhase::Editor);
         {
             let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
             timeline.0.clock.duration_seconds = 3.0;
             timeline.0.clock.time_seconds = 0.0;
+        }
+        {
+            let mut camera = world.resource_mut::<crate::state::EditorCameraRes>();
+            camera.0.editor_pan = [12.0, -4.0];
+            camera.0.editor_target_z = 2.0;
         }
 
         world.write_message(SetTimelineTime(1.25));
@@ -4314,6 +4336,26 @@ mod tests {
             1.25,
             epsilon = 1e-6
         );
+        let preview = world
+            .resource::<crate::state::EditorTimelineRes>()
+            .0
+            .preview
+            .position;
+        let camera = &world.resource::<crate::state::EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, [preview[0] + 0.5, preview[2] + 0.5]);
+        assert_eq!(camera.editor_target_z, preview[1]);
+
+        let preserved_pan = camera.editor_pan;
+        let preserved_target_z = camera.editor_target_z;
+        world
+            .resource_mut::<crate::state::EditorInputRes>()
+            .0
+            .ctrl_held = true;
+        world.write_message(SetTimelineTime(0.5));
+        world.run_schedule(crate::state::StateSchedule);
+        let camera = &world.resource::<crate::state::EditorCameraRes>().0;
+        assert_eq!(camera.editor_pan, preserved_pan);
+        assert_eq!(camera.editor_target_z, preserved_target_z);
 
         world.write_message(SetTimelineTime(9.0));
         world.run_schedule(crate::state::StateSchedule);

@@ -78,6 +78,50 @@ async fn streaming_geometry_appends_unindexed_vertices_without_rebuild() {
 
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::test]
+async fn streaming_vertex_replacement_reuses_allocation_and_exposes_outline_buffer() {
+    let (device, queue) = test_device_queue().await;
+    let vertices = vec![
+        Vertex::untextured([0.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+        Vertex::untextured([1.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+        Vertex::untextured([0.0, 1.0, 0.0], [1.0, 1.0, 1.0, 1.0]),
+    ];
+    let mut slot = MeshSlot::Empty;
+
+    slot.replace_with_streaming_vertices(&device, &queue, "Outline Streaming Mesh", &vertices);
+    let initial_capacity = match &slot {
+        MeshSlot::Streaming {
+            capacity_vertices, ..
+        } => *capacity_vertices,
+        _ => panic!("replacement must create a streaming mesh"),
+    };
+    assert!(slot.vertex_buffer().is_some());
+
+    slot.replace_with_streaming_vertices(&device, &queue, "Outline Streaming Mesh", &vertices[..2]);
+    assert_eq!(
+        match &slot {
+            MeshSlot::Streaming {
+                capacity_vertices, ..
+            } => *capacity_vertices,
+            _ => panic!("replacement must retain the streaming mesh"),
+        },
+        initial_capacity
+    );
+    assert_eq!(slot.draw_data().map(|draw_data| draw_data.count()), Some(2));
+
+    let grown = vec![Vertex::untextured([2.0, 0.0, 0.0], [1.0, 1.0, 1.0, 1.0]); 7];
+    slot.replace_with_streaming_vertices(&device, &queue, "Outline Streaming Mesh", &grown);
+    assert!(matches!(
+        &slot,
+        MeshSlot::Streaming {
+            capacity_vertices,
+            ..
+        } if *capacity_vertices > initial_capacity
+    ));
+    assert_eq!(slot.draw_data().map(|draw_data| draw_data.count()), Some(7));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[tokio::test]
 async fn streaming_geometry_appends_indexed_data_without_rebuild() {
     let (device, queue) = test_device_queue().await;
     let first = MeshGeometry {

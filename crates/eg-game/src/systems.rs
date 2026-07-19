@@ -88,7 +88,7 @@ pub struct CollisionResult {
 /// `PlayerDirection`. Run before [`GameplaySet::AdvancePlayer`].
 pub fn turn_input_system(
     mut pending: ResMut<PendingTurnInputs>,
-    mut players: Query<(&mut PlayerDirection, &Grounded)>,
+    mut players: Query<(&PlayerPosition, &mut PlayerDirection, &mut Trail, &Grounded)>,
     clock: Res<GameClock>,
 ) {
     if !clock.started || clock.game_over || clock.level_complete {
@@ -99,10 +99,26 @@ pub fn turn_input_system(
         if front.at_seconds <= clock.elapsed_seconds {
             let TimedTurnInput { kind, .. } = *front;
             pending.taps.pop_front();
-            if let Ok((mut direction, grounded)) = players.single_mut()
+            if let Ok((position, mut direction, mut trail, grounded)) = players.single_mut()
                 && grounded.0
                 && kind == TurnInputKind::TurnRight
             {
+                // A grounded turn starts a new visual leg. Without this
+                // anchor the renderer joins the old and new head positions
+                // with a diagonal, making the snake appear to ignore turns.
+                const MIN_DELTA: f32 = 0.001;
+                if let Some(segment) = trail.segments.last_mut() {
+                    let already_anchored = segment.last().is_some_and(|last| {
+                        (last[0] - position.0[0]).abs() < MIN_DELTA
+                            && (last[1] - position.0[1]).abs() < MIN_DELTA
+                            && (last[2] - position.0[2]).abs() < MIN_DELTA
+                    });
+                    if !already_anchored {
+                        segment.push(position.0);
+                    }
+                } else {
+                    trail.segments.push(vec![position.0]);
+                }
                 direction.0 = match direction.0 {
                     Direction::Forward => Direction::Right,
                     Direction::Right => Direction::Forward,

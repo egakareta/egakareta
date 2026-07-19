@@ -13,7 +13,8 @@ use super::components::{
 use super::events::ConsumedEventsBuffer;
 use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains};
 use super::resources::{
-    FrameDelta, GameClock, PlayerProgress, SpatialIndex, TimedTurnInput, TurnInputKind,
+    FrameDelta, GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput,
+    TurnInputKind,
 };
 use super::simulation::{TimelineSimulationRuntime, simulate_timeline_state};
 use super::test_app::TestApp;
@@ -161,6 +162,39 @@ fn player_stays_grounded_when_footprint_overlaps_platform_edge() {
     assert!(grounded);
     assert!(!app.world().resource::<GameClock>().game_over);
     approx::assert_abs_diff_eq!(position[1], 1.0, epsilon = 1e-6);
+}
+
+#[test]
+fn grounded_turn_anchors_the_trail_before_changing_direction() {
+    let mut app = TestApp::minimal();
+    spawn_player(
+        &mut app,
+        [0.0, 0.0, 0.0],
+        Direction::Forward,
+        BASE_PLAYER_SPEED,
+        true,
+    );
+    {
+        let world = app.world_mut();
+        let mut players = world.query::<&mut PlayerPosition>();
+        players.single_mut(world).expect("one player").0 = [2.0, 0.0, 3.0];
+    }
+    start_game(&mut app);
+    app.world_mut()
+        .resource_mut::<PendingTurnInputs>()
+        .taps
+        .push_back(TimedTurnInput {
+            at_seconds: 0.0,
+            kind: TurnInputKind::TurnRight,
+        });
+
+    tick(&mut app, 0.0);
+
+    let world = app.world_mut();
+    let mut query = world.query::<(&PlayerDirection, &Trail)>();
+    let (direction, trail) = query.single(world).expect("one player");
+    assert_eq!(direction.0, Direction::Right);
+    assert_eq!(trail.segments, vec![vec![[0.0, 0.0, 0.0], [2.0, 0.0, 3.0]]]);
 }
 
 #[test]

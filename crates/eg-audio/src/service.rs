@@ -198,8 +198,63 @@ pub fn start_audio_preload(
     });
 }
 
+fn decode_waveform_and_send(
+    source_for_send: String,
+    level_for_send: String,
+    bytes: Vec<u8>,
+    cache_key: String,
+    sender: Sender<WaveformResult>,
+) {
+    let _ = sender.send((
+        source_for_send.clone(),
+        level_for_send.clone(),
+        WaveformLoadMessage::Started {
+            window_size: WAVEFORM_WINDOW,
+        },
+    ));
+
+    let decoded = crate::audio::decode_audio_to_waveform_streaming(
+        &bytes,
+        WAVEFORM_WINDOW,
+        WAVEFORM_CHUNK_PEAKS,
+        |start_peak, peaks, sample_rate| {
+            let _ = sender.send((
+                source_for_send.clone(),
+                level_for_send.clone(),
+                WaveformLoadMessage::Chunk {
+                    start_peak,
+                    peaks,
+                    sample_rate,
+                    window_size: WAVEFORM_WINDOW,
+                },
+            ));
+        },
+    );
+
+    if let Some(summary) = decoded {
+        let _ = sender.send((
+            source_for_send,
+            level_for_send,
+            WaveformLoadMessage::Finished {
+                sample_rate: summary.sample_rate,
+                window_size: WAVEFORM_WINDOW,
+                total_peaks: summary.peak_count,
+                cache_key: Some(cache_key),
+                bytes: Some(bytes),
+            },
+        ));
+    } else {
+        let _ = sender.send((
+            source_for_send,
+            level_for_send,
+            WaveformLoadMessage::Failed { bytes: Some(bytes) },
+        ));
+    }
+}
+
 /// Starts asynchronous loading of waveform data for a music track.
-/// Spawns a thread to decode the audio file.
+/// Native builds decode on Rayon; browser builds decode independently of the
+/// AudioWorklet-owned worker pool.
 ///
 /// # Arguments
 /// * `level_name` - The level directory name containing the music file
@@ -246,59 +301,26 @@ pub fn start_waveform_loading(
             return;
         }
 
+        #[cfg(not(target_arch = "wasm32"))]
         rayon::spawn(move || {
-            let _ = sender.send((
-                source_for_send.clone(),
-                level_for_send.clone(),
-                WaveformLoadMessage::Started {
-                    window_size: WAVEFORM_WINDOW,
-                },
-            ));
-
-            let decoded = crate::audio::decode_audio_to_waveform_streaming(
-                &bytes,
-                WAVEFORM_WINDOW,
-                WAVEFORM_CHUNK_PEAKS,
-                |start_peak, peaks, sample_rate| {
-                    let _ = sender.send((
-                        source_for_send.clone(),
-                        level_for_send.clone(),
-                        WaveformLoadMessage::Chunk {
-                            start_peak,
-                            peaks,
-                            sample_rate,
-                            window_size: WAVEFORM_WINDOW,
-                        },
-                    ));
-                },
-            );
-
-            if let Some(summary) = decoded {
-                let _ = sender.send((
-                    source_for_send,
-                    level_for_send,
-                    WaveformLoadMessage::Finished {
-                        sample_rate: summary.sample_rate,
-                        window_size: WAVEFORM_WINDOW,
-                        total_peaks: summary.peak_count,
-                        cache_key: Some(cache_key),
-                        bytes: Some(bytes),
-                    },
-                ));
-            } else {
-                let _ = sender.send((
-                    source_for_send,
-                    level_for_send,
-                    WaveformLoadMessage::Failed { bytes: Some(bytes) },
-                ));
-            }
+            decode_waveform_and_send(source_for_send, level_for_send, bytes, cache_key, sender);
         });
+
+        // AudioWorklet startup intentionally delays the Rayon worker pool. Do
+        // not make editor waveform loading depend on that pool: it is a
+        // presentation task and must still complete when browser threading is
+        // unavailable or the audio device has not yet been unlocked.
+        #[cfg(target_arch = "wasm32")]
+        decode_waveform_and_send(source_for_send, level_for_send, bytes, cache_key, sender);
     });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::waveform_cache_key;
+    use std::sync::mpsc;
+    use web_time::Duration;
+
+    use super::{WaveformLoadMessage, decode_waveform_and_send, waveform_cache_key};
 
     #[test]
     fn waveform_cache_key_tracks_audio_content_and_window_size() {
@@ -311,5 +333,40 @@ mod tests {
         assert_ne!(first, different_bytes);
         assert_ne!(first, different_window);
         assert!(first.starts_with("waveform-v1-window-256-sha256-"));
+    }
+
+    #[test]
+    fn waveform_decode_task_always_emits_a_terminal_message() {
+        let (sender, receiver) = mpsc::channel();
+        decode_waveform_and_send(
+            "audio.mp3".to_string(),
+            "Regression".to_string(),
+            crate::audio::tiny_wav_bytes(),
+            "test-cache-key".to_string(),
+            sender,
+        );
+
+        assert!(matches!(
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("decoder emits its start message")
+                .2,
+            WaveformLoadMessage::Started { .. }
+        ));
+
+        let mut terminal = None;
+        while let Ok((_, _, message)) = receiver.recv_timeout(Duration::from_secs(1)) {
+            if matches!(
+                message,
+                WaveformLoadMessage::Finished { .. } | WaveformLoadMessage::Failed { .. }
+            ) {
+                terminal = Some(message);
+                break;
+            }
+        }
+        assert!(matches!(
+            terminal,
+            Some(WaveformLoadMessage::Finished { .. })
+        ));
     }
 }

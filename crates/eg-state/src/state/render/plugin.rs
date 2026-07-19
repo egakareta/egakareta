@@ -543,6 +543,11 @@ fn editor_objects_for_render(
 /// Extract time-dependent gameplay block batches from App-owned gameplay
 /// entities. This is the scheduled replacement for the animated-block branch
 /// in the former legacy frame callback.
+#[derive(PartialEq)]
+pub(crate) struct PlayingStaticBlockMeshCache {
+    objects: Vec<LevelObject>,
+}
+
 pub(crate) fn extract_playing_block_meshes_system(
     phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
@@ -556,15 +561,21 @@ pub(crate) fn extract_playing_block_meshes_system(
     >,
     objects: GameplayRenderObjects<'_, '_>,
     mut block_meshes: ResMut<RenderPlayingBlockMeshesRes>,
+    mut static_cache: Local<Option<PlayingStaticBlockMeshCache>>,
 ) {
-    block_meshes.result = None;
-    block_meshes.chunked = None;
     if !matches!(*phase.get(), AppPhase::Playing | AppPhase::GameOver) || session.game_paused {
+        if static_cache.take().is_some() {
+            block_meshes.result = None;
+            block_meshes.chunked = None;
+        }
         return;
     }
     let Some(clock) = clock else {
         return;
     };
+
+    block_meshes.result = None;
+    block_meshes.chunked = None;
 
     let mut gameplay_objects = objects
         .iter()
@@ -598,11 +609,19 @@ pub(crate) fn extract_playing_block_meshes_system(
         .filter(|object| is_play_world_render_object(object))
         .collect::<Vec<_>>();
     if has_animated_blocks || has_object_transform_triggers || has_camera_timeline_triggers {
+        *static_cache = None;
         block_meshes.result = Some(build_block_instance_batches_from_refs_at_time(
             &render_object_refs,
             Some(clock.elapsed_seconds),
         ));
     } else {
+        let cache = PlayingStaticBlockMeshCache {
+            objects: gameplay_objects.clone(),
+        };
+        if static_cache.as_ref() == Some(&cache) {
+            return;
+        }
+        *static_cache = Some(cache);
         block_meshes.chunked = Some(build_chunked_block_mesh_from_refs(&render_object_refs));
     }
 }
@@ -636,6 +655,13 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
 /// Extract the editor static and selected block meshes from App-owned editor
 /// resources. This is the scheduled replacement for the editor block rebuild
 /// branches in the former legacy frame callback.
+#[derive(PartialEq)]
+pub(crate) struct EditorBlockMeshCache {
+    objects: Vec<LevelObject>,
+    selected_indices: Vec<usize>,
+    time_seconds: Option<f32>,
+}
+
 pub(crate) fn extract_editor_block_meshes_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
@@ -648,10 +674,13 @@ pub(crate) fn extract_editor_block_meshes_system(
     >,
     timeline: Res<EditorTimelineRes>,
     mut block_meshes: ResMut<RenderEditorBlockMeshesRes>,
+    mut cache: Local<Option<EditorBlockMeshCache>>,
 ) {
-    block_meshes.static_mesh = eg_mesh::ChunkedBlockMesh::default();
-    block_meshes.selected_geometry = eg_mesh::MeshGeometry::default();
     if *phase.get() != AppPhase::Editor {
+        if cache.take().is_some() {
+            block_meshes.static_mesh = eg_mesh::ChunkedBlockMesh::default();
+            block_meshes.selected_geometry = eg_mesh::MeshGeometry::default();
+        }
         return;
     }
 
@@ -671,6 +700,15 @@ pub(crate) fn extract_editor_block_meshes_system(
         .collect::<Vec<_>>();
     let time_seconds =
         has_camera_timeline_triggers(&trigger_objects).then_some(timeline.0.clock.time_seconds);
+    let cache_key = EditorBlockMeshCache {
+        objects: object_source.clone(),
+        selected_indices: selected_indices.clone(),
+        time_seconds,
+    };
+    if cache.as_ref() == Some(&cache_key) {
+        return;
+    }
+    *cache = Some(cache_key);
     block_meshes.static_mesh = match time_seconds {
         Some(time_seconds) => build_chunked_block_mesh_from_refs_at_time(
             &static_objects,
@@ -1876,11 +1914,15 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
     let device = &gpu.0.device;
     let queue = &gpu.0.queue;
 
-    meshes.0.gem_shatter_effects.replace_with_vertices(
-        device,
-        "Gem Shatter Vertex Buffer",
-        &block_effects.0,
-    );
+    meshes
+        .0
+        .gem_shatter_effects
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Gem Shatter Vertex Buffer",
+            &block_effects.0,
+        );
     if let Some(result) = playing.result.as_ref() {
         meshes
             .0
@@ -1936,66 +1978,101 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
         meshes.0.blocks_chunked.clear();
     }
 
-    meshes.0.spawn_marker.replace_with_vertices(
+    meshes.0.spawn_marker.replace_with_streaming_vertices(
         device,
+        queue,
         "Spawn Marker Vertex Buffer",
         &spawn_marker.0,
     );
+    meshes.0.editor_gizmo.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Editor Gizmo Vertex Buffer",
+        &gizmo.0,
+    );
+    meshes.0.trail.write_streaming_vertices(queue, &trail.0);
     meshes
         .0
-        .editor_gizmo
-        .replace_with_vertices(device, "Editor Gizmo Vertex Buffer", &gizmo.0);
-    meshes.0.trail.write_streaming_vertices(queue, &trail.0);
-    meshes.0.practice_checkpoints.replace_with_vertices(
+        .practice_checkpoints
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Practice Checkpoint Flag Vertex Buffer",
+            &practice_checkpoints.0,
+        );
+    meshes.0.camera_arrow.replace_with_streaming_vertices(
         device,
-        "Practice Checkpoint Flag Vertex Buffer",
-        &practice_checkpoints.0,
-    );
-    meshes.0.camera_arrow.replace_with_vertices(
-        device,
+        queue,
         "Camera Arrow Vertex Buffer",
         &camera_arrow.0,
     );
+    meshes.0.editor_cursor.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Editor Cursor Vertex Buffer",
+        &cursor.0,
+    );
     meshes
         .0
-        .editor_cursor
-        .replace_with_vertices(device, "Editor Cursor Vertex Buffer", &cursor.0);
-    meshes.0.editor_hitbox_visualization.replace_with_vertices(
+        .editor_hitbox_visualization
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hitbox Visualization Vertex Buffer",
+            &hitbox.0,
+        );
+    meshes.0.tap_indicators.replace_with_streaming_vertices(
         device,
-        "Editor Hitbox Visualization Vertex Buffer",
-        &hitbox.0,
-    );
-    meshes.0.tap_indicators.replace_with_vertices(
-        device,
+        queue,
         "Tap Indicator Vertex Buffer",
         &tap_indicator.0,
     );
-    meshes.0.editor_selection_stencil.replace_with_vertices(
-        device,
-        "Editor Selection Stencil Vertex Buffer",
-        &selection.stencil_vertices,
-    );
-    meshes.0.editor_selection_outline.replace_with_vertices(
-        device,
-        "Editor Selection Outline Vertex Buffer",
-        &selection.outline_vertices,
-    );
+    meshes
+        .0
+        .editor_selection_stencil
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Selection Stencil Vertex Buffer",
+            &selection.stencil_vertices,
+        );
+    meshes
+        .0
+        .editor_selection_outline
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Selection Outline Vertex Buffer",
+            &selection.outline_vertices,
+        );
     meshes.0.editor_selection_outline_instances = selection.instances.clone();
-    meshes.0.editor_hover_stencil.replace_with_vertices(
-        device,
-        "Editor Hover Stencil Vertex Buffer",
-        &hover.stencil_vertices,
-    );
-    meshes.0.editor_hover_outline.replace_with_vertices(
-        device,
-        "Editor Hover Outline Vertex Buffer",
-        &hover.outline_vertices,
-    );
-    meshes.0.transform_trigger_markers.replace_with_vertices(
-        device,
-        "Transform Trigger Marker Vertex Buffer",
-        &transform_markers.0,
-    );
+    meshes
+        .0
+        .editor_hover_stencil
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hover Stencil Vertex Buffer",
+            &hover.stencil_vertices,
+        );
+    meshes
+        .0
+        .editor_hover_outline
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hover Outline Vertex Buffer",
+            &hover.outline_vertices,
+        );
+    meshes
+        .0
+        .transform_trigger_markers
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Transform Trigger Marker Vertex Buffer",
+            &transform_markers.0,
+        );
 }
 
 /// Bevy [`QueryFilter`] for the authored object fields that trigger

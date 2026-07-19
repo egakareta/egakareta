@@ -50,6 +50,24 @@ use crate::state::{
     start_audio_source_at_seconds_for_resources,
 };
 
+#[derive(SystemParam)]
+pub struct TimelineSeekResources<'w, 's> {
+    phase: Res<'w, State<AppPhase>>,
+    input: Res<'w, EditorInputRes>,
+    authored_objects: Query<
+        'w,
+        's,
+        (
+            &'static crate::state::EditorObjectOrder,
+            &'static eg_game::ObjectData,
+        ),
+        With<crate::state::EditorAuthoredObject>,
+    >,
+    spawn: Res<'w, EditorSpawnRes>,
+    camera: ResMut<'w, EditorCameraRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
+}
+
 /// Toggle timeline playback.
 #[derive(Message, Debug, Clone, Copy, Default)]
 pub struct ToggleTimelinePlayback;
@@ -253,38 +271,69 @@ fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_, 
 
 pub fn handle_shift_timeline(
     mut events: MessageReader<ShiftTimeline>,
-    mut timeline: ResMut<EditorTimelineRes>,
+    mut resources: TimelineSeekResources,
 ) {
     for event in events.read() {
-        let current_time = timeline.0.clock.time_seconds;
-        let next_time = (current_time + event.0).clamp(0.0, timeline.0.clock.duration_seconds);
-        timeline.0.clock.time_seconds = next_time;
-        queue_playback_seek(&mut timeline);
+        let current_time = resources.timeline.0.clock.time_seconds;
+        let next_time =
+            (current_time + event.0).clamp(0.0, resources.timeline.0.clock.duration_seconds);
+        seek_timeline(&mut resources, next_time);
     }
 }
 
 pub fn handle_set_timeline_time(
     mut events: MessageReader<SetTimelineTime>,
-    mut timeline: ResMut<EditorTimelineRes>,
+    mut resources: TimelineSeekResources,
 ) {
     for event in events.read() {
-        timeline.0.clock.time_seconds = event.0.clamp(0.0, timeline.0.clock.duration_seconds);
-        queue_playback_seek(&mut timeline);
+        let next_time = event
+            .0
+            .clamp(0.0, resources.timeline.0.clock.duration_seconds);
+        seek_timeline(&mut resources, next_time);
     }
 }
 
 pub fn handle_set_timeline_duration(
     mut events: MessageReader<SetTimelineDuration>,
-    mut timeline: ResMut<EditorTimelineRes>,
+    mut resources: TimelineSeekResources,
 ) {
     for event in events.read() {
-        timeline.0.clock.duration_seconds = event.0.max(0.1);
-        timeline.0.clock.time_seconds = timeline
+        resources.timeline.0.clock.duration_seconds = event.0.max(0.1);
+        let next_time = resources
+            .timeline
             .0
             .clock
             .time_seconds
-            .min(timeline.0.clock.duration_seconds);
-        queue_playback_seek(&mut timeline);
+            .min(resources.timeline.0.clock.duration_seconds);
+        seek_timeline(&mut resources, next_time);
+    }
+}
+
+fn seek_timeline(resources: &mut TimelineSeekResources<'_, '_>, time_seconds: f32) {
+    resources.timeline.0.clock.time_seconds = time_seconds;
+    queue_playback_seek(&mut resources.timeline);
+
+    if *resources.phase.get() != AppPhase::Editor || resources.timeline.0.playback.playing {
+        return;
+    }
+
+    let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+    let mut runtime = TimelineSimulationRuntime::new(
+        resources.spawn.0.position,
+        resources.spawn.0.direction,
+        &objects,
+        &resources.timeline.0.taps.tap_times,
+    );
+    runtime.advance_to(time_seconds);
+    let snapshot = runtime.snapshot();
+    resources.timeline.0.preview.position = snapshot.position;
+    resources.timeline.0.preview.direction = snapshot.direction;
+
+    // Ctrl deliberately keeps the editor view fixed while scrubbing. The
+    // default follows the simulated snake, matching the pre-ECS editor.
+    if !resources.input.0.ctrl_held {
+        resources.camera.0.editor_pan = [snapshot.position[0] + 0.5, snapshot.position[2] + 0.5];
+        resources.camera.0.editor_target_z = snapshot.position[1];
     }
 }
 

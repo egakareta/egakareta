@@ -163,6 +163,11 @@ impl App {
         !pressed || should_route_pointer_input(egui_consumed, pointer_over_egui)
     }
 
+    fn unlock_audio_before_routing<T>(unlock: impl FnOnce(), routed_input: T) -> T {
+        unlock();
+        routed_input
+    }
+
     fn collect_touch_input_events(
         touch_points: &mut HashMap<u64, PhysicalPosition<f64>>,
         pinch_last_distance: &mut Option<f64>,
@@ -453,12 +458,16 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 let pressed = element_state == ElementState::Pressed;
-                if !Self::should_route_mouse_button_input(egui_consumed, ui_wants_pointer, pressed)
-                {
+                // Browser audio contexts may only be opened during a user
+                // gesture. UI clicks are deliberately not routed into game
+                // input, but they are still valid gestures for AudioWorklet.
+                if !Self::unlock_audio_before_routing(
+                    || runtime.ensure_audio_device(),
+                    Self::should_route_mouse_button_input(egui_consumed, ui_wants_pointer, pressed),
+                ) {
                     return;
                 }
 
-                runtime.ensure_audio_device();
                 let button_idx = mouse_button_index_from_winit(button);
                 runtime.process_input_event(InputEvent::MouseButton {
                     button: button_idx,
@@ -488,14 +497,18 @@ impl ApplicationHandler for App {
                 runtime.process_input_event(InputEvent::Zoom(zoom_delta));
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if !should_route_keyboard_input(
-                    egui_consumed,
-                    runtime.egui_context().egui_wants_keyboard_input(),
+                // As with pointer input, retain the browser user gesture even
+                // when egui consumes the key event.
+                if !Self::unlock_audio_before_routing(
+                    || runtime.ensure_audio_device(),
+                    should_route_keyboard_input(
+                        egui_consumed,
+                        runtime.egui_context().egui_wants_keyboard_input(),
+                    ),
                 ) {
                     return;
                 }
 
-                runtime.ensure_audio_device();
                 let pressed = event.state == ElementState::Pressed;
                 let just_pressed = pressed && !event.repeat;
 
@@ -615,6 +628,18 @@ mod tests {
     fn mouse_release_routes_even_when_pointer_is_over_egui() {
         assert!(App::should_route_mouse_button_input(false, true, false));
         assert!(App::should_route_mouse_button_input(true, true, false));
+    }
+
+    #[test]
+    fn ui_consumed_gesture_unlocks_audio_before_gameplay_input_is_filtered() {
+        let mut unlocked = false;
+        let routed = App::unlock_audio_before_routing(
+            || unlocked = true,
+            App::should_route_mouse_button_input(true, true, true),
+        );
+
+        assert!(unlocked, "a UI gesture must still unlock AudioWorklet");
+        assert!(!routed, "the UI gesture must not leak into gameplay input");
     }
 
     #[test]

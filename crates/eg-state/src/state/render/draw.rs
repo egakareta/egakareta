@@ -16,7 +16,6 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::TextureViewDescriptor;
 
-use eg_render::MeshSlot;
 use eg_render::RenderSurfaceError;
 use eg_types::AppPhase;
 
@@ -543,15 +542,14 @@ impl RenderContext<'_> {
 
             if !selection_instances.is_empty() {
                 puffin::profile_scope!("DrawSelectionOutlines");
-                let selection_mask_buffer = match &self.render_meshes().editor_selection_stencil {
-                    MeshSlot::VertexData { buffer, .. } => Some(buffer),
-                    _ => None,
-                };
-                let selection_outline_buffer = match &self.render_meshes().editor_selection_outline
-                {
-                    MeshSlot::VertexData { buffer, .. } => Some(buffer),
-                    _ => None,
-                };
+                let selection_mask_buffer = self
+                    .render_meshes()
+                    .editor_selection_stencil
+                    .vertex_buffer();
+                let selection_outline_buffer = self
+                    .render_meshes()
+                    .editor_selection_outline
+                    .vertex_buffer();
 
                 if let (Some(selection_mask_buffer), Some(selection_outline_buffer)) =
                     (selection_mask_buffer, selection_outline_buffer)

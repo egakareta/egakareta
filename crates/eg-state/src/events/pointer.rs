@@ -381,8 +381,13 @@ pub fn handle_pointer_moved(
         let mut handled = false;
         if editor.input.left_mouse_down && !editor.input.right_dragging {
             handled = editor.drag_gizmo_from_screen(event.x, event.y, viewport, phase)
-                || editor.drag_selection_from_screen(event.x, event.y, viewport, phase)
-                || editor.update_marquee_selection(event.x, event.y, phase);
+                || editor.drag_selection_from_screen(event.x, event.y, viewport, phase);
+            if !handled && editor.update_marquee_selection(event.x, event.y, phase) {
+                if editor.marquee_has_dragged_far_enough() {
+                    editor.apply_marquee_selection(viewport, editor.input.shift_held);
+                }
+                handled = true;
+            }
         }
         if !handled {
             if editor.input.mode == EditorMode::Tapping {

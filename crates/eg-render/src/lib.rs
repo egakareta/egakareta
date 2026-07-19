@@ -430,6 +430,35 @@ impl MeshSlot {
         }
     }
 
+    /// Replace dynamic vertex data while retaining a reusable GPU buffer.
+    ///
+    /// This is for presentation meshes that change often (trails, gizmos,
+    /// overlays). It grows capacity only when needed and otherwise updates the
+    /// existing buffer in place, avoiding one GPU allocation per frame.
+    pub fn replace_with_streaming_vertices(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        vertices: &[Vertex],
+    ) {
+        let capacity = match self {
+            Self::Streaming {
+                capacity_vertices, ..
+            } => *capacity_vertices as usize,
+            _ => 0,
+        };
+        if vertices.len() > capacity {
+            let grown_capacity = vertices
+                .len()
+                .saturating_mul(2)
+                .max(1)
+                .min(u32::MAX as usize) as u32;
+            *self = Self::streaming(device, label, grown_capacity);
+        }
+        self.write_streaming_vertices(queue, vertices);
+    }
+
     pub fn append_streaming_geometry(
         &mut self,
         queue: &wgpu::Queue,
@@ -545,6 +574,16 @@ impl MeshSlot {
                 *vertex_count = 0;
                 *index_count = 0;
             }
+        }
+    }
+
+    /// Return the vertex buffer used by unindexed meshes, including dynamic
+    /// streaming meshes. Custom passes that issue their own vertex ranges
+    /// (such as editor selection silhouettes) use this instead of draw_data.
+    pub fn vertex_buffer(&self) -> Option<&wgpu::Buffer> {
+        match self {
+            Self::VertexData { buffer, .. } | Self::Streaming { buffer, .. } => Some(buffer),
+            Self::Empty | Self::IndexedData { .. } | Self::IndexedStreaming { .. } => None,
         }
     }
 
