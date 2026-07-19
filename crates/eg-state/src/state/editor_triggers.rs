@@ -233,15 +233,6 @@ super::editor_context_methods! {
         let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
     }
-
-    /// Number of camera/transform trigger objects currently in the
-    /// level. Used by tests that verify the legacy
-    /// `AddCameraTrigger` / `AddCameraFollowTrigger` path still
-    /// grows the object store.
-    #[cfg(test)]
-    pub fn trigger_object_count(&self) -> usize {
-        self.trigger_objects().len()
-    }
 }
 
 #[cfg(test)]

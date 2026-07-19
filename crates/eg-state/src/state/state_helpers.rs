@@ -47,18 +47,6 @@ super::editor_context_methods! {
         self.normalized_block_selection_indices()
     }
 
-    /// Returns `true` when any currently-selected block is a transform
-    /// trigger block. Used by editor actions to know when a mutation
-    /// requires refreshing the transform trigger marker overlay.
-    #[cfg(test)]
-    pub fn has_selected_transform_trigger_block(&self) -> bool {
-        self.selected_indices_normalized().into_iter().any(|index| {
-            self.objects
-                .get(index)
-                .is_some_and(|o| o.is_transform_trigger())
-        })
-    }
-
     pub fn normalize_block_selection(&mut self) {
         let indices = self.normalized_block_selection_indices();
         self.input.selected_block_index = self
