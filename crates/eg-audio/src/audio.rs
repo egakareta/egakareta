@@ -415,10 +415,19 @@ impl AudioBackend {
     }
 
     /// Stop the current playback and reset the playback state.
+    ///
+    /// Drops the active player so a later [`AudioBackend::resume`] (or any
+    /// code path that calls it) cannot silently un-pause the same player.
+    /// Pausing the rodio player alone is insufficient because Bevy's
+    /// gameplay-audio sync system calls `resume()` whenever the session
+    /// reports `game_paused = false`, which would otherwise undo a playtest
+    /// exit's stop and keep the playtest music playing in the editor.
     pub fn stop(&mut self) {
-        if let Some(player) = &self.current_player {
-            player.pause();
+        if let Some(player) = self.current_player.take() {
+            player.stop();
         }
+        self.current_audio_source = None;
+        self.decoded_cache = None;
         self.playback_started_at = None;
         self.playback_start_offset_seconds = 0.0;
     }
@@ -546,13 +555,21 @@ impl AudioBackend {
     }
 
     /// Check if the audio backend is currently playing any audio. Returns true if playback is active, false otherwise.
+    ///
+    /// A paused or stopped player is not considered "playing" — only an
+    /// actively decoding/rendering player reports true. This keeps callers
+    /// like the gameplay-audio pause sync from thinking the music is still
+    /// running after `stop()` and accidentally resuming it.
     pub fn is_playing(&self) -> bool {
+        if self.playback_started_at.is_none() {
+            return false;
+        }
         if let Some(player) = self.current_player.as_ref() {
             return !player.empty();
         }
         #[cfg(test)]
         {
-            return self.playback_started_at.is_some();
+            return true;
         }
         #[cfg(not(test))]
         {
@@ -987,6 +1004,37 @@ mod tests {
 
         backend.stop();
         assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+    }
+
+    /// `stop()` must drop the active player so a later `resume()` call cannot
+    /// silently un-pause the same player. This is the playtest-exit contract
+    /// that the eg-state schedule relies on: when the playtest is exited,
+    /// `consume_audio_stop_request_system` calls `stop()`, and the subsequent
+    /// `sync_gameplay_audio_pause_system` `resume()` must not bring the
+    /// playtest music back.
+    #[test]
+    fn stop_drops_player_so_resume_is_a_noop() {
+        let mut backend = AudioBackend::new();
+        let wav = super::tiny_wav_bytes();
+
+        backend.replace_with_bytes("bytes:playtest".to_string(), &wav, 0.0);
+        assert!(backend.is_playing());
+        assert!(backend.current_player.is_some());
+
+        // Simulate the playtest-exit schedule: consume_audio_stop_request_system.
+        backend.stop();
+        assert!(!backend.is_playing());
+        assert!(backend.current_player.is_none());
+        assert_eq!(backend.playback_time_seconds(), None);
+
+        // Simulate the very next system in the same frame:
+        // sync_gameplay_audio_pause_system unconditionally calls resume()
+        // when game_paused is false. With the player dropped, this must
+        // leave the backend silent and not restart playback.
+        backend.resume();
+        assert!(!backend.is_playing());
+        assert!(backend.current_player.is_none());
         assert_eq!(backend.playback_time_seconds(), None);
     }
 
