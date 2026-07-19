@@ -541,6 +541,10 @@ pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: Playt
             Some(transition.playtest_audio_start_seconds);
         resources.session.playing_sky_color = transition.sky_color;
         resources.session.playing_trigger_base_objects = Some(transition.objects.clone());
+        // Snapshot the editor's authored blocks before gameplay reset despawns
+        // them. The playtest-exit handlers (Escape, ToggleEditor, level
+        // completion) use this snapshot to repopulate the editor.
+        resources.session.playtest_editor_objects = Some(objects.clone());
         resources.session.practice_mode_enabled = false;
         resources.session.practice_checkpoints.clear();
         resources.session.audio_stop_pending = true;

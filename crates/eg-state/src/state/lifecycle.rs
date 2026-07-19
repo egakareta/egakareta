@@ -1289,6 +1289,7 @@ impl AppInitialization {
                 playing_trigger_base_objects: None,
                 practice_mode_enabled: false,
                 practice_checkpoints: Vec::new(),
+                playtest_editor_objects: None,
                 audio_stop_pending: false,
             },
             level_import_channel,

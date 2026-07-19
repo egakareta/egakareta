@@ -497,10 +497,17 @@ pub fn handle_toggle_editor(world: &mut World) {
                 world
                     .resource_mut::<NextState<AppPhase>>()
                     .set(AppPhase::Editor);
-                let mut session = world.resource_mut::<SessionStateRes>();
-                session.playtesting_editor = false;
-                session.game_paused = false;
-                session.audio_stop_pending = true;
+                {
+                    let mut session = world.resource_mut::<SessionStateRes>();
+                    session.playtesting_editor = false;
+                    session.game_paused = false;
+                    session.audio_stop_pending = true;
+                }
+                // Restore the editor's authored blocks from the playtest
+                // snapshot. `replace_app_gameplay_world` despawns every
+                // `Object` entity (including the editor's), so the editor
+                // would be empty without this restoration.
+                crate::events::misc::restore_editor_objects_from_session(world);
             }
             AppPhase::Menu => enter_editor_from_menu(world),
             AppPhase::Playing | AppPhase::GameOver => {}

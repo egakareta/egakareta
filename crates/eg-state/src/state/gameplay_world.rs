@@ -125,24 +125,21 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     }
 
     let (objects, position, direction, duration) = if playtesting_editor {
+        // Use the snapshot captured at playtest start. The editor's authored
+        // entities are already despawned by `replace_app_gameplay_world`
+        // (called when the playtest started), so querying the live
+        // `EditorAuthoredObject` set would return an empty list.
+        let snapshot = world
+            .resource::<SessionStateRes>()
+            .playtest_editor_objects
+            .clone();
+        let objects = snapshot.unwrap_or_default();
         let (position, direction) = {
             let spawn = &world.resource::<EditorSpawnRes>().0;
             (spawn.position, spawn.direction)
         };
         (
-            {
-                let mut query = world.query_filtered::<(
-                    &super::editor_objects::EditorObjectOrder,
-                    &eg_game::ObjectData,
-                ), With<super::editor_objects::EditorAuthoredObject>>(
-                );
-                let mut objects = query
-                    .iter(world)
-                    .map(|(order, data)| (order.0, data.0.clone()))
-                    .collect::<Vec<_>>();
-                objects.sort_by_key(|(order, _)| *order);
-                objects.into_iter().map(|(_, object)| object).collect()
-            },
+            objects,
             position,
             direction,
             world
@@ -164,14 +161,20 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
         world
             .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Editor);
-        let mut session = world.resource_mut::<SessionStateRes>();
-        session.playtesting_editor = false;
-        session.game_paused = false;
-        session.playtest_audio_start_seconds = None;
-        session.playing_trigger_base_objects = None;
-        session.practice_mode_enabled = false;
-        session.practice_checkpoints.clear();
-        session.audio_stop_pending = true;
+        {
+            let mut session = world.resource_mut::<SessionStateRes>();
+            session.playtesting_editor = false;
+            session.game_paused = false;
+            session.playtest_audio_start_seconds = None;
+            session.playing_trigger_base_objects = None;
+            session.practice_mode_enabled = false;
+            session.practice_checkpoints.clear();
+            session.audio_stop_pending = true;
+        }
+        // Repopulate the editor's authored block list from the snapshot
+        // before the gameplay world is replaced (which would otherwise
+        // despawn every remaining `Object` entity).
+        crate::events::misc::restore_editor_objects_from_session(world);
     } else {
         world
             .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()

@@ -10,12 +10,12 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
 use bevy_state::prelude::{NextState, State};
+use eg_types::EditorMode;
 
-use super::timeline::stop_editor_timeline_playback;
 use crate::state::{
     EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes, SessionStateRes,
+    replace_editor_objects,
 };
 
 /// Toggle editor hitbox visualization.
@@ -86,54 +86,106 @@ pub fn handle_toggle_place_window(
 // timeline playback stop, editor timeline clock reset, and editor-to-menu
 // transition. Menu and game-over branches are also resolved directly in the
 // App world.
-pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeResources) {
-    for _ in events.read() {
-        match *resources.phase.get() {
+pub fn handle_escape(world: &mut World) {
+    use bevy_ecs::message::Messages;
+
+    let events: Vec<Escape> = world.resource_mut::<Messages<Escape>>().drain().collect();
+    for _ in events {
+        let phase = *world.resource::<State<eg_types::AppPhase>>().get();
+        match phase {
             eg_types::AppPhase::Playing => {
-                if resources.session.playtesting_editor {
-                    resources.next_phase.set(eg_types::AppPhase::Editor);
-                    resources.session.playtesting_editor = false;
-                    resources.session.game_paused = false;
-                    resources.session.audio_stop_pending = true;
-                    resources.timeline.0.playback.playing = false;
-                    resources.timeline.0.playback.runtime = None;
+                let playtesting_editor = world.resource::<SessionStateRes>().playtesting_editor;
+                if playtesting_editor {
+                    exit_playtest_restore_editor(world);
                 } else {
-                    resources.session.game_paused = !resources.session.game_paused;
+                    let mut session = world.resource_mut::<SessionStateRes>();
+                    session.game_paused = !session.game_paused;
                 }
                 continue;
             }
             eg_types::AppPhase::Editor => {
-                if clear_editor_selection_for_escape(&mut resources.input, &mut resources.timeline)
+                // Inline the selection-clear and timeline-stop logic with
+                // scoped blocks so every `resource_mut` borrow is dropped
+                // before the next one. (Holding two `Mut`s simultaneously is
+                // not possible from a `&mut World` exclusive-system entry
+                // point without going through `SystemParam`.)
+                let had_block_selection = {
+                    let mut input = world.resource_mut::<EditorInputRes>();
+                    let had = input.0.selected_block_index.is_some()
+                        || !input.0.selected_block_indices.is_empty()
+                        || input.0.hovered_block_index.is_some();
+                    if had {
+                        input.0.selected_block_index = None;
+                        input.0.selected_block_indices.clear();
+                        input.0.hovered_block_index = None;
+                    }
+                    had
+                };
+                let had_tap_selection = {
+                    let mut timeline = world.resource_mut::<EditorTimelineRes>();
+                    let had = selected_tap_exists(&timeline);
+                    if had {
+                        timeline.0.taps.selected_index = None;
+                    }
+                    had
+                };
+                if had_block_selection || had_tap_selection {
+                    continue;
+                }
+
+                // Stop active editor timeline playback if it's running. The
+                // helper takes three resources, so we read the `last_mode`
+                // out of the runtime and pass it as plain data so the three
+                // resources can be borrowed one at a time.
+                let was_playing = {
+                    let timeline = world.resource::<EditorTimelineRes>();
+                    timeline.0.playback.playing
+                };
+                if was_playing {
+                    let next_mode = {
+                        let runtime = world.resource::<EditorRuntimeRes>();
+                        runtime.0.interaction.last_mode.unwrap_or(EditorMode::Place)
+                    };
+                    {
+                        let mut timeline = world.resource_mut::<EditorTimelineRes>();
+                        timeline.0.playback.playing = false;
+                        timeline.0.playback.runtime = None;
+                        timeline.0.playback.pending_seek_time_seconds = None;
+                        timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
+                    }
+                    {
+                        let mut input = world.resource_mut::<EditorInputRes>();
+                        input.0.mode = next_mode;
+                    }
+                    {
+                        let mut runtime = world.resource_mut::<EditorRuntimeRes>();
+                        runtime.0.interaction.last_mode = None;
+                    }
+                    continue;
+                }
+
                 {
-                    continue;
+                    let mut timeline = world.resource_mut::<EditorTimelineRes>();
+                    if timeline.0.clock.time_seconds > 0.001 {
+                        timeline.0.clock.time_seconds = 0.0;
+                        continue;
+                    }
                 }
 
-                if stop_editor_timeline_playback(
-                    &mut resources.input,
-                    &mut resources.runtime,
-                    &mut resources.timeline,
-                ) {
-                    continue;
-                }
-
-                if resources.timeline.0.clock.time_seconds > 0.001 {
-                    resources.timeline.0.clock.time_seconds = 0.0;
-                    continue;
-                }
-
-                if let Some(menu) = resources.menu.as_deref_mut() {
-                    resources.next_phase.set(eg_types::AppPhase::Menu);
-                    resources.session.transition_to_menu();
+                world
+                    .resource_mut::<NextState<eg_types::AppPhase>>()
+                    .set(eg_types::AppPhase::Menu);
+                world.resource_mut::<SessionStateRes>().transition_to_menu();
+                if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
                     menu.0.preview_level_index = None;
-                    continue;
                 }
-                resources.next_phase.set(eg_types::AppPhase::Menu);
-                resources.session.transition_to_menu();
             }
             eg_types::AppPhase::GameOver => {
-                resources.next_phase.set(eg_types::AppPhase::Menu);
-                resources.session.transition_to_menu();
-                if let Some(menu) = resources.menu.as_deref_mut() {
+                world
+                    .resource_mut::<NextState<eg_types::AppPhase>>()
+                    .set(eg_types::AppPhase::Menu);
+                world.resource_mut::<SessionStateRes>().transition_to_menu();
+                if let Some(mut menu) = world.get_resource_mut::<MenuStateRes>() {
                     menu.0.preview_level_index = None;
                 }
             }
@@ -142,37 +194,37 @@ pub fn handle_escape(mut events: MessageReader<Escape>, mut resources: EscapeRes
     }
 }
 
-#[derive(SystemParam)]
-pub struct EscapeResources<'w> {
-    phase: Res<'w, State<eg_types::AppPhase>>,
-    next_phase: ResMut<'w, NextState<eg_types::AppPhase>>,
-    input: ResMut<'w, EditorInputRes>,
-    timeline: ResMut<'w, EditorTimelineRes>,
-    runtime: ResMut<'w, EditorRuntimeRes>,
-    session: ResMut<'w, SessionStateRes>,
-    menu: Option<ResMut<'w, MenuStateRes>>,
+/// Apply the playtest-exit side effects: stop the playtest audio, transition
+/// to the editor, and restore the editor's authored block list from the
+/// snapshot captured at playtest start.
+fn exit_playtest_restore_editor(world: &mut World) {
+    world
+        .resource_mut::<NextState<eg_types::AppPhase>>()
+        .set(eg_types::AppPhase::Editor);
+    {
+        let mut session = world.resource_mut::<SessionStateRes>();
+        session.playtesting_editor = false;
+        session.game_paused = false;
+        session.audio_stop_pending = true;
+    }
+    {
+        let mut timeline = world.resource_mut::<EditorTimelineRes>();
+        timeline.0.playback.playing = false;
+        timeline.0.playback.runtime = None;
+    }
+    restore_editor_objects_from_session(world);
 }
 
-fn clear_editor_selection_for_escape(
-    input: &mut EditorInputRes,
-    timeline: &mut EditorTimelineRes,
-) -> bool {
-    let had_block_selection = input.0.selected_block_index.is_some()
-        || !input.0.selected_block_indices.is_empty()
-        || input.0.hovered_block_index.is_some();
-    let had_tap_selection = selected_tap_exists(timeline);
-
-    if had_block_selection {
-        input.0.selected_block_index = None;
-        input.0.selected_block_indices.clear();
-        input.0.hovered_block_index = None;
+/// Repopulate the editor's authored block list from
+/// `SessionStateRes::playtest_editor_objects` and clear the snapshot.
+pub(crate) fn restore_editor_objects_from_session(world: &mut World) {
+    let snapshot = world
+        .resource_mut::<SessionStateRes>()
+        .playtest_editor_objects
+        .take();
+    if let Some(objects) = snapshot {
+        replace_editor_objects(world, objects);
     }
-
-    if had_tap_selection {
-        timeline.0.taps.selected_index = None;
-    }
-
-    had_block_selection || had_tap_selection
 }
 
 fn selected_tap_exists(timeline: &EditorTimelineRes) -> bool {

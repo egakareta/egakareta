@@ -161,6 +161,13 @@ pub struct SessionStateRes {
     pub playtest_audio_start_seconds: Option<f32>,
     pub playing_sky_color: [f32; 3],
     pub playing_trigger_base_objects: Option<Vec<LevelObject>>,
+    /// Snapshot of the editor's authored block list captured at the moment a
+    /// playtest begins. `replace_app_gameplay_world` despawns every entity
+    /// tagged `Object` (which includes the editor's authored blocks), so this
+    /// snapshot is the only authority for restoring the editor's blocks when
+    /// the playtest is left via Escape, the back-to-editor button, or
+    /// completion. Cleared once the editor has been repopulated.
+    pub playtest_editor_objects: Option<Vec<LevelObject>>,
     pub practice_mode_enabled: bool,
     pub practice_checkpoints: Vec<PracticeCheckpoint>,
     /// One-shot audio compatibility intent for an App-owned quit-to-menu
@@ -179,6 +186,7 @@ impl SessionStateRes {
         self.playtest_audio_start_seconds = None;
         self.playing_level_name = None;
         self.playing_trigger_base_objects = None;
+        self.playtest_editor_objects = None;
         self.practice_mode_enabled = false;
         self.practice_checkpoints.clear();
         self.audio_stop_pending = true;

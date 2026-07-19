@@ -4006,6 +4006,176 @@ mod tests {
         assert!(query.iter(&world).next().is_some());
     }
 
+    /// `Playtest` snapshots the editor's authored block list into
+    /// `SessionStateRes::playtest_editor_objects` so the editor can be
+    /// repopulated when the playtest is left. Without this snapshot,
+    /// `replace_app_gameplay_world` despawns the editor's authored entities
+    /// and the user returns from the playtest to find their level empty.
+    #[test]
+    fn playtest_snapshots_editor_blocks_for_restoration() {
+        use crate::events::timeline::Playtest;
+
+        let mut world = build_event_world();
+        set_test_phase(&mut world, AppPhase::Editor);
+        let blocks = vec![
+            LevelObject {
+                block_id: eg_blocks::BlockId::new("core/stone"),
+                position: [0.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                block_id: eg_blocks::BlockId::new("core/dirt"),
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ];
+        replace_authored_objects(&mut world, blocks.clone());
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_level_name = Some("SnapshotPlaytest".to_string());
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
+
+        world.write_message(Playtest);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let session = world.resource::<crate::state::SessionStateRes>();
+        let snapshot = session
+            .playtest_editor_objects
+            .as_ref()
+            .expect("playtest start must snapshot editor blocks");
+        assert_eq!(snapshot.len(), blocks.len());
+        assert_eq!(snapshot[0].block_id, blocks[0].block_id);
+        assert_eq!(snapshot[1].block_id, blocks[1].block_id);
+    }
+
+    /// `Escape` while in a playtest must repopulate the editor's authored
+    /// blocks. Without this restoration the editor would be empty after the
+    /// user leaves the playtest.
+    #[test]
+    fn escape_from_playtest_restores_editor_blocks() {
+        use crate::events::misc::Escape;
+        use crate::events::timeline::Playtest;
+
+        let mut world = build_event_world();
+        set_test_phase(&mut world, AppPhase::Editor);
+        let blocks = vec![
+            LevelObject {
+                block_id: eg_blocks::BlockId::new("core/stone"),
+                position: [0.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                block_id: eg_blocks::BlockId::new("core/dirt"),
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ];
+        replace_authored_objects(&mut world, blocks.clone());
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_level_name = Some("EscapeRestore".to_string());
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
+
+        // Enter the playtest, then leave it via Escape. The test world
+        // only runs the `StateSchedule`; the AppPhase state transition is
+        // applied separately so we step it through `apply_test_phase_transition`
+        // just like the existing playtest tests.
+        world.write_message(Playtest);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(test_phase(&world), AppPhase::Playing);
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .playtesting_editor,
+            "playtest start must flip the playtesting_editor flag"
+        );
+
+        // During the playtest the editor entities are despawned by
+        // `replace_app_gameplay_world`, so the editor's authored set is
+        // empty until the snapshot is restored.
+        {
+            let mut query =
+                world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
+            assert_eq!(
+                query.iter(&world).count(),
+                0,
+                "playtest start despawns every authored editor entity"
+            );
+        }
+
+        world.write_message(Escape);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(test_phase(&world), AppPhase::Editor);
+
+        let mut query =
+            world.query_filtered::<(&crate::state::EditorObjectOrder, &eg_game::ObjectData), With<crate::state::EditorAuthoredObject>>();
+        let mut restored = query
+            .iter(&world)
+            .map(|(order, data)| (order.0, data.0.block_id.clone()))
+            .collect::<Vec<_>>();
+        restored.sort_by_key(|(order, _)| *order);
+
+        assert_eq!(
+            restored.len(),
+            blocks.len(),
+            "editor blocks must be restored"
+        );
+        assert_eq!(restored[0].1, blocks[0].block_id);
+        assert_eq!(restored[1].1, blocks[1].block_id);
+
+        assert!(
+            world
+                .resource::<crate::state::SessionStateRes>()
+                .playtest_editor_objects
+                .is_none(),
+            "playtest snapshot must be cleared after the editor is restored"
+        );
+    }
+
+    /// `ToggleEditor` while in a playtest must also repopulate the editor's
+    /// authored blocks (the alternate back-to-editor path).
+    #[test]
+    fn toggle_editor_from_playtest_restores_editor_blocks() {
+        use crate::events::navigation::ToggleEditor;
+        use crate::events::timeline::Playtest;
+
+        let mut world = build_event_world();
+        set_test_phase(&mut world, AppPhase::Editor);
+        let blocks = vec![LevelObject {
+            block_id: eg_blocks::BlockId::new("core/stone"),
+            position: [0.0, 0.0, 0.0],
+            ..LevelObject::default()
+        }];
+        replace_authored_objects(&mut world, blocks.clone());
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_level_name = Some("ToggleRestore".to_string());
+        world
+            .resource_mut::<crate::state::EditorTimelineRes>()
+            .0
+            .clock
+            .duration_seconds = 5.0;
+
+        world.write_message(Playtest);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(test_phase(&world), AppPhase::Playing);
+
+        world.write_message(ToggleEditor);
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(test_phase(&world), AppPhase::Editor);
+
+        let mut query = world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
+        assert_eq!(query.iter(&world).count(), blocks.len());
+    }
+
     /// Built-in loading mutates App resources directly. Remaining export/audio
     /// side effects are Runtime requests, while import pickers use App senders.
     #[test]
