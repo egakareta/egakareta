@@ -2,7 +2,7 @@
     "$schema": "../../node_modules/license-check-and-add/config-schema.json",
     "ignoreFile": ".gitignore",
     "ignore": [
-        ".agents/temp/**",
+        ".agents/**",
         ".wrangler/**",
         "assets/**",
         "supabase/**",
