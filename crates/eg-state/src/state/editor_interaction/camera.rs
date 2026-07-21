@@ -171,8 +171,9 @@ super::super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::EditorSubsystem;
     use glam::{Vec2, Vec3};
+
+    use super::super::super::EditorSubsystem;
 
     #[test]
     fn camera_axes_follow_editor_rotation() {

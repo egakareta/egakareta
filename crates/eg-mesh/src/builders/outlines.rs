@@ -5,13 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::Vertex;
-use crate::shapes::append_prism;
-use crate::transforms::rotate_vertices_around_euler;
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::{BlockCollision, BlockDefinition};
 use eg_types::LevelObject;
 use glam::{EulerRot, Mat3, Vec3};
+
+use crate::{Vertex, shapes::append_prism, transforms::rotate_vertices_around_euler};
 
 fn euler_rotation_matrix(degrees: [f32; 3]) -> Mat3 {
     Mat3::from_euler(

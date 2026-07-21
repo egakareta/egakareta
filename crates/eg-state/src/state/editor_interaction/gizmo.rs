@@ -5,10 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag};
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
+
+use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
@@ -764,16 +765,16 @@ super::super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
+    use eg_mesh::{GizmoAxis, GizmoDragKind};
+    use eg_types::{
+        AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, EditorMode,
+        LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+    };
+    use glam::{Vec2, Vec3};
+
     use super::super::super::{
         EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem,
     };
-    use eg_mesh::{GizmoAxis, GizmoDragKind};
-    use eg_types::{
-        AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID,
-    };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
-    use glam::{Vec2, Vec3};
 
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
         EditorDragBlockStart {

@@ -7,8 +7,6 @@
 */
 
 #[cfg(test)]
-use super::EditorSubsystem;
-#[cfg(test)]
 use eg_editor_domain::add_tap_with_indicator;
 use eg_editor_domain::{
     TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
@@ -22,6 +20,9 @@ use eg_editor_domain::{
 };
 #[cfg(test)]
 use eg_types::{LevelObject, TriggerTarget};
+
+#[cfg(test)]
+use super::EditorSubsystem;
 
 #[cfg(test)]
 fn object_ids_for_removed_indices(
@@ -532,11 +533,14 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::EditorSubsystem;
     use eg_editor_domain::derive_tap_indicator_positions;
     use eg_game::TimelineSimulationRuntime;
-    use eg_types::{Direction, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint};
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
+    use eg_types::{
+        Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger, TimingPoint, TriggerTarget,
+    };
+
+    use super::EditorSubsystem;
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {

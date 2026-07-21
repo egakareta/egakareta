@@ -10,7 +10,7 @@
 //! The full plan calls for `GpuContextRes`, `SceneMeshesRes`,
 //! `SurfaceHostRes`, `CameraUniform`, `LineUniform`, and
 //! `ColorSpaceUniform` to be lifted out of the legacy `State` struct
-//! and become `bevy_ecs::Resource`s. This file defines the resource
+//! and become `bevy::ecs::Resource`s. This file defines the resource
 //! types. The POD resources ([`RenderUniformsRes`],
 //! [`RenderFrameInputRes`]) are still mirrored while the legacy frame
 //! update computes uniforms, and the heavy resources
@@ -30,13 +30,13 @@
 //!   resource writes owned by Bevy systems.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
-//! entire module with `bevy_render` render-world resources
-//! (`bevy_render::render_resource::Buffer`) plus
-//! `bevy_render::camera::Camera` etc. The Bevy `Message`-driven
+//! entire module with `bevy::render` render-world resources
+//! (`bevy::render::render_resource::Buffer`) plus
+//! `bevy::render::camera::Camera` etc. The Bevy `Message`-driven
 //! `extract` system here is replaced by the `RenderApp` extract
-//! schedule in the `bevy_render` graph.
+//! schedule in the `bevy::render` graph.
 
-use bevy_ecs::prelude::*;
+use bevy::ecs::prelude::*;
 use eg_platform::state_host::SurfaceHost;
 use eg_render::{EditorOutlineInstance, RenderFrameInput, SceneMeshes};
 use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
@@ -388,8 +388,9 @@ pub fn render_pod_resources_present(world: &World) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use eg_types::PhysicalSize;
+
+    use super::*;
 
     #[test]
     fn resize_request_take_returns_none_when_idle() {

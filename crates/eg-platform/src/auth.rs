@@ -6,15 +6,14 @@
 
 */
 #[cfg(not(target_arch = "wasm32"))]
-use serde::Deserialize;
-use serde::Serialize;
-
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
-#[cfg(not(target_arch = "wasm32"))]
-use web_time::Instant;
 
 use eg_types::{AuthErrorResponse, AuthSession};
+#[cfg(not(target_arch = "wasm32"))]
+use serde::Deserialize;
+use serde::Serialize;
+#[cfg(not(target_arch = "wasm32"))]
+use web_time::Instant;
 
 #[derive(Serialize)]
 struct RefreshRequest<'a> {
@@ -289,10 +288,9 @@ mod tests {
 
     use serde::Deserialize;
 
-    use super::{endpoint_url, parse_response, signup_url};
-
     #[cfg(not(target_arch = "wasm32"))]
     use super::{claim_handoff, refresh_session, sign_in, sign_out};
+    use super::{endpoint_url, parse_response, signup_url};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

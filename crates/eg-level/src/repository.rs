@@ -10,13 +10,14 @@
 //! Provides functionality to load level metadata from binary files,
 //! serialize/deserialize levels, and manage the level catalog.
 
-use std::io::{Read, Write as _};
-use std::sync::OnceLock;
-
-use include_dir::{Dir, include_dir};
+use std::{
+    io::{Read, Write as _},
+    sync::OnceLock,
+};
 
 use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_types::LevelMetadata;
+use include_dir::{Dir, include_dir};
 
 static LEVELS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/levels");
 static BUILTIN_LEVELS: OnceLock<Vec<LevelMetadata>> = OnceLock::new();
@@ -145,11 +146,12 @@ fn collect_builtin_levels(dir: &Dir<'_>, levels: &mut Vec<LevelMetadata>) {
 mod tests {
     use std::io::Write as _;
 
+    use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
+
     use super::{
         build_egz_archive, builtin_level_names, get_builtin_audio, load_builtin_level_metadata,
         parse_level_metadata_json, read_metadata_from_egz,
     };
-    use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 
     #[test]
     fn discovers_builtin_levels_from_assets_directory() {

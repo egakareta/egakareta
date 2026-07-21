@@ -5,14 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use bevy::{ecs::prelude::With, state::prelude::State};
+use eg_editor_domain::derive_timeline_position;
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
+
 use super::EditorDirtyFlags;
 use crate::state::{
     EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
 };
-use bevy_ecs::prelude::With;
-use bevy_state::prelude::State;
-use eg_editor_domain::derive_timeline_position;
-use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 // ── EditorDirtyFlags contract tests ─────────────────────────────
 #[test]
 fn dirty_flags_default_is_clean() {
@@ -128,8 +128,9 @@ fn tick_state_runs_phase_transition_system() {
 #[test]
 fn test_app_tick_state_writes_command_messages_to_app_resources() {
     // SetEditorMode is handled through App-world resources.
-    use crate::events::editor_mode::SetEditorMode;
     use eg_types::EditorMode;
+
+    use crate::events::editor_mode::SetEditorMode;
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
@@ -175,10 +176,11 @@ fn test_app_tick_state_writes_input_state_directly() {
 
 #[test]
 fn test_app_camera_pan_system_owns_key_motion() {
-    use crate::state::editor_camera::update_editor_camera_pan_system;
-    use crate::state::{EditorCameraRes, EditorInputRes};
+    use crate::state::{
+        EditorCameraRes, EditorInputRes, editor_camera::update_editor_camera_pan_system,
+    };
 
-    let mut world = bevy_ecs::world::World::new();
+    let mut world = bevy::ecs::world::World::new();
     world.insert_resource(State::new(AppPhase::Editor));
     world.insert_resource(crate::state::FrameTimeRes {
         delta_seconds: 0.1,
@@ -190,7 +192,7 @@ fn test_app_camera_pan_system_owns_key_motion() {
     }));
     world.insert_resource(EditorCameraRes::default());
 
-    let mut schedule = bevy_ecs::schedule::Schedule::default();
+    let mut schedule = bevy::ecs::schedule::Schedule::default();
     schedule.add_systems(update_editor_camera_pan_system);
     schedule.run(&mut world);
 
@@ -200,8 +202,10 @@ fn test_app_camera_pan_system_owns_key_motion() {
 
 #[test]
 fn test_app_tick_state_writes_pointer_state_directly() {
-    use crate::events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick};
-    use crate::state::EditorCameraRes;
+    use crate::{
+        events::pointer::{CameraDrag, MouseButton, PointerMoved, PrimaryClick},
+        state::EditorCameraRes,
+    };
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut()
@@ -341,9 +345,8 @@ fn test_app_tick_state_builds_frame_input_from_world() {
 
 #[test]
 fn tick_state_registers_render_pod_resources_on_construction() {
-    use crate::state::render::resources::render_pod_resources_present;
     use crate::state::render::resources::{
-        RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes,
+        RenderFrameInputRes, RenderResizeRequest, RenderUniformsRes, render_pod_resources_present,
     };
 
     let app = crate::state::test_support::TestApp::minimal();
@@ -357,9 +360,11 @@ fn tick_state_registers_render_pod_resources_on_construction() {
 
 #[test]
 fn tick_state_poll_channels_emits_audio_import_result_event() {
-    use crate::events::async_results::AudioImportResultEvent;
-    use crate::state::async_bridge::AudioImportChannelRes;
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
+
+    use crate::{
+        events::async_results::AudioImportResultEvent, state::async_bridge::AudioImportChannelRes,
+    };
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Create a fresh channel whose receiver sits in the Bevy
@@ -394,9 +399,11 @@ fn tick_state_poll_channels_emits_audio_import_result_event() {
 
 #[test]
 fn tick_state_poll_channels_emits_level_import_result_event() {
-    use crate::events::async_results::LevelImportResultEvent;
-    use crate::state::async_bridge::LevelImportChannelRes;
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
+
+    use crate::{
+        events::async_results::LevelImportResultEvent, state::async_bridge::LevelImportChannelRes,
+    };
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
@@ -408,7 +415,7 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
-    let mut poll_schedule = bevy_ecs::schedule::Schedule::default();
+    let mut poll_schedule = bevy::ecs::schedule::Schedule::default();
     poll_schedule.add_systems(crate::state::async_bridge::poll_channels_system);
     poll_schedule.run(app.world_mut());
 
@@ -421,9 +428,11 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 
 #[test]
 fn tick_state_poll_channels_emits_auth_service_result_event() {
-    use crate::events::async_results::AuthServiceResultEvent;
-    use crate::state::async_bridge::AuthChannelRes;
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
+
+    use crate::{
+        events::async_results::AuthServiceResultEvent, state::async_bridge::AuthChannelRes,
+    };
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
@@ -452,9 +461,12 @@ fn tick_state_poll_channels_emits_auth_service_result_event() {
 
 #[test]
 fn test_app_render_extract_builds_menu_and_editor_uniforms() {
-    use crate::state::EditorCameraRes;
-    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
     use approx::assert_abs_diff_eq;
+
+    use crate::state::{
+        EditorCameraRes,
+        render::resources::{RenderConfigRes, RenderUniformsRes},
+    };
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut().insert_resource(RenderConfigRes {
@@ -517,8 +529,9 @@ fn test_app_render_extract_builds_menu_and_editor_uniforms() {
 
 #[test]
 fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
-    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
     use approx::assert_abs_diff_eq;
+
+    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut()
@@ -532,7 +545,7 @@ fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
     let player_entity = {
         let world = app.world_mut();
         world
-            .query_filtered::<bevy_ecs::entity::Entity, bevy_ecs::prelude::With<eg_game::PlayerPosition>>()
+            .query_filtered::<bevy::ecs::entity::Entity, bevy::ecs::prelude::With<eg_game::PlayerPosition>>()
             .single(world)
             .expect("TestApp should seed one player entity")
     };
@@ -573,8 +586,9 @@ fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
 
 #[test]
 fn test_app_render_extract_uses_app_time_viewport_and_gamma() {
-    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
     use approx::assert_abs_diff_eq;
+
+    use crate::state::render::resources::{RenderConfigRes, RenderUniformsRes};
 
     let mut app = crate::state::test_support::TestApp::minimal();
     app.world_mut().insert_resource(RenderConfigRes {

@@ -5,14 +5,16 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::MeshGeometry;
-use crate::Vertex;
-use crate::advanced_shapes::append_cone;
-use crate::blocks::build_block_geometry;
-use crate::shapes::{append_prism, append_quad};
 use eg_blocks::{BlockEffect, BlockEffectPreset};
 use eg_types::{Direction, LevelObject};
 use glam::{EulerRot, Quat, Vec2, Vec3};
+
+use crate::{
+    MeshGeometry, Vertex,
+    advanced_shapes::append_cone,
+    blocks::build_block_geometry,
+    shapes::{append_prism, append_quad},
+};
 
 const PRACTICE_CHECKPOINT_FLAG_BLOCK_ID: &str = "core/practice_checkpoint_flag";
 const PRACTICE_CHECKPOINT_FLAG_SIZE: [f32; 3] = [0.45, 1.0, 0.85];
@@ -727,6 +729,9 @@ pub fn build_camera_arrow_vertices(
 
 #[cfg(test)]
 mod tests {
+    use eg_blocks::BlockEffect;
+    use eg_types::Direction;
+
     use super::{
         PracticeCheckpointFlagInstance, TransformTriggerMarker, build_block_effect_vertices,
         build_practice_checkpoint_flag_geometry, build_tap_division_preview_vertices,
@@ -734,8 +739,6 @@ mod tests {
         build_trail_vertices_with_alpha, build_transform_trigger_marker_vertices,
     };
     use crate::Vertex;
-    use eg_blocks::BlockEffect;
-    use eg_types::Direction;
 
     const PRISM_VERTEX_COUNT: usize = 36;
 

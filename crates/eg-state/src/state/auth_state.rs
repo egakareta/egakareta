@@ -5,11 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy_ecs::prelude::*;
-
-use super::{AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest};
+use bevy::ecs::prelude::*;
 use eg_platform::services::{trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out};
 use eg_types::AuthSession;
+
+use super::{AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest};
 
 impl AuthStateRes {
     pub fn display_name(&self) -> Option<&str> {
@@ -144,8 +144,9 @@ pub fn process_auth_requests_system(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use eg_types::{AuthProfile, AuthSessionTokens, AuthUser};
+
+    use super::*;
 
     fn test_auth_session(username: Option<&str>, email: Option<&str>) -> AuthSession {
         AuthSession {
@@ -179,7 +180,7 @@ mod tests {
         world.insert_resource(AuthSignOutRequest { pending: true });
         world.insert_resource(AuthOpenSignupRequest { pending: true });
 
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
         schedule.add_systems(process_auth_requests_system);
         schedule.run(&mut world);
 

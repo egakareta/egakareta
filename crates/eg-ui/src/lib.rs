@@ -20,22 +20,12 @@ pub mod plugin;
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::components::{
-    TimelineBarInputs, WaveformPanelInputs, show_timeline_bar, show_waveform_panel,
-    timeline_metrics,
-};
-use crate::modes::compose::{
-    show_block_preview_button, show_place_block_properties_window, show_recent_block_quick_strip,
-    show_selected_block_properties_window,
-};
-use crate::modes::shared::show_mode_selector_popup;
-use crate::modes::tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel};
-use crate::modes::timing::{TimingModePanelInputs, show_timing_mode_bottom_panel};
-use bevy_ecs::world::World;
+use bevy::ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
-use eg_state::commands::AppCommand;
-use eg_state::state::EditorConfigState;
-use eg_state::state::editor_command::EditorCommand;
+use eg_state::{
+    commands::AppCommand,
+    state::{EditorConfigState, editor_command::EditorCommand},
+};
 use eg_types::{
     AppSettings, BasicLevelMetadata, EditorMode, LevelObject, MusicMetadata, SettingsSection,
     essential_keybind_actions, format_key_chord,
@@ -47,6 +37,22 @@ pub use menu::{
     show_pause_menu_ui, show_practice_checkpoint_ui,
 };
 pub use plugin::{UiPlugin, register_ui_resources_world, write_ui_command, write_ui_commands};
+
+use crate::{
+    components::{
+        TimelineBarInputs, WaveformPanelInputs, show_timeline_bar, show_waveform_panel,
+        timeline_metrics,
+    },
+    modes::{
+        compose::{
+            show_block_preview_button, show_place_block_properties_window,
+            show_recent_block_quick_strip, show_selected_block_properties_window,
+        },
+        shared::show_mode_selector_popup,
+        tapping::{show_selected_tap_properties_window, show_tapping_mode_bottom_panel},
+        timing::{TimingModePanelInputs, show_timing_mode_bottom_panel},
+    },
+};
 
 /// Destination for semantic UI commands emitted while egui is running.
 ///
@@ -2222,6 +2228,14 @@ fn show_view_selector_cube(
 
 #[cfg(test)]
 mod tests {
+    use eg_blocks::{BlockCategory, BlockDefinition};
+    use eg_state::{
+        commands::AppCommand,
+        state::{EditorConfigState, editor_command::EditorCommand},
+    };
+    use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
+    use glam::{Mat3, Vec3};
+
     use super::{
         EditorUiInputs, SettingsSidebarInputs, UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink,
         block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
@@ -2229,13 +2243,6 @@ mod tests {
         responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
         show_perf_overlay, sort_quad_by_angle,
     };
-    use eg_blocks::BlockCategory;
-    use eg_blocks::BlockDefinition;
-    use eg_state::commands::AppCommand;
-    use eg_state::state::EditorConfigState;
-    use eg_state::state::editor_command::EditorCommand;
-    use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
-    use glam::{Mat3, Vec3};
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
         let pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
@@ -2385,7 +2392,7 @@ mod tests {
 
         let messages = app
             .world()
-            .resource::<bevy_ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
+            .resource::<bevy::ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
         let mut reader = messages.get_cursor();
         assert_eq!(reader.read(messages).count(), 1);
     }

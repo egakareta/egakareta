@@ -28,7 +28,7 @@
 //! 13. `RebuildMeshSet` — react to dirty flags (or `Changed<>` components
 //!     in the full-Bevy migration) and rebuild mesh resources.
 
-use bevy_ecs::schedule::SystemSet;
+use bevy::ecs::schedule::SystemSet;
 
 /// Ordered system sets for the eg-state `App`.
 ///

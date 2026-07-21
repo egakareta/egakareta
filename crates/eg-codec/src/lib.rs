@@ -5,12 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use serde::{Deserialize, Serialize};
-
 use eg_types::{
     BasicLevelMetadata, LevelMetadata, LevelObject, LevelPreviewCameraMetadata, MusicMetadata,
     SpawnMetadata, TimedTrigger, TimingPoint,
 };
+use serde::{Deserialize, Serialize};
 
 const LEVEL_MAGIC: [u8; 4] = *b"EGB1";
 const LEVEL_CODEC_VERSION: u16 = 2;

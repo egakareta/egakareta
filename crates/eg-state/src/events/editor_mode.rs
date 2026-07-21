@@ -7,10 +7,11 @@
 */
 //! Editor mode / block-id / pick events.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_blocks::BlockId;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;

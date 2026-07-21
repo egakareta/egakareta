@@ -15,6 +15,7 @@ members = [
     "crates/eg-mesh",
     "crates/eg-platform",
     "crates/eg-render",
+    "crates/eg-spike",
     "crates/eg-state",
     "crates/eg-ui",
     "crates/egb",
@@ -32,12 +33,15 @@ license = "AGPL-3.0-only"
 [workspace.dependencies]
 async-trait = "0.1"
 approx = "0.5"
-bevy_app = "0.19"
-bevy_clipboard = "0.19"
-bevy_ecs = "0.19"
-bevy_state = "0.19"
-bevy_tasks = "0.19"
-bevy_time = "0.19"
+bevy = { version = "0.19", default-features = false, features = [
+    "bevy_clipboard",
+    "bevy_state",
+    "bevy_material",
+    "bevy_log",
+    "bevy_pbr",
+    "bevy_render",
+] }
+bevy_egui = "0.41"
 bytemuck = { version = "1.25", features = ["derive"] }
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"

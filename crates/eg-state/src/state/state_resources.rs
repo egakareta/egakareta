@@ -20,27 +20,26 @@
 //! that wrap non-`Default` channel pairs (audio, auth) are added in
 //! Phase 2b alongside their resource registration helpers.
 
-use bevy_ecs::prelude::*;
+use std::{collections::HashMap, sync::mpsc};
+
+use bevy::ecs::prelude::*;
 use eg_platform::services::AuthServiceMessage;
 use eg_types::{
     AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
-    LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress,
+    LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress, SpawnMetadata,
 };
 
-use std::collections::HashMap;
-use std::sync::mpsc;
-
-use crate::state::PracticeCheckpoint;
-use crate::state::editor_camera::EditorCameraState;
-use crate::state::editor_config_state::EditorConfigState;
-use crate::state::editor_timeline::EditorTimelineState;
-use crate::state::editor_timing::EditorTimingState;
-use crate::state::editor_triggers::EditorTriggerState;
-use crate::state::history::EditorHistoryState;
-use crate::state::perf::PerfState;
-use crate::state::runtime::{BlockVisualEffect, EditorRuntimeState};
-
-use eg_types::SpawnMetadata;
+use crate::state::{
+    PracticeCheckpoint,
+    editor_camera::EditorCameraState,
+    editor_config_state::EditorConfigState,
+    editor_timeline::EditorTimelineState,
+    editor_timing::EditorTimingState,
+    editor_triggers::EditorTriggerState,
+    history::EditorHistoryState,
+    perf::PerfState,
+    runtime::{BlockVisualEffect, EditorRuntimeState},
+};
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------

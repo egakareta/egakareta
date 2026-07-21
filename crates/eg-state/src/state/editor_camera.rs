@@ -5,22 +5,24 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy_ecs::prelude::{Res, ResMut};
-use bevy_state::prelude::State;
+use bevy::{
+    ecs::prelude::{Res, ResMut},
+    state::prelude::State,
+};
+#[cfg(test)]
+use eg_blocks::BlockId;
+use eg_types::{
+    AppPhase, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, DEFAULT_CAMERA_PITCH,
+    DEFAULT_CAMERA_YAW, EasingDirection, EditorInputState, LevelObject, TimedTrigger,
+};
+#[cfg(test)]
+use eg_types::{CAMERA_TRIGGER_BLOCK_ID, TriggerTarget};
 use glam::{Mat4, Vec2, Vec3};
 
 #[cfg(test)]
 use super::EditorSubsystem;
 #[cfg(test)]
 use super::editor_triggers::camera_trigger_object_pose;
-#[cfg(test)]
-use eg_blocks::BlockId;
-use eg_types::{AppPhase, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorInputState};
-#[cfg(test)]
-use eg_types::{CAMERA_TRIGGER_BLOCK_ID, TriggerTarget};
-use eg_types::{
-    CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, EasingDirection, LevelObject, TimedTrigger,
-};
 
 const PLAY_CAMERA_DISTANCE: f32 = 28.28;
 const MIN_EDITOR_PITCH: f32 = -89.9f32.to_radians();
@@ -481,15 +483,18 @@ pub fn update_editor_camera_pan_system(
 
 #[cfg(test)]
 mod tests {
+    use eg_types::{
+        CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
+        TimedTrigger, TriggerTarget,
+    };
+    use glam::Vec3;
+
     use super::{
         CameraViewSample, DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, EditorSubsystem,
         MIN_PLAYING_PITCH, eased_alpha, editor_camera_offset_for_pose, interpolate_camera_samples,
         live_follow_sample_for_camera, offset_from_rotation_pitch,
         playing_camera_offset_for_angles,
     };
-    use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
-    use eg_types::{CameraMode, CameraTrigger, EasingDirection, TimedTrigger, TriggerTarget};
-    use glam::Vec3;
 
     fn assert_vec3_close(actual: Vec3, expected: Vec3) {
         assert!(

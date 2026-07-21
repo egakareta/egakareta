@@ -10,8 +10,7 @@ description = "egakareta egui interface components"
 license = "AGPL-3.0-only"
 
 [dependencies]
-bevy_app = { workspace = true }
-bevy_ecs = { workspace = true }
+bevy = { workspace = true }
 eg-types = { workspace = true }
 eg-blocks = { workspace = true }
 eg-state = { workspace = true }

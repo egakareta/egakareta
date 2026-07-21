@@ -7,8 +7,9 @@
 */
 use eg_block_geometry::hitbox_cuboids;
 use eg_game::physics::object_xz_contains;
-use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
-use eg_types::{LevelObject, TRANSFORM_TRIGGER_BLOCK_ID};
+use eg_types::{
+    EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+};
 
 pub fn create_block_at_cursor(
     cursor: [f32; 3],

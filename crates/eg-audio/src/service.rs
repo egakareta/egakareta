@@ -10,13 +10,12 @@
 //! Provides functionality to asynchronously load audio files, decode them into
 //! waveform data for visualization, and cache the raw bytes for playback.
 
-use std::collections::HashMap;
-use std::sync::mpsc::Sender;
+use std::{collections::HashMap, sync::mpsc::Sender};
 
+use eg_platform::task::spawn_background;
 use sha2::{Digest, Sha256};
 
 use crate::audio::runtime_asset_source_key;
-use eg_platform::task::spawn_background;
 
 pub type AudioPreloadResult = (String, Option<Vec<u8>>);
 pub const WAVEFORM_WINDOW: usize = 256;
@@ -318,6 +317,7 @@ pub fn start_waveform_loading(
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
+
     use web_time::Duration;
 
     use super::{WaveformLoadMessage, decode_waveform_and_send, waveform_cache_key};

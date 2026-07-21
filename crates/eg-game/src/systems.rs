@@ -11,21 +11,22 @@
 
 use std::collections::HashMap;
 
-use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::SystemSet;
+use bevy::ecs::{prelude::*, schedule::SystemSet};
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
-use crate::components::{
-    CachedBlockBehavior, Grounded, ObjectData, PlayerDirection, PlayerPosition, PlayerSpeed, Trail,
-    VerticalVelocity,
-};
-use crate::events::{ConsumedEventsBuffer, ConsumedObjectEvent};
-use crate::physics::aabb_overlaps_cuboid_xz;
-use crate::resources::{
-    DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress,
-    SpatialIndex, TimedTurnInput, TurnInputKind,
+use crate::{
+    components::{
+        CachedBlockBehavior, Grounded, ObjectData, PlayerDirection, PlayerPosition, PlayerSpeed,
+        Trail, VerticalVelocity,
+    },
+    events::{ConsumedEventsBuffer, ConsumedObjectEvent},
+    physics::aabb_overlaps_cuboid_xz,
+    resources::{
+        DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress,
+        SpatialIndex, TimedTurnInput, TurnInputKind,
+    },
 };
 
 /// Ordered gameplay system set. Run as a single tick to advance the

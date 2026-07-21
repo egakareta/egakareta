@@ -5,8 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::timeline::derive_timeline_state;
 use eg_types::{DEFAULT_CAMERA_PITCH, DEFAULT_CAMERA_YAW, Direction, LevelObject, SpawnMetadata};
+
+use crate::timeline::derive_timeline_state;
 
 pub struct EditorPlaytestTransition {
     pub objects: Vec<LevelObject>,

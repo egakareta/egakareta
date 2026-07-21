@@ -5,8 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::collections::{HashMap, HashSet};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::{DefaultHasher, Hash, Hasher},
+};
 
 use eg_blocks::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockBobAnimation, BlockCuboid, BlockDefinition,

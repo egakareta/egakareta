@@ -1,4 +1,4 @@
-use bevy_state::prelude::States;
+use bevy::state::prelude::States;
 use smart_default::SmartDefault;
 use smart_is_default::SmartIsDefault;
 

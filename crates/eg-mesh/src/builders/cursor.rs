@@ -5,10 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::Vertex;
-use crate::blocks::build_block_geometry_for_object;
-use crate::builders::game::build_colored_tap_indicator_vertices;
 use eg_types::LevelObject;
+
+use crate::{
+    Vertex, blocks::build_block_geometry_for_object,
+    builders::game::build_colored_tap_indicator_vertices,
+};
 
 const EDITOR_CURSOR_TOP_COLOR: [f32; 4] = [0.2, 0.85, 0.95, 0.6];
 const EDITOR_CURSOR_OUTLINE_COLOR: [f32; 4] = [0.08, 0.48, 0.62, 0.45];
@@ -53,9 +55,10 @@ pub fn build_editor_tap_cursor_vertices(cursor: [f32; 3]) -> Vec<Vertex> {
 
 #[cfg(test)]
 mod tests {
+    use eg_types::LevelObject;
+
     use super::{build_editor_cursor_vertices, build_editor_tap_cursor_vertices};
     use crate::blocks::build_block_geometry_for_object;
-    use eg_types::LevelObject;
 
     #[test]
     fn cursor_vertices_follow_requested_size() {

@@ -6,8 +6,7 @@
 
 */
 
-use eg_types::AppSettings;
-use eg_types::PersistentWaveformCacheEntry;
+use eg_types::{AppSettings, PersistentWaveformCacheEntry};
 
 use crate::storage;
 
@@ -158,18 +157,16 @@ pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::fs;
+    use std::{collections::HashMap, fs};
+
+    use eg_types::{AppSettings, PersistentWaveformCacheEntry};
 
     use super::{
         load_all_local_audio, load_app_settings_from_storage, load_waveform_from_storage,
         save_app_settings_to_storage, save_audio_to_storage, save_level_export,
         save_waveform_to_storage,
     };
-    use crate::test_hooks;
-    use crate::test_hooks::shared_test_lock;
-    use eg_types::AppSettings;
-    use eg_types::PersistentWaveformCacheEntry;
+    use crate::{test_hooks, test_hooks::shared_test_lock};
 
     struct HookResetGuard;
 

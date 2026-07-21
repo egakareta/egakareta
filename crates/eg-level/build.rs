@@ -5,8 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 fn workspace_root() -> PathBuf {
     let root = PathBuf::from(

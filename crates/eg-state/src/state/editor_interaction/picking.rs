@@ -836,10 +836,11 @@ super::super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::EditorSubsystem;
     use eg_blocks::BlockId;
     use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use glam::{Vec2, Vec3};
+
+    use super::super::super::EditorSubsystem;
 
     #[test]
     fn ray_intersect_rotated_block_hits_and_misses() {

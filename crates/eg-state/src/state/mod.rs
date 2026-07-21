@@ -70,8 +70,9 @@ mod state_resources;
 mod transitions;
 mod visual_effects;
 
-use crate::events as state_events;
 pub use state_events::{CommandHandlerSet, add_command_systems, register_command_events};
+
+use crate::events as state_events;
 
 #[cfg(test)]
 mod editor_domain_tests;
@@ -85,6 +86,8 @@ pub mod test_support;
 
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
 
+use std::ops::{Deref, DerefMut};
+
 pub(crate) use async_bridge::apply_imported_level_to_world;
 pub use audio_state::{
     AudioBackendRes, AudioBackendSystemParam, AudioState, EditorAudioCacheRes,
@@ -94,10 +97,8 @@ pub(crate) use audio_state::{
     load_waveform_for_level_resources, start_audio_source_at_seconds_for_resources,
     with_audio_backend,
 };
-
-pub use editor_camera::EditorCameraState;
-pub use editor_camera::editor_camera_preview_for_objects;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
+pub use editor_camera::{EditorCameraState, editor_camera_preview_for_objects};
 pub use editor_config_state::EditorConfigState;
 use editor_interaction::EditorPickSpatialIndex;
 pub use editor_interaction::{
@@ -112,6 +113,9 @@ pub use editor_triggers::EditorTriggerState;
 pub(crate) use editor_triggers::{
     camera_trigger_object_pose, sync_camera_follow_trigger_object_pose,
 };
+use eg_game::GameCheckpointState;
+use eg_mesh::MeshGeometry;
+use eg_types::{EditorInputState, LevelObject, SpawnMetadata};
 pub use history::EditorHistoryState;
 pub use input_bridge::{
     PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
@@ -143,11 +147,6 @@ pub use state_resources::{
     GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
     MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
-
-use eg_game::GameCheckpointState;
-use eg_mesh::MeshGeometry;
-use eg_types::{EditorInputState, LevelObject, SpawnMetadata};
-use std::ops::{Deref, DerefMut};
 
 #[derive(Clone)]
 pub struct PracticeCheckpoint {
@@ -211,12 +210,12 @@ pub struct EditorSubsystem {
 /// Schedule label for the per-frame state update. Runtime runs this
 /// after App update and before the remaining compatibility update/render
 /// path.
-#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSchedule;
 
 /// Schedule label for the render extraction pass that runs after the
 /// App-world gameplay tick and refreshes render POD resources for present.
-#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderExtractSchedule;
 
 pub struct RenderBootstrapResources {

@@ -32,10 +32,11 @@
 //! `Playtest` records an App-world gameplay transition seed; the exclusive
 //! gameplay reset system applies the world replacement atomically.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::{NextState, State};
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::{NextState, State},
+};
 use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
     derive_timeline_elapsed_seconds, remove_tap_with_indicator,

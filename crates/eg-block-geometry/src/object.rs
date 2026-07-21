@@ -168,9 +168,10 @@ fn cross(a: Vec2, b: Vec2) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use eg_blocks::BlockCuboid;
     use eg_types::LevelObject;
+
+    use super::*;
 
     #[test]
     fn cuboids_from_definition_preserves_color_tint() {

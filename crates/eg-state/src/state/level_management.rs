@@ -44,11 +44,12 @@ fn auto_menu_preview_camera_from_spawn(spawn: &SpawnMetadata) -> ([f32; 3], [f32
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata};
     use eg_types::{
         BasicLevelMetadata, Direction, EditorStateParams, LevelMetadata,
         LevelPreviewCameraMetadata, MusicMetadata, SpawnMetadata,
     };
+
+    use super::{auto_menu_preview_camera_from_spawn, menu_preview_camera_for_metadata};
 
     #[test]
     fn menu_preview_camera_for_metadata_prefers_manual_camera() {

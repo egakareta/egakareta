@@ -5,8 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::AppPhase;
-use eg_types::EditorInteractionChange;
+use eg_types::{AppPhase, EditorInteractionChange};
 use glam::Vec2;
 
 super::super::editor_context_methods! {

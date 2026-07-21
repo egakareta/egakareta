@@ -10,8 +10,9 @@
 //! These tests exercise editor logic **without GPU, audio, or rendering**.
 //! They use `EditorSubsystem::default()` which requires no wgpu adapter.
 
-use super::EditorSubsystem;
 use eg_types::{Direction, LevelObject};
+
+use super::EditorSubsystem;
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);

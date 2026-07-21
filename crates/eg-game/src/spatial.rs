@@ -5,10 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy_ecs::prelude::*;
+use std::collections::HashMap;
+
+use bevy::ecs::prelude::*;
 use eg_block_geometry::{hitbox_cuboids, rotated_cuboid_aabb_xz};
 use eg_types::LevelObject;
-use std::collections::HashMap;
 
 pub const GRID_CELL_SIZE: f32 = 4.0;
 

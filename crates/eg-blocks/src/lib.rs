@@ -13,14 +13,12 @@
 mod block_id;
 mod block_schema;
 
-use std::collections::HashMap;
-use std::sync::OnceLock;
-
-use image::imageops::FilterType;
-use include_dir::{Dir, include_dir};
+use std::{collections::HashMap, sync::OnceLock};
 
 pub use block_id::*;
 pub use block_schema::*;
+use image::imageops::FilterType;
+use include_dir::{Dir, include_dir};
 
 static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_DEFINITIONS: OnceLock<Vec<BlockDefinition>> = OnceLock::new();

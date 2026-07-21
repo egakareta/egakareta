@@ -6,17 +6,13 @@
 
 */
 
-use super::EditorDirtyFlags;
 #[cfg(test)]
-use super::EditorSubsystem;
-use eg_blocks::BlockDefinition;
-use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
-#[cfg(test)]
-use eg_types::LevelObject;
-use eg_types::{EditorPlaceMode, TRANSFORM_TRIGGER_BLOCK_ID};
+use std::borrow::Cow;
 
+use eg_blocks::BlockDefinition;
 #[cfg(test)]
 use eg_blocks::BlockRenderProfile;
+use eg_editor_domain::{create_block_at_cursor, derive_timeline_elapsed_seconds};
 #[cfg(test)]
 use eg_game::trigger_transformed_objects_at_time;
 #[cfg(test)]
@@ -25,9 +21,14 @@ use eg_mesh::{
     build_editor_selection_outline_vertices,
 };
 #[cfg(test)]
-use eg_types::TriggerTarget;
+use eg_types::LevelObject;
 #[cfg(test)]
-use std::borrow::Cow;
+use eg_types::TriggerTarget;
+use eg_types::{EditorPlaceMode, TRANSFORM_TRIGGER_BLOCK_ID};
+
+use super::EditorDirtyFlags;
+#[cfg(test)]
+use super::EditorSubsystem;
 
 #[cfg(test)]
 const EDITOR_SELECTION_OUTLINE_COLOR: [f32; 4] = [0.098, 0.6, 1.0, 1.0];
@@ -292,13 +293,14 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        EDITOR_SELECTION_OUTLINE_COLOR, EditorObjectOutlineStyle, EditorSubsystem,
-        build_editor_object_outline_vertices, transform_trigger_markers_for_triggers,
-    };
     use eg_mesh::build_block_geometry_for_object;
     use eg_types::{
         EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+    };
+
+    use super::{
+        EDITOR_SELECTION_OUTLINE_COLOR, EditorObjectOutlineStyle, EditorSubsystem,
+        build_editor_object_outline_vertices, transform_trigger_markers_for_triggers,
     };
 
     fn block(position: [f32; 3], size: [f32; 3]) -> LevelObject {

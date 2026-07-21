@@ -4,7 +4,7 @@
         "build": "bun scripts/build.ts",
         "build:native": "cargo build -p eg-app",
         "bench:hot-paths": "cargo bench -p eg-app --features benchmarks --bench perf_hot_paths",
-        "format:cargo": "cargo fmt",
+        "format:cargo": "cargo fmt -- --config-path .config/rustfmt.toml",
         "format:prettier": "prettier --config .config/.prettierrc --ignore-path .gitignore --ignore-path .config/.prettierignore --write .",
         "format": "bun run format:cargo && bun run format:prettier",
         "lint": "cargo clippy --workspace -- -D warnings",

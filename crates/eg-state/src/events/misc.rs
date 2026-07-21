@@ -8,9 +8,11 @@
 //! Misc editor command events: hitbox / perf overlay / place window /
 //! escape.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_state::prelude::{NextState, State};
+use bevy::{
+    app::App,
+    ecs::prelude::*,
+    state::prelude::{NextState, State},
+};
 use eg_types::EditorMode;
 
 use crate::state::{
@@ -87,7 +89,7 @@ pub fn handle_toggle_place_window(
 // transition. Menu and game-over branches are also resolved directly in the
 // App world.
 pub fn handle_escape(world: &mut World) {
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
 
     let events: Vec<Escape> = world.resource_mut::<Messages<Escape>>().drain().collect();
     for _ in events {

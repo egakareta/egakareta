@@ -14,16 +14,20 @@
 //! mesh buffers, and presents the scene plus egui from App-owned resources.
 //!
 //! REFACTOR POINT(full-bevy): this plugin + system set graph is the
-//! placeholder for `bevy_render`'s render-world + render graph. The
+//! placeholder for `bevy::render`'s render-world + render graph. The
 //! `extract_render_state_system` here becomes a
 //! `RenderApp::extract` system in the full-Bevy migration; the
-//! `RenderPresentSet` is replaced by `bevy_render`'s `Render` set.
+//! `RenderPresentSet` is replaced by `bevy::render`'s `Render` set.
 
-use bevy_app::{App, Plugin};
-use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::{Schedule, SystemSet};
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::{App, Plugin},
+    ecs::{
+        prelude::*,
+        schedule::{Schedule, SystemSet},
+        system::SystemParam,
+    },
+    state::prelude::State,
+};
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::{
     TapDivisionPreviewRange, derive_timing_division_tap_previews, tap_time_is_timing_division,
@@ -50,25 +54,29 @@ use eg_types::{
 };
 use glam::{Mat4, Vec2, Vec3};
 
-use super::draw::render_egui_with_resources;
-use super::resources::{
-    RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
-    RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
-    RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
-    RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
-    RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
-    RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
-    RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
-    RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
-    RenderUniformsRes,
+use super::{
+    draw::render_egui_with_resources,
+    resources::{
+        RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
+        RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
+        RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
+        RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
+        RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
+        RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
+        RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
+        RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
+        RenderUniformsRes,
+    },
 };
-use crate::events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind};
-use crate::state::{
-    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-    MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
-    editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
-    evaluate_camera_track_for_objects,
+use crate::{
+    events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind},
+    state::{
+        BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
+        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+        MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+        editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
+        evaluate_camera_track_for_objects,
+    },
 };
 
 /// System sets for the rendering extraction plugin.
@@ -2140,12 +2148,14 @@ pub fn add_state_render_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::render::resources::render_pod_resources_present;
-    use crate::state::{EditorCameraRes, EditorInputRes, SessionStateRes};
-    use bevy_ecs::world::World;
-    use bevy_state::prelude::State;
+    use bevy::{ecs::world::World, state::prelude::State};
     use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize};
+
+    use super::*;
+    use crate::state::{
+        EditorCameraRes, EditorInputRes, SessionStateRes,
+        render::resources::render_pod_resources_present,
+    };
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {
@@ -2221,7 +2231,7 @@ mod tests {
             cached_behavior: eg_game::CachedBlockBehavior::from_block_id(&object.block_id),
         });
 
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
         schedule.add_systems(mark_mesh_dirty_system);
         schedule.run(&mut world);
 
@@ -2248,7 +2258,7 @@ mod tests {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
 
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
         schedule.add_systems(present_render_frame_system);
         schedule.run(&mut world);
     }
@@ -2261,7 +2271,7 @@ mod tests {
             .resource_mut::<RenderResizeRequest>()
             .request(PhysicalSize::new(320, 240));
 
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
         schedule.add_systems(apply_resize_surface_system);
         schedule.run(&mut world);
 

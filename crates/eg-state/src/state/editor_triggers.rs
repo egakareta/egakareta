@@ -5,10 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-#[cfg(test)]
-use super::EditorSubsystem;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
+
+#[cfg(test)]
+use super::EditorSubsystem;
 
 #[derive(Default, Clone)]
 pub struct EditorTriggerState {
@@ -237,11 +238,12 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::EditorSubsystem;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
         TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
+
+    use super::EditorSubsystem;
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {

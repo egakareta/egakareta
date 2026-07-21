@@ -5,14 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::editor_objects::replace_editor_objects;
-use super::runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState};
-use super::{AudioState, AuthStateRes, EditorConfigState};
-use bevy_ecs::world::World;
-use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
-use glam::Mat4;
-use wgpu::util::DeviceExt;
-
+use bevy::ecs::world::World;
 use eg_blocks::BlockTextureAtlas;
 use eg_level::builtin_level_names;
 use eg_mesh::{
@@ -23,10 +16,19 @@ use eg_platform::state_host::NativeWindow;
 use eg_platform::state_host::SurfaceHost;
 #[cfg(target_arch = "wasm32")]
 use eg_platform::state_host::WasmCanvas;
+use eg_render::{DEPTH_FORMAT, GpuContext, InstancedMeshSlot, MeshSlot, SceneMeshes};
 use eg_types::{
     AppPhase, BasicLevelMetadata, CameraUniform, ColorSpaceUniform,
     DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET, GridUniform,
     LevelMetadata, LineUniform, MenuState, MusicMetadata, PhysicalSize, SettingsSection,
+};
+use glam::Mat4;
+use wgpu::util::DeviceExt;
+
+use super::{
+    AudioState, AuthStateRes, EditorConfigState,
+    editor_objects::replace_editor_objects,
+    runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState},
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -362,8 +364,8 @@ impl AppBootstrap {
         world.insert_resource(super::MenuPreviewObjectsRes {
             objects: Vec::new(),
         });
-        world.insert_resource(bevy_state::prelude::State::new(phase));
-        world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
+        world.insert_resource(bevy::state::prelude::State::new(phase));
+        world.init_resource::<bevy::state::prelude::NextState<eg_types::AppPhase>>();
         world.insert_resource(super::MenuStateRes::new(menu));
         world.insert_resource(auth);
 

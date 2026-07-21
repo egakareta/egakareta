@@ -13,10 +13,10 @@
 //! runs the real Bevy `FixedUpdate` schedule for focused ECS
 //! tests.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-
-use bevy_app::FixedUpdate;
+use bevy::{
+    app::{App, FixedUpdate},
+    ecs::prelude::*,
+};
 
 use crate::plugin::GamePlugin;
 
@@ -91,12 +91,15 @@ impl Default for TestApp {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::components::{PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed};
-    use crate::physics::BASE_PLAYER_SPEED;
-    use crate::resources::{FrameDelta, GameClock, PlayerProgress, SpatialIndex};
-    use crate::{Grounded, Player, SpawnDirection, SpawnPosition, Trail, VerticalVelocity};
     use eg_types::Direction;
+
+    use super::*;
+    use crate::{
+        Grounded, Player, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
+        components::{PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed},
+        physics::BASE_PLAYER_SPEED,
+        resources::{FrameDelta, GameClock, PlayerProgress, SpatialIndex},
+    };
 
     #[test]
     fn test_app_minimal_registers_gameplay_resources() {

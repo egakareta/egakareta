@@ -11,19 +11,22 @@
 //! directly to mirrored App-world resources so pointer routing no longer
 //! needs to stage legacy editor commands during the compatibility window.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 use glam::Vec2;
 
-use crate::events::navigation::TurnRight;
-use crate::state::{
-    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
-    EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    RenderConfigRes, collect_editor_object_data, replace_editor_objects_commands,
+use crate::{
+    events::navigation::TurnRight,
+    state::{
+        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
+        EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
+        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        RenderConfigRes, collect_editor_object_data, replace_editor_objects_commands,
+    },
 };
 
 /// Mouse button state update for editor interaction routing.

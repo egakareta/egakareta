@@ -17,8 +17,8 @@ where
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native_runtime {
-    use std::future::Future;
-    use std::sync::OnceLock;
+    use std::{future::Future, sync::OnceLock};
+
     use tokio::runtime::{Builder, Handle};
 
     /// Shared current-thread Tokio runtime driven on a dedicated OS thread.
@@ -69,8 +69,9 @@ where
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::spawn_background;
     use web_time::Duration;
+
+    use super::spawn_background;
 
     #[test]
     fn executes_background_future() {

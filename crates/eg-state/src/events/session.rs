@@ -35,9 +35,7 @@
 //! Settings handlers persist App-owned changes directly. Runtime still mirrors
 //! the remaining compatibility fields until their legacy readers move.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_state::prelude::State;
+use bevy::{app::App, ecs::prelude::*, state::prelude::State};
 use eg_types::{
     AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorStateParams,
     LevelPreviewCameraMetadata, MusicMetadata, SettingsSection,
@@ -175,7 +173,7 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 pub fn handle_load_level(world: &mut World) {
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
 
     let events: Vec<LoadLevel> = world
         .resource_mut::<Messages<LoadLevel>>()

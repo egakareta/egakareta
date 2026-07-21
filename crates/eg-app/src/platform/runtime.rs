@@ -5,45 +5,34 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-#[cfg(not(test))]
-use crate::load_menu_textures;
-#[cfg(not(test))]
-use crate::{
-    show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
-    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
-};
 #[cfg(test)]
-use bevy_app::FixedUpdate;
-use bevy_app::{App, PostUpdate};
+use bevy::app::FixedUpdate;
 #[cfg(not(test))]
-use bevy_ecs::world::World;
-use bevy_state::prelude::State;
+use bevy::ecs::world::World;
+use bevy::{
+    app::{App, PostUpdate},
+    state::prelude::State,
+};
 #[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
-use eg_state::state::AudioBackendRes;
-
-use eg_state::state::AppBootstrap;
 #[cfg(not(test))]
 use eg_state::state::AuthStateRes;
-use eg_state::state::EditorInputRes;
 #[cfg(not(test))]
 use eg_state::state::MenuStateRes;
 #[cfg(not(test))]
 use eg_state::state::PerfRes;
-use eg_state::state::RenderConfigRes;
 #[cfg(not(test))]
 use eg_state::state::RenderEguiRes;
 #[cfg(not(test))]
 use eg_state::state::RenderGpuRes;
 #[cfg(not(target_arch = "wasm32"))]
 use eg_state::state::RenderSurfaceHostRes;
-use eg_state::state::SessionStateRes;
-use eg_state::state::enqueue_platform_input;
-use eg_state::state::register_state_schedule;
-
-use eg_state::state::setup_state_app;
 #[cfg(test)]
 use eg_state::state::test_support::TestApp;
+use eg_state::state::{
+    AppBootstrap, AudioBackendRes, EditorInputRes, RenderConfigRes, SessionStateRes,
+    enqueue_platform_input, register_state_schedule, setup_state_app,
+};
 use eg_ui::register_ui_resources_world;
 #[cfg(not(test))]
 use eg_ui::{EditorUiInputs, SettingsSidebarInputs};
@@ -51,6 +40,14 @@ use eg_ui::{EditorUiInputs, SettingsSidebarInputs};
 use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
 #[cfg(not(test))]
 use egui_wgpu::ScreenDescriptor;
+
+#[cfg(not(test))]
+use crate::load_menu_textures;
+#[cfg(not(test))]
+use crate::{
+    show_editor_ui, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
+    show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui, show_settings_sidebar,
+};
 
 #[cfg(not(test))]
 const SORA_TTF: &[u8] = include_bytes!(concat!(
@@ -609,7 +606,7 @@ impl Runtime {
         app.add_systems(PostUpdate, eg_state::state::run_state_schedule_system);
         register_ui_resources_world(app.world_mut());
         #[cfg(not(test))]
-        app.add_systems(bevy_app::Update, run_egui_ui_system);
+        app.add_systems(bevy::app::Update, run_egui_ui_system);
         bootstrap.install(app.world_mut());
 
         #[cfg(not(test))]
@@ -771,8 +768,7 @@ impl Runtime {
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use bevy_state::prelude::State;
+    use bevy::state::prelude::State;
     use eg_state::state::{
         AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
@@ -780,6 +776,8 @@ mod tests {
         MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
         SessionStateRes,
     };
+
+    use super::*;
 
     fn runtime_in_phase(phase: eg_types::AppPhase) -> Runtime {
         let mut runtime = Runtime::new_test();
@@ -2851,8 +2849,10 @@ mod tests {
     // All three spawn messages mutate authoritative App-world resources.
     // The runtime tests below pin message handling against those resources.
 
-    use eg_state::events::spawn::{RotatePlacementPreview, RotateSpawnDirection, SetSpawnHere};
-    use eg_state::state::EditorSpawnRes;
+    use eg_state::{
+        events::spawn::{RotatePlacementPreview, RotateSpawnDirection, SetSpawnHere},
+        state::EditorSpawnRes,
+    };
     use eg_types::Direction;
 
     /// `SetSpawnHere` writes the current editor cursor to `EditorSpawnRes`.

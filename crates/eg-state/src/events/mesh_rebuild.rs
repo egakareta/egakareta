@@ -31,12 +31,12 @@
 //!   dirty-flag path.
 //!
 //! REFACTOR POINT(full-bevy): the change-detection system is
-//! replaced by `bevy_render`'s render-world `extract` step in the
+//! replaced by `bevy::render`'s render-world `extract` step in the
 //! full-Bevy migration. The `RebuildMeshEvent` event itself stays
 //! but the source changes (Bevy's render graph emits it from
 //! `Mesh` / `Material` asset events).
 
-use bevy_ecs::prelude::*;
+use bevy::ecs::prelude::*;
 
 /// Reason a mesh needs to be rebuilt.
 ///

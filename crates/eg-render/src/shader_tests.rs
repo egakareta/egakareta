@@ -5,9 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use naga::front::wgsl;
-use naga::valid::{Capabilities, ValidationFlags, Validator};
-use naga::{Block, Statement};
+use naga::{
+    Block, Statement,
+    front::wgsl,
+    valid::{Capabilities, ValidationFlags, Validator},
+};
 
 use super::{GRID_WGSL, SHADER_WGSL};
 

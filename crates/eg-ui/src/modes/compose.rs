@@ -7,13 +7,17 @@
 */
 use std::collections::HashMap;
 
-use crate::UiCommandSink;
-use crate::modes::shared::{EditorPropertyPopup, show_editor_property_popup};
 use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
-use eg_state::commands::AppCommand;
-use eg_state::state::EditorConfigState;
-use eg_state::state::editor_command::EditorCommand;
+use eg_state::{
+    commands::AppCommand,
+    state::{EditorConfigState, editor_command::EditorCommand},
+};
 use eg_types::{CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget};
+
+use crate::{
+    UiCommandSink,
+    modes::shared::{EditorPropertyPopup, show_editor_property_popup},
+};
 
 const RECENT_BLOCK_STRIP_LIMIT: usize = 4;
 const COMPACT_PREVIEW_BUTTON_SIZE: f32 = 40.0;
@@ -565,18 +569,18 @@ fn scale_channel(value: u8, factor: f32) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
+    use eg_state::state::EditorConfigState;
+    use eg_types::{
+        CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, EditorMode,
+        LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
+    };
+
     use super::{
         FALLBACK_SIDE_COLOR, FALLBACK_TOP_COLOR, TOP_LIGHTEN_FACTOR, atlas_average_color,
         block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
         show_place_block_properties_window, show_selected_block_properties_window,
     };
-    use eg_blocks::{BlockDefinition, BlockTextureAtlas, BlockTextureLayers};
-    use eg_state::state::EditorConfigState;
-    use eg_types::{
-        CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
-        TRANSFORM_TRIGGER_BLOCK_ID,
-    };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {

@@ -5,11 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::AppSettings;
-use eg_types::AuthSession;
-use eg_types::PersistentWaveformCacheEntry;
-use opfs::{DirectoryHandle as _, FileHandle as _};
 use std::collections::HashMap;
+
+use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
+use opfs::{DirectoryHandle as _, FileHandle as _};
 
 const AUDIO_DIR_NAME: &str = "audio";
 const WAVEFORM_DIR_NAME: &str = "waveforms";
@@ -25,9 +24,7 @@ pub async fn save_audio(filename: &str, data: &[u8]) -> Result<(), String> {
 /// Load all audio files from persistent storage, returning a map of filenames to their byte contents.
 pub async fn load_all_audio() -> HashMap<String, Vec<u8>> {
     use futures::StreamExt;
-    use opfs::DirectoryEntry;
-    use opfs::DirectoryHandle as _;
-    use opfs::FileHandle as _;
+    use opfs::{DirectoryEntry, DirectoryHandle as _, FileHandle as _};
 
     let mut audio_map = HashMap::new();
     let Ok(audio_dir) = opfs_subdir(AUDIO_DIR_NAME).await else {
@@ -197,9 +194,7 @@ async fn opfs_write_file(
     filename: &str,
     data: &[u8],
 ) -> Result<(), String> {
-    use opfs::DirectoryHandle as _;
-    use opfs::FileHandle as _;
-    use opfs::WritableFileStream as _;
+    use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
 
     let mut file = dir
         .get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: true })
@@ -221,8 +216,9 @@ async fn opfs_write_file(
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use super::*;
     use std::sync::{Mutex, OnceLock};
+
+    use super::*;
 
     fn test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

@@ -5,11 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::UiCommandSink;
-use crate::components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS};
-use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
+use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::TimingPoint;
+
+use crate::{
+    UiCommandSink,
+    components::{MAX_TIMELINE_DURATION_SECONDS, MIN_TIMELINE_DURATION_SECONDS},
+};
 
 /// Direct values needed only while rendering timing-mode controls.
 pub(crate) struct TimingModePanelInputs<'a> {
@@ -225,11 +227,11 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
 #[cfg(test)]
 mod tests {
+    use eg_state::commands::AppCommand;
+    use eg_types::{AppSettings, LevelObject, MusicMetadata, TimingPoint};
+
     use super::{TimingModePanelInputs, show_timing_mode_bottom_panel};
     use crate::test_utils::editor_ui_view;
-    use eg_state::commands::AppCommand;
-    use eg_types::LevelObject;
-    use eg_types::{AppSettings, MusicMetadata, TimingPoint};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,

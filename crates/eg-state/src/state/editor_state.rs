@@ -6,10 +6,6 @@
 
 */
 #[cfg(test)]
-use super::EditorDirtyFlags;
-#[cfg(test)]
-use super::EditorSubsystem;
-#[cfg(test)]
 use eg_blocks::BlockId;
 use eg_editor_domain::add_tap_with_indicator;
 #[cfg(test)]
@@ -23,6 +19,11 @@ use eg_types::EditorMode;
 use eg_types::{Direction, LevelObject, TimingPoint};
 #[cfg(test)]
 use eg_types::{EasingDirection, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget};
+
+#[cfg(test)]
+use super::EditorDirtyFlags;
+#[cfg(test)]
+use super::EditorSubsystem;
 
 #[cfg(test)]
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
@@ -742,7 +743,6 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::EditorSubsystem;
     use eg_blocks::BlockId;
     use eg_game::TimelineSimulationRuntime;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
@@ -750,6 +750,8 @@ mod tests {
         Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
         TimedTrigger, TriggerTarget,
     };
+
+    use super::EditorSubsystem;
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
         LevelObject {

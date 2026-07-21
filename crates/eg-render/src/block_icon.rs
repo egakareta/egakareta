@@ -5,21 +5,19 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use glam::{Mat4, Vec3};
-use wgpu::util::DeviceExt;
-
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{BlockDefinition, BlockRenderProfile, BlockTextureLayers};
-
-use eg_mesh::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
 use eg_mesh::{
     CameraTriggerVisualStyle, MeshGeometry, TransformTriggerVisualStyle,
     append_camera_trigger_visual_vertices, append_transform_trigger_visual_vertices,
+    shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers},
 };
 use eg_types::{
     CAMERA_TRIGGER_BLOCK_ID, CameraUniform, ColorSpaceUniform, LevelObject,
     TRANSFORM_TRIGGER_BLOCK_ID,
 };
+use glam::{Mat4, Vec3};
+use wgpu::util::DeviceExt;
 
 use crate::{DEPTH_FORMAT, GpuContext};
 

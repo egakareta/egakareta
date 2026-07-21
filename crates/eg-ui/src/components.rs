@@ -5,10 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::UiCommandSink;
-use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
+use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::{AppSettings, EditorMode};
+
+use crate::UiCommandSink;
 
 pub(crate) const MIN_TIMELINE_DURATION_SECONDS: f32 = 0.1;
 pub(crate) const MAX_TIMELINE_DURATION_SECONDS: f32 = 600.0;
@@ -750,13 +750,14 @@ pub(crate) fn show_waveform_panel(
 }
 #[cfg(test)]
 mod tests {
+    use eg_types::{
+        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
+        EditorMode, LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
+        TimingPoint, TriggerTarget,
+    };
+
     use super::*;
     use crate::test_utils::editor_ui_view;
-    use eg_types::{
-        AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EditorMode, LevelObject,
-        MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
-    };
-    use eg_types::{EasingDirection, TimedTrigger, TriggerTarget};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,

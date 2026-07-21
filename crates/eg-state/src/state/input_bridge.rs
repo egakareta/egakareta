@@ -7,17 +7,17 @@
 */
 //! Platform input resources for the Bevy App world.
 
-use bevy_ecs::prelude::*;
-use bevy_state::prelude::State;
-
-use crate::commands::{AppCommand, InputEvent};
-use crate::state::editor_command::EditorCommand;
-use crate::state::{
-    EditorAuthoredObject, EditorConfigRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes,
-    EditorTimingRes, SessionStateRes,
-};
+use bevy::{ecs::prelude::*, state::prelude::State};
 use eg_editor_domain::{TimingDivisionDirection, timing_division_time_in_direction};
 use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
+
+use crate::{
+    commands::{AppCommand, InputEvent},
+    state::{
+        EditorAuthoredObject, EditorConfigRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes,
+        EditorTimingRes, SessionStateRes, editor_command::EditorCommand,
+    },
+};
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
@@ -576,10 +576,13 @@ fn is_modifier_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use bevy::ecs::message::Messages;
+
     use super::*;
-    use crate::events::{auth, pointer};
-    use crate::state::plugins::register_state_resources;
-    use bevy_ecs::message::Messages;
+    use crate::{
+        events::{auth, pointer},
+        state::plugins::register_state_resources,
+    };
 
     #[test]
     fn enqueue_platform_input_buffers_event() {

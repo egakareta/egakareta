@@ -5,21 +5,24 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::components::{
-    BlockId, CachedBlockBehavior, ColorTint, Grounded, Object, ObjectBundle, ObjectData, ObjectId,
-    Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position, Rotation, Size,
-    SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
-};
-use super::events::ConsumedEventsBuffer;
-use super::physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains};
-use super::resources::{
-    FrameDelta, GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput,
-    TurnInputKind,
-};
-use super::simulation::{TimelineSimulationRuntime, simulate_timeline_state};
-use super::test_app::TestApp;
 use eg_block_geometry::hitbox_cuboids;
 use eg_types::{Direction, LevelObject};
+
+use super::{
+    components::{
+        BlockId, CachedBlockBehavior, ColorTint, Grounded, Object, ObjectBundle, ObjectData,
+        ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
+        Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
+    },
+    events::ConsumedEventsBuffer,
+    physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains},
+    resources::{
+        FrameDelta, GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput,
+        TurnInputKind,
+    },
+    simulation::{TimelineSimulationRuntime, simulate_timeline_state},
+    test_app::TestApp,
+};
 
 fn app_with_objects(objects: impl IntoIterator<Item = LevelObject>) -> TestApp {
     let mut app = TestApp::minimal();

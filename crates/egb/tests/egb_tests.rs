@@ -6,9 +6,11 @@
 
 */
 
-use std::fs;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::{
+    fs,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 fn get_egb_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_egb"))

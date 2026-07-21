@@ -6,14 +6,15 @@
 
 */
 #[cfg(test)]
+use eg_editor_domain::derive_tap_indicator_positions;
+#[cfg(test)]
+use eg_types::{LevelObject, TriggerTarget, next_level_object_id};
+
+#[cfg(test)]
 use super::EditorClipboard;
 use super::EditorHistorySnapshot;
 #[cfg(test)]
 use super::EditorSubsystem;
-#[cfg(test)]
-use eg_editor_domain::derive_tap_indicator_positions;
-#[cfg(test)]
-use eg_types::{LevelObject, TriggerTarget, next_level_object_id};
 
 #[derive(Default, Clone)]
 pub struct EditorHistoryState {
@@ -290,8 +291,9 @@ fn regenerate_object_ids_for_clipboard(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use eg_types::LevelObject;
+
+    use super::*;
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {

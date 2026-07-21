@@ -5,10 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::env;
-use std::fs;
-use std::io::{self, Read as _};
-use std::path::PathBuf;
+use std::{
+    env, fs,
+    io::{self, Read as _},
+    path::PathBuf,
+};
 
 use eg_level::{convert_level_binary_to_json, convert_level_json_to_binary};
 

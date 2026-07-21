@@ -5,12 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::UiCommandSink;
-use crate::modes::shared::{
-    EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
+use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
+
+use crate::{
+    UiCommandSink,
+    modes::shared::{
+        EditorPropertyPopup, show_editor_property_popup, show_player_camera_status_row,
+    },
 };
-use eg_state::commands::AppCommand;
-use eg_state::state::editor_command::EditorCommand;
 
 pub(crate) fn show_tapping_mode_bottom_panel(
     ui: &mut egui::Ui,

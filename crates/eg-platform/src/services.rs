@@ -9,8 +9,10 @@ use std::sync::mpsc::Sender;
 
 use eg_types::AuthSession;
 
-use crate::io::{pick_audio_file, pick_level_file, save_audio_to_storage};
-use crate::task::spawn_background;
+use crate::{
+    io::{pick_audio_file, pick_level_file, save_audio_to_storage},
+    task::spawn_background,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthServiceMessage {
@@ -91,16 +93,14 @@ pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthSe
 mod tests {
     use std::sync::mpsc;
 
-    use web_time::Duration;
-
-    use crate::test_hooks;
-    use crate::test_hooks::shared_test_lock;
     use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
+    use web_time::Duration;
 
     use super::{
         AuthServiceMessage, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
         trigger_auth_sign_out, trigger_level_import,
     };
+    use crate::{test_hooks, test_hooks::shared_test_lock};
 
     fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {
         AuthSession {

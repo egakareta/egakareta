@@ -46,10 +46,9 @@ mod tests {
         MusicMetadata, SpawnMetadata,
     };
 
-    use super::super::read_metadata_from_egz;
     use super::{
-        build_level_export, convert_level_binary_to_json, convert_level_json_to_binary,
-        normalize_level_binary_format,
+        super::read_metadata_from_egz, build_level_export, convert_level_binary_to_json,
+        convert_level_json_to_binary, normalize_level_binary_format,
     };
 
     fn sample_metadata() -> LevelMetadata {

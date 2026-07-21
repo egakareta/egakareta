@@ -6,13 +6,13 @@
 
 */
 
+use std::collections::{HashMap, HashSet};
+
+use eg_blocks::BlockId;
 use glam::{EulerRot, Mat3, Vec3};
 use serde::{Deserialize, Serialize};
 use smart_default::SmartDefault;
 use smart_is_default::SmartIsDefault;
-use std::collections::{HashMap, HashSet};
-
-use eg_blocks::BlockId;
 
 pub const CAMERA_TRIGGER_BLOCK_ID: &str = "core/camera_trigger";
 pub const TRANSFORM_TRIGGER_BLOCK_ID: &str = "core/transform_trigger";

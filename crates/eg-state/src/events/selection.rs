@@ -7,10 +7,11 @@
 */
 //! Selection / transform events.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_blocks::BlockId;
 use eg_editor_domain::{
     TimelineNearSearch, derive_timeline_time_for_world_target_near_time, snap_cell_to_step,

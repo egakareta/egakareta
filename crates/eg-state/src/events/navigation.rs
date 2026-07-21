@@ -22,10 +22,11 @@
 //! App-owned resources while the compatibility `State` is still refreshed
 //! for presentation.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::{NextState, State};
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::{NextState, State},
+};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
@@ -476,7 +477,7 @@ fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, di
 }
 
 pub fn handle_toggle_editor(world: &mut World) {
-    use bevy_ecs::message::Messages;
+    use bevy::ecs::message::Messages;
 
     let events: Vec<ToggleEditor> = world
         .resource_mut::<Messages<ToggleEditor>>()

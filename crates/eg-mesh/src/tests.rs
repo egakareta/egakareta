@@ -7,18 +7,21 @@
 */
 #[cfg(test)]
 mod tests {
-    use crate::blocks::{
-        build_block_geometry, build_block_instance_batches, build_block_template_geometry,
-        build_block_vertices,
-    };
-    use crate::builders::{
-        GizmoParams, build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-        build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    };
-    use crate::{GizmoPart, Vertex};
     use eg_block_geometry::hitbox_cuboids;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+    };
+
+    use crate::{
+        GizmoPart, Vertex,
+        blocks::{
+            build_block_geometry, build_block_instance_batches, build_block_template_geometry,
+            build_block_vertices,
+        },
+        builders::{
+            GizmoParams, build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
+            build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
+        },
     };
 
     fn bounds_xz(vertices: &[[f32; 3]]) -> (f32, f32, f32, f32) {

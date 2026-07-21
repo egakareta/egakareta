@@ -5,12 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::PhysicalSize;
-
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 use std::sync::Mutex;
+
+use eg_types::PhysicalSize;
 
 #[cfg(target_arch = "wasm32")]
 pub type WasmCanvas = web_sys::HtmlCanvasElement;

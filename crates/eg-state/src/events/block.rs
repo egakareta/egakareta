@@ -9,16 +9,18 @@
 
 use std::collections::HashMap;
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_editor_domain::{
     remove_topmost_block_at_cursor, snap_cell_to_step, snap_component_to_step,
     topmost_block_index_at_cursor,
 };
-use eg_types::LevelObject;
-use eg_types::{AppPhase, EditorInputState, EditorMode, TriggerTarget, next_level_object_id};
+use eg_types::{
+    AppPhase, EditorInputState, EditorMode, LevelObject, TriggerTarget, next_level_object_id,
+};
 
 use crate::state::{
     EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,

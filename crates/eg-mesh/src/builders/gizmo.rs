@@ -5,10 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::advanced_shapes::{append_cone, append_sphere};
-use crate::shapes::append_prism;
-use crate::{GizmoPart, Vertex};
 use glam::{Quat, Vec3};
+
+use crate::{
+    GizmoPart, Vertex,
+    advanced_shapes::{append_cone, append_sphere},
+    shapes::append_prism,
+};
 
 const ROTATE_RING_SEGMENTS: usize = 72;
 const ROTATE_RING_TUBE_SEGMENTS: usize = 12;

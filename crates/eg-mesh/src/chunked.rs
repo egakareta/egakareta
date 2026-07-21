@@ -7,15 +7,18 @@
 */
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use crate::Vertex;
-use crate::blocks::{
-    BlockInstanceBuildResult, build_block_instance_batches_from_refs,
-    build_block_instance_batches_from_refs_at_time,
-};
-use crate::geometry::MeshGeometry;
-use crate::shapes::{PrismFaceColors, PrismTextureLayers};
 use eg_blocks::{BlockCuboid, BlockDefinition, BlockRenderProfile, BlockTextureLayers};
 use eg_types::LevelObject;
+
+use crate::{
+    Vertex,
+    blocks::{
+        BlockInstanceBuildResult, build_block_instance_batches_from_refs,
+        build_block_instance_batches_from_refs_at_time,
+    },
+    geometry::MeshGeometry,
+    shapes::{PrismFaceColors, PrismTextureLayers},
+};
 
 pub const DEFAULT_RENDER_CHUNK_SIZE: i32 = 16;
 
@@ -766,8 +769,9 @@ fn is_unit_size(size: [f32; 3]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{VoxelFastLaneRejection, build_chunked_block_mesh, classify_voxel_fast_lane};
     use eg_types::LevelObject;
+
+    use super::{VoxelFastLaneRejection, build_chunked_block_mesh, classify_voxel_fast_lane};
 
     #[test]
     fn classifier_accepts_grid_aligned_solid_cube() {

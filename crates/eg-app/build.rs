@@ -5,8 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 fn workspace_root() -> PathBuf {
     let root = PathBuf::from(

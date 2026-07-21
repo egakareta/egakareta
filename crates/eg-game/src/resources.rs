@@ -10,9 +10,10 @@
 //! World-level state for the headless gameplay simulation. See
 //! [`crate::components`] for per-entity data.
 
-use bevy_ecs::prelude::*;
-use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 use std::collections::VecDeque;
+
+use bevy::ecs::prelude::*;
+use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use crate::spatial::SpatialGrid;
 

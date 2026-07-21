@@ -5,8 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::Vertex;
 use glam::{EulerRot, Mat3, Vec3};
+
+use crate::Vertex;
 
 pub fn rotate_vertices_around_euler(vertices: &mut [Vertex], center: [f32; 3], degrees: [f32; 3]) {
     if degrees

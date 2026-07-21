@@ -12,8 +12,10 @@
 //! platform-specific side effects (file pickers, clipboard, storage, auth) on a
 //! per-function basis without going through wrapper layers.
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, OnceLock},
+};
 
 use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
 

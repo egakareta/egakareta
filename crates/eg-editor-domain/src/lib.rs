@@ -21,12 +21,12 @@ pub use transitions::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use eg_types::TriggerTarget;
     use eg_types::{
         BasicLevelMetadata, LevelMetadata, LevelObject, MusicMetadata, SpawnMetadata,
-        TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint,
+        TRANSFORM_TRIGGER_BLOCK_ID, TimingPoint, TriggerTarget,
     };
+
+    use super::*;
 
     fn assert_near_solver_hits_target(
         spawn: [f32; 3],

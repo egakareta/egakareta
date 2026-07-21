@@ -320,9 +320,10 @@ pub fn ray_intersect_rotated_block(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use approx::assert_abs_diff_eq;
     use eg_types::LevelObject;
+
+    use super::*;
 
     #[test]
     fn aabb_hits_front_face() {

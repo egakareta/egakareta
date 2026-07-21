@@ -7,15 +7,16 @@
 */
 //! App-world menu preview selection and metadata extraction.
 
-use bevy_ecs::prelude::*;
-use bevy_state::prelude::State;
+use bevy::{ecs::prelude::*, state::prelude::State};
 use eg_types::{
     AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
     LevelMetadata,
 };
 
-use super::level_management::menu_preview_camera_for_metadata;
-use super::{BuiltinLevelCatalogRes, MenuPreviewObjectsRes, MenuStateRes};
+use super::{
+    BuiltinLevelCatalogRes, MenuPreviewObjectsRes, MenuStateRes,
+    level_management::menu_preview_camera_for_metadata,
+};
 
 /// Refresh the selected built-in level used by the menu preview.
 ///

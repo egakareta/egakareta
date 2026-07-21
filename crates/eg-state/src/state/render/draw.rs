@@ -9,15 +9,13 @@ use std::iter;
 
 use eg_mesh::ChunkAabb;
 use eg_render::{
-    ChunkedBlockMeshSlot, RenderFrameInput, current_surface_output, draw_instanced_blocks,
-    draw_mesh,
+    ChunkedBlockMeshSlot, RenderFrameInput, RenderSurfaceError, current_surface_output,
+    draw_instanced_blocks, draw_mesh,
 };
+use eg_types::AppPhase;
 use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::TextureViewDescriptor;
-
-use eg_render::RenderSurfaceError;
-use eg_types::AppPhase;
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
 
@@ -827,10 +825,6 @@ impl RenderContext<'_> {
 #[cfg(test)]
 mod tests {
 
-    use glam::Mat4;
-    use wgpu::Color;
-
-    use super::{RenderSurfaceError, ViewFrustum, current_surface_output};
     use eg_mesh::ChunkAabb;
     use eg_render::{
         apply_gamma_correction_if_enabled, clear_color_for_phase, editor_grid_darkening,
@@ -838,6 +832,10 @@ mod tests {
         should_draw_floor_and_grid, should_skip_world,
     };
     use eg_types::{AppPhase, EditorMode, LevelMetadata};
+    use glam::Mat4;
+    use wgpu::Color;
+
+    use super::{RenderSurfaceError, ViewFrustum, current_surface_output};
 
     fn assert_color_approx(actual: Color, expected: Color) {
         approx::assert_abs_diff_eq!(actual.r as f32, expected.r as f32, epsilon = 1e-6);

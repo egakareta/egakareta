@@ -5,11 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use rodio::Source;
-use std::io::Cursor;
-use std::str::FromStr;
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::{io::Cursor, str::FromStr};
+
+use rodio::Source;
 use web_time::Duration;
 
 #[cfg(target_arch = "wasm32")]
@@ -731,14 +731,14 @@ pub fn decode_audio_to_waveform_streaming<F>(
 where
     F: FnMut(usize, Vec<f32>, u32),
 {
-    use symphonia::core::audio::sample::Sample;
-    use symphonia::core::codecs::audio::AudioDecoderOptions;
-    use symphonia::core::errors::Error as SymphoniaError;
-    use symphonia::core::formats::FormatOptions;
-    use symphonia::core::formats::TrackType;
-    use symphonia::core::formats::probe::Hint;
-    use symphonia::core::io::MediaSourceStream;
-    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::{
+        audio::sample::Sample,
+        codecs::audio::AudioDecoderOptions,
+        errors::Error as SymphoniaError,
+        formats::{FormatOptions, TrackType, probe::Hint},
+        io::MediaSourceStream,
+        meta::MetadataOptions,
+    };
 
     let source = std::io::Cursor::new(bytes.to_vec());
     let mss = MediaSourceStream::new(Box::new(source), Default::default());
@@ -847,14 +847,12 @@ pub fn tiny_wav_bytes() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use super::{
+        accumulate_interleaved_samples, accumulate_waveform_frame_peak, available_host_labels,
+        decode_audio_to_waveform, decode_audio_to_waveform_streaming, host_label,
+        parse_host_id_by_label, select_host,
+    };
     use crate::audio::AudioBackend;
-
-    use super::accumulate_interleaved_samples;
-    use super::accumulate_waveform_frame_peak;
-    use super::decode_audio_to_waveform;
-    use super::decode_audio_to_waveform_streaming;
-
-    use super::{available_host_labels, host_label, parse_host_id_by_label, select_host};
 
     #[test]
     fn parse_host_id_by_label_handles_default_and_case_insensitive_labels() {

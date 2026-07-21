@@ -10,18 +10,21 @@
 //! These handlers own snap normalization, settings persistence, and selected
 //! object resnapping directly in App resources.
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_editor_domain::{snap_cell_to_step, snap_component_to_step};
 use eg_types::AppPhase;
 
-use crate::events::session::persist_app_settings;
-use crate::state::{
-    EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes,
-    EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    EditorTriggerRes, SessionStateRes,
+use crate::{
+    events::session::persist_app_settings,
+    state::{
+        EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
+        EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+        EditorTimingRes, EditorTriggerRes, SessionStateRes,
+    },
 };
 
 /// Set whether to snap to grid.

@@ -27,28 +27,29 @@
 //! REFACTOR POINT(full-bevy): the full-Bevy migration promotes these
 //! plugin shells to the actual plugin graph (with `RenderPlugin` /
 //! `AudioPlugin` / `AuthPlugin` / `UiPlugin` added), the systems they
-//! register move into `bevy_render` / `bevy_egui` / `bevy_audio`, and
+//! register move into `bevy::render` / `bevy_egui` / `bevy_audio`, and
 //! the schedule labels here are replaced by Bevy's standard
 //! `Update` / `FixedUpdate` / `OnEnter` schedules.
 
-use bevy_app::{App, FixedUpdate, Plugin};
-use bevy_ecs::prelude::*;
-use bevy_state::{app::AppExtStates, prelude::State};
-use bevy_time::{Fixed, Time, TimePlugin};
-
-use super::StateSchedule;
-use super::render::plugin::RenderPlugin;
-use super::state_resources::{
-    AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-    AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-    LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest,
-    PerfRes, SessionStateRes,
+use bevy::{
+    app::{App, FixedUpdate, Plugin},
+    ecs::prelude::*,
+    state::{app::AppExtStates, prelude::State},
+    time::{Fixed, Time, TimePlugin},
 };
+
 use super::{
     AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
-    RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
+    RuntimeAudioPreloadSenderRes, StateSchedule, WaveformLoadSenderRes,
+    render::plugin::RenderPlugin,
+    state_resources::{
+        AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+        AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
+        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+        LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest,
+        PerfRes, SessionStateRes,
+    },
 };
 
 /// Registers the headless gameplay systems. Currently a thin shim around
@@ -189,7 +190,7 @@ impl Plugin for StatePlugins {
     fn build(&self, app: &mut App) {
         app.add_plugins((
             TimePlugin,
-            bevy_state::app::StatesPlugin,
+            bevy::state::app::StatesPlugin,
             MenuPlugin,
             SessionPlugin,
             EditorPlugin,
@@ -227,7 +228,7 @@ pub fn setup_state_app(app: &mut App) {
 pub fn run_state_schedule_system(world: &mut World) {
     super::input_bridge::drain_platform_input_system(world);
     let _ = world.try_run_schedule(StateSchedule);
-    let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
+    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
     let manual_driver = world
         .remove_resource::<super::gameplay_world::ManualGameplayDriverRes>()
         .is_some();
@@ -243,7 +244,7 @@ pub fn run_state_schedule_system(world: &mut World) {
     // pass so gameplay can run with the newly-entered phase. Apply those
     // terminal requests in the same frame rather than leaving a completed
     // level in Playing until the next App update.
-    let _ = world.try_run_schedule(bevy_state::prelude::StateTransition);
+    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
     if super::render::resources::render_pod_resources_present(world) {
         let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
     }
@@ -259,7 +260,7 @@ pub fn run_state_schedule_system(world: &mut World) {
 #[allow(dead_code)]
 pub fn register_state_resources(world: &mut World) {
     world.insert_resource(State::new(eg_types::AppPhase::Menu));
-    world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
+    world.init_resource::<bevy::state::prelude::NextState<eg_types::AppPhase>>();
     world.init_resource::<MenuPreviewObjectsRes>();
     world.init_resource::<BlockEffectsRes>();
     world.init_resource::<SessionStateRes>();
@@ -335,7 +336,7 @@ pub fn register_state_schedule(world: &mut World) {
     // Phase 6a channel poll systems, and Phase 6b result handler systems.
     // The schedule is added to the world's
     // scheduler so runtime and test harnesses can invoke it.
-    let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
+    let mut schedule = bevy::ecs::schedule::Schedule::new(crate::state::StateSchedule);
     schedule.configure_sets(
         (
             crate::events::CommandHandlerSet,
@@ -346,7 +347,8 @@ pub fn register_state_schedule(world: &mut World) {
     );
     schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
     crate::events::add_command_systems(&mut schedule);
-    schedule.add_systems(bevy_ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
+    schedule
+        .add_systems(bevy::ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
     schedule.add_systems(consume_audio_stop_request_system.after(crate::events::CommandHandlerSet));
     schedule.add_systems(sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system));
     schedule.add_systems(
@@ -394,7 +396,7 @@ pub fn register_state_schedule(world: &mut World) {
     world.add_schedule(schedule);
 
     let mut render_extract_schedule =
-        bevy_ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
+        bevy::ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
     render_extract_schedule.add_systems(
         (
             crate::state::render::plugin::extract_trail_vertices_system,

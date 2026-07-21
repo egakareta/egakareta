@@ -5,9 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
 use eg_types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
+
+use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
@@ -818,11 +819,13 @@ fn cross_2d(a: Vec2, b: Vec2) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::EditorSubsystem;
-    use super::super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
-    use super::{projected_block_overlaps_rect, screen_bounds_overlap_rect};
     use eg_types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
     use glam::{Vec2, Vec3};
+
+    use super::{
+        super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem},
+        projected_block_overlaps_rect, screen_bounds_overlap_rect,
+    };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {

@@ -23,7 +23,7 @@
 //!
 //! ```ignore
 //! use eg_state::state::test_support::TestApp;
-//! use bevy_state::prelude::State;
+//! use bevy::state::prelude::State;
 //! use eg_types::AppPhase;
 //!
 //! let mut app = TestApp::minimal();
@@ -38,11 +38,12 @@
 //!
 //! [StateSchedule]: crate::state::StateSchedule
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
+use bevy::{app::App, ecs::prelude::*};
 
-use super::StateSchedule;
-use super::plugins::{register_state_schedule, setup_state_app};
+use super::{
+    StateSchedule,
+    plugins::{register_state_schedule, setup_state_app},
+};
 
 /// Test harness for the eg-state plugin graph.
 ///
@@ -173,16 +174,16 @@ impl Default for TestApp {
 
 #[cfg(test)]
 mod tests {
+    use bevy::{app::FixedUpdate, state::prelude::State};
+    use eg_game::TimelineSimulationRuntime;
+    use eg_types::{AppPhase, Direction, EditorMode};
+
     use super::*;
     use crate::state::{
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
         EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, PerfRes,
         RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes,
     };
-    use bevy_app::FixedUpdate;
-    use bevy_state::prelude::State;
-    use eg_game::TimelineSimulationRuntime;
-    use eg_types::{AppPhase, Direction, EditorMode};
 
     #[test]
     fn test_app_minimal_seeds_state_plugin_resources() {

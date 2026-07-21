@@ -7,7 +7,15 @@
 */
 use std::collections::HashMap;
 
+use eg_state::{commands::InputEvent, state::AppBootstrap};
+use eg_types::GameCursor;
 use egui_winit::State as EguiWinitState;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::{JsCast, prelude::*};
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
+#[cfg(not(target_arch = "wasm32"))]
+use winit::window::Icon;
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition},
@@ -16,22 +24,11 @@ use winit::{
     window::{Window, WindowId},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use winit::window::Icon;
-
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{JsCast, prelude::*};
-#[cfg(target_arch = "wasm32")]
-use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys, WindowExtWebSys};
-
-use crate::platform::input_mapping::{
-    key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
+use crate::platform::{
+    input_mapping::{key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit},
+    input_routing::{should_route_keyboard_input, should_route_pointer_input},
+    runtime::Runtime,
 };
-use crate::platform::input_routing::{should_route_keyboard_input, should_route_pointer_input};
-use crate::platform::runtime::Runtime;
-use eg_state::commands::InputEvent;
-use eg_state::state::AppBootstrap;
-use eg_types::GameCursor;
 
 // REFACTOR POINT(full-bevy): replace this custom winit `ApplicationHandler`
 // with `bevy_winit` + Bevy's app runner.
@@ -578,12 +575,14 @@ impl ApplicationHandler for App {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, TouchPointEvent};
-    use crate::platform::runtime::Runtime;
+    use std::collections::HashMap;
+
     use eg_state::commands::InputEvent;
     use eg_types::GameCursor;
-    use std::collections::HashMap;
     use winit::{dpi::PhysicalPosition, event::TouchPhase};
+
+    use super::{App, TouchPointEvent};
+    use crate::platform::runtime::Runtime;
 
     fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
         PhysicalPosition::new(x, y)

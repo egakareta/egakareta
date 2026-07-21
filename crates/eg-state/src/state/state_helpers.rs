@@ -5,9 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use eg_types::LevelObject;
+
 #[cfg(test)]
 use super::EditorSubsystem;
-use eg_types::LevelObject;
 
 super::editor_context_methods! {
     #[cfg(test)]
@@ -203,8 +204,9 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use super::EditorSubsystem;
     use eg_types::LevelObject;
+
+    use super::EditorSubsystem;
 
     fn block(position: [f32; 3]) -> LevelObject {
         LevelObject {

@@ -5,10 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::editor_interaction::EditorInteractionState;
-use super::history::EditorHistoryState;
 use eg_blocks::BlockEffect;
 use eg_types::LevelObject;
+
+use super::{editor_interaction::EditorInteractionState, history::EditorHistoryState};
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EditorDirtyFlags {

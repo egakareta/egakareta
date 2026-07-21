@@ -5,20 +5,25 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy_ecs::prelude::Resource;
-use bevy_ecs::world::World;
-use eg_audio::audio::{AudioBackend, runtime_asset_source_key};
-use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{
+        Arc, Mutex,
+        mpsc::{Receiver, Sender},
+    },
+};
+
+use bevy::ecs::{prelude::Resource, world::World};
+use eg_audio::{
+    audio::{AudioBackend, runtime_asset_source_key},
+    service::{
+        AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformResult,
+    },
+};
+use eg_platform::{io::save_waveform_to_storage, task::spawn_background};
+use eg_types::PersistentWaveformCacheEntry;
 
 use super::EditorTimingState;
-use eg_audio::service::{
-    AudioByteCache, AudioPreloadResult, EditorAudioCache, WaveformCacheEntry, WaveformResult,
-};
-use eg_platform::io::save_waveform_to_storage;
-use eg_platform::task::spawn_background;
-use eg_types::PersistentWaveformCacheEntry;
 
 // REFACTOR POINT(full-bevy): `AudioState` becomes Bevy audio resources or
 // stays as a custom resource behind Bevy systems; direct `State` polling goes away.
@@ -34,10 +39,10 @@ pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
 pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
 
 #[cfg(not(target_arch = "wasm32"))]
-pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::Res<'w, AudioBackendRes>;
+pub type AudioBackendSystemParam<'w> = bevy::ecs::change_detection::Res<'w, AudioBackendRes>;
 
 #[cfg(target_arch = "wasm32")]
-pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::NonSend<'w, AudioBackendRes>;
+pub type AudioBackendSystemParam<'w> = bevy::ecs::change_detection::NonSend<'w, AudioBackendRes>;
 
 pub(crate) fn with_audio_backend<R>(world: &World, f: impl FnOnce(&AudioBackendRes) -> R) -> R {
     #[cfg(not(target_arch = "wasm32"))]
@@ -463,11 +468,13 @@ pub(crate) fn persist_waveform_cache_entry(cache_key: String, entry: &WaveformCa
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use eg_audio::audio::runtime_asset_source_key;
+
     use super::{
         AudioState, EditorTimingState, WaveformCacheEntry, load_waveform_for_level_resources,
     };
-    use eg_audio::audio::runtime_asset_source_key;
-    use std::collections::HashMap;
 
     #[test]
     fn queues_runtime_audio_preload_by_level_and_source() {

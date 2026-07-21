@@ -5,8 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::Vertex;
-use crate::lighting::apply_lighting;
+use crate::{Vertex, lighting::apply_lighting};
 
 pub fn append_cone(
     vertices: &mut Vec<Vertex>,

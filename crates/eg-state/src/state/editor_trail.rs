@@ -214,9 +214,10 @@ fn cached_editor_trail_segments(
 }
 #[cfg(test)]
 mod tests {
+    use eg_types::{LevelObject, SpawnMetadata};
+
     use super::*;
     use crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed;
-    use eg_types::{LevelObject, SpawnMetadata};
 
     #[test]
     fn recent_segments_keep_latest_points_with_bound() {

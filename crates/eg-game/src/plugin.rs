@@ -7,16 +7,19 @@
 */
 //! `GamePlugin` - the headless gameplay Bevy plugin.
 
-use bevy_app::{App, FixedUpdate, Plugin};
-use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::Schedule;
-
-use crate::events::ConsumedEventsBuffer;
-use crate::resources::{
-    DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, LevelMeta, PendingTurnInputs,
-    PlayerProgress, SpatialIndex,
+use bevy::{
+    app::{App, FixedUpdate, Plugin},
+    ecs::{prelude::*, schedule::Schedule},
 };
-use crate::systems::{self, CollisionOutcome, GameplaySet};
+
+use crate::{
+    events::ConsumedEventsBuffer,
+    resources::{
+        DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, LevelMeta, PendingTurnInputs,
+        PlayerProgress, SpatialIndex,
+    },
+    systems::{self, CollisionOutcome, GameplaySet},
+};
 
 /// Plugin that registers the headless gameplay systems + resources.
 pub struct GamePlugin;

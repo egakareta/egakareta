@@ -5,11 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use crate::UiCommandSink;
-use eg_state::commands::AppCommand;
-use eg_state::state::EditorConfigState;
-use eg_state::state::editor_command::EditorCommand;
+use eg_state::{
+    commands::AppCommand,
+    state::{EditorConfigState, editor_command::EditorCommand},
+};
 use eg_types::{AppSettings, Direction, EditorMode};
+
+use crate::UiCommandSink;
 
 const PROPERTY_POPUP_MARGIN: f32 = 12.0;
 const MODE_SELECTOR_WIDTH: f32 = 48.0;
@@ -268,13 +270,13 @@ pub(crate) fn show_player_camera_status_row(
 
 #[cfg(test)]
 mod tests {
+    use eg_state::{commands::AppCommand, state::EditorConfigState};
+    use eg_types::{AppSettings, Direction, EditorMode};
+
     use super::{
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
         show_mode_selector_popup, show_player_camera_status_row,
     };
-    use eg_state::commands::AppCommand;
-    use eg_state::state::EditorConfigState;
-    use eg_types::{AppSettings, Direction, EditorMode};
 
     #[test]
     fn property_popup_runs_content_closure_with_bottom_bar_offset() {

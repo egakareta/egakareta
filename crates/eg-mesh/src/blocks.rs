@@ -5,19 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use rayon::prelude::*;
 use std::collections::BTreeMap;
 
-use crate::advanced_shapes::append_cone;
-use crate::builders::game::{
-    append_cylinder_segment, append_oriented_box_edges, append_xz_ring, object_center,
-    transform_marker_rotation,
-};
-use crate::geometry::MeshGeometry;
-use crate::noise::pseudo_random_noise;
-use crate::shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers};
-use crate::transforms::rotate_vertices_around_euler;
-use crate::{BlockInstance, Vertex};
 use eg_block_geometry::visual_cuboids;
 use eg_blocks::{
     BlockAnimationAxis, BlockAnimationPhaseSeed, BlockDefinition, BlockRenderProfile,
@@ -25,6 +14,20 @@ use eg_blocks::{
 };
 use eg_types::{CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 use glam::Vec3;
+use rayon::prelude::*;
+
+use crate::{
+    BlockInstance, Vertex,
+    advanced_shapes::append_cone,
+    builders::game::{
+        append_cylinder_segment, append_oriented_box_edges, append_xz_ring, object_center,
+        transform_marker_rotation,
+    },
+    geometry::MeshGeometry,
+    noise::pseudo_random_noise,
+    shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers},
+    transforms::rotate_vertices_around_euler,
+};
 
 const LIQUID_PROFILE_TAG: f32 = 1.0;
 const GEM_PROFILE_TAG: f32 = 4.0;
@@ -943,8 +946,9 @@ pub fn append_transform_trigger_visual_vertices_with_rotation(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use eg_types::CAMERA_TRIGGER_BLOCK_ID;
+
+    use super::*;
 
     fn camera_trigger_object(time_seconds: f32, transition_interval_seconds: f32) -> LevelObject {
         LevelObject {

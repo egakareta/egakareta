@@ -26,10 +26,11 @@
 //!   runtime compatibility sync rebuilds legacy presentation once.
 //!
 
-use bevy_app::App;
-use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemParam;
-use bevy_state::prelude::State;
+use bevy::{
+    app::App,
+    ecs::{prelude::*, system::SystemParam},
+    state::prelude::State,
+};
 use eg_blocks::BlockId;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
