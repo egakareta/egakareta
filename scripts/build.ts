@@ -47,6 +47,10 @@ const proc = Bun.spawn(
         stdin: "inherit",
         stdout: "inherit",
         stderr: "pipe",
+        env: {
+            ...process.env,
+            CARGO_UNSTABLE_BUILD_STD: "std,panic_abort",
+        },
     },
 );
 

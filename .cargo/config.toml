@@ -4,6 +4,12 @@
 [env]
 EGAKARETA_WORKSPACE_ROOT = { value = ".", relative = true }
 
+[unstable]
+feature-unification = true
+
+[resolver]
+feature-unification = "workspace"
+
 [target.wasm32-unknown-unknown]
 rustflags = [
     "-C",
@@ -23,9 +29,6 @@ rustflags = [
     "-C",
     "link-arg=--export=__tls_base",
 ]
-
-[unstable]
-build-std = ["std", "panic_abort"]
 
 [profile.dev.package."*"]
 debug = 1
