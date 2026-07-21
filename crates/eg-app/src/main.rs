@@ -11,7 +11,8 @@
 )]
 
 #[cfg(not(target_arch = "wasm32"))]
-fn main() {
+#[tokio::main]
+async fn main() {
     egakareta_lib::run_native_app();
 }
 
