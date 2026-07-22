@@ -2383,7 +2383,7 @@ mod tests {
 
     #[test]
     fn world_command_sink_writes_messages_immediately() {
-        let mut app = bevy_app::App::new();
+        let mut app = bevy::app::App::new();
         app.add_plugins(crate::plugin::UiPlugin);
 
         let mut sink = WorldUiCommandSink::new(app.world_mut());
