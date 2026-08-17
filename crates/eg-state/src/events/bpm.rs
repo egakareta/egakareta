@@ -41,6 +41,10 @@ pub fn register_events(app: &mut App) {
 // lockstep to avoid two divergent implementations.
 // -----------------------------------------------------------------------
 
+/// Maximum number of bpm tap times retained for the running average.
+/// Mirrors the cap in `EditorSubsystem::bpm_tap`.
+const BPM_TAP_HISTORY_LIMIT: usize = 16;
+
 fn wall_clock_now_seconds() -> f64 {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -57,7 +61,21 @@ fn wall_clock_now_seconds() -> f64 {
 
 pub fn handle_bpm_tap(mut events: MessageReader<BpmTap>, mut timing: ResMut<EditorTimingRes>) {
     for _ in events.read() {
-        timing.0.record_bpm_tap_at(wall_clock_now_seconds());
+        let now_secs = wall_clock_now_seconds();
+        timing.0.bpm_tap_times.push(now_secs);
+        if timing.0.bpm_tap_times.len() > 1 {
+            let mut diffs: Vec<f64> = Vec::with_capacity(timing.0.bpm_tap_times.len() - 1);
+            for i in 1..timing.0.bpm_tap_times.len() {
+                diffs.push(timing.0.bpm_tap_times[i] - timing.0.bpm_tap_times[i - 1]);
+            }
+            let avg_diff = diffs.iter().sum::<f64>() / diffs.len() as f64;
+            let bpm = (60.0 / avg_diff) as f32;
+            timing.0.bpm_tap_result = Some(bpm);
+        }
+        if timing.0.bpm_tap_times.len() > BPM_TAP_HISTORY_LIMIT {
+            let excess = timing.0.bpm_tap_times.len() - BPM_TAP_HISTORY_LIMIT;
+            timing.0.bpm_tap_times.drain(0..excess);
+        }
     }
 }
 
@@ -66,6 +84,7 @@ pub fn handle_bpm_tap_reset(
     mut timing: ResMut<EditorTimingRes>,
 ) {
     for _ in events.read() {
-        timing.0.reset_bpm_tap();
+        timing.0.bpm_tap_times.clear();
+        timing.0.bpm_tap_result = None;
     }
 }

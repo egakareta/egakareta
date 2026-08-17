@@ -20,11 +20,15 @@ use eg_mesh::{
     TransformTriggerMarker, Vertex, build_block_geometry_for_object,
     build_editor_selection_outline_vertices,
 };
-use eg_types::EditorPlaceMode;
 #[cfg(test)]
 use eg_types::LevelObject;
 #[cfg(test)]
 use eg_types::TriggerTarget;
+use eg_types::{EditorPlaceMode, TRANSFORM_TRIGGER_BLOCK_ID};
+
+use super::EditorDirtyFlags;
+#[cfg(test)]
+use super::EditorSubsystem;
 
 #[cfg(test)]
 const EDITOR_SELECTION_OUTLINE_COLOR: [f32; 4] = [0.098, 0.6, 1.0, 1.0];
@@ -175,26 +179,33 @@ fn transform_trigger_marker_source_objects<'a>(
 }
 
 super::editor_context_methods! {
+    pub fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
+        self.runtime.dirty.merge(dirty);
+    }
+
     pub fn sync_objects(&mut self) {
         self.normalize_block_selection();
         self.sync_trigger_selection_from_objects();
-        self.timeline.invalidate_samples();
+        self.invalidate_samples();
         self.pick_spatial_index.invalidate();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
         self.block_static_vertex_cache_complete_len = None;
         self.runtime.pending_block_mesh_appends.clear();
+        self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
     pub fn sync_objects_for_drag(&mut self) {
         self.normalize_block_selection();
         self.pick_spatial_index.invalidate();
+        self.mark_dirty(EditorDirtyFlags::drag_object_sync());
     }
 
     pub fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
-        self.timeline.invalidate_samples();
+        self.invalidate_samples();
         self.pick_spatial_index.invalidate();
+        self.mark_dirty(EditorDirtyFlags::drag_release_sync());
     }
 
     pub fn selected_block_default_size(&self) -> [f32; 3] {
@@ -211,6 +222,7 @@ super::editor_context_methods! {
             self.config.selected_block_rotation_degrees,
         )
         .with_generated_id(&self.objects);
+        let placed_transform_trigger = new_block.block_id == TRANSFORM_TRIGGER_BLOCK_ID;
         let can_append_mesh = self.can_append_block_mesh_after_placement();
 
         self.record_history_state();
@@ -224,10 +236,17 @@ super::editor_context_methods! {
             self.clear_block_selection();
         }
         if can_append_mesh {
-            self.timeline.invalidate_samples();
+            self.invalidate_samples();
             self.runtime.pending_block_mesh_appends.push(placed_index);
+            self.mark_dirty(EditorDirtyFlags::appended_block(
+                place_mode == EditorPlaceMode::SelectPlaced,
+                placed_transform_trigger,
+            ));
         } else {
             self.sync_objects();
+            if placed_transform_trigger {
+                self.mark_dirty(EditorDirtyFlags::trigger_markers_changed());
+            }
         }
         placed_index
     }
@@ -274,14 +293,13 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use eg_editor_domain::topmost_block_index_at_cursor;
     use eg_mesh::build_block_geometry_for_object;
     use eg_types::{
         EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
 
     use super::{
-        EDITOR_SELECTION_OUTLINE_COLOR, EditorObjectOutlineStyle,
+        EDITOR_SELECTION_OUTLINE_COLOR, EditorObjectOutlineStyle, EditorSubsystem,
         build_editor_object_outline_vertices, transform_trigger_markers_for_triggers,
     };
 
@@ -343,20 +361,18 @@ mod tests {
 
     #[test]
     fn topmost_block_index_at_cursor_prefers_highest_overlapping_block() {
-        let objects = vec![
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             block([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
             block([0.0, 1.0, 0.0], [1.0, 2.0, 1.0]),
             block([2.0, 0.0, 2.0], [1.0, 1.0, 1.0]),
         ];
 
         assert_eq!(
-            topmost_block_index_at_cursor(&objects, [0.0, 0.0, 0.0]),
+            editor.topmost_block_index_at_cursor([0.0, 0.0, 0.0]),
             Some(1)
         );
-        assert_eq!(
-            topmost_block_index_at_cursor(&objects, [4.0, 0.0, 4.0]),
-            None
-        );
+        assert_eq!(editor.topmost_block_index_at_cursor([4.0, 0.0, 4.0]), None);
     }
 
     #[test]

@@ -15,8 +15,8 @@ use bevy::{
     state::prelude::State,
 };
 use eg_editor_domain::{
-    normalize_selected_indices, remove_topmost_block_at_cursor, snap_cell_to_step,
-    snap_component_to_step, topmost_block_index_at_cursor,
+    remove_topmost_block_at_cursor, snap_cell_to_step, snap_component_to_step,
+    topmost_block_index_at_cursor,
 };
 use eg_types::{
     AppPhase, EditorInputState, EditorMode, LevelObject, TriggerTarget, next_level_object_id,
@@ -26,7 +26,7 @@ use crate::state::{
     EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,
     EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
     EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
-    record_history_snapshot, replace_editor_objects_commands,
+    replace_editor_objects_commands,
 };
 
 /// Remove the block under cursor or selected blocks.
@@ -386,11 +386,21 @@ fn update_selected_block(
 }
 
 fn selected_indices_normalized(input: &EditorInputState, object_count: usize) -> Vec<usize> {
-    normalize_selected_indices(
-        &input.selected_block_indices,
-        input.selected_block_index,
-        object_count,
-    )
+    let mut indices = input
+        .selected_block_indices
+        .iter()
+        .copied()
+        .filter(|index| *index < object_count)
+        .collect::<Vec<_>>();
+    if let Some(index) = input
+        .selected_block_index
+        .filter(|index| *index < object_count)
+    {
+        indices.push(index);
+    }
+    indices.sort_unstable();
+    indices.dedup();
+    indices
 }
 
 fn normalize_block_selection(input: &mut EditorInputState, object_count: usize) {
@@ -439,8 +449,13 @@ fn sync_trigger_selection_from_objects(
 }
 
 fn record_history_state(resources: &mut BlockResources<'_, '_>, objects: &[LevelObject]) {
+    const MAX_HISTORY: usize = 256;
+    if resources.history.0.undo.len() >= MAX_HISTORY {
+        resources.history.0.undo.remove(0);
+    }
     let snapshot = history_snapshot_from_resources(resources, objects);
-    record_history_snapshot(&mut resources.history.0, snapshot);
+    resources.history.0.undo.push(snapshot);
+    resources.history.0.redo.clear();
 }
 
 fn history_snapshot_from_resources(

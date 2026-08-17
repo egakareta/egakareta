@@ -8,13 +8,16 @@
 //! Test harness for the eg-state `App`.
 //!
 //! [`TestApp`] is the canonical headless Bevy harness for eg-state -- it
-//! builds a [`bevy_app::App`] with every eg-state plugin registered, without touching the heavy
+//! builds a [`bevy_app::App`] with every eg-state plugin registered and
+//! the per-frame [`StateSchedule`] wired in, without touching the heavy
 //! GPU/surface resources. Tests that want to assert on the World, queries,
 //! or resources use [`TestApp`] directly.
 //!
-//! The harness is intentionally minimal: no headless GPU, no window, and no
+//! The harness is intentionally minimal: no headless GPU, no window, no
 //! surface. It exposes only the resources, events, schedules, and systems
-//! that the domain plugin graph registers.
+//! that the plugin graph registers. Tests that need the heavy render
+//! path (e.g. the wgpu buffers, the surface, the egui renderer) use
+//! App-owned render resources and focused render fixtures.
 //!
 //! # Examples
 //!
@@ -29,19 +32,24 @@
 //! assert_eq!(*app.world().resource::<State<AppPhase>>().get(), AppPhase::Editor);
 //! ```
 //!
-//! The harness is a thin wrapper around `bevy_app::App::new()` plus the
-//! eg-state plugin graph. App-owned resources are the only state
-//! authority — production and test paths share the same Bevy schedules.
+//! REFACTOR POINT(full-bevy): in the full-Bevy migration, the harness
+//! remains a thin wrapper around `bevy_app::App::new()` plus the eg-state
+//! plugin graph; App-owned resources are the only state authority.
 //!
-use bevy::{app::App, ecs::prelude::*, time::TimeUpdateStrategy};
+//! [StateSchedule]: crate::state::StateSchedule
 
-use super::plugins::setup_state_app;
+use bevy::{app::App, ecs::prelude::*};
+
+use super::{
+    StateSchedule,
+    plugins::{register_state_schedule, setup_state_app},
+};
 
 /// Test harness for the eg-state plugin graph.
 ///
 /// Wraps a [`bevy_app::App`] built with [`setup_state_app`] + the
-/// standard Bevy schedules. Provides ergonomic accessors for the underlying
-/// [`World`] + [`App`] so tests can assert on resources,
+/// per-frame [`StateSchedule`]. Provides ergonomic accessors for the
+/// underlying [`World`] + [`App`] so tests can assert on resources,
 /// events, and queries without constructing a monolithic compatibility
 /// object.
 ///
@@ -53,8 +61,8 @@ pub struct TestApp {
 }
 
 impl TestApp {
-    /// Build a `TestApp` with every eg-state plugin. No GPU, no surface, no
-    /// window.
+    /// Build a `TestApp` with every eg-state plugin + the `StateSchedule`
+    /// registered. No GPU, no surface, no window.
     ///
     /// This is the canonical entry point for headless eg-state tests. It
     /// installs the plugin graph and schedule wiring used by App tests,
@@ -62,8 +70,9 @@ impl TestApp {
     pub fn minimal() -> Self {
         let mut app = App::new();
         setup_state_app(&mut app);
+        register_state_schedule(app.world_mut());
         super::editor_objects::replace_editor_objects(app.world_mut(), Vec::new());
-        app.insert_resource(TimeUpdateStrategy::FixedTimesteps(1));
+        app.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
 
         app.insert_resource(super::MenuStateRes::new(eg_types::MenuState {
             selected_level: 0,
@@ -75,13 +84,6 @@ impl TestApp {
         }));
 
         super::gameplay_world::seed_app_gameplay_world(app.world_mut());
-
-        // Bevy's first `Time<Real>` update establishes its time origin and
-        // deliberately yields a zero delta. Prime that boundary before
-        // handing the deterministic fixture to a test so every explicit
-        // `tick()` advances the fixed loop exactly once as promised by the
-        // `FixedTimesteps(1)` strategy above.
-        app.update();
         app.world_mut().clear_trackers();
 
         Self { app }
@@ -120,10 +122,31 @@ impl TestApp {
 
     /// Run a single frame of the `App` via `app.update()`.
     ///
-    /// Production systems run through Bevy's ordinary schedules. The
-    /// This is the same frame driver that production uses.
+    /// In Phase 7-scaffold the App's default schedules are empty (no
+    /// systems have been registered into `Update` yet), so this call
+    /// is a no-op. The actual frame driver is the per-frame
+    /// [`StateSchedule`]; use [`TestApp::tick_state`] to invoke the
+    /// eg-state pipeline or [`TestApp::run_state_schedule`] to run
+    /// only the schedule.
     pub fn tick(&mut self) {
         self.app.update();
+    }
+
+    /// Run a single frame of the eg-state pipeline.
+    ///
+    /// Run the same state, gameplay, and render-extraction schedules as the
+    /// production Runtime frame driver.
+    pub fn tick_state(&mut self) {
+        super::plugins::run_state_schedule_system(self.world_mut());
+    }
+
+    /// Run the [`StateSchedule`] once on the World.
+    ///
+    /// Equivalent to [`TestApp::tick_state`], returning whether the
+    /// schedule completed without panicking (Bevy 0.19's
+    /// `try_run_schedule` is the underlying API).
+    pub fn run_state_schedule(&mut self) -> bool {
+        self.world_mut().try_run_schedule(StateSchedule).is_ok()
     }
 
     /// Assert the World contains a resource of type `T`. Panics with
@@ -159,7 +182,7 @@ mod tests {
     use crate::state::{
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
         EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, PerfRes,
-        RenderTrailVerticesRes, SessionStateRes,
+        RenderExtractSchedule, RenderTrailVerticesRes, SessionStateRes,
     };
 
     #[test]
@@ -232,23 +255,9 @@ mod tests {
     }
 
     #[test]
-    fn test_app_tick_processes_messages_in_standard_update_schedule() {
-        use crate::events::navigation::ToggleEditor;
-
+    fn test_app_run_state_schedule_succeeds_on_empty_world() {
         let mut app = TestApp::minimal();
-        app.world_mut().write_message(ToggleEditor);
-        app.tick();
-
-        assert_eq!(
-            *app.world().resource::<State<AppPhase>>().get(),
-            AppPhase::Editor
-        );
-    }
-
-    #[test]
-    fn test_app_update_succeeds_on_empty_world() {
-        let mut app = TestApp::minimal();
-        app.tick();
+        assert!(app.run_state_schedule());
     }
 
     #[test]
@@ -258,10 +267,10 @@ mod tests {
     }
 
     #[test]
-    fn test_app_phase_transition_via_update() {
+    fn test_app_phase_transition_via_tick_state() {
         let mut app = TestApp::minimal();
 
-        app.tick();
+        app.tick_state();
         assert_eq!(
             *app.world().resource::<State<AppPhase>>().get(),
             AppPhase::Menu
@@ -271,20 +280,20 @@ mod tests {
         app.world_mut()
             .insert_resource(State::new(AppPhase::Playing));
 
-        app.tick();
+        app.tick_state();
         assert_eq!(
             *app.world().resource::<State<AppPhase>>().get(),
             AppPhase::Playing
         );
 
-        app.tick();
+        app.tick_state();
         assert_eq!(
             *app.world().resource::<State<AppPhase>>().get(),
             AppPhase::Playing
         );
     }
     #[test]
-    fn test_app_update_stops_editor_playback_without_audio() {
+    fn test_app_state_schedule_stops_editor_playback_without_audio() {
         let mut app = TestApp::minimal();
         app.world_mut()
             .insert_resource(State::new(AppPhase::Editor));
@@ -307,7 +316,7 @@ mod tests {
             timeline.0.playback.seek_resync_cooldown_seconds = 0.0;
         }
 
-        app.tick();
+        assert!(app.run_state_schedule());
 
         let timeline = &app.world().resource::<EditorTimelineRes>().0;
         assert!(!timeline.playback.playing);
@@ -337,7 +346,11 @@ mod tests {
             timeline.0.playback.runtime = Some(playback_runtime);
         }
 
-        app.tick();
+        assert!(
+            app.world_mut()
+                .try_run_schedule(RenderExtractSchedule)
+                .is_ok()
+        );
         assert!(
             !app.world()
                 .resource::<RenderTrailVerticesRes>()

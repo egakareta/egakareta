@@ -6,13 +6,78 @@
 
 */
 
+#[cfg(test)]
+use eg_editor_domain::add_tap_with_indicator;
 use eg_editor_domain::{
     TapDivisionPreview, TapDivisionPreviewRange, TimelineNearSearch,
     derive_timeline_time_for_world_target_near_time, derive_timing_division_tap_previews,
     timeline_axis_aligned_segment_split_fraction, timeline_turn_corner_position,
 };
+#[cfg(test)]
+use eg_editor_domain::{
+    derive_tap_indicator_positions, remove_topmost_block_at_cursor, snap_cell_to_step,
+    toggle_spawn_direction, topmost_block_index_at_cursor,
+};
+#[cfg(test)]
+use eg_types::{LevelObject, TriggerTarget};
 
-use super::editor_timeline::EditorTimelineSnapshot;
+#[cfg(test)]
+use super::EditorSubsystem;
+
+#[cfg(test)]
+fn object_ids_for_removed_indices(
+    objects: &[LevelObject],
+    removed_indices: &[usize],
+) -> Vec<String> {
+    let mut removed_indices = removed_indices
+        .iter()
+        .copied()
+        .filter(|index| *index < objects.len())
+        .collect::<Vec<_>>();
+    removed_indices.sort_unstable();
+    removed_indices.dedup();
+
+    objects
+        .iter()
+        .enumerate()
+        .filter(|(index, object)| {
+            removed_indices.binary_search(index).is_ok()
+                && object.trigger.is_none()
+                && !object.id.is_empty()
+        })
+        .map(|(_, object)| object.id.clone())
+        .collect()
+}
+
+#[cfg(test)]
+fn dereference_removed_transform_trigger_targets(
+    objects: &mut [LevelObject],
+    removed_object_ids: &[String],
+) {
+    if removed_object_ids.is_empty() {
+        return;
+    }
+
+    let mut removed_object_ids = removed_object_ids.to_vec();
+    removed_object_ids.sort_unstable();
+    removed_object_ids.dedup();
+
+    for object in objects {
+        let Some(trigger) = object.trigger.as_mut() else {
+            continue;
+        };
+        if !trigger.transform {
+            continue;
+        }
+        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
+            continue;
+        };
+
+        object_ids.retain(|object_id| removed_object_ids.binary_search(object_id).is_err());
+        object_ids.sort_unstable();
+        object_ids.dedup();
+    }
+}
 
 fn distance_sq(left: [f32; 3], right: [f32; 3]) -> f32 {
     let dx = left[0] - right[0];
@@ -74,132 +139,6 @@ pub struct TapPathPick {
     pub time_seconds: f32,
 }
 
-struct TapPathSearch<'a> {
-    cache: &'a [EditorTimelineSnapshot],
-    snapshot_cache_revision: u64,
-    simulation_revision: u64,
-    snapshot_cache_step_seconds: f32,
-    duration_seconds: f32,
-    snap_to_grid: bool,
-    snap_step: f32,
-}
-
-fn tap_path_pick_near_world(
-    search: TapPathSearch<'_>,
-    target_world: [f32; 3],
-) -> Option<TapPathPick> {
-    if search.cache.is_empty() || search.snapshot_cache_revision != search.simulation_revision {
-        return None;
-    }
-
-    let step_seconds = search.snapshot_cache_step_seconds.max(1.0 / 480.0);
-    if search.cache.len() == 1 {
-        return Some(TapPathPick {
-            indicator_position: [
-                search.cache[0].position[0] - 0.5,
-                search.cache[0].position[1],
-                search.cache[0].position[2] - 0.5,
-            ],
-            time_seconds: 0.0,
-        });
-    }
-
-    let mut best_position = search.cache[0].position;
-    let mut best_index = 0;
-    let mut best_alpha = 0.0;
-    let mut best_axis = None;
-    let mut best_distance_sq = f32::INFINITY;
-
-    for index in 0..search.cache.len().saturating_sub(1) {
-        let previous_snapshot = &search.cache[index];
-        let current_snapshot = &search.cache[index + 1];
-        let previous = previous_snapshot.position;
-        let current = current_snapshot.position;
-
-        let mut consider_candidate =
-            |segment_start: [f32; 3],
-             segment_end: [f32; 3],
-             segment_start_alpha: f32,
-             segment_alpha_width: f32| {
-                let (candidate, alpha) =
-                    closest_point_on_segment(segment_start, segment_end, target_world);
-                let segment_alpha =
-                    (segment_start_alpha + alpha * segment_alpha_width).clamp(0.0, 1.0);
-                let candidate_distance_sq = distance_sq(candidate, target_world);
-                if candidate_distance_sq < best_distance_sq {
-                    best_distance_sq = candidate_distance_sq;
-                    best_position = candidate;
-                    best_index = index;
-                    best_alpha = segment_alpha;
-                    best_axis = segment_path_axis(segment_start, segment_end);
-                }
-            };
-
-        if let Some(corner) = timeline_turn_corner_position(
-            previous,
-            previous_snapshot.direction,
-            current,
-            current_snapshot.direction,
-        ) {
-            let split_fraction =
-                timeline_axis_aligned_segment_split_fraction(previous, corner, current);
-            consider_candidate(previous, corner, 0.0, split_fraction);
-            consider_candidate(corner, current, split_fraction, 1.0 - split_fraction);
-            continue;
-        }
-
-        let (candidate, alpha) = closest_point_on_segment(previous, current, target_world);
-        let candidate_distance_sq = distance_sq(candidate, target_world);
-        if candidate_distance_sq < best_distance_sq {
-            best_distance_sq = candidate_distance_sq;
-            best_position = candidate;
-            best_index = index;
-            best_alpha = alpha;
-            best_axis = segment_path_axis(previous, current);
-        }
-    }
-
-    let mut indicator_position = [
-        best_position[0] - 0.5,
-        best_position[1],
-        best_position[2] - 0.5,
-    ];
-    let mut time_seconds = (best_index as f32 + best_alpha) * step_seconds;
-    if search.snap_to_grid {
-        let snap_step = search.snap_step.max(0.05);
-        match best_axis {
-            Some(PathAxis::X) => {
-                indicator_position[0] = (indicator_position[0] / snap_step).floor() * snap_step;
-                let snapped_world_x = indicator_position[0] + 0.5;
-                let previous = search.cache[best_index].position;
-                let current = search.cache[best_index + 1].position;
-                let segment_x = current[0] - previous[0];
-                if segment_x.abs() > f32::EPSILON {
-                    best_alpha = ((snapped_world_x - previous[0]) / segment_x).clamp(0.0, 1.0);
-                    time_seconds = (best_index as f32 + best_alpha) * step_seconds;
-                }
-            }
-            Some(PathAxis::Z) => {
-                indicator_position[2] = (indicator_position[2] / snap_step).floor() * snap_step;
-                let snapped_world_z = indicator_position[2] + 0.5;
-                let previous = search.cache[best_index].position;
-                let current = search.cache[best_index + 1].position;
-                let segment_z = current[2] - previous[2];
-                if segment_z.abs() > f32::EPSILON {
-                    best_alpha = ((snapped_world_z - previous[2]) / segment_z).clamp(0.0, 1.0);
-                    time_seconds = (best_index as f32 + best_alpha) * step_seconds;
-                }
-            }
-            None => {}
-        }
-    }
-
-    Some(TapPathPick {
-        indicator_position,
-        time_seconds: time_seconds.clamp(0.0, search.duration_seconds.max(0.0)),
-    })
-}
-
 super::editor_context_methods! {
     #[cfg(test)]
     pub fn sync_tap_indicators_to_spawn(&mut self) {
@@ -247,18 +186,111 @@ super::editor_context_methods! {
     }
 
     pub fn tap_path_pick_near_world(&self, target_world: [f32; 3]) -> Option<TapPathPick> {
-        tap_path_pick_near_world(
-            TapPathSearch {
-                cache: &self.timeline.snapshot_cache,
-                snapshot_cache_revision: self.timeline.snapshot_cache_revision,
-                simulation_revision: self.timeline.simulation_revision,
-                snapshot_cache_step_seconds: self.timeline.snapshot_cache_step_seconds,
-                duration_seconds: self.timeline.clock.duration_seconds,
-                snap_to_grid: self.effective_snap_to_grid(),
-                snap_step: self.config.snap_step,
-            },
-            target_world,
-        )
+        let cache = &self.timeline.snapshot_cache;
+        if cache.is_empty()
+            || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
+        {
+            return None;
+        }
+
+        let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+        if cache.len() == 1 {
+            return Some(TapPathPick {
+                indicator_position: self.tap_indicator_position_from_world(cache[0].position),
+                time_seconds: 0.0,
+            });
+        }
+
+        let mut best_position = cache[0].position;
+        let mut best_index = 0;
+        let mut best_alpha = 0.0;
+        let mut best_axis = None;
+        let mut best_distance_sq = f32::INFINITY;
+
+        for index in 0..cache.len().saturating_sub(1) {
+            let previous_snapshot = &cache[index];
+            let current_snapshot = &cache[index + 1];
+            let previous = previous_snapshot.position;
+            let current = current_snapshot.position;
+
+            let mut consider_candidate =
+                |segment_start: [f32; 3],
+                 segment_end: [f32; 3],
+                 segment_start_alpha: f32,
+                 segment_alpha_width: f32| {
+                    let (candidate, alpha) =
+                        closest_point_on_segment(segment_start, segment_end, target_world);
+                    let segment_alpha =
+                        (segment_start_alpha + alpha * segment_alpha_width).clamp(0.0, 1.0);
+                    let candidate_distance_sq = distance_sq(candidate, target_world);
+                    if candidate_distance_sq < best_distance_sq {
+                        best_distance_sq = candidate_distance_sq;
+                        best_position = candidate;
+                        best_index = index;
+                        best_alpha = segment_alpha;
+                        best_axis = segment_path_axis(segment_start, segment_end);
+                    }
+                };
+
+            if let Some(corner) = timeline_turn_corner_position(
+                previous,
+                previous_snapshot.direction,
+                current,
+                current_snapshot.direction,
+            ) {
+                let split_fraction =
+                    timeline_axis_aligned_segment_split_fraction(previous, corner, current);
+                consider_candidate(previous, corner, 0.0, split_fraction);
+                consider_candidate(corner, current, split_fraction, 1.0 - split_fraction);
+                continue;
+            }
+
+            let (candidate, alpha) = closest_point_on_segment(previous, current, target_world);
+            let candidate_distance_sq = distance_sq(candidate, target_world);
+            if candidate_distance_sq < best_distance_sq {
+                best_distance_sq = candidate_distance_sq;
+                best_position = candidate;
+                best_index = index;
+                best_alpha = alpha;
+                best_axis = segment_path_axis(previous, current);
+            }
+        }
+
+        let mut indicator_position = self.tap_indicator_position_from_world(best_position);
+        let mut time_seconds = (best_index as f32 + best_alpha) * step_seconds;
+        if self.effective_snap_to_grid() {
+            let snap_step = self.config.snap_step.max(0.05);
+            match best_axis {
+                Some(PathAxis::X) => {
+                    indicator_position[0] = (indicator_position[0] / snap_step).floor() * snap_step;
+                    let snapped_world_x = indicator_position[0] + 0.5;
+                    let previous = cache[best_index].position;
+                    let current = cache[best_index + 1].position;
+                    let segment_x = current[0] - previous[0];
+                    if segment_x.abs() > f32::EPSILON {
+                        best_alpha = ((snapped_world_x - previous[0]) / segment_x).clamp(0.0, 1.0);
+                        time_seconds = (best_index as f32 + best_alpha) * step_seconds;
+                    }
+                }
+                Some(PathAxis::Z) => {
+                    indicator_position[2] = (indicator_position[2] / snap_step).floor() * snap_step;
+                    let snapped_world_z = indicator_position[2] + 0.5;
+                    let previous = cache[best_index].position;
+                    let current = cache[best_index + 1].position;
+                    let segment_z = current[2] - previous[2];
+                    if segment_z.abs() > f32::EPSILON {
+                        best_alpha = ((snapped_world_z - previous[2]) / segment_z).clamp(0.0, 1.0);
+                        time_seconds = (best_index as f32 + best_alpha) * step_seconds;
+                    }
+                }
+                None => {}
+            }
+        }
+
+        Some(TapPathPick {
+            indicator_position,
+            time_seconds: time_seconds.clamp(0.0, self.timeline.clock.duration_seconds.max(0.0)),
+        })
     }
 
     pub fn tap_path_cursor_near_world(&self, target_world: [f32; 3]) -> [f32; 3] {
@@ -307,6 +339,106 @@ super::editor_context_methods! {
     }
 
     #[cfg(test)]
+    pub fn toggle_tap_at_cursor(&mut self) -> (Option<f32>, bool) {
+        let indicator_cell = self.input.cursor;
+
+        if let Some(remove_index) = self
+            .timeline
+            .taps
+            .tap_indicator_positions
+            .iter()
+            .enumerate()
+            .filter(|(_, position)| {
+                ((*position)[0] - indicator_cell[0]).abs() < 0.01
+                    && ((*position)[1] - indicator_cell[1]).abs() < 0.01
+                    && ((*position)[2] - indicator_cell[2]).abs() < 0.01
+            })
+            .min_by(|(left_index, _), (right_index, _)| {
+                let left_time = self
+                    .timeline
+                    .taps
+                    .tap_times
+                    .get(*left_index)
+                    .copied()
+                    .unwrap_or(self.timeline.clock.time_seconds);
+                let right_time = self
+                    .timeline
+                    .taps
+                    .tap_times
+                    .get(*right_index)
+                    .copied()
+                    .unwrap_or(self.timeline.clock.time_seconds);
+                let left_distance = (left_time - self.timeline.clock.time_seconds).abs();
+                let right_distance = (right_time - self.timeline.clock.time_seconds).abs();
+                f32::total_cmp(&left_distance, &right_distance)
+            })
+            .map(|(index, _)| index)
+        {
+            let removed_time = self
+                .timeline
+                .taps
+                .tap_times
+                .get(remove_index)
+                .copied()
+                .unwrap_or(self.timeline.clock.time_seconds);
+
+            if remove_index < self.timeline.taps.tap_times.len() {
+                self.timeline.taps.tap_times.remove(remove_index);
+            }
+            if remove_index < self.timeline.taps.tap_indicator_positions.len() {
+                self.timeline
+                    .taps
+                    .tap_indicator_positions
+                    .remove(remove_index);
+            }
+            self.adjust_selected_tap_after_removal(remove_index);
+
+            self.invalidate_samples_from(removed_time);
+            return (Some(removed_time), false);
+        }
+
+        let derived_time = self.tap_time_for_indicator_cell(indicator_cell);
+
+        let selected_index = add_tap_with_indicator(
+            &mut self.timeline.taps.tap_times,
+            &mut self.timeline.taps.tap_indicator_positions,
+            derived_time,
+            indicator_cell,
+        );
+        self.set_selected_tap_index(selected_index);
+        self.invalidate_samples_from(derived_time);
+        (Some(derived_time), true)
+    }
+
+    #[cfg(test)]
+    pub fn nudge_selected(&mut self, world_dx: f32, world_dz: f32) -> bool {
+        let selected_indices = self.selected_indices_normalized();
+        if selected_indices.is_empty() {
+            return false;
+        }
+
+        for index in &selected_indices {
+            if let Some(obj) = self.objects.get_mut(*index) {
+                obj.position[0] += world_dx;
+                obj.position[2] += world_dz;
+            }
+        }
+
+        if let Some(index) = self
+            .input
+            .selected_block_index
+            .filter(|index| selected_indices.contains(index))
+            .or_else(|| selected_indices.first().copied())
+            && let Some(obj) = self.objects.get(index)
+        {
+            self.input.cursor = [obj.position[0], obj.position[1].max(0.0), obj.position[2]];
+        }
+
+        self.invalidate_samples();
+        true
+    }
+
+    #[cfg(test)]
     pub fn snap_selected_blocks_to_grid(&mut self) -> bool {
         let selected_indices = self.selected_indices_normalized();
         if selected_indices.is_empty() {
@@ -336,7 +468,7 @@ super::editor_context_methods! {
         }
 
         if changed {
-            self.timeline.invalidate_samples();
+            self.invalidate_samples();
         }
         changed
     }
@@ -354,7 +486,7 @@ super::editor_context_methods! {
                 }
             }
             self.clear_block_selection();
-            self.timeline.invalidate_samples();
+            self.invalidate_samples();
             self.pick_spatial_index.invalidate();
             self.sync_trigger_selection_from_objects();
             return true;
@@ -364,7 +496,7 @@ super::editor_context_methods! {
             let removed_object_ids = object_ids_for_removed_indices(&self.objects, &[index]);
             dereference_removed_transform_trigger_targets(&mut self.objects, &removed_object_ids);
             remove_topmost_block_at_cursor(&mut self.objects, self.input.cursor);
-            self.timeline.invalidate_samples();
+            self.invalidate_samples();
             self.pick_spatial_index.invalidate();
             self.sync_trigger_selection_from_objects();
             return true;
@@ -377,44 +509,38 @@ super::editor_context_methods! {
     pub fn set_spawn_here(&mut self) {
         self.spawn.position = self.input.cursor;
         self.sync_tap_indicators_to_spawn();
-        self.timeline.invalidate_samples();
+        self.invalidate_samples();
     }
 
     #[cfg(test)]
     pub fn rotate_spawn_direction(&mut self) {
         self.spawn.direction = toggle_spawn_direction(self.spawn.direction);
         self.sync_tap_indicators_to_spawn();
-        self.timeline.invalidate_samples();
+        self.invalidate_samples();
     }
 
+    #[cfg(test)]
+    pub fn move_cursor(&mut self, dx: i32, dy: i32) {
+        let step = if self.effective_snap_to_grid() {
+            self.config.snap_step.max(0.05)
+        } else {
+            1.0
+        };
+        self.input.cursor[0] += dx as f32 * step;
+        self.input.cursor[2] += dy as f32 * step;
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bevy::state::prelude::State;
-    use eg_editor_domain::{
-        TapDivisionPreviewRange, TimelineNearSearch, add_tap_with_indicator,
-        derive_timeline_elapsed_seconds, derive_timeline_time_for_world_target_near_time,
-        derive_timing_division_tap_previews, nudge_selected_objects, remove_tap_with_indicator,
-    };
+    use eg_editor_domain::derive_tap_indicator_positions;
+    use eg_game::TimelineSimulationRuntime;
     use eg_types::{
-        Direction, EasingDirection, LevelObject, SpawnMetadata, TRANSFORM_TRIGGER_BLOCK_ID,
+        Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
         TimedTrigger, TimingPoint, TriggerTarget,
     };
 
-    use super::{EditorTimelineSnapshot, TapPathSearch, tap_path_pick_near_world};
-    use crate::{
-        events::{
-            block::RemoveBlock,
-            history::{Redo, Undo},
-            selection::SnapSelectionToGrid,
-            spawn::{RotateSpawnDirection, SetSpawnHere},
-        },
-        state::{
-            EditorConfigRes, EditorInputRes, EditorSpawnRes, EditorTimelineState,
-            collect_editor_objects_from_world, replace_editor_objects, test_support::TestApp,
-        },
-    };
+    use super::EditorSubsystem;
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -440,84 +566,47 @@ mod tests {
         }
     }
 
-    fn remove_block_test_app(objects: Vec<LevelObject>, selected_indices: Vec<usize>) -> TestApp {
-        let mut app = TestApp::minimal();
-        app.world_mut()
-            .insert_resource(State::new(eg_types::AppPhase::Editor));
-        replace_editor_objects(app.world_mut(), objects);
-        let mut input = app.world_mut().resource_mut::<EditorInputRes>();
-        input.0.selected_block_index = selected_indices.first().copied();
-        input.0.selected_block_indices = selected_indices;
-        app
-    }
-
-    fn pick_timeline_path(
-        timeline: &EditorTimelineState,
-        snap_to_grid: bool,
-        snap_step: f32,
-        target_world: [f32; 3],
-    ) -> super::TapPathPick {
-        tap_path_pick_near_world(
-            TapPathSearch {
-                cache: &timeline.snapshot_cache,
-                snapshot_cache_revision: timeline.snapshot_cache_revision,
-                simulation_revision: timeline.simulation_revision,
-                snapshot_cache_step_seconds: timeline.snapshot_cache_step_seconds,
-                duration_seconds: timeline.clock.duration_seconds,
-                snap_to_grid,
-                snap_step,
-            },
-            target_world,
-        )
-        .expect("timeline samples should yield a path pick")
-    }
-
     #[test]
     fn remove_block_undo_redo_sequence_restores_and_reapplies() {
-        let mut app = remove_block_test_app(
-            vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])],
-            vec![0],
-        );
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
 
-        app.world_mut().write_message(RemoveBlock);
-        app.tick();
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects.len(), 1);
-        assert_eq!(objects[0].position, [2.0, 0.0, 0.0]);
+        editor.record_history_state();
+        editor.remove_selected();
+        assert_eq!(editor.objects.len(), 1);
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, 0.0]);
 
-        app.world_mut().write_message(Undo);
-        app.tick();
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects.len(), 2);
-        assert_eq!(objects[0].position, [0.0, 0.0, 0.0]);
-        assert_eq!(objects[1].position, [2.0, 0.0, 0.0]);
+        editor.undo();
+        assert_eq!(editor.objects.len(), 2);
+        assert_eq!(editor.objects[0].position, [0.0, 0.0, 0.0]);
+        assert_eq!(editor.objects[1].position, [2.0, 0.0, 0.0]);
 
-        app.world_mut().write_message(Redo);
-        app.tick();
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects.len(), 1);
-        assert_eq!(objects[0].position, [2.0, 0.0, 0.0]);
+        editor.redo();
+        assert_eq!(editor.objects.len(), 1);
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, 0.0]);
     }
 
     #[test]
     fn remove_block_dereferences_deleted_transform_trigger_target() {
-        let mut objects = vec![
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             test_block([0.0, 0.0, 0.0]),
             test_block([2.0, 0.0, 0.0]),
             test_block([4.0, 0.0, 0.0]),
         ];
-        objects.push(test_transform_trigger(vec!["object_2"]));
-        let mut app = remove_block_test_app(objects, vec![1]);
+        editor
+            .objects
+            .push(test_transform_trigger(vec!["object_2"]));
+        editor.input.selected_block_index = Some(1);
+        editor.input.selected_block_indices = vec![1];
 
-        app.world_mut().write_message(RemoveBlock);
-        app.tick();
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects.len(), 3);
-        assert_eq!(objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        let triggers = objects
-            .iter()
-            .filter(|object| object.trigger.is_some())
-            .collect::<Vec<_>>();
+        editor.remove_selected();
+
+        assert_eq!(editor.objects.len(), 3);
+        assert_eq!(editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        let triggers = editor.trigger_objects();
         let trigger = triggers
             .first()
             .and_then(|object| object.trigger.as_ref())
@@ -532,22 +621,22 @@ mod tests {
 
     #[test]
     fn remove_block_remaps_transform_trigger_targets_after_deleted_block() {
-        let mut objects = vec![
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             test_block([0.0, 0.0, 0.0]),
             test_block([2.0, 0.0, 0.0]),
             test_block([4.0, 0.0, 0.0]),
         ];
-        objects.push(test_transform_trigger(vec!["object_4"]));
-        let mut app = remove_block_test_app(objects, vec![0]);
+        editor
+            .objects
+            .push(test_transform_trigger(vec!["object_4"]));
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
 
-        app.world_mut().write_message(RemoveBlock);
-        app.tick();
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects[1].position, [4.0, 0.0, 0.0]);
-        let triggers = objects
-            .iter()
-            .filter(|object| object.trigger.is_some())
-            .collect::<Vec<_>>();
+        editor.remove_selected();
+
+        assert_eq!(editor.objects[1].position, [4.0, 0.0, 0.0]);
+        let triggers = editor.trigger_objects();
         let trigger = triggers
             .first()
             .and_then(|object| object.trigger.as_ref())
@@ -562,98 +651,93 @@ mod tests {
 
     #[test]
     fn spawn_set_and_rotate_support_two_step_undo_redo() {
-        let mut app = remove_block_test_app(Vec::new(), Vec::new());
-        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [4.0, 1.0, 3.0];
+        let mut editor = EditorSubsystem::default();
+        editor.objects.clear();
+        editor.spawn.position = [0.0, 0.0, 0.0];
+        editor.spawn.direction = Direction::Forward;
+        editor.timeline.taps.tap_times = vec![1.0 / eg_game::BASE_PLAYER_SPEED];
+        editor.timeline.taps.tap_indicator_positions = derive_tap_indicator_positions(
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.timeline.taps.tap_times,
+            &editor.objects,
+        );
+        editor.input.cursor = [4.0, 1.0, 3.0];
 
-        app.world_mut().write_message(SetSpawnHere);
-        app.tick();
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.position,
-            [4.0, 1.0, 3.0]
-        );
+        editor.record_history_state();
+        editor.set_spawn_here();
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
+        editor.record_history_state();
+        editor.rotate_spawn_direction();
+        assert_eq!(editor.spawn.direction, Direction::Right);
 
-        app.world_mut().write_message(RotateSpawnDirection);
-        app.tick();
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.direction,
-            Direction::Right
-        );
+        editor.undo();
+        assert_eq!(editor.spawn.direction, Direction::Forward);
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
 
-        app.world_mut().write_message(Undo);
-        app.tick();
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.direction,
-            Direction::Forward
-        );
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.position,
-            [4.0, 1.0, 3.0]
-        );
+        editor.undo();
+        assert_eq!(editor.spawn.direction, Direction::Forward);
+        assert_eq!(editor.spawn.position, [0.0, 0.0, 0.0]);
 
-        app.world_mut().write_message(Undo);
-        app.tick();
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.position,
-            [0.0, 0.0, 0.0]
-        );
+        editor.redo();
+        assert_eq!(editor.spawn.position, [4.0, 1.0, 3.0]);
+        editor.redo();
+        assert_eq!(editor.spawn.direction, Direction::Right);
 
-        app.world_mut().write_message(Redo);
-        app.tick();
-        assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.position,
-            [4.0, 1.0, 3.0]
+        let expected_indicators = derive_tap_indicator_positions(
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.timeline.taps.tap_times,
+            &editor.objects,
         );
-        app.world_mut().write_message(Redo);
-        app.tick();
         assert_eq!(
-            app.world().resource::<EditorSpawnRes>().0.direction,
-            Direction::Right
+            editor.timeline.taps.tap_indicator_positions,
+            expected_indicators
         );
     }
 
     #[test]
     fn toggle_tap_at_cursor_adds_then_removes_indicator() {
-        let mut tap_times = Vec::new();
-        let mut indicator_positions = Vec::new();
-        let indicator_cell = [1.0, 0.0, 2.0];
+        let mut editor = EditorSubsystem::default();
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.timeline.clock.time_seconds = 2.0;
+        editor.input.cursor = [1.0, 0.0, 2.0];
+        editor.timeline.preview.position = [1.5, 0.0, 2.5];
 
-        let selected_index = add_tap_with_indicator(
-            &mut tap_times,
-            &mut indicator_positions,
-            2.0,
-            indicator_cell,
-        );
-        assert_eq!(selected_index, Some(0));
-        assert_eq!(tap_times, vec![2.0]);
-        assert_eq!(indicator_positions, vec![indicator_cell]);
+        let (added_time, added) = editor.toggle_tap_at_cursor();
+        assert!(added);
+        assert!(added_time.is_some());
+        assert_eq!(editor.timeline.taps.tap_times.len(), 1);
+        assert_eq!(editor.timeline.taps.tap_indicator_positions.len(), 1);
 
-        assert_eq!(
-            remove_tap_with_indicator(&mut tap_times, &mut indicator_positions, 2.0),
-            Some(0)
-        );
-        assert!(tap_times.is_empty());
-        assert!(indicator_positions.is_empty());
+        let (removed_time, added_again) = editor.toggle_tap_at_cursor();
+        assert!(!added_again);
+        assert!(removed_time.is_some());
+        assert!(editor.timeline.taps.tap_times.is_empty());
+        assert!(editor.timeline.taps.tap_indicator_positions.is_empty());
     }
 
     #[test]
     fn toggle_tap_after_death_uses_reachable_timeline_time() {
-        let spawn = SpawnMetadata::default();
-        let objects = vec![test_block([0.0, 0.0, 4.0])];
-        let seed_time =
-            derive_timeline_elapsed_seconds(spawn.position, spawn.direction, &[], 3.0, &objects);
-        let added_time = derive_timeline_time_for_world_target_near_time(
-            spawn.position,
-            spawn.direction,
-            &[],
-            8.0,
-            &objects,
-            [0.5, 0.0, 3.5],
-            TimelineNearSearch {
-                seed_time,
-                window_seconds: 1.5,
-            },
-        );
+        let mut editor = EditorSubsystem::default();
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.timeline.clock.time_seconds = 3.0;
+        editor.objects = vec![test_block([0.0, 0.0, 4.0])];
+        editor.input.cursor = [0.0, 0.0, 3.0];
 
+        let mut runtime = TimelineSimulationRuntime::new(
+            editor.spawn.position,
+            editor.spawn.direction,
+            &editor.objects,
+            &[],
+        );
+        runtime.advance_to(editor.timeline.clock.time_seconds);
+        editor.timeline.preview.position = runtime.position();
+
+        let (added_time, added) = editor.toggle_tap_at_cursor();
+
+        assert!(added);
+        let added_time = added_time.expect("tap should be added");
         assert!(
             (added_time - 0.375).abs() < 0.03,
             "expected tap near reachable target time, got {added_time}"
@@ -666,101 +750,112 @@ mod tests {
 
     #[test]
     fn nudge_and_remove_selected_cover_selected_and_cursor_fallback_paths() {
-        let mut objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
-        let selected_indices = vec![0, 1];
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([3.0, 0.0, 3.0])];
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.input.selected_block_index = Some(0);
 
-        assert!(
-            nudge_selected_objects(&mut objects, &selected_indices, Some(0), 2.0, -1.0,).is_some()
-        );
-        assert_eq!(objects[0].position, [2.0, 0.0, -1.0]);
-        assert_eq!(objects[1].position, [5.0, 0.0, 2.0]);
+        assert!(editor.nudge_selected(2.0, -1.0));
+        assert_eq!(editor.objects[0].position, [2.0, 0.0, -1.0]);
+        assert_eq!(editor.objects[1].position, [5.0, 0.0, 2.0]);
 
-        assert!(nudge_selected_objects(&mut objects, &[], None, 1.0, 1.0).is_none());
+        editor.input.selected_block_indices.clear();
+        editor.input.selected_block_index = None;
+        assert!(!editor.nudge_selected(1.0, 1.0));
 
-        let mut app = remove_block_test_app(objects, Vec::new());
-        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [2.0, 0.0, -1.0];
-        app.world_mut().write_message(RemoveBlock);
-        app.tick();
-        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
+        editor.input.cursor = [2.0, 0.0, -1.0];
+        assert!(editor.remove_selected());
+        assert_eq!(editor.objects.len(), 1);
 
-        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [999.0, 0.0, 999.0];
-        app.world_mut().write_message(RemoveBlock);
-        app.tick();
-        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
+        editor.input.cursor = [999.0, 0.0, 999.0];
+        assert!(!editor.remove_selected());
     }
 
     #[test]
     fn snap_selection_to_grid_snaps_all_selected_blocks_to_configured_step() {
-        let mut app = remove_block_test_app(
-            vec![
-                test_block([0.24, 0.26, -0.74]),
-                test_block([1.76, 0.0, 2.24]),
-                test_block([9.1, 0.0, 9.1]),
-            ],
-            vec![0, 1],
-        );
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_step = 0.5;
-        app.world_mut().write_message(SnapSelectionToGrid);
-        app.tick();
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_step = 0.5;
+        editor.objects = vec![
+            test_block([0.24, 0.26, -0.74]),
+            test_block([1.76, 0.0, 2.24]),
+            test_block([9.1, 0.0, 9.1]),
+        ];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0, 1];
 
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert_eq!(objects[0].position, [0.0, 0.5, -0.5]);
-        assert_eq!(objects[1].position, [2.0, 0.0, 2.0]);
-        assert_eq!(objects[2].position, [9.1, 0.0, 9.1]);
-        assert_eq!(
-            app.world().resource::<EditorInputRes>().0.cursor,
-            [0.0, 0.5, -0.5]
-        );
+        assert!(editor.snap_selected_blocks_to_grid());
+
+        assert_eq!(editor.objects[0].position, [0.0, 0.5, -0.5]);
+        assert_eq!(editor.objects[1].position, [2.0, 0.0, 2.0]);
+        assert_eq!(editor.objects[2].position, [9.1, 0.0, 9.1]);
+        assert_eq!(editor.input.cursor, [0.0, 0.5, -0.5]);
+    }
+
+    #[test]
+    fn move_cursor_uses_snap_configuration() {
+        let mut editor = EditorSubsystem::default();
+        editor.input.cursor = [0.0, 0.0, 0.0];
+
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 0.25;
+        editor.move_cursor(2, -1);
+        assert_eq!(editor.input.cursor, [0.5, 0.0, -0.25]);
+
+        editor.config.snap_to_grid = false;
+        editor.move_cursor(1, 1);
+        assert_eq!(editor.input.cursor, [1.5, 0.0, 0.75]);
     }
 
     #[test]
     fn tapping_path_cursor_snaps_only_along_movement_axis() {
-        let forward_spawn = SpawnMetadata {
-            position: [1.0, 0.0, 0.0],
-            direction: Direction::Forward,
-        };
-        let mut forward_timeline = EditorTimelineState::default();
-        forward_timeline.clock.duration_seconds = 4.0;
-        forward_timeline.clock.time_seconds = 0.4;
+        let mut forward_editor = EditorSubsystem::default();
+        forward_editor.input.mode = EditorMode::Tapping;
+        forward_editor.spawn.position = [1.0, 0.0, 0.0];
+        forward_editor.spawn.direction = Direction::Forward;
+        forward_editor.config.snap_to_grid = true;
+        forward_editor.config.snap_step = 2.0;
+        forward_editor.timeline.clock.duration_seconds = 4.0;
+        forward_editor.set_timeline_time_seconds(0.4);
         crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
-            &mut forward_timeline,
-            &[],
-            &forward_spawn,
+            &mut forward_editor.timeline,
+            &forward_editor.objects,
+            &forward_editor.spawn,
         );
-        let forward_cursor =
-            pick_timeline_path(&forward_timeline, true, 2.0, [4.5, 0.0, 3.4]).indicator_position;
+
+        let forward_cursor = forward_editor.tap_path_cursor_near_world([4.5, 0.0, 3.4]);
         assert_eq!(forward_cursor[0], 1.0);
         assert_eq!(forward_cursor[2], 2.0);
 
-        let right_spawn = SpawnMetadata {
-            position: [0.0, 0.0, 1.0],
-            direction: Direction::Right,
-        };
-        let mut right_timeline = EditorTimelineState::default();
-        right_timeline.clock.duration_seconds = 4.0;
-        right_timeline.clock.time_seconds = 0.4;
+        let mut right_editor = EditorSubsystem::default();
+        right_editor.input.mode = EditorMode::Tapping;
+        right_editor.spawn.position = [0.0, 0.0, 1.0];
+        right_editor.spawn.direction = Direction::Right;
+        right_editor.config.snap_to_grid = true;
+        right_editor.config.snap_step = 2.0;
+        right_editor.timeline.clock.duration_seconds = 4.0;
+        right_editor.set_timeline_time_seconds(0.4);
         crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
-            &mut right_timeline,
-            &[],
-            &right_spawn,
+            &mut right_editor.timeline,
+            &right_editor.objects,
+            &right_editor.spawn,
         );
-        let right_cursor =
-            pick_timeline_path(&right_timeline, true, 2.0, [3.4, 0.0, 4.5]).indicator_position;
+
+        let right_cursor = right_editor.tap_path_cursor_near_world([3.4, 0.0, 4.5]);
         assert_eq!(right_cursor[0], 2.0);
         assert_eq!(right_cursor[2], 1.0);
     }
 
     #[test]
     fn tapping_path_cursor_splits_turn_samples_without_diagonal_drift() {
-        let mut timeline = EditorTimelineState::default();
-        timeline.clock.duration_seconds = 2.0;
-        timeline.snapshot_cache_step_seconds = 1.0;
-        timeline.snapshot_cache_revision = timeline.simulation_revision;
-        timeline.snapshot_cache = vec![
-            EditorTimelineSnapshot {
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
+        editor.timeline.clock.duration_seconds = 2.0;
+        editor.timeline.snapshot_cache_step_seconds = 1.0;
+        editor.timeline.snapshot_cache_revision = editor.timeline.simulation_revision;
+        editor.timeline.snapshot_cache = vec![
+            crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [1.44, 0.0, 1.5],
                 direction: Direction::Right,
                 is_grounded: true,
@@ -768,7 +863,7 @@ mod tests {
                 trail_segment_count: 0,
                 trail_point_count: 0,
             },
-            EditorTimelineSnapshot {
+            crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [1.5, 0.0, 1.56],
                 direction: Direction::Forward,
                 is_grounded: true,
@@ -778,7 +873,7 @@ mod tests {
             },
         ];
 
-        let cursor = pick_timeline_path(&timeline, true, 1.0, [1.5, 0.0, 1.55]).indicator_position;
+        let cursor = editor.tap_path_cursor_near_world([1.5, 0.0, 1.55]);
 
         assert_eq!(cursor[0], 1.0);
         assert_eq!(cursor[2], 1.0);
@@ -786,25 +881,18 @@ mod tests {
 
     #[test]
     fn timing_division_previews_include_distant_timeline_times() {
-        let timing_points = vec![TimingPoint {
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.timeline.clock.duration_seconds = 60.0;
+        editor.timeline.clock.time_seconds = 0.0;
+        editor.timing.timing_points = vec![TimingPoint {
             time_seconds: 0.0,
             bpm: 120.0,
             time_signature_numerator: 4,
             time_signature_denominator: 4,
         }];
 
-        let previews = derive_timing_division_tap_previews(
-            [0.0, 0.0, 0.0],
-            Direction::Forward,
-            &[],
-            &timing_points,
-            60.0,
-            TapDivisionPreviewRange {
-                start_seconds: 0.0,
-                end_seconds: 60.0,
-            },
-            &[],
-        );
+        let previews = editor.timing_division_tap_previews();
 
         assert!(previews.iter().any(|preview| {
             (preview.time_seconds - 45.0).abs() <= 0.001
@@ -814,31 +902,31 @@ mod tests {
 
     #[test]
     fn toggle_tap_at_cursor_can_add_distant_cached_path_tap() {
-        let spawn = SpawnMetadata::default();
-        let mut timeline = EditorTimelineState::default();
-        timeline.clock.duration_seconds = 8.0;
-        timeline.clock.time_seconds = 0.1;
+        let mut editor = EditorSubsystem::default();
+        editor.input.mode = EditorMode::Tapping;
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
+        editor.timeline.clock.duration_seconds = 8.0;
+        editor.set_timeline_time_seconds(0.1);
+        editor.input.cursor = [0.0, 0.0, 32.0];
         crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_if_needed(
-            &mut timeline,
-            &[],
-            &spawn,
-        );
-        let pick = pick_timeline_path(&timeline, true, 1.0, [0.5, 0.0, 32.5]);
-        let mut tap_times = Vec::new();
-        let mut indicator_positions = Vec::new();
-        add_tap_with_indicator(
-            &mut tap_times,
-            &mut indicator_positions,
-            pick.time_seconds,
-            pick.indicator_position,
+            &mut editor.timeline,
+            &editor.objects,
+            &editor.spawn,
         );
 
-        let added_time = pick.time_seconds;
+        let (added_time, added) = editor.toggle_tap_at_cursor();
+
+        assert!(added);
+        let added_time = added_time.expect("tap should be added");
         assert!(
             (added_time - 4.0).abs() < 0.02,
             "expected distant tap near 4.0s, got {added_time}"
         );
-        assert_eq!(tap_times, vec![added_time]);
-        assert_eq!(indicator_positions, vec![[0.0, 0.0, 32.0]]);
+        assert_eq!(editor.timeline.taps.tap_times, vec![added_time]);
+        assert_eq!(
+            editor.timeline.taps.tap_indicator_positions,
+            vec![[0.0, 0.0, 32.0]]
+        );
     }
 }

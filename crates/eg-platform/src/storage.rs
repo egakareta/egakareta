@@ -5,53 +5,50 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::collections::HashMap;
 
-#[cfg(not(target_arch = "wasm32"))]
-use async_fs as fs;
 use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
-use futures::StreamExt;
-#[cfg(target_arch = "wasm32")]
-use web_fs as fs;
+use opfs::{DirectoryHandle as _, FileHandle as _};
 
 const AUDIO_DIR_NAME: &str = "audio";
 const WAVEFORM_DIR_NAME: &str = "waveforms";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const AUTH_SESSION_FILE_NAME: &str = "auth_session.json";
-const APP_STORAGE_DIR_NAME: &str = "egakareta";
 
 /// Save the given audio data to persistent storage with the specified filename.
 pub async fn save_audio(filename: &str, data: &[u8]) -> Result<(), String> {
-    let audio_dir = storage_subdir(AUDIO_DIR_NAME).await?;
-    storage_write_file(&audio_dir, filename, data).await
+    let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
+    opfs_write_file(&audio_dir, filename, data).await
 }
 
 /// Load all audio files from persistent storage, returning a map of filenames to their byte contents.
 pub async fn load_all_audio() -> HashMap<String, Vec<u8>> {
+    use futures::StreamExt;
+    use opfs::{DirectoryEntry, DirectoryHandle as _, FileHandle as _};
+
     let mut audio_map = HashMap::new();
-    let Ok(audio_dir) = storage_subdir(AUDIO_DIR_NAME).await else {
+    let Ok(audio_dir) = opfs_subdir(AUDIO_DIR_NAME).await else {
         return audio_map;
     };
-    let Ok(entries) = fs::read_dir(&audio_dir).await else {
+    let Ok(entries) = audio_dir
+        .entries()
+        .await
+        .map_err(|err| format!("Failed to get directory entries: {:?}", err))
+    else {
         return audio_map;
     };
 
     futures::pin_mut!(entries);
     while let Some(entry) = entries.next().await {
-        let Ok(entry) = entry else {
+        let Ok((filename, DirectoryEntry::File(file))) = entry else {
             continue;
         };
-        let Ok(file_type) = entry.file_type().await else {
-            continue;
-        };
-        if !file_type.is_file() {
-            continue;
-        }
-        if let Ok(bytes) = fs::read(entry.path()).await {
-            audio_map.insert(entry.file_name().to_string_lossy().into_owned(), bytes);
+        if let Ok(bytes) = file
+            .read()
+            .await
+            .map_err(|err| format!("Failed to read file: {:?}", err))
+        {
+            audio_map.insert(filename, bytes);
         }
     }
 
@@ -60,8 +57,8 @@ pub async fn load_all_audio() -> HashMap<String, Vec<u8>> {
 
 /// Read the specified music file from persistent storage, returning None if it doesn't exist.
 pub async fn read_editor_music_bytes(music_source: &str) -> Result<Option<Vec<u8>>, String> {
-    let audio_dir = storage_subdir(AUDIO_DIR_NAME).await?;
-    storage_read_file(&audio_dir, music_source).await
+    let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
+    opfs_read_file(&audio_dir, music_source).await
 }
 
 /// Save the given waveform cache entry to persistent storage with the specified cache key.
@@ -70,14 +67,14 @@ pub async fn save_waveform(
     entry: &PersistentWaveformCacheEntry,
 ) -> Result<(), String> {
     let encoded = encode_waveform_entry(entry)?;
-    let waveform_dir = storage_subdir(WAVEFORM_DIR_NAME).await?;
-    storage_write_file(&waveform_dir, &format!("{cache_key}.cbor"), &encoded).await
+    let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await?;
+    opfs_write_file(&waveform_dir, &format!("{cache_key}.cbor"), &encoded).await
 }
 
 /// Load the waveform cache entry from persistent storage with the specified cache key.
 pub async fn load_waveform(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-    let waveform_dir = storage_subdir(WAVEFORM_DIR_NAME).await.ok()?;
-    let bytes = storage_read_file(&waveform_dir, &format!("{cache_key}.cbor"))
+    let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await.ok()?;
+    let bytes = opfs_read_file(&waveform_dir, &format!("{cache_key}.cbor"))
         .await
         .ok()??;
     decode_waveform_entry(&bytes).ok()
@@ -94,7 +91,7 @@ fn decode_waveform_entry(bytes: &[u8]) -> Result<PersistentWaveformCacheEntry, S
 /// Load the app settings from persistent storage, returning default settings if not found.
 pub async fn load_app_settings() -> Result<AppSettings, String> {
     let root = app_specific_dir().await?;
-    let Some(settings_bytes) = storage_read_file(&root, SETTINGS_FILE_NAME).await? else {
+    let Some(settings_bytes) = opfs_read_file(&root, SETTINGS_FILE_NAME).await? else {
         return Ok(AppSettings::default());
     };
     let settings_json = String::from_utf8(settings_bytes)
@@ -108,13 +105,13 @@ pub async fn save_app_settings(settings: &AppSettings) -> Result<(), String> {
     let settings_json = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
     let root = app_specific_dir().await?;
-    storage_write_file(&root, SETTINGS_FILE_NAME, settings_json.as_bytes()).await
+    opfs_write_file(&root, SETTINGS_FILE_NAME, settings_json.as_bytes()).await
 }
 
 /// Load the auth session from persistent storage, returning None if not found.
 pub async fn load_auth_session() -> Result<Option<AuthSession>, String> {
     let root = app_specific_dir().await?;
-    let Some(session_bytes) = storage_read_file(&root, AUTH_SESSION_FILE_NAME).await? else {
+    let Some(session_bytes) = opfs_read_file(&root, AUTH_SESSION_FILE_NAME).await? else {
         return Ok(None);
     };
     let session_json = String::from_utf8(session_bytes)
@@ -129,7 +126,7 @@ pub async fn load_auth_session() -> Result<Option<AuthSession>, String> {
 pub async fn save_auth_session(session: &AuthSession) -> Result<(), String> {
     let session_json = serde_json::to_string_pretty(session)
         .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
-    storage_write_file(
+    opfs_write_file(
         &app_specific_dir().await?,
         AUTH_SESSION_FILE_NAME,
         session_json.as_bytes(),
@@ -139,68 +136,82 @@ pub async fn save_auth_session(session: &AuthSession) -> Result<(), String> {
 
 /// Clear the auth session from persistent storage.
 pub async fn clear_auth_session() -> Result<(), String> {
-    let path = app_specific_dir().await?.join(AUTH_SESSION_FILE_NAME);
-    match fs::remove_file(path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(format!("Failed to clear auth session: {error}")),
-    }
+    let _ = app_specific_dir()
+        .await?
+        .remove_entry(AUTH_SESSION_FILE_NAME)
+        .await
+        .map_err(|err| format!("Failed to clear auth session: {:?}", err));
     Ok(())
 }
 
-/// The path for app-specific data storage.
+/// The DirectoryHandle for the app-specific data storage.
 /// Uses the `EGAKARETA_STORAGE_ROOT` environment variable in tests.
-async fn app_specific_dir() -> Result<PathBuf, String> {
+async fn app_specific_dir() -> Result<opfs::persistent::DirectoryHandle, String> {
     #[cfg(test)]
     if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
         let path = std::path::PathBuf::from(root);
-        fs::create_dir_all(&path)
-            .await
+        std::fs::create_dir_all(&path)
             .map_err(|err| format!("Failed to create storage root: {err}"))?;
-        return Ok(path);
+        return Ok(opfs::persistent::DirectoryHandle::from(path));
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    let path = dirs::data_local_dir()
-        .ok_or_else(|| "Failed to resolve the native data directory".to_string())?
-        .join(APP_STORAGE_DIR_NAME);
-    #[cfg(target_arch = "wasm32")]
-    let path = PathBuf::from(APP_STORAGE_DIR_NAME);
-
-    fs::create_dir_all(&path)
+    opfs::persistent::app_specific_dir()
         .await
-        .map_err(|err| format!("Failed to create app storage directory: {err}"))?;
-    Ok(path)
+        .map_err(|err| format!("Failed to get app specific dir: {:?}", err))
 }
 
-/// Resolve a named subdirectory of the app storage, creating it if needed.
-async fn storage_subdir(name: &str) -> Result<PathBuf, String> {
-    let path = app_specific_dir().await?.join(name);
-    fs::create_dir_all(&path)
+/// The DirectoryHandle for the specified subdirectory of the `app_specific_dir`, creating it if it doesn't exist.
+async fn opfs_subdir(name: &str) -> Result<opfs::persistent::DirectoryHandle, String> {
+    app_specific_dir()
+        .await?
+        .get_directory_handle_with_options(name, &opfs::GetDirectoryHandleOptions { create: true })
         .await
-        .map_err(|err| format!("Failed to create subdirectory '{name}': {err}"))?;
-    Ok(path)
+        .map_err(|err| format!("Failed to get subdirectory '{name}': {:?}", err))
 }
 
 /// Read the specified file from the given directory, returning None if it doesn't exist.
-async fn storage_read_file(dir: &Path, filename: &str) -> Result<Option<Vec<u8>>, String> {
-    match fs::read(dir.join(filename)).await {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(format!("File read failed: {error}")),
-    }
+async fn opfs_read_file(
+    dir: &opfs::persistent::DirectoryHandle,
+    filename: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let file = dir
+        .get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: false })
+        .await;
+    let file = match file {
+        Ok(file) => file,
+        Err(_) => return Ok(None),
+    };
+
+    file.read()
+        .await
+        .map(Some)
+        .map_err(|err| format!("File read failed: {:?}", err))
 }
 
 /// Write the specified data to the given file in the directory, creating it if it doesn't exist.
-async fn storage_write_file(dir: &Path, filename: &str, data: &[u8]) -> Result<(), String> {
-    let path = dir.join(filename);
-    // `web-fs::write` has create-new semantics, while `async-fs::write`
-    // replaces existing files. Removing the old file first gives this shared
-    // adapter a consistent overwrite contract on both platforms.
-    let _ = fs::remove_file(&path).await;
-    fs::write(&path, data)
+async fn opfs_write_file(
+    dir: &opfs::persistent::DirectoryHandle,
+    filename: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
+
+    let mut file = dir
+        .get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: true })
         .await
-        .map_err(|err| format!("Failed to write file '{filename}': {err}"))
+        .map_err(|err| format!("Failed to get file handle '{filename}': {:?}", err))?;
+    let mut writer = file
+        .create_writable_with_options(&opfs::CreateWritableOptions {
+            keep_existing_data: false,
+        })
+        .await
+        .map_err(|err| format!("Failed to create writable for file '{filename}': {:?}", err))?;
+
+    let _ = writer.write_at_cursor_pos(data).await;
+    writer
+        .close()
+        .await
+        .map_err(|err| format!("Failed to close writable for file '{filename}': {:?}", err))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -238,16 +249,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn storage_root_uses_storage_override() {
+    async fn opfs_root_uses_storage_override() {
         let _env = TestEnv::new();
         let root = app_specific_dir()
             .await
             .expect("failed to get app specific dir");
 
-        storage_write_file(&root, "probe.txt", b"probe")
+        opfs_write_file(&root, "probe.txt", b"probe")
             .await
             .expect("failed to write probe");
-        let loaded = storage_read_file(&root, "probe.txt")
+        let loaded = opfs_read_file(&root, "probe.txt")
             .await
             .expect("failed to read probe")
             .expect("probe should exist");
@@ -256,12 +267,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn storage_subdirectories_are_created() {
+    async fn opfs_subdirectories_are_created() {
         let _env = TestEnv::new();
-        storage_subdir(AUDIO_DIR_NAME)
+        opfs_subdir(AUDIO_DIR_NAME)
             .await
             .expect("audio directory should resolve");
-        storage_subdir(WAVEFORM_DIR_NAME)
+        opfs_subdir(WAVEFORM_DIR_NAME)
             .await
             .expect("waveform directory should resolve");
     }

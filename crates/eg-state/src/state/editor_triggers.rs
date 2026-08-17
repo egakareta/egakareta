@@ -8,6 +8,9 @@
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 
+#[cfg(test)]
+use super::EditorSubsystem;
+
 #[derive(Default, Clone)]
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
@@ -63,69 +66,11 @@ pub(crate) fn sync_camera_follow_trigger_object_pose(
     object.rotation = camera_trigger_rotation_degrees(camera.yaw, camera.pitch);
 }
 
-/// Whether a timed trigger drives the editor camera track.
-pub(crate) fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
-    matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
-}
-
-/// Return authored trigger objects ordered by their timeline time.
-pub(crate) fn trigger_objects_sorted(objects: &[LevelObject]) -> Vec<LevelObject> {
-    let mut triggers = objects
-        .iter()
-        .filter(|object| object.trigger.is_some())
-        .cloned()
-        .collect::<Vec<_>>();
-    triggers.sort_by(|a, b| {
-        f32::total_cmp(
-            &a.trigger
-                .as_ref()
-                .map(|trigger| trigger.time_seconds)
-                .unwrap_or(0.0),
-            &b.trigger
-                .as_ref()
-                .map(|trigger| trigger.time_seconds)
-                .unwrap_or(0.0),
-        )
-    });
-    triggers
-}
-
-/// Whether authored objects contain an object-transform trigger.
-pub(crate) fn has_object_transform_triggers(objects: &[LevelObject]) -> bool {
-    trigger_objects_sorted(objects).iter().any(|object| {
-        let Some(trigger) = object.trigger.as_ref() else {
-            return false;
-        };
-        !matches!(trigger.target, TriggerTarget::Camera) && trigger.transform
-    })
-}
-
-/// Return ordered camera-track marker data with indices relative to the full
-/// ordered trigger list.
-pub(crate) fn camera_track_markers(objects: &[LevelObject]) -> Vec<(usize, CameraTrigger, f32)> {
-    trigger_objects_sorted(objects)
-        .iter()
-        .enumerate()
-        .filter_map(|(index, object)| {
-            let trigger = object.trigger.as_ref()?;
-            if !is_camera_track_trigger(trigger) {
-                return None;
-            }
-            Some((index, trigger.camera.clone()?, trigger.time_seconds))
-        })
-        .collect()
-}
-
-/// Whether authored objects contain a camera-track trigger.
-#[cfg(test)]
-pub(crate) fn has_camera_timeline_triggers(objects: &[LevelObject]) -> bool {
-    trigger_objects_sorted(objects)
-        .iter()
-        .filter_map(|object| object.trigger.as_ref())
-        .any(is_camera_track_trigger)
-}
-
 super::editor_context_methods! {
+    pub fn is_camera_track_trigger(trigger: &TimedTrigger) -> bool {
+        matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some()
+    }
+
     fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
         let cache = &self.timeline.snapshot_cache;
         if cache.is_empty()
@@ -153,7 +98,19 @@ super::editor_context_methods! {
 
     // TODO: avoid re-scanning self.objects on every call; index trigger objects efficiently.
     pub fn trigger_objects(&self) -> Vec<LevelObject> {
-        trigger_objects_sorted(&self.objects)
+        let mut triggers = self
+            .objects
+            .iter()
+            .filter(|object| object.trigger.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
+        triggers.sort_by(|a, b| {
+            f32::total_cmp(
+                &a.trigger.as_ref().map(|t| t.time_seconds).unwrap_or(0.0),
+                &b.trigger.as_ref().map(|t| t.time_seconds).unwrap_or(0.0),
+            )
+        });
+        triggers
     }
 
     // TODO: avoid re-scanning self.objects on every call; index trigger objects efficiently.
@@ -190,27 +147,66 @@ super::editor_context_methods! {
     }
 
     pub fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
-        camera_track_markers(&self.objects)
-            .into_iter()
-            .map(|(index, mut camera, time_seconds)| {
+        self.trigger_objects()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, object)| {
+                let trigger = object.trigger.as_ref()?;
+                if !Self::is_camera_track_trigger(trigger) {
+                    return None;
+                }
+                let mut camera = trigger.camera.clone()?;
                 if let Some(target_position) = self
-                    .timeline_position_for_camera_trigger_marker(time_seconds)
+                    .timeline_position_for_camera_trigger_marker(trigger.time_seconds)
                     .filter(|_| camera.mode == CameraMode::Follow)
                 {
                     camera.target_position = target_position;
                 }
-                (index, camera)
+                Some((index, camera))
             })
             .collect()
     }
 
     pub fn has_object_transform_triggers(&self) -> bool {
-        has_object_transform_triggers(&self.objects)
+        self.trigger_objects().iter().any(|object| {
+            let Some(trigger) = object.trigger.as_ref() else {
+                return false;
+            };
+            !matches!(trigger.target, TriggerTarget::Camera) && trigger.transform
+        })
     }
 
     #[cfg(test)]
     pub fn has_camera_timeline_triggers(&self) -> bool {
-        has_camera_timeline_triggers(&self.objects)
+        self.trigger_objects()
+            .iter()
+            .filter_map(|object| object.trigger.as_ref())
+            .any(Self::is_camera_track_trigger)
+    }
+
+    /// Returns `true` when any of the given block indices are referenced as
+    /// source objects by at least one transform trigger. Used to decide when
+    /// the transform trigger marker overlay must be rebuilt after a block
+    /// move/resize/rotate.
+    pub fn any_block_is_transform_trigger_source(&self, indices: &[usize]) -> bool {
+        if indices.is_empty() {
+            return false;
+        }
+        self.trigger_objects().iter().any(|object| {
+            let Some(trigger) = object.trigger.as_ref() else {
+                return false;
+            };
+            if !trigger.transform {
+                return false;
+            }
+            let TriggerTarget::Objects { object_ids } = &trigger.target else {
+                return false;
+            };
+            indices
+                .iter()
+                .filter_map(|index| self.objects.get(*index))
+                .any(|object| object_ids.contains(&object.id))
+        })
     }
 
     #[cfg(test)]
@@ -247,10 +243,7 @@ mod tests {
         TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
 
-    use super::{
-        camera_track_markers, has_camera_timeline_triggers, has_object_transform_triggers,
-        is_camera_track_trigger, trigger_objects_sorted,
-    };
+    use super::EditorSubsystem;
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -341,21 +334,23 @@ mod tests {
         let follow = camera_follow_trigger(1.0).trigger.unwrap();
         let object = object_move_timed_trigger(2.0);
 
-        assert!(is_camera_track_trigger(&pose));
-        assert!(is_camera_track_trigger(&follow));
-        assert!(!is_camera_track_trigger(&object));
+        assert!(EditorSubsystem::is_camera_track_trigger(&pose));
+        assert!(EditorSubsystem::is_camera_track_trigger(&follow));
+        assert!(!EditorSubsystem::is_camera_track_trigger(&object));
     }
 
     #[test]
     fn trigger_objects_are_sorted_trigger_objects() {
-        let objects = vec![
+        let mut editor = EditorSubsystem::default();
+
+        editor.objects = vec![
             test_block(99.0),
             camera_pose_trigger(2.0),
             object_move_trigger(0.5),
             camera_follow_trigger(1.0),
         ];
 
-        let triggers = trigger_objects_sorted(&objects);
+        let triggers = editor.trigger_objects();
         assert_eq!(triggers.len(), 3);
         assert_eq!(triggers[0].id, "transform_0.5");
         assert_eq!(triggers[1].id, "camera_follow_1");
@@ -364,13 +359,19 @@ mod tests {
 
     #[test]
     fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
-        let objects = vec![
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
             camera_pose_trigger(0.5),
             object_move_trigger(0.75),
             camera_follow_trigger(1.0),
         ];
 
-        let markers = camera_track_markers(&objects);
+        editor.set_trigger_selected(Some(99));
+        assert_eq!(editor.selected_trigger_index(), None);
+        editor.set_trigger_selected(Some(2));
+        assert_eq!(editor.selected_trigger_index(), Some(2));
+
+        let markers = editor.camera_trigger_markers();
         assert_eq!(markers.len(), 2);
         assert_eq!(markers[0].0, 0);
         assert_eq!(markers[1].0, 2);
@@ -380,22 +381,25 @@ mod tests {
 
     #[test]
     fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
-        let mut objects = vec![camera_pose_trigger(0.0)];
-        assert!(!has_object_transform_triggers(&objects));
+        let mut editor = EditorSubsystem::default();
 
-        objects.push(object_move_trigger(1.0));
-        assert!(has_object_transform_triggers(&objects));
+        editor.objects = vec![camera_pose_trigger(0.0)];
+        assert!(!editor.has_object_transform_triggers());
+
+        editor.objects.push(object_move_trigger(1.0));
+        assert!(editor.has_object_transform_triggers());
     }
 
     #[test]
     fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
-        let mut objects = vec![object_move_trigger(0.0)];
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![object_move_trigger(0.0)];
 
-        objects[0].position = [9.0, 8.0, 7.0];
-        objects[0].size = [2.0, 3.0, 4.0];
-        objects[0].rotation = [10.0, 20.0, 30.0];
+        editor.objects[0].position = [9.0, 8.0, 7.0];
+        editor.objects[0].size = [2.0, 3.0, 4.0];
+        editor.objects[0].rotation = [10.0, 20.0, 30.0];
 
-        let trigger_object = trigger_objects_sorted(&objects).remove(0);
+        let trigger_object = editor.trigger_objects().remove(0);
         assert_eq!(trigger_object.position, [9.0, 8.0, 7.0]);
         assert_eq!(trigger_object.rotation, [10.0, 20.0, 30.0]);
         assert_eq!(trigger_object.size, [2.0, 3.0, 4.0]);
@@ -403,13 +407,17 @@ mod tests {
 
     #[test]
     fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
-        let mut objects = (0..10_000)
-            .map(|index| test_block(index as f32))
-            .collect::<Vec<_>>();
-        objects.push(camera_pose_trigger(1.0));
-        objects.push(test_block(10_001.0));
+        let mut editor = EditorSubsystem::default();
+        editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
+        editor.objects.push(camera_pose_trigger(1.0));
+        editor.objects.push(test_block(10_001.0));
 
-        assert_eq!(trigger_objects_sorted(&objects).len(), 1);
-        assert!(has_camera_timeline_triggers(&objects));
+        assert_eq!(editor.trigger_objects().len(), 1);
+        assert!(editor.has_camera_timeline_triggers());
+
+        editor.sync_objects();
+
+        assert_eq!(editor.trigger_objects().len(), 1);
+        assert!(editor.has_camera_timeline_triggers());
     }
 }

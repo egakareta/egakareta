@@ -7,6 +7,9 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 
+[features]
+test-support = []
+
 [dependencies]
 bevy = { workspace = true }
 eg-audio = { workspace = true }
@@ -18,16 +21,24 @@ eg-game = { workspace = true }
 eg-level = { workspace = true }
 eg-mesh = { workspace = true }
 eg-platform = { workspace = true }
+eg-render = { workspace = true }
 eg-types = { workspace = true }
 bytemuck = { workspace = true }
 egui = { workspace = true }
+egui-wgpu = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }
+pollster = { workspace = true }
 puffin = { workspace = true }
 serde_json = { workspace = true }
 smart-default = { workspace = true }
 smart-is-default = { workspace = true }
+tokio = { workspace = true }
 web-time = { workspace = true }
+wgpu = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+winit = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }

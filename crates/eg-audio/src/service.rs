@@ -10,12 +10,14 @@
 //! Provides functionality to asynchronously load audio files, decode them into
 //! waveform data for visualization, and cache the raw bytes for playback.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::mpsc::Sender};
 
+use eg_platform::task::spawn_background;
 use sha2::{Digest, Sha256};
 
 use crate::audio::runtime_asset_source_key;
 
+pub type AudioPreloadResult = (String, Option<Vec<u8>>);
 pub const WAVEFORM_WINDOW: usize = 256;
 const WAVEFORM_CHUNK_PEAKS: usize = 2048;
 const WAVEFORM_CACHE_VERSION: u32 = 1;
@@ -76,12 +78,6 @@ impl EditorAudioCache {
             local_file_bytes,
             ..Self::default()
         }
-    }
-
-    /// Replace only the persisted local-file fallback cache, retaining
-    /// in-memory level bytes and decoded waveform entries.
-    pub fn replace_local_files(&mut self, local_file_bytes: HashMap<String, Vec<u8>>) {
-        self.local_file_bytes = local_file_bytes;
     }
 
     pub fn insert_level_audio(&mut self, level_name: &str, bytes: Vec<u8>) -> String {
@@ -190,37 +186,40 @@ async fn load_level_audio_bytes(level_name: &str) -> Option<Vec<u8>> {
     eg_level::get_builtin_audio(level_name).map(|bytes| bytes.to_vec())
 }
 
-/// Load the built-in audio bytes for a runtime preload request.
-///
-/// The caller owns the returned future through a Bevy task component. Keeping
-/// this service as a result-returning future removes the previous detached
-/// sender-based completion path.
-pub async fn load_audio_preload(level_name: String) -> Option<Vec<u8>> {
-    load_level_audio_bytes(&level_name).await
+pub fn start_audio_preload(
+    source_key: String,
+    level_name: String,
+    sender: Sender<AudioPreloadResult>,
+) {
+    spawn_background(async move {
+        let bytes = load_level_audio_bytes(&level_name).await;
+        let _ = sender.send((source_key, bytes));
+    });
 }
 
-fn decode_waveform(
-    source: String,
-    level_name: String,
+fn decode_waveform_and_send(
+    source_for_send: String,
+    level_for_send: String,
     bytes: Vec<u8>,
     cache_key: String,
-) -> Vec<WaveformResult> {
-    let mut results = vec![(
-        source.clone(),
-        level_name.clone(),
+    sender: Sender<WaveformResult>,
+) {
+    let _ = sender.send((
+        source_for_send.clone(),
+        level_for_send.clone(),
         WaveformLoadMessage::Started {
             window_size: WAVEFORM_WINDOW,
         },
-    )];
+    ));
 
     let decoded = crate::audio::decode_audio_to_waveform_streaming(
         &bytes,
         WAVEFORM_WINDOW,
         WAVEFORM_CHUNK_PEAKS,
         |start_peak, peaks, sample_rate| {
-            results.push((
-                source.clone(),
-                level_name.clone(),
+            let _ = sender.send((
+                source_for_send.clone(),
+                level_for_send.clone(),
                 WaveformLoadMessage::Chunk {
                     start_peak,
                     peaks,
@@ -232,9 +231,9 @@ fn decode_waveform(
     );
 
     if let Some(summary) = decoded {
-        results.push((
-            source,
-            level_name,
+        let _ = sender.send((
+            source_for_send,
+            level_for_send,
             WaveformLoadMessage::Finished {
                 sample_rate: summary.sample_rate,
                 window_size: WAVEFORM_WINDOW,
@@ -244,59 +243,84 @@ fn decode_waveform(
             },
         ));
     } else {
-        results.push((
-            source,
-            level_name,
+        let _ = sender.send((
+            source_for_send,
+            level_for_send,
             WaveformLoadMessage::Failed { bytes: Some(bytes) },
         ));
     }
-    results
 }
 
-/// Load and decode a waveform, returning ordered progress results owned by
-/// the caller's Bevy task. The App world applies this stream with a frame
-/// budget instead of receiving it from a detached channel producer.
-pub async fn load_waveform(
+/// Starts asynchronous loading of waveform data for a music track.
+/// Native builds decode on Rayon; browser builds decode independently of the
+/// AudioWorklet-owned worker pool.
+///
+/// # Arguments
+/// * `level_name` - The level directory name containing the music file
+/// * `cached_bytes` - Optional pre-loaded audio bytes to avoid re-reading
+/// * `sender` - Channel sender for the result
+pub fn start_waveform_loading(
     level_name: String,
     cached_bytes: Option<Vec<u8>>,
-) -> Vec<WaveformResult> {
-    let source = "audio.mp3".to_string();
-    let bytes = if let Some(bytes) = cached_bytes {
-        Some(bytes)
-    } else {
-        load_level_audio_bytes(&level_name).await
-    };
+    sender: Sender<WaveformResult>,
+) {
+    let source_for_send = "audio.mp3".to_string();
+    let level_for_send = level_name.clone();
 
-    let Some(bytes) = bytes else {
-        return vec![(
-            source,
-            level_name,
-            WaveformLoadMessage::Failed { bytes: None },
-        )];
-    };
+    spawn_background(async move {
+        let bytes = if let Some(bytes) = cached_bytes {
+            Some(bytes)
+        } else {
+            load_level_audio_bytes(&level_name).await
+        };
 
-    let cache_key = waveform_cache_key(&bytes, WAVEFORM_WINDOW);
-    if let Some(cached) = eg_platform::io::load_waveform_from_storage(&cache_key).await
-        && cached.is_compatible(WAVEFORM_WINDOW)
-    {
-        return vec![(
-            source,
-            level_name,
-            WaveformLoadMessage::Cached {
-                samples: cached.samples,
-                sample_rate: cached.sample_rate,
-                window_size: cached.window_size,
-                bytes: Some(bytes),
-            },
-        )];
-    }
+        let Some(bytes) = bytes else {
+            let _ = sender.send((
+                source_for_send,
+                level_for_send,
+                WaveformLoadMessage::Failed { bytes: None },
+            ));
+            return;
+        };
 
-    decode_waveform(source, level_name, bytes, cache_key)
+        let cache_key = waveform_cache_key(&bytes, WAVEFORM_WINDOW);
+        if let Some(cached) = eg_platform::io::load_waveform_from_storage(&cache_key).await
+            && cached.is_compatible(WAVEFORM_WINDOW)
+        {
+            let _ = sender.send((
+                source_for_send,
+                level_for_send,
+                WaveformLoadMessage::Cached {
+                    samples: cached.samples,
+                    sample_rate: cached.sample_rate,
+                    window_size: cached.window_size,
+                    bytes: Some(bytes),
+                },
+            ));
+            return;
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        rayon::spawn(move || {
+            decode_waveform_and_send(source_for_send, level_for_send, bytes, cache_key, sender);
+        });
+
+        // AudioWorklet startup intentionally delays the Rayon worker pool. Do
+        // not make editor waveform loading depend on that pool: it is a
+        // presentation task and must still complete when browser threading is
+        // unavailable or the audio device has not yet been unlocked.
+        #[cfg(target_arch = "wasm32")]
+        decode_waveform_and_send(source_for_send, level_for_send, bytes, cache_key, sender);
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{WaveformLoadMessage, decode_waveform, waveform_cache_key};
+    use std::sync::mpsc;
+
+    use web_time::Duration;
+
+    use super::{WaveformLoadMessage, decode_waveform_and_send, waveform_cache_key};
 
     #[test]
     fn waveform_cache_key_tracks_audio_content_and_window_size() {
@@ -312,20 +336,37 @@ mod tests {
     }
 
     #[test]
-    fn waveform_decode_task_returns_a_terminal_message() {
-        let results = decode_waveform(
+    fn waveform_decode_task_always_emits_a_terminal_message() {
+        let (sender, receiver) = mpsc::channel();
+        decode_waveform_and_send(
             "audio.mp3".to_string(),
             "Regression".to_string(),
             crate::audio::tiny_wav_bytes(),
             "test-cache-key".to_string(),
+            sender,
         );
+
         assert!(matches!(
-            results.first().expect("decoder emits a start message").2,
+            receiver
+                .recv_timeout(Duration::from_secs(1))
+                .expect("decoder emits its start message")
+                .2,
             WaveformLoadMessage::Started { .. }
         ));
+
+        let mut terminal = None;
+        while let Ok((_, _, message)) = receiver.recv_timeout(Duration::from_secs(1)) {
+            if matches!(
+                message,
+                WaveformLoadMessage::Finished { .. } | WaveformLoadMessage::Failed { .. }
+            ) {
+                terminal = Some(message);
+                break;
+            }
+        }
         assert!(matches!(
-            results.last().expect("decoder emits a terminal result").2,
-            WaveformLoadMessage::Finished { .. }
+            terminal,
+            Some(WaveformLoadMessage::Finished { .. })
         ));
     }
 }

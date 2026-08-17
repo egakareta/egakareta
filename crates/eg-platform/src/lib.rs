@@ -12,7 +12,9 @@
 pub mod auth;
 pub mod io;
 pub mod services;
+pub mod state_host;
 pub mod storage;
+pub mod task;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod test_hooks;

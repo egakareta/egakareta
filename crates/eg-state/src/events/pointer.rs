@@ -22,10 +22,10 @@ use glam::Vec2;
 use crate::{
     events::navigation::TurnRight,
     state::{
-        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
-        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
-        collect_editor_object_data, replace_editor_objects_commands,
+        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
+        EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
+        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        RenderConfigRes, collect_editor_object_data, replace_editor_objects_commands,
     },
 };
 
@@ -175,6 +175,7 @@ fn handle_tapping_click(
         editor.runtime.interaction.hovered_tap_index = Some(tap_index);
         editor.set_timeline_time_seconds(time_seconds);
         editor.input.cursor = pick.cursor;
+        editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
         return true;
     }
 
@@ -191,6 +192,7 @@ fn handle_tapping_click(
             editor.set_timeline_time_seconds(pending_click.pick.time_seconds);
             editor.add_tap(pending_click.pick.indicator_position);
             editor.input.cursor = pending_click.pick.indicator_position;
+            editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
             return true;
         }
     }
@@ -213,6 +215,7 @@ fn handle_tapping_click(
         });
         editor.set_timeline_time_seconds(target_pick.time_seconds);
         editor.input.cursor = target_pick.indicator_position;
+        editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
         return true;
     }
 
@@ -220,6 +223,7 @@ fn handle_tapping_click(
     editor.record_history_state();
     editor.add_tap(target_pick.indicator_position);
     editor.input.cursor = target_pick.indicator_position;
+    editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
     true
 }
 

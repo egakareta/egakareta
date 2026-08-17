@@ -14,51 +14,24 @@
 #![warn(missing_docs)]
 #[cfg(feature = "benchmarks")]
 pub mod bench_support;
-mod bevy_app;
+mod platform;
 mod tests;
 
-pub use bevy_app::{EgakaretaPlugin, GAME_CANVAS_SELECTOR, build_bevy_app};
 pub use eg_ui::{
     MenuTextures, load_menu_textures, show_editor_ui, show_menu_favicon_ui, show_menu_play_ui,
     show_menu_topbar_ui, show_pause_menu_ui, show_perf_overlay, show_practice_checkpoint_ui,
     show_settings_sidebar,
 };
 #[cfg(target_arch = "wasm32")]
-use wasm_bindgen::{JsCast, prelude::*};
+pub use platform::application::run_game;
+#[cfg(not(target_arch = "wasm32"))]
+pub use platform::application::run_native_app;
+#[cfg(not(target_arch = "wasm32"))]
+pub use platform::input_mapping::{
+    key_str_from_winit, mouse_button_index_from_winit, zoom_delta_from_winit,
+};
 #[cfg(target_arch = "wasm32")]
 pub use wasm_bindgen_rayon::init_thread_pool;
-
-/// Start the browser build through the configured Bevy application root.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub async fn run_game() -> Result<(), JsValue> {
-    let browser_window = web_sys::window().ok_or_else(|| JsValue::from_str("Missing window"))?;
-    let document = browser_window
-        .document()
-        .ok_or_else(|| JsValue::from_str("Missing document"))?;
-    let canvas = match document.get_element_by_id("gameCanvas") {
-        Some(existing) => existing.dyn_into::<web_sys::HtmlCanvasElement>()?,
-        None => {
-            let canvas = document
-                .create_element("canvas")?
-                .dyn_into::<web_sys::HtmlCanvasElement>()?;
-            canvas.set_id("gameCanvas");
-            document
-                .body()
-                .ok_or_else(|| JsValue::from_str("Missing document body"))?
-                .append_child(&canvas)?;
-            canvas
-        }
-    };
-    canvas.set_attribute(
-        "style",
-        "display:block;width:100vw;height:100vh;touch-action:none;",
-    )?;
-
-    let mut app = build_bevy_app();
-    let _ = app.run();
-    Ok(())
-}
 
 #[cfg(target_arch = "wasm32")]
 #[unsafe(no_mangle)]

@@ -21,36 +21,34 @@
 //!   metadata, settings, practice mode).
 //! - [`MenuPlugin`] — owns `MenuStateRes`; top-level navigation uses Bevy's
 //!   `State<AppPhase>` resource.
-//! - [`AudioPlugin`] — owns the custom rodio/cpal boundary and its
-//!   App-world resources.
-//! - [`StateDomainPlugins`] — aggregator that registers all eg-state domains
-//!   once Bevy's core plugins have been installed.
-//! - [`StatePlugins`] — headless/test composition that also installs the
-//!   required Bevy time and state plugins.
+//! - [`StatePlugins`] — aggregator that registers all of the above in
+//!   dependency order.
 //!
-//! Production uses `build_bevy_app()` with `DefaultPlugins` and the
-//! `EgakaretaPlugin` composition. These plugin shells remain for the
-//! headless `StatePlugins` test composition only.
+//! REFACTOR POINT(full-bevy): the full-Bevy migration promotes these
+//! plugin shells to the actual plugin graph (with `RenderPlugin` /
+//! `AudioPlugin` / `AuthPlugin` / `UiPlugin` added), the systems they
+//! register move into `bevy::render` / `bevy_egui` / `bevy_audio`, and
+//! the schedule labels here are replaced by Bevy's standard
+//! `Update` / `FixedUpdate` / `OnEnter` schedules.
 
 use bevy::{
-    app::{App, First, FixedUpdate, Plugin, PostUpdate, PreUpdate, Startup, Update},
+    app::{App, FixedUpdate, Plugin},
     ecs::prelude::*,
-    input::InputSystems,
     state::{app::AppExtStates, prelude::State},
-    time::TimePlugin,
+    time::{Fixed, Time, TimePlugin},
 };
 
 use super::{
     AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
-    poll_persistence_tasks_system, poll_waveform_load_tasks_system,
-    queue_pending_level_exports_system,
+    RuntimeAudioPreloadSenderRes, StateSchedule, WaveformLoadSenderRes,
     render::plugin::RenderPlugin,
     state_resources::{
-        AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-        BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes,
-        EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-        EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes, LevelExportServiceRes,
-        MenuPreviewObjectsRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+        AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
+        AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
+        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+        LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest,
+        PerfRes, SessionStateRes,
     },
 };
 
@@ -63,8 +61,9 @@ pub struct GameplayPlugin;
 impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(eg_game::GamePlugin).add_systems(
-            Startup,
-            super::gameplay_world::seed_default_gameplay_world_system,
+            FixedUpdate,
+            super::gameplay_world::prepare_app_gameplay_fixed_system
+                .before(eg_game::systems::GameplaySet::TurnInput),
         );
         app.configure_sets(
             FixedUpdate,
@@ -85,8 +84,8 @@ impl Plugin for GameplayPlugin {
 }
 
 /// Registers the editor-domain resources. Editor mutation systems consume
-/// these App-owned resources through Bevy's standard gameplay and render
-/// schedules.
+/// these App-owned resources through `StateSchedule` and the standard Bevy
+/// gameplay/render schedules.
 pub struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
@@ -109,62 +108,18 @@ impl Plugin for EditorPlugin {
             .init_resource::<AuthOpenSignupRequest>()
             .init_resource::<GameplayResetRes>()
             .init_resource::<BuiltinLevelCatalogRes>()
-            .init_resource::<LevelExportServiceRes>();
-        super::input_bridge::register_platform_input_resources(app.world_mut());
-    }
-}
-
-/// Owns the custom rodio/cpal service boundary until Bevy audio replaces it.
-///
-/// Keeping the backend and its playback side effects in one plugin prevents
-/// editor and session setup from implicitly owning native-only audio state.
-pub struct AudioPlugin;
-
-impl Plugin for AudioPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<EditorAudioCacheRes>()
-            .init_resource::<RuntimeAudioPreloadRes>();
+            .init_resource::<LevelExportServiceRes>()
+            .init_resource::<LevelImportSenderRes>()
+            .init_resource::<AudioImportSenderRes>()
+            .init_resource::<EditorAudioCacheRes>()
+            .init_resource::<RuntimeAudioPreloadRes>()
+            .init_resource::<RuntimeAudioPreloadSenderRes>()
+            .init_resource::<WaveformLoadSenderRes>();
         #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<AudioBackendRes>();
         #[cfg(target_arch = "wasm32")]
         app.init_non_send::<AudioBackendRes>();
-        app.add_systems(
-            Update,
-            consume_audio_stop_request_system.after(crate::events::CommandHandlerSet),
-        )
-        .add_systems(
-            Update,
-            sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system),
-        )
-        .add_systems(
-            Update,
-            super::audio_state::poll_runtime_audio_preload_tasks_system
-                .after(crate::events::CommandHandlerSet),
-        )
-        .add_systems(
-            Update,
-            poll_waveform_load_tasks_system
-                .after(crate::events::CommandHandlerSet)
-                .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-        )
-        .add_systems(
-            Update,
-            (
-                queue_pending_level_exports_system,
-                poll_persistence_tasks_system,
-            )
-                .chain()
-                .after(crate::events::CommandHandlerSet),
-        )
-        .add_systems(
-            Update,
-            (
-                super::file_import_tasks::poll_level_import_tasks_system,
-                super::file_import_tasks::poll_audio_import_tasks_system,
-            )
-                .after(crate::events::CommandHandlerSet)
-                .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-        );
+        super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
 
@@ -210,47 +165,25 @@ impl Plugin for SessionPlugin {
 
 /// Registers menu resources and preview/render defaults.
 ///
+/// `MenuStateRes` doesn't have a `Default` impl (`MenuState` itself does
+/// not derive `Default`), so it must be inserted explicitly by the
+/// `AppBootstrap` constructor.
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuPreviewObjectsRes>()
-            .init_resource::<BlockEffectsRes>()
-            .init_resource::<super::MenuStateRes>();
+            .init_resource::<BlockEffectsRes>();
+        // `MenuStateRes` is added by the `State` constructor because it
+        // needs level names from `eg-level`.
     }
 }
 
-/// Aggregates every eg-state domain after Bevy's core plugins are present.
-///
-/// Production adds this after `DefaultPlugins`; headless fixtures use
-/// [`StatePlugins`], which supplies the small core-plugin baseline itself.
-/// Keeping the domain graph separate prevents the root app from registering
-/// Bevy's unique time and state plugins twice.
-pub struct StateDomainPlugins;
-
-impl Plugin for StateDomainPlugins {
-    fn build(&self, app: &mut App) {
-        app.add_plugins((
-            MenuPlugin,
-            SessionPlugin,
-            EditorPlugin,
-            AudioPlugin,
-            GameplayPlugin,
-            // Rendering extraction plugin. Bevy's render sub-app owns the
-            // GPU and surface; the domain world derives retained entities.
-            RenderPlugin,
-        ))
-        .init_state::<eg_types::AppPhase>();
-        super::transitions::register_phase_transition_hooks(app);
-        configure_standard_state_schedules(app);
-    }
-}
-
-/// Complete headless/test eg-state composition.
-///
-/// This owns the foundational plugins only when the caller has not already
-/// installed `DefaultPlugins` or `MinimalPlugins`. The windowed Bevy root
-/// instead adds [`StateDomainPlugins`] directly after `DefaultPlugins`.
+/// Aggregator plugin. Add this to an `App` to register every eg-state
+/// plugin in dependency order. Equivalent to a hand-written
+/// `app.add_plugins((TimePlugin, MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin))`
+/// — kept as a single plugin so the order is centralized and the full
+/// eg-state `App` is built with one call.
 pub struct StatePlugins;
 
 impl Plugin for StatePlugins {
@@ -258,175 +191,63 @@ impl Plugin for StatePlugins {
         app.add_plugins((
             TimePlugin,
             bevy::state::app::StatesPlugin,
-            StateDomainPlugins,
-        ));
+            MenuPlugin,
+            SessionPlugin,
+            EditorPlugin,
+            GameplayPlugin,
+            // Rendering extraction plugin. Registers the POD
+            // resources (RenderUniformsRes, RenderFrameInputRes,
+            // RenderResizeRequest) and the system sets (RenderSet).
+            // AppBootstrap installs the authoritative heavy
+            // resources (RenderGpuRes, RenderMeshesRes,
+            // RenderSurfaceHostRes) after wgpu initialization.
+            RenderPlugin,
+        ))
+        .init_state::<eg_types::AppPhase>();
+        super::transitions::register_phase_transition_hooks(app);
     }
-}
-
-/// Install the production eg-state pipeline in Bevy's standard schedules.
-///
-/// The old labelled schedules remain available only for focused compatibility
-/// fixtures while those tests are migrated. The runtime itself never drives
-/// them: input is ingested in `PreUpdate`, domain work in `Update`, and the
-/// derived render data/present bridge in `PostUpdate`.
-fn configure_standard_state_schedules(app: &mut App) {
-    crate::events::register_command_events(app);
-    crate::state::async_bridge::register_async_result_messages(app);
-
-    app.configure_sets(
-        Update,
-        (
-            crate::events::CommandHandlerSet,
-            crate::state::async_bridge::ApplyAsyncResultsSet,
-        )
-            .chain(),
-    )
-    .configure_sets(
-        PreUpdate,
-        (
-            super::input_bridge::BevyInputBridgeSet::Capture,
-            super::input_bridge::BevyInputBridgeSet::Translate
-                .after(super::input_bridge::BevyInputBridgeSet::Capture),
-        ),
-    )
-    .add_systems(First, crate::state::frame_time::begin_puffin_frame_system)
-    .add_systems(
-        PreUpdate,
-        (
-            super::input_bridge::drain_bevy_keyboard_input_system
-                .after(InputSystems)
-                .in_set(super::input_bridge::BevyInputBridgeSet::Translate),
-            super::input_bridge::drain_bevy_pointer_input_system
-                .after(InputSystems)
-                .in_set(super::input_bridge::BevyInputBridgeSet::Translate),
-            super::input_bridge::drain_bevy_mouse_motion_and_wheel_system
-                .after(InputSystems)
-                .in_set(super::input_bridge::BevyInputBridgeSet::Translate),
-            super::input_bridge::drain_bevy_touch_input_system
-                .after(InputSystems)
-                .in_set(super::input_bridge::BevyInputBridgeSet::Translate),
-            super::input_bridge::clear_held_input_on_bevy_focus_loss_system
-                .after(InputSystems)
-                .in_set(super::input_bridge::BevyInputBridgeSet::Translate),
-        ),
-    );
-    let update = app
-        .get_schedule_mut(Update)
-        .expect("Bevy App must provide the Update schedule");
-    update.add_systems(crate::state::frame_time::advance_frame_time_system);
-    crate::events::add_command_systems(update);
-    update.add_systems(bevy::ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
-    update.add_systems(
-        crate::state::editor_playback::update_editor_timeline_playback_system
-            .after(crate::events::CommandHandlerSet),
-    );
-    update.add_systems(
-        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_system
-            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
-    );
-    update.add_systems(
-        crate::state::menu_preview::refresh_menu_preview_system
-            .after(crate::events::CommandHandlerSet),
-    );
-    update.add_systems(
-        crate::state::visual_effects::update_block_effects_system
-            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
-    );
-    update.add_systems(
-        super::gameplay_world::apply_pending_gameplay_reset_system
-            .after(crate::events::navigation::handle_turn_right)
-            .after(crate::events::navigation::handle_game_restart_level)
-            .after(crate::events::navigation::handle_game_set_practice_mode)
-            .after(crate::events::timeline::handle_playtest),
-    );
-    update.add_systems(
-        crate::state::auth_state::process_auth_requests_system
-            .after(crate::events::auth::handle_auth_submit_sign_in)
-            .after(crate::events::auth::handle_auth_sign_out)
-            .after(crate::events::auth::handle_auth_open_signup)
-            .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-    );
-    update.add_systems(
-        crate::state::auth_state::poll_auth_tasks_system
-            .after(crate::state::auth_state::process_auth_requests_system)
-            .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-    );
-    update.add_systems(
-        crate::state::editor_camera::update_editor_camera_pan_system
-            .after(crate::events::CommandHandlerSet),
-    );
-    update.add_systems(
-        crate::state::perf::process_perf_frame_copy_request_system
-            .after(crate::events::auth::handle_copy_latest_perf_frame)
-            .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-    );
-    update.add_systems(
-        poll_waveform_load_tasks_system
-            .after(crate::events::CommandHandlerSet)
-            .before(crate::state::async_bridge::ApplyAsyncResultsSet),
-    );
-    crate::state::async_bridge::add_apply_async_results_systems(update);
-    crate::state::render::plugin::add_state_render_systems(update);
-
-    app.add_systems(
-        PostUpdate,
-        (
-            apply_requested_phase_transition_system,
-            super::gameplay_world::apply_completed_gameplay_transition_system,
-            super::gameplay_world::play_death_sfx_system,
-            super::gameplay_world::apply_game_over_transition_system,
-            apply_terminal_phase_transition_system,
-        )
-            .chain(),
-    )
-    .add_systems(
-        PostUpdate,
-        (
-            crate::state::render::plugin::extract_trail_vertices_system,
-            crate::state::render::plugin::extract_block_effect_vertices_system,
-            crate::state::render::plugin::extract_practice_checkpoint_vertices_system,
-            crate::state::render::plugin::extract_playing_block_meshes_system,
-            crate::state::render::plugin::extract_menu_preview_block_mesh_system,
-            crate::state::render::plugin::extract_editor_block_meshes_system,
-            crate::state::render::plugin::extract_editor_spawn_marker_vertices_system,
-            crate::state::render::plugin::extract_editor_camera_arrow_vertices_system,
-            crate::state::render::plugin::extract_editor_cursor_vertices_system,
-            crate::state::render::plugin::extract_editor_hitbox_vertices_system,
-            crate::state::render::plugin::extract_editor_tap_indicator_vertices_system,
-            crate::state::render::plugin::extract_editor_selection_overlays_system,
-            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
-            crate::state::render::plugin::update_render_frame_input_system,
-            crate::state::render::plugin::update_render_uniforms_system,
-            crate::state::render::plugin::extract_editor_gizmo_vertices_system
-                .after(crate::state::render::plugin::update_render_uniforms_system),
-        )
-            .chain(),
-    );
-}
-
-/// Apply transition requests emitted during `Update` before fixed gameplay.
-///
-/// `StatesPlugin` applies transitions at its normal frame boundary. The game
-/// additionally needs commands such as Play and ToggleEditor to become
-/// visible to the same frame's fixed simulation and presentation, so this is
-/// the one explicit post-update transition boundary.
-fn apply_requested_phase_transition_system(world: &mut World) {
-    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
-}
-
-/// Apply terminal gameplay requests created after fixed simulation.
-fn apply_terminal_phase_transition_system(world: &mut World) {
-    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
 }
 
 /// One-shot setup: add all eg-state plugins + register the system set
 /// ordering. Use this when constructing a `bevy_app::App` for eg-state
 /// (full-ECS harness) or for tests.
 ///
-/// This is the canonical "give me a fully wired eg-state `App`" helper.
-/// Individual plugins register their systems on Bevy's standard schedules.
+/// In Bevy 0.19, per-schedule `configure_sets(...)` must be called on the
+/// `Schedule` itself, not on `App`. The set ordering is therefore
+/// configured per-schedule by callers (see [`super::sets::StateSet`] for
+/// the per-set semantics). This entry point exists as the canonical
+/// "give me a fully wired eg-state `App`" helper and is where
+/// `app.add_schedule(StateUpdate::default())` + the schedule's
+/// `configure_sets` will be wired in Phase 2c.
 pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
+}
+
+/// App `PostUpdate` and the headless test harness use this system to run the
+/// state, gameplay, and render-extraction schedules in one canonical order.
+pub fn run_state_schedule_system(world: &mut World) {
+    super::input_bridge::drain_platform_input_system(world);
+    let _ = world.try_run_schedule(StateSchedule);
+    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
+    let manual_driver = world
+        .remove_resource::<super::gameplay_world::ManualGameplayDriverRes>()
+        .is_some();
+    if manual_driver && world.contains_resource::<Time<Fixed>>() {
+        let _ = world.try_run_schedule(FixedUpdate);
+    }
+    if manual_driver {
+        world.insert_resource(super::gameplay_world::ManualGameplayDriverRes);
+    }
+    super::gameplay_world::apply_completed_gameplay_transition_system(world);
+    super::gameplay_world::apply_game_over_transition_system(world);
+    // Terminal transition systems write NextState after the first transition
+    // pass so gameplay can run with the newly-entered phase. Apply those
+    // terminal requests in the same frame rather than leaving a completed
+    // level in Playing until the next App update.
+    let _ = world.try_run_schedule(bevy::state::prelude::StateTransition);
+    if super::render::resources::render_pod_resources_present(world) {
+        let _ = world.try_run_schedule(crate::state::RenderExtractSchedule);
+    }
 }
 
 /// Register all default-constructible eg-state resources on a `World`.
@@ -462,14 +283,154 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<GameplayResetRes>();
     world.init_resource::<BuiltinLevelCatalogRes>();
     world.init_resource::<LevelExportServiceRes>();
+    world.init_resource::<LevelImportSenderRes>();
+    world.init_resource::<AudioImportSenderRes>();
     #[cfg(not(target_arch = "wasm32"))]
     world.init_resource::<AudioBackendRes>();
     #[cfg(target_arch = "wasm32")]
     world.init_non_send::<AudioBackendRes>();
     world.init_resource::<EditorAudioCacheRes>();
     world.init_resource::<RuntimeAudioPreloadRes>();
+    world.init_resource::<RuntimeAudioPreloadSenderRes>();
+    world.init_resource::<WaveformLoadSenderRes>();
     super::input_bridge::register_platform_input_resources(world);
     // Bare worlds used by focused render fixtures still need the
     // default POD and placeholder mesh/surface resources.
     super::render::plugin::register_render_pod_resources(world);
+}
+
+/// Register the App-owned state schedule resources + the
+/// [`StateSchedule`] on a `World`.
+///
+/// Phase 3: alongside the eg-state resources, this also initializes
+/// the `Messages<T>` buffers for every event type, then adds the
+/// [`StateSchedule`] to the world. The schedule contains per-message
+/// handlers that mutate App-world resources directly or write typed request
+/// resources for unavoidable platform side effects.
+///
+/// The schedule also contains the
+/// `poll_channels_system` from `state::async_bridge` that drains
+/// the five external `mpsc` receivers (auth, audio import,
+/// waveform, audio preload, level import) and emits the
+/// corresponding async-result events into the World. The channel
+/// wrappers themselves are inserted lazily by
+/// install_async_channel_resources (when external platform services are installed).
+///
+/// Runtime and tests call this for the App-owned world before running
+/// [`StateSchedule`].
+pub fn register_state_schedule(world: &mut World) {
+    // Message resources for every command event type. The
+    // `register_command_events` helper takes an `App`; we use the
+    // `World`-flavoured helper to keep this function working on a
+    // bare world (no `App`).
+    crate::events::register_command_events_world(world);
+
+    // Phase 6a: register the async-bridge `Messages<T>` resources
+    // (the channel wrappers are inserted lazily by
+    // `install_async_channel_resources`).
+    crate::state::async_bridge::register_async_channel_resources_world(world);
+
+    // Build the per-frame schedule that handles the per-event
+    // message resources, updates App-world resources / typed
+    // request resources, then runs the render bookkeeping systems,
+    // Phase 6a channel poll systems, and Phase 6b result handler systems.
+    // The schedule is added to the world's
+    // scheduler so runtime and test harnesses can invoke it.
+    let mut schedule = bevy::ecs::schedule::Schedule::new(crate::state::StateSchedule);
+    schedule.configure_sets(
+        (
+            crate::events::CommandHandlerSet,
+            crate::state::async_bridge::PollChannelsSet,
+            crate::state::async_bridge::ApplyAsyncResultsSet,
+        )
+            .chain(),
+    );
+    schedule.add_systems(crate::state::frame_time::advance_frame_time_system);
+    crate::events::add_command_systems(&mut schedule);
+    schedule
+        .add_systems(bevy::ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
+    schedule.add_systems(consume_audio_stop_request_system.after(crate::events::CommandHandlerSet));
+    schedule.add_systems(sync_gameplay_audio_pause_system.after(consume_audio_stop_request_system));
+    schedule.add_systems(
+        crate::state::editor_playback::update_editor_timeline_playback_system
+            .after(crate::events::CommandHandlerSet),
+    );
+    schedule.add_systems(
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_system
+            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
+    );
+    schedule.add_systems(
+        crate::state::menu_preview::refresh_menu_preview_system
+            .after(crate::events::CommandHandlerSet),
+    );
+    schedule.add_systems(
+        crate::state::visual_effects::update_block_effects_system
+            .after(crate::state::editor_playback::update_editor_timeline_playback_system),
+    );
+    schedule.add_systems(
+        super::gameplay_world::apply_pending_gameplay_reset_system
+            .after(crate::events::navigation::handle_turn_right)
+            .after(crate::events::navigation::handle_game_restart_level)
+            .after(crate::events::navigation::handle_game_set_practice_mode)
+            .after(crate::events::timeline::handle_playtest),
+    );
+    schedule.add_systems(
+        crate::state::auth_state::process_auth_requests_system
+            .after(crate::events::auth::handle_auth_submit_sign_in)
+            .after(crate::events::auth::handle_auth_sign_out)
+            .after(crate::events::auth::handle_auth_open_signup)
+            .before(crate::state::async_bridge::PollChannelsSet),
+    );
+    schedule.add_systems(
+        crate::state::editor_camera::update_editor_camera_pan_system
+            .after(crate::events::CommandHandlerSet),
+    );
+    schedule.add_systems(
+        crate::state::perf::process_perf_frame_copy_request_system
+            .after(crate::events::auth::handle_copy_latest_perf_frame)
+            .before(crate::state::async_bridge::PollChannelsSet),
+    );
+    crate::state::async_bridge::add_poll_channels_systems(&mut schedule);
+    crate::state::async_bridge::add_apply_async_results_systems(&mut schedule);
+    crate::state::render::plugin::add_state_render_systems(&mut schedule);
+    world.add_schedule(schedule);
+
+    let mut render_extract_schedule =
+        bevy::ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
+    render_extract_schedule.add_systems(
+        (
+            crate::state::render::plugin::extract_trail_vertices_system,
+            crate::state::render::plugin::extract_block_effect_vertices_system,
+            crate::state::render::plugin::extract_practice_checkpoint_vertices_system,
+            crate::state::render::plugin::extract_playing_block_meshes_system,
+            crate::state::render::plugin::extract_menu_preview_block_mesh_system,
+            crate::state::render::plugin::extract_editor_block_meshes_system,
+            crate::state::render::plugin::extract_editor_spawn_marker_vertices_system,
+            crate::state::render::plugin::extract_editor_camera_arrow_vertices_system,
+            crate::state::render::plugin::extract_editor_cursor_vertices_system,
+            crate::state::render::plugin::extract_editor_hitbox_vertices_system,
+            crate::state::render::plugin::extract_editor_tap_indicator_vertices_system,
+            crate::state::render::plugin::extract_editor_selection_overlays_system,
+            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            crate::state::render::plugin::update_render_frame_input_system,
+            crate::state::render::plugin::update_render_uniforms_system,
+            crate::state::render::plugin::extract_editor_gizmo_vertices_system
+                .after(crate::state::render::plugin::update_render_uniforms_system),
+            crate::state::render::plugin::upload_render_uniforms_system
+                .after(crate::state::render::plugin::update_render_uniforms_system),
+            crate::state::render::plugin::clear_editor_dirty_flags_system,
+        )
+            .chain(),
+    );
+    render_extract_schedule.add_systems(
+        crate::state::render::plugin::upload_extracted_render_meshes_system
+            .after(crate::state::render::plugin::clear_editor_dirty_flags_system)
+            .in_set(crate::state::render::plugin::RenderSet::Present),
+    );
+    render_extract_schedule.add_systems(
+        crate::state::render::plugin::present_render_frame_system
+            .after(crate::state::render::plugin::upload_extracted_render_meshes_system)
+            .in_set(crate::state::render::plugin::RenderSet::Present),
+    );
+    world.add_schedule(render_extract_schedule);
 }

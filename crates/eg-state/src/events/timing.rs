@@ -10,7 +10,8 @@
 //! All 6 messages in this module are **carve-outs** (same pattern as
 //! `events::snap`, `events::editor_mode::handle_set_block_id`, and
 //! `events::session`): the per-message handlers in this file mutate
-//! `EditorTimingRes.0` directly.
+//! `EditorTimingRes.0` directly instead of staging a legacy
+//! `EditorCommand`.
 //!
 //! The carve-out covers `timing_points` and `timing_selected_index`.
 //! The bpm-tap fields are carved out in `events::bpm` and share the same
@@ -70,7 +71,9 @@ pub fn register_events(app: &mut App) {
 // Dispatch systems (all carve-outs: write directly to EditorTimingRes)
 // -----------------------------------------------------------------------
 
-/// Insert a new timing point, re-sort by time, and bump the revision.
+/// Insert a new timing point and re-sort the list by time. Mirrors
+/// `State::editor_add_timing_point` / `EditorSubsystem::add_timing_point`
+/// (which sorts ascending by `time_seconds` and bumps the revision).
 pub fn handle_add_timing_point(
     mut events: MessageReader<AddTimingPoint>,
     mut timing: ResMut<EditorTimingRes>,
@@ -91,8 +94,9 @@ pub fn handle_add_timing_point(
     }
 }
 
-/// Remove the timing point at `index` (no-op if out of range) and bump the
-/// revision.
+/// Remove the timing point at `index` (no-op if out of range) and
+/// bump the revision. Mirrors
+/// `EditorSubsystem::remove_timing_point`.
 pub fn handle_remove_timing_point(
     mut events: MessageReader<RemoveTimingPoint>,
     mut timing: ResMut<EditorTimingRes>,
@@ -105,7 +109,8 @@ pub fn handle_remove_timing_point(
     }
 }
 
-/// Update the timestamp of the timing point at `index` and re-sort the list.
+/// Update the timestamp of the timing point at `index` and re-sort
+/// the list. Mirrors `EditorSubsystem::update_timing_point_time`.
 pub fn handle_set_timing_point_time(
     mut events: MessageReader<SetTimingPointTime>,
     mut timing: ResMut<EditorTimingRes>,
@@ -122,7 +127,8 @@ pub fn handle_set_timing_point_time(
     }
 }
 
-/// Update the BPM of the timing point at `index`, clamped to at least `1.0`.
+/// Update the BPM of the timing point at `index`. Mirrors
+/// `EditorSubsystem::update_timing_point_bpm` (clamped to >= 1.0).
 pub fn handle_set_timing_point_bpm(
     mut events: MessageReader<SetTimingPointBpm>,
     mut timing: ResMut<EditorTimingRes>,
@@ -135,8 +141,9 @@ pub fn handle_set_timing_point_bpm(
     }
 }
 
-/// Update the time signature of the timing point at `index`, clamping both
-/// parts to at least `1`.
+/// Update the time signature of the timing point at `index`.
+/// Mirrors `EditorSubsystem::update_timing_point_time_signature`
+/// (numerator and denominator clamped to >= 1).
 pub fn handle_set_timing_point_time_signature(
     mut events: MessageReader<SetTimingPointTimeSignature>,
     mut timing: ResMut<EditorTimingRes>,
@@ -150,7 +157,8 @@ pub fn handle_set_timing_point_time_signature(
     }
 }
 
-/// Select or deselect a timing point.
+/// Select or deselect a timing point. Mirrors
+/// `EditorSubsystem::set_timing_selected_index`.
 pub fn handle_set_timing_selected(
     mut events: MessageReader<SetTimingSelected>,
     mut timing: ResMut<EditorTimingRes>,

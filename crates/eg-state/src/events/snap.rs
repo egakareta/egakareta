@@ -52,7 +52,6 @@ pub fn register_events(app: &mut App) {
 
 #[derive(SystemParam)]
 pub struct SnapResources<'w, 's> {
-    commands: Commands<'w, 's>,
     phase: Res<'w, State<AppPhase>>,
     config: ResMut<'w, EditorConfigRes>,
     input: ResMut<'w, EditorInputRes>,
@@ -87,7 +86,7 @@ pub fn handle_set_snap_to_grid(
         }
         resources.config.0.snap_to_grid = event.0;
         resources.session.app_settings.editor_snap_to_grid = event.0;
-        persist_app_settings(&mut resources.commands, &resources.session.app_settings);
+        persist_app_settings(&resources.session.app_settings);
         resnap_selected_object(&mut resources, SelectedSnap::PositionAndSize);
     }
 }
@@ -100,7 +99,7 @@ pub fn handle_set_snap_step(mut events: MessageReader<SetSnapStep>, mut resource
         }
         resources.config.0.snap_step = step;
         resources.session.app_settings.editor_snap_step = step;
-        persist_app_settings(&mut resources.commands, &resources.session.app_settings);
+        persist_app_settings(&resources.session.app_settings);
         if resources.config.0.snap_to_grid {
             resnap_selected_object(&mut resources, SelectedSnap::PositionAndSize);
         }
@@ -117,7 +116,7 @@ pub fn handle_set_snap_rotation(
         }
         resources.config.0.snap_rotation = event.0;
         resources.session.app_settings.editor_rotation_snap = event.0;
-        persist_app_settings(&mut resources.commands, &resources.session.app_settings);
+        persist_app_settings(&resources.session.app_settings);
         resnap_selected_object(&mut resources, SelectedSnap::Rotation);
     }
 }
@@ -133,7 +132,7 @@ pub fn handle_set_snap_rotation_step(
         }
         resources.config.0.snap_rotation_step_degrees = step;
         resources.session.app_settings.editor_rotation_snap_step = step;
-        persist_app_settings(&mut resources.commands, &resources.session.app_settings);
+        persist_app_settings(&resources.session.app_settings);
         if resources.config.0.snap_rotation {
             resnap_selected_object(&mut resources, SelectedSnap::Rotation);
         }
@@ -201,6 +200,11 @@ fn resnap_selected_object(resources: &mut SnapResources<'_, '_>, selected_snap: 
     rotation.0 = selected.rotation;
     size.0 = selected.size;
     resources.input.0.cursor = selected.position;
+    resources
+        .runtime
+        .0
+        .dirty
+        .merge(crate::state::EditorDirtyFlags::drag_object_sync());
 }
 
 fn record_history_state(resources: &mut SnapResources<'_, '_>, objects: &[eg_types::LevelObject]) {

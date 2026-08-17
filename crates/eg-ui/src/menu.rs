@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::{AppSettings, PlayerLevelProgress};
 
 use crate::{UiCommandSink, components::show_shadowed_label};
@@ -32,50 +33,6 @@ const MENU_GEM_ICON_SVG: &str = include_str!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/gem_icon.svg"
 ));
-
-const SORA_TTF: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/Sora.ttf"
-));
-
-/// Registers custom font families with the egui context.
-///
-/// Must be called once after the egui context is created. Uses a resource
-/// flag in the caller to ensure idempotence.
-pub fn register_custom_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
-    fonts.font_data.insert(
-        "sora".to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(SORA_TTF)),
-    );
-    fonts.font_data.insert(
-        "sora_thin".to_owned(),
-        std::sync::Arc::new(
-            egui::FontData::from_static(SORA_TTF).tweak(egui::FontTweak {
-                coords: egui::epaint::text::VariationCoords::new([(b"wght", 100.0)]),
-                ..Default::default()
-            }),
-        ),
-    );
-    fonts
-        .families
-        .entry(egui::FontFamily::Name("sora_thin".into()))
-        .or_default()
-        .insert(0, "sora_thin".to_owned());
-    fonts
-        .families
-        .entry(egui::FontFamily::Proportional)
-        .or_default()
-        .insert(0, "sora".to_owned());
-    fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .insert(0, "sora".to_owned());
-
-    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-    ctx.set_fonts(fonts);
-}
 
 fn load_png_texture(
     ctx: &egui::Context,
@@ -256,7 +213,7 @@ pub fn show_menu_play_ui(
                 )
                 .clicked()
                 {
-                    commands.turn_right();
+                    commands.push(AppCommand::TurnRight);
                 }
 
                 if let Some(edit_button) = edit_button {
@@ -273,7 +230,7 @@ pub fn show_menu_play_ui(
                     )
                     .clicked()
                     {
-                        commands.toggle_editor();
+                        commands.push(AppCommand::ToggleEditor);
                     }
                 }
                 return;
@@ -295,7 +252,7 @@ pub fn show_menu_play_ui(
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
             {
-                commands.turn_right();
+                commands.push(AppCommand::TurnRight);
             }
         });
 }
@@ -413,7 +370,7 @@ pub fn show_pause_menu_ui(
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
-                            commands.game_restart_level();
+                            commands.push(AppCommand::GameRestartLevel);
                         }
                         if ui
                             .add_sized(
@@ -428,7 +385,7 @@ pub fn show_pause_menu_ui(
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
-                            commands.game_resume();
+                            commands.push(AppCommand::GameResume);
                         }
                         if ui
                             .add_sized(
@@ -443,7 +400,7 @@ pub fn show_pause_menu_ui(
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
-                            commands.game_quit_to_menu();
+                            commands.push(AppCommand::GameQuitToMenu);
                         }
                     },
                 );
@@ -460,7 +417,7 @@ pub fn show_pause_menu_ui(
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                         .changed()
                     {
-                        commands.game_set_practice_mode(practice_enabled);
+                        commands.push(AppCommand::GameSetPracticeMode(practice_enabled));
                     }
                 });
             });
@@ -517,10 +474,10 @@ pub fn show_practice_checkpoint_ui(
         });
 
     if place_checkpoint {
-        commands.game_set_practice_checkpoint();
+        commands.push(AppCommand::GameSetPracticeCheckpoint);
     }
     if remove_checkpoint {
-        commands.game_remove_practice_checkpoint();
+        commands.push(AppCommand::GameRemovePracticeCheckpoint);
     }
 }
 
@@ -698,7 +655,7 @@ fn paint_menu_gem_icon(painter: &egui::Painter, rect: egui::Rect, shadow: bool) 
 
 /// Shows the main-menu topbar.
 pub fn show_menu_topbar_ui(
-    ctx: &egui::Context,
+    root_ui: &mut egui::Ui,
     is_menu: bool,
     app_settings: &AppSettings,
     auth_display_name: Option<&str>,
@@ -710,75 +667,73 @@ pub fn show_menu_topbar_ui(
         return;
     }
 
-    egui::Area::new("menu_top_bar".into())
-        .order(egui::Order::Foreground)
-        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-        .show(ctx, |ui| {
-            ui.set_min_width(ctx.content_rect().width());
-            ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
-            ui.horizontal_wrapped(|ui| {
-                ui.add_space(4.0);
-                ui.label(egui_phosphor::regular::CLOCK);
-                ui.label(egui::RichText::new(get_current_time_str()).monospace());
+    let ctx = root_ui.ctx().clone();
 
-                if ui
-                    .button(format!("{} Settings", egui_phosphor::regular::GEAR))
-                    .on_hover_text(format!(
-                        "Settings{}",
-                        app_settings.hotkey_hint("toggle_settings")
-                    ))
-                    .clicked()
-                {
-                    commands.toggle_settings();
-                }
+    egui::Panel::top("menu_top_bar").show_inside(root_ui, |ui| {
+        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(4.0);
+            ui.label(egui_phosphor::regular::CLOCK);
+            ui.label(egui::RichText::new(get_current_time_str()).monospace());
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.horizontal(|ui| {
-                        if let Some(name) = auth_display_name {
-                            ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
-                            if ui
-                                .add_enabled(!auth_pending, egui::Button::new("Sign out"))
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                commands.auth_sign_out();
-                            }
-                        } else {
-                            if ui
-                                .add_enabled(
-                                    !auth_pending,
-                                    egui::Button::new(format!(
-                                        "{} Sign in",
-                                        egui_phosphor::regular::SIGN_IN
-                                    )),
-                                )
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                commands.auth_submit_sign_in();
-                            }
-                            if ui
-                                .add_enabled(!auth_pending, egui::Button::new("Create account"))
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .clicked()
-                            {
-                                commands.auth_open_signup();
-                            }
-                            if auth_pending {
-                                ui.spinner();
-                            }
+            if ui
+                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                .on_hover_text(format!(
+                    "Settings{}",
+                    app_settings.hotkey_hint("toggle_settings")
+                ))
+                .clicked()
+            {
+                commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.horizontal(|ui| {
+                    if let Some(name) = auth_display_name {
+                        ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
+                        if ui
+                            .add_enabled(!auth_pending, egui::Button::new("Sign out"))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthSignOut);
                         }
-                    });
+                    } else {
+                        if ui
+                            .add_enabled(
+                                !auth_pending,
+                                egui::Button::new(format!(
+                                    "{} Sign in",
+                                    egui_phosphor::regular::SIGN_IN
+                                )),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthSubmitSignIn);
+                        }
+                        if ui
+                            .add_enabled(!auth_pending, egui::Button::new("Create account"))
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            commands.push(AppCommand::AuthOpenSignup);
+                        }
+                        if auth_pending {
+                            ui.spinner();
+                        }
+                    }
                 });
             });
-            ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
         });
+        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
+    });
 
     if let Some(message) = auth_message {
         egui::Area::new("menu_auth_message_area".into())
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
-            .show(ctx, |ui| {
+            .show(&ctx, |ui| {
                 ui.colored_label(ui.visuals().warn_fg_color, message);
             });
     }
@@ -804,44 +759,34 @@ fn get_current_time_str() -> String {
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::{message::Messages, world::World};
-    use eg_state::events::auth;
+    use eg_state::commands::AppCommand;
     use eg_types::AppSettings;
 
     use super::{
         MENU_EDIT_BUTTON_PNG, MENU_PLAY_BUTTON_PNG, MENU_TEXTURE_MAX_DIMENSION,
-        downsample_menu_texture, load_png_color_image, register_custom_fonts, show_menu_topbar_ui,
+        downsample_menu_texture, load_png_color_image, show_menu_topbar_ui,
     };
-    use crate::test_utils::with_world_command_sink;
-
-    fn message_count<T: bevy::ecs::message::Message>(world: &World) -> usize {
-        let messages = world.resource::<Messages<T>>();
-        let mut reader = messages.get_cursor();
-        reader.read(messages).count()
-    }
 
     fn run_menu_auth_ui_once(
         auth_display_name: Option<&str>,
         auth_pending: bool,
         auth_message: Option<&str>,
-    ) -> World {
+    ) -> Vec<AppCommand> {
         let app_settings = AppSettings::default();
         let ctx = egui::Context::default();
-        let ui_ctx = ctx.clone();
-        let (world, _) = with_world_command_sink(|commands| {
-            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-                show_menu_topbar_ui(
-                    &ui_ctx,
-                    true,
-                    &app_settings,
-                    auth_display_name,
-                    auth_pending,
-                    auth_message,
-                    commands,
-                );
-            })
+        let mut commands = Vec::new();
+        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+            show_menu_topbar_ui(
+                root_ui,
+                true,
+                &app_settings,
+                auth_display_name,
+                auth_pending,
+                auth_message,
+                &mut commands,
+            );
         });
-        world
+        commands
     }
 
     #[test]
@@ -872,41 +817,19 @@ mod tests {
     }
 
     #[test]
-    fn custom_font_registration_preserves_sora_and_phosphor_fallbacks() {
-        let context = egui::Context::default();
-        register_custom_fonts(&context);
-        let _ = context.run_ui(egui::RawInput::default(), |_| {});
-
-        context.fonts(|fonts| {
-            let definitions = fonts.definitions();
-            assert!(definitions.font_data.contains_key("sora"));
-            assert!(definitions.font_data.contains_key("sora_thin"));
-            assert!(definitions.font_data.contains_key("phosphor"));
-            assert_eq!(
-                definitions.families[&egui::FontFamily::Proportional][..2],
-                ["sora", "phosphor"]
-            );
-            assert_eq!(
-                definitions.families[&egui::FontFamily::Name("sora_thin".into())],
-                ["sora_thin"]
-            );
-        });
-    }
-
-    #[test]
     fn menu_topbar_and_auth_ui_render_guest_state() {
-        let world = run_menu_auth_ui_once(None, false, None);
+        let commands = run_menu_auth_ui_once(None, false, None);
 
-        assert_eq!(message_count::<auth::AuthSubmitSignIn>(&world), 0);
+        assert!(commands.is_empty());
     }
 
     #[test]
     fn menu_auth_ui_renders_pending_message_and_signed_in_state() {
-        let pending_world =
+        let pending_commands =
             run_menu_auth_ui_once(None, true, Some("Complete sign-in in your browser."));
-        assert_eq!(message_count::<auth::AuthSubmitSignIn>(&pending_world), 0);
+        assert!(pending_commands.is_empty());
 
-        let signed_in_world = run_menu_auth_ui_once(Some("player"), false, None);
-        assert_eq!(message_count::<auth::AuthSignOut>(&signed_in_world), 0);
+        let signed_in_commands = run_menu_auth_ui_once(Some("player"), false, None);
+        assert!(signed_in_commands.is_empty());
     }
 }

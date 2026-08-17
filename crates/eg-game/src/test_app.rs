@@ -16,7 +16,6 @@
 use bevy::{
     app::{App, FixedUpdate},
     ecs::prelude::*,
-    time::{Fixed, Time},
 };
 
 use crate::plugin::GamePlugin;
@@ -69,14 +68,6 @@ impl TestApp {
         self.world_mut().run_schedule(FixedUpdate);
     }
 
-    /// Advance fixed time by `delta_seconds` and then run one gameplay tick.
-    pub fn tick_gameplay_for(&mut self, delta_seconds: f32) {
-        self.world_mut()
-            .resource_mut::<Time<Fixed>>()
-            .advance_by(std::time::Duration::from_secs_f32(delta_seconds.max(0.0)));
-        self.tick_gameplay();
-    }
-
     /// Run one headless gameplay tick and report whether the schedule exists.
     pub fn try_tick_gameplay(&mut self) -> bool {
         self.world_mut().try_run_schedule(FixedUpdate).is_ok()
@@ -107,7 +98,7 @@ mod tests {
         Grounded, Player, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
         components::{PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed},
         physics::BASE_PLAYER_SPEED,
-        resources::{GameClock, PlayerProgress, SpatialIndex},
+        resources::{FrameDelta, GameClock, PlayerProgress, SpatialIndex},
     };
 
     #[test]
@@ -148,7 +139,9 @@ mod tests {
             let mut clock = app.world_mut().resource_mut::<GameClock>();
             clock.started = true;
         }
-        app.tick_gameplay_for(0.5);
+        app.world_mut().resource_mut::<FrameDelta>().0 = 0.5;
+
+        app.tick_gameplay();
 
         let position = app
             .world_mut()

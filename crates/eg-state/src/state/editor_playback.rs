@@ -14,12 +14,12 @@ use bevy::{
 use eg_blocks::BlockEffectColorMode;
 use eg_editor_domain::derive_timeline_elapsed_seconds;
 use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};
-use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TriggerTarget};
 
 use super::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorInputRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, FrameTimeRes,
-    RuntimeAudioPreloadRes, SessionStateRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
+    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
     audio_state::start_audio_source_at_seconds_for_resources, editor_timeline::EditorTimelineState,
     runtime::BlockVisualEffect,
 };
@@ -101,6 +101,14 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
     if (clamped_time - old_time).abs() > 1e-4 {
         params.timeline.0.clock.time_seconds = clamped_time;
 
+        if simulate_preview && has_timeline_preview_triggers(&objects) {
+            params
+                .runtime_state
+                .0
+                .dirty
+                .merge(EditorDirtyFlags::timeline_trigger_preview_changed());
+        }
+
         if simulate_preview {
             let (position, direction, events) = advance_simulation_preview(
                 clamped_time,
@@ -110,7 +118,13 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
             );
             let consumed_objects = !events.is_empty();
             queue_block_effects(events, &mut params.runtime_state);
-            let _ = consumed_objects;
+            if consumed_objects {
+                params
+                    .runtime_state
+                    .0
+                    .dirty
+                    .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
+            }
             params.timeline.0.preview.position = position;
             params.timeline.0.preview.direction = direction;
         } else {
@@ -164,6 +178,16 @@ fn effective_playback_mode(
     } else {
         input.0.mode
     }
+}
+
+fn has_timeline_preview_triggers(objects: &[LevelObject]) -> bool {
+    objects.iter().any(|object| {
+        let Some(trigger) = object.trigger.as_ref() else {
+            return false;
+        };
+        (!matches!(trigger.target, TriggerTarget::Camera) && trigger.transform)
+            || (matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some())
+    })
 }
 
 fn rebuild_playback_runtime(
@@ -321,7 +345,16 @@ fn stop_editor_playback(
         .last_mode
         .take()
         .unwrap_or(EditorMode::Place);
-    let _ = simulate_preview;
+    runtime
+        .0
+        .dirty
+        .merge(EditorDirtyFlags::playback_mode_changed());
+    if simulate_preview {
+        runtime
+            .0
+            .dirty
+            .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
+    }
     audio.stop();
 }
 #[cfg(test)]

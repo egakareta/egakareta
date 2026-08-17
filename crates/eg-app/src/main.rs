@@ -11,10 +11,9 @@
 )]
 
 #[cfg(not(target_arch = "wasm32"))]
-fn main() {
-    env_logger::init();
-    let mut app = egakareta_lib::build_bevy_app();
-    let _ = app.run();
+#[tokio::main]
+async fn main() {
+    egakareta_lib::run_native_app();
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -13,13 +13,17 @@
 //!
 //!
 
-use bevy::{ecs::prelude::*, state::prelude::State};
+use bevy::{
+    ecs::prelude::*,
+    state::prelude::State,
+    time::{Fixed, Time},
+};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
-    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, GameClock, LevelMeta, Object,
-    ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player, PlayerBundle, PlayerDiedEvent,
-    PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation, Size,
-    SpatialIndex, SpawnDirection, SpawnPosition, TimedTurnInput, Trail, VerticalVelocity,
+    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FrameDelta,
+    GameClock, LevelMeta, Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player,
+    PlayerBundle, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation,
+    Size, SpatialIndex, SpawnDirection, SpawnPosition, TimedTurnInput, Trail, VerticalVelocity,
 };
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
@@ -32,6 +36,10 @@ const DEAD_SFX: &[u8] = include_bytes!(concat!(
     env!("EGAKARETA_WORKSPACE_ROOT"),
     "/assets/dead.mp3"
 ));
+
+/// Keeps headless fixtures deterministic while production uses `FixedUpdate`.
+#[derive(Resource, Default)]
+pub(crate) struct ManualGameplayDriverRes;
 
 pub(super) fn seed_app_gameplay_world(world: &mut World) {
     replace_app_gameplay_world(
@@ -52,34 +60,40 @@ pub(super) fn seed_app_gameplay_world(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: PlayerLevelProgress::default(),
             pending_turns: Vec::new(),
+            death_sfx_played: false,
         },
     );
-}
-
-/// Seed the empty gameplay world for a normal Bevy application startup.
-///
-/// The custom bootstrap can still install a fully populated level before the
-/// first frame. In that case it has already spawned the player, so this
-/// startup system deliberately leaves that authoritative state untouched.
-/// The Bevy root, on the other hand, starts with the deterministic empty
-/// player world that menu and gameplay transitions expect.
-pub(super) fn seed_default_gameplay_world_system(world: &mut World) {
-    if world
-        .query_filtered::<Entity, With<Player>>()
-        .iter(world)
-        .next()
-        .is_none()
-    {
-        seed_app_gameplay_world(world);
-    }
 }
 
 /// Keep fixed-step gameplay systems active only for unpaused gameplay.
 pub(super) fn gameplay_is_active(
     phase: Res<State<eg_types::AppPhase>>,
     session: Res<SessionStateRes>,
+    manual_driver: Option<Res<ManualGameplayDriverRes>>,
 ) -> bool {
-    *phase.get() == eg_types::AppPhase::Playing && !session.game_paused
+    manual_driver.is_none() && *phase.get() == eg_types::AppPhase::Playing && !session.game_paused
+}
+
+/// Feed the standard `FixedUpdate` gameplay systems from Bevy's fixed delta.
+pub(super) fn prepare_app_gameplay_fixed_system(
+    phase: Res<State<eg_types::AppPhase>>,
+    session: Res<SessionStateRes>,
+    time: Res<Time<Fixed>>,
+    mut delta: ResMut<FrameDelta>,
+) {
+    delta.0 = if *phase.get() == eg_types::AppPhase::Playing && !session.game_paused {
+        // Direct FixedUpdate runs in the headless driver do not advance
+        // Time<Fixed>. Use its configured fixed timestep there so the same
+        // App-owned gameplay schedule remains deterministic in tests.
+        let fixed_delta = time.delta_secs();
+        if fixed_delta > 0.0 {
+            fixed_delta
+        } else {
+            time.timestep().as_secs_f32()
+        }
+    } else {
+        0.0
+    };
 }
 
 /// Apply the terminal gameplay transition after the App-owned simulation has
@@ -190,6 +204,7 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: eg_types::PlayerLevelProgress::default(),
             pending_turns: Vec::new(),
+            death_sfx_played: false,
         },
     );
 }
@@ -211,6 +226,16 @@ pub fn apply_game_over_transition_system(world: &mut World) {
             world.resource::<PlayerProgress>().sanitized(),
         )
     };
+
+    let should_play_death_sfx = {
+        let mut death_sfx = world.resource_mut::<DeathSfxFlag>();
+        let pending = death_sfx.0;
+        death_sfx.0 = false;
+        pending
+    };
+    if should_play_death_sfx {
+        with_audio_backend(world, |audio| audio.play_sfx(DEAD_SFX));
+    }
 
     if practice_mode_enabled && !playtesting_editor {
         let (seed, trigger_base_objects) = {
@@ -322,7 +347,11 @@ fn persist_level_progress(world: &mut World, progress: PlayerLevelProgress) {
 
     #[cfg(not(test))]
     if let Some(settings) = settings_to_persist {
-        crate::state::queue_app_settings_persist_world(world, settings);
+        eg_platform::task::spawn_background(async move {
+            if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
+                log::warn!("Failed to persist gameplay progress: {error}");
+            }
+        });
     }
     #[cfg(test)]
     let _ = settings_to_persist;
@@ -403,6 +432,7 @@ pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: progress.unwrap_or_default(),
             pending_turns: Vec::new(),
+            death_sfx_played: false,
         },
     );
 }
@@ -423,6 +453,7 @@ struct GameplayWorldSeed {
     completion_hold_seconds: f32,
     progress: eg_types::PlayerLevelProgress,
     pending_turns: Vec<TimedTurnInput>,
+    death_sfx_played: bool,
 }
 
 fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
@@ -442,6 +473,7 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
         completion_hold_seconds,
         progress,
         pending_turns,
+        death_sfx_played,
     } = seed;
 
     let entities = {
@@ -515,17 +547,10 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
         level_meta.level_duration_seconds = normalized_duration;
     }
     world.resource_mut::<PendingTurnInputs>().taps = pending_turns.into();
-    rebuild_spatial_index(world);
-}
+    world.resource_mut::<FrameDelta>().0 = 0.0;
 
-/// Play one death SFX for each fixed-tick death message.
-pub fn play_death_sfx_system(
-    mut deaths: MessageReader<PlayerDiedEvent>,
-    audio: super::AudioBackendSystemParam<'_>,
-) {
-    for _ in deaths.read() {
-        audio.play_sfx(DEAD_SFX);
-    }
+    world.resource_mut::<DeathSfxFlag>().0 = death_sfx_played;
+    rebuild_spatial_index(world);
 }
 
 fn rebuild_spatial_index(world: &mut World) {

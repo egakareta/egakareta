@@ -74,65 +74,6 @@ pub struct EditorTimelineState {
 }
 
 impl EditorTimelineState {
-    pub fn invalidate_samples(&mut self) {
-        self.simulation_revision = self.simulation_revision.wrapping_add(1);
-        self.snapshot_cache_revision = 0;
-        self.snapshot_cache.clear();
-        self.trail_point_cache.clear();
-        self.trail_segment_start_cache.clear();
-        self.scrub_runtime = None;
-        self.scrub_runtime_revision = 0;
-    }
-
-    pub fn invalidate_samples_from(&mut self, from_seconds: f32) {
-        self.simulation_revision = self.simulation_revision.wrapping_add(1);
-
-        let step_seconds = self.snapshot_cache_step_seconds.max(1.0 / 480.0);
-        if !self.snapshot_cache.is_empty() && from_seconds > step_seconds {
-            let keep_count = (from_seconds / step_seconds).floor() as usize;
-            let keep_count = keep_count.min(self.snapshot_cache.len());
-            if keep_count > 0 {
-                self.snapshot_cache.truncate(keep_count);
-                self.truncate_cached_timeline_trail_to_snapshot_prefix();
-                self.snapshot_cache_revision = 0;
-            } else {
-                self.clear_cached_timeline_samples();
-            }
-        } else {
-            self.clear_cached_timeline_samples();
-        }
-
-        if self
-            .scrub_runtime
-            .as_ref()
-            .is_some_and(|runtime| runtime.elapsed_seconds() >= from_seconds)
-        {
-            self.scrub_runtime = None;
-            self.scrub_runtime_revision = 0;
-        } else if self.scrub_runtime.is_none() {
-            self.scrub_runtime_revision = 0;
-        }
-    }
-
-    fn clear_cached_timeline_samples(&mut self) {
-        self.snapshot_cache.clear();
-        self.trail_point_cache.clear();
-        self.trail_segment_start_cache.clear();
-        self.snapshot_cache_revision = 0;
-    }
-
-    fn truncate_cached_timeline_trail_to_snapshot_prefix(&mut self) {
-        let Some(snapshot) = self.snapshot_cache.last() else {
-            self.trail_point_cache.clear();
-            self.trail_segment_start_cache.clear();
-            return;
-        };
-
-        self.trail_point_cache.truncate(snapshot.trail_point_count);
-        self.trail_segment_start_cache
-            .truncate(snapshot.trail_segment_count);
-    }
-
     /// Copy timeline data needed by editor pointer picking without cloning the
     /// private simulation runtime owned by the active playback path.
     pub fn clone_for_interaction(&self) -> Self {

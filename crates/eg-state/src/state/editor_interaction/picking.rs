@@ -294,93 +294,6 @@ fn min_axis(values: [f32; 3]) -> usize {
     }
 }
 
-pub(crate) fn has_valid_viewport(viewport_size: Vec2) -> bool {
-    viewport_size.x > 0.0 && viewport_size.y > 0.0
-}
-
-pub(crate) fn ray_intersect_rotated_block(
-    ray_origin: Vec3,
-    ray_dir: Vec3,
-    obj: &LevelObject,
-) -> Option<(f32, Vec3)> {
-    let center = obj.center();
-    let rotation = obj.basis();
-    let inv_rotation = rotation.transpose();
-    let local_origin_world = center + inv_rotation * (ray_origin - center);
-    let local_dir = inv_rotation * ray_dir;
-    let mut best_hit = None;
-
-    for cuboid in hitbox_cuboids(obj) {
-        let min = Vec3::from(cuboid.min);
-        let max = Vec3::from(cuboid.max);
-        if let Some((t_hit, normal_local)) =
-            ray_intersect_aabb(local_origin_world, local_dir, min, max)
-            && best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true)
-        {
-            best_hit = Some((t_hit, rotation * normal_local));
-        }
-    }
-    best_hit
-}
-
-pub(crate) fn ray_intersect_camera_trigger_block(
-    ray_origin: Vec3,
-    ray_dir: Vec3,
-    obj: &LevelObject,
-) -> Option<(f32, Vec3)> {
-    let eye = obj.center();
-    let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(obj.rotation));
-    let arrow_direction = if forward.length_squared() > f32::EPSILON {
-        forward.normalize()
-    } else {
-        Vec3::Z
-    };
-    let mut marker_t =
-        ray_intersect_sphere(ray_origin, ray_dir, eye, CAMERA_TRIGGER_BALL_PICK_RADIUS);
-    let arrow_center = eye + arrow_direction * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
-    if let Some(arrow_t) = ray_intersect_sphere(
-        ray_origin,
-        ray_dir,
-        arrow_center,
-        CAMERA_TRIGGER_ARROW_PICK_RADIUS,
-    ) {
-        marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
-    }
-    marker_t.map(|t| (t, Vec3::Y))
-}
-
-pub(crate) fn cursor_from_ray_hit(
-    hit: Vec3,
-    hit_normal: Vec3,
-    snap_enabled: bool,
-    snap_step: f32,
-    mode: EditorMode,
-    selected_size: [f32; 3],
-) -> [f32; 3] {
-    let target = hit + hit_normal * 0.01;
-    let snap_step = snap_step.max(0.05);
-    let footprint_centered = mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
-    let cursor_target = if footprint_centered {
-        Vec3::new(
-            target.x - selected_size[0] * 0.5,
-            target.y,
-            target.z - selected_size[2] * 0.5,
-        )
-    } else {
-        target
-    };
-    let next_cursor = if snap_enabled {
-        [
-            (cursor_target.x / snap_step).floor() * snap_step,
-            (cursor_target.y / snap_step).floor() * snap_step,
-            (cursor_target.z / snap_step).floor() * snap_step,
-        ]
-    } else {
-        [cursor_target.x, cursor_target.y, cursor_target.z]
-    };
-    [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
-}
-
 super::super::editor_context_methods! {
     pub fn pick_from_screen(
         &mut self,
@@ -388,7 +301,7 @@ super::super::editor_context_methods! {
         y: f64,
         viewport_size: Vec2,
     ) -> Option<EditorPickResult> {
-        if !has_valid_viewport(viewport_size) {
+        if viewport_size.x <= 0.0 || viewport_size.y <= 0.0 {
             return None;
         }
 
@@ -689,14 +602,33 @@ super::super::editor_context_methods! {
     }
 
     fn cursor_from_ray_hit(&self, hit: Vec3, hit_normal: Vec3) -> [f32; 3] {
-        cursor_from_ray_hit(
-            hit,
-            hit_normal,
-            self.effective_snap_to_grid(),
-            self.config.snap_step,
-            self.input.mode,
-            self.selected_block_default_size(),
-        )
+        let target = hit + hit_normal * 0.01;
+        let snap_enabled = self.effective_snap_to_grid();
+        let snap_step = self.config.snap_step.max(0.05);
+        let footprint_centered =
+            self.input.mode == EditorMode::Place && (!snap_enabled || snap_step < 1.0);
+        let selected_size = self.selected_block_default_size();
+        let cursor_target = if footprint_centered {
+            Vec3::new(
+                target.x - selected_size[0] * 0.5,
+                target.y,
+                target.z - selected_size[2] * 0.5,
+            )
+        } else {
+            target
+        };
+
+        let next_cursor = if snap_enabled {
+            [
+                (cursor_target.x / snap_step).floor() * snap_step,
+                (cursor_target.y / snap_step).floor() * snap_step,
+                (cursor_target.z / snap_step).floor() * snap_step,
+            ]
+        } else {
+            [cursor_target.x, cursor_target.y, cursor_target.z]
+        };
+
+        [next_cursor[0], next_cursor[1].max(0.0), next_cursor[2]]
     }
 
     fn pick_candidate_object_indices(
@@ -849,7 +781,28 @@ super::super::editor_context_methods! {
         ray_dir: Vec3,
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        ray_intersect_camera_trigger_block(ray_origin, ray_dir, obj)
+        let eye = obj.center();
+        let forward = Vec3::from_array(CameraTrigger::forward_from_rotation(obj.rotation));
+        let arrow_direction = if forward.length_squared() > f32::EPSILON {
+            forward.normalize()
+        } else {
+            Vec3::Z
+        };
+
+        let mut marker_t =
+            ray_intersect_sphere(ray_origin, ray_dir, eye, CAMERA_TRIGGER_BALL_PICK_RADIUS);
+
+        let arrow_center = eye + arrow_direction * CAMERA_TRIGGER_ARROW_PICK_OFFSET;
+        if let Some(arrow_t) = ray_intersect_sphere(
+            ray_origin,
+            ray_dir,
+            arrow_center,
+            CAMERA_TRIGGER_ARROW_PICK_RADIUS,
+        ) {
+            marker_t = Some(marker_t.map_or(arrow_t, |best| best.min(arrow_t)));
+        }
+
+        marker_t.map(|t| (t, Vec3::Y))
     }
 
     pub fn ray_intersect_rotated_block(
@@ -858,75 +811,126 @@ super::super::editor_context_methods! {
         ray_dir: Vec3,
         obj: &eg_types::LevelObject,
     ) -> Option<(f32, Vec3)> {
-        ray_intersect_rotated_block(ray_origin, ray_dir, obj)
+        let center = obj.center();
+        let rotation = obj.basis();
+        let inv_rotation = rotation.transpose();
+
+        let local_origin_world = center + inv_rotation * (ray_origin - center);
+        let local_dir = inv_rotation * ray_dir;
+        let mut best_hit: Option<(f32, Vec3)> = None;
+
+        for cuboid in hitbox_cuboids(obj) {
+            let min = Vec3::from(cuboid.min);
+            let max = Vec3::from(cuboid.max);
+            if let Some((t_hit, normal_local)) =
+                ray_intersect_aabb(local_origin_world, local_dir, min, max)
+                && best_hit.map(|(best_t, _)| t_hit < best_t).unwrap_or(true)
+            {
+                best_hit = Some((t_hit, rotation * normal_local));
+            }
+        }
+
+        best_hit
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use eg_blocks::BlockId;
     use eg_types::{CAMERA_TRIGGER_BLOCK_ID, LevelObject};
     use glam::{Vec2, Vec3};
 
-    use super::{
-        cursor_from_ray_hit, has_valid_viewport, ray_intersect_camera_trigger_block,
-        ray_intersect_rotated_block,
-    };
+    use super::super::super::EditorSubsystem;
 
     #[test]
     fn ray_intersect_rotated_block_hits_and_misses() {
+        let editor = EditorSubsystem::default();
         let block = LevelObject {
             rotation: [0.0, 45.0, 0.0],
             ..LevelObject::default()
         };
 
-        let hit = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &block);
+        let hit = editor.ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &block);
         assert!(hit.is_some());
 
-        let miss = ray_intersect_rotated_block(Vec3::new(5.0, 5.0, -5.0), Vec3::Z, &block);
+        let miss = editor.ray_intersect_rotated_block(Vec3::new(5.0, 5.0, -5.0), Vec3::Z, &block);
         assert!(miss.is_none());
     }
 
     #[test]
     fn ray_intersect_rotated_block_uses_json_hitboxes() {
+        let editor = EditorSubsystem::default();
         let fence = LevelObject::new("core/wooden_fence");
 
-        let rail_hit = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &fence);
+        let rail_hit =
+            editor.ray_intersect_rotated_block(Vec3::new(0.5, 0.5, -5.0), Vec3::Z, &fence);
         assert!(rail_hit.is_some());
 
-        let gap_miss = ray_intersect_rotated_block(Vec3::new(0.2, 0.5, -5.0), Vec3::Z, &fence);
+        let gap_miss =
+            editor.ray_intersect_rotated_block(Vec3::new(0.2, 0.5, -5.0), Vec3::Z, &fence);
         assert!(gap_miss.is_none());
     }
 
     #[test]
     fn camera_trigger_block_pick_uses_arrow_visual_outside_old_cube_bounds() {
+        let editor = EditorSubsystem::default();
         let camera_trigger = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
 
         let ray_origin = Vec3::new(0.5, 5.0, 0.5 + super::CAMERA_TRIGGER_ARROW_PICK_OFFSET);
         let ray_dir = -Vec3::Y;
 
-        assert!(ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger).is_none());
-        assert!(ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger).is_some());
+        assert!(
+            editor
+                .ray_intersect_rotated_block(ray_origin, ray_dir, &camera_trigger)
+                .is_none()
+        );
+        assert!(
+            editor
+                .ray_intersect_camera_trigger_block(ray_origin, ray_dir, &camera_trigger)
+                .is_some()
+        );
     }
 
     #[test]
     fn pick_from_screen_rejects_invalid_viewport() {
-        assert!(!has_valid_viewport(Vec2::new(0.0, 720.0)));
-        assert!(!has_valid_viewport(Vec2::new(1280.0, 0.0)));
-        assert!(has_valid_viewport(Vec2::new(1280.0, 720.0)));
+        let mut editor = EditorSubsystem::default();
+
+        let pick = editor.pick_from_screen(0.0, 0.0, Vec2::new(0.0, 720.0));
+        assert!(pick.is_none());
+
+        let pick = editor.pick_from_screen(0.0, 0.0, Vec2::new(1280.0, 0.0));
+        assert!(pick.is_none());
+    }
+
+    #[test]
+    fn pick_from_screen_center_prefers_block_hit() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.objects.clear();
+        editor.objects.push(LevelObject::default());
+
+        let viewport = Vec2::new(1280.0, 720.0);
+        let pick = editor
+            .pick_from_screen(
+                (viewport.x * 0.5) as f64,
+                (viewport.y * 0.5) as f64,
+                viewport,
+            )
+            .expect("expected pick result");
+
+        assert!(pick.hit_trigger_index.is_none());
+        assert!(pick.cursor[1] >= 0.0);
     }
 
     #[test]
     fn cursor_from_ray_hit_centers_footprint_when_snap_disabled() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = false;
+
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
-        let cursor = cursor_from_ray_hit(
-            hit,
-            normal,
-            false,
-            1.0,
-            eg_types::EditorMode::Place,
-            [1.0; 3],
-        );
+
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 0.734, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.51, epsilon = 1e-4);
@@ -935,16 +939,14 @@ mod tests {
 
     #[test]
     fn cursor_from_ray_hit_preserves_unit_snap_flooring() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
+
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
-        let cursor = cursor_from_ray_hit(
-            hit,
-            normal,
-            true,
-            1.0,
-            eg_types::EditorMode::Place,
-            [1.0; 3],
-        );
+
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 1.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.0, epsilon = 1e-4);
@@ -953,16 +955,14 @@ mod tests {
 
     #[test]
     fn cursor_from_ray_hit_centers_footprint_before_subunit_snap() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 0.25;
+
         let hit = Vec3::new(1.234, 0.5, 5.678);
         let normal = Vec3::Y;
-        let cursor = cursor_from_ray_hit(
-            hit,
-            normal,
-            true,
-            0.25,
-            eg_types::EditorMode::Place,
-            [1.0; 3],
-        );
+
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 0.5, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.5, epsilon = 1e-4);
@@ -971,16 +971,14 @@ mod tests {
 
     #[test]
     fn cursor_from_ray_hit_centers_selected_block_size_when_snap_disabled() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_to_grid = false;
+        editor.config.selected_block_id = BlockId::new("core/speedportal");
+
         let hit = Vec3::new(4.0, 0.25, 9.0);
         let normal = Vec3::Y;
-        let cursor = cursor_from_ray_hit(
-            hit,
-            normal,
-            false,
-            1.0,
-            eg_types::EditorMode::Place,
-            [2.0, 1.0, 1.0],
-        );
+
+        let cursor = editor.cursor_from_ray_hit(hit, normal);
 
         approx::assert_abs_diff_eq!(cursor[0], 3.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(cursor[1], 0.26, epsilon = 1e-4);

@@ -9,7 +9,7 @@ use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
 
-use super::super::{EditorDragBlockStart, EditorGizmoDrag};
+use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
@@ -691,6 +691,52 @@ super::super::editor_context_methods! {
 
         if self.drag_gizmo(x, y, viewport) {
             self.sync_objects_for_drag();
+            let is_move = self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
+                == Some(GizmoDragKind::Move);
+            let trigger_drag = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .is_some_and(|drag| self.gizmo_drag_trigger_start(drag).is_some());
+            // The dragged block(s) may be a transform trigger block on the
+            // grid (not the virtual trigger target). When the user moves,
+            // resizes, or rotates the trigger block itself, the source ring
+            // and connector line should follow the block pose live.
+            let dragging_transform_trigger_block = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .is_some_and(|drag| {
+                    drag.start_blocks.iter().any(|b| {
+                        self.objects
+                            .get(b.index)
+                            .is_some_and(|o| o.is_transform_trigger())
+                    })
+                });
+            // Check if any dragged blocks are sources of transform triggers
+            let dragged_indices: Vec<usize> = self
+                .runtime
+                .interaction
+                .gizmo_drag
+                .as_ref()
+                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
+                .unwrap_or_default();
+            let dragging_transform_trigger_source =
+                self.any_block_is_transform_trigger_source(&dragged_indices);
+            if is_move || trigger_drag {
+                self.mark_dirty(EditorDirtyFlags {
+                    rebuild_cursor: is_move,
+                    rebuild_block_mesh: trigger_drag,
+                    rebuild_hitbox_visualization: trigger_drag,
+                    rebuild_transform_trigger_markers: trigger_drag
+                        || dragging_transform_trigger_block
+                        || dragging_transform_trigger_source,
+                    rebuild_preview_player: trigger_drag,
+                    ..EditorDirtyFlags::default()
+                });
+            }
             true
         } else {
             false
@@ -719,7 +765,6 @@ super::super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use bevy::state::prelude::State;
     use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
         AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, EditorMode,
@@ -727,55 +772,9 @@ mod tests {
     };
     use glam::{Vec2, Vec3};
 
-    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag};
-    use crate::{
-        events::pointer::{PointerMoved, PrimaryClick},
-        state::{
-            EditorCameraState, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
-            EditorTriggerRes, RenderConfigRes, collect_editor_objects_from_world,
-            editor_camera_view_proj, project_world_to_screen, replace_editor_objects,
-            test_support::TestApp,
-        },
+    use super::super::super::{
+        EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem,
     };
-
-    fn gizmo_test_app(objects: Vec<LevelObject>, mode: EditorMode) -> TestApp {
-        let mut app = TestApp::minimal();
-        app.world_mut()
-            .insert_resource(State::new(AppPhase::Editor));
-        replace_editor_objects(app.world_mut(), objects);
-        {
-            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
-            input.0.mode = mode;
-            input.0.selected_block_index = Some(0);
-            input.0.selected_block_indices = vec![0];
-        }
-        {
-            let mut render = app.world_mut().resource_mut::<RenderConfigRes>();
-            render.width = 1280;
-            render.height = 720;
-        }
-        app
-    }
-
-    fn screen_for_world(world: Vec3) -> Vec2 {
-        let viewport = Vec2::new(1280.0, 720.0);
-        project_world_to_screen(
-            editor_camera_view_proj(&EditorCameraState::default(), viewport),
-            world,
-            viewport,
-        )
-        .expect("world position should project to screen")
-    }
-
-    fn gizmo_axis_length_for_screen(center: Vec3, target_pixels: f32) -> f32 {
-        [Vec3::X, Vec3::Y, Vec3::Z]
-            .into_iter()
-            .map(|axis| screen_for_world(center + axis).distance(screen_for_world(center)))
-            .filter(|pixels_per_world| *pixels_per_world > f32::EPSILON)
-            .map(|pixels_per_world| target_pixels / pixels_per_world)
-            .min_by(f32::total_cmp)
-            .expect("default editor camera projects every gizmo axis")
-    }
 
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
         EditorDragBlockStart {
@@ -784,48 +783,6 @@ mod tests {
             size: block.size,
             rotation: block.rotation,
         }
-    }
-
-    fn rotate_block_with_gizmo(
-        block: LevelObject,
-        axis: GizmoAxis,
-        snap_rotation: bool,
-        snap_rotation_step_degrees: f32,
-    ) -> [f32; 3] {
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Rotate);
-        {
-            let mut config = app.world_mut().resource_mut::<EditorConfigRes>();
-            config.0.snap_rotation = snap_rotation;
-            config.0.snap_rotation_step_degrees = snap_rotation_step_degrees;
-        }
-
-        let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
-        let start_mouse = center_screen + Vec2::new(30.0, 0.0);
-        let current_mouse = center_screen + Vec2::new(0.0, 30.0);
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
-            axis,
-            kind: GizmoDragKind::Rotate,
-            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
-            start_center_screen: [center_screen.x, center_screen.y],
-            start_center_world: center.to_array(),
-            start_blocks: vec![start_block_for_index(0, &block)],
-        });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: current_mouse.x as f64,
-            y: current_mouse.y as f64,
-        });
-        app.tick();
-
-        collect_editor_objects_from_world(app.world_mut())[0].rotation
     }
 
     fn local_face_center(block: &LevelObject, axis: Vec3, face_sign: f32) -> Vec3 {
@@ -845,25 +802,25 @@ mod tests {
 
     #[test]
     fn pick_gizmo_handle_returns_none_when_mode_has_no_gizmo() {
-        let mut app = gizmo_test_app(vec![LevelObject::default()], EditorMode::Place);
-        app.world_mut()
-            .write_message(PointerMoved { x: 640.0, y: 360.0 });
-        app.tick();
+        let mut editor = EditorSubsystem::default();
 
-        assert!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .hovered_gizmo
-                .is_none()
-        );
+        editor.input.mode = EditorMode::Place;
+        editor.objects = vec![LevelObject::default()];
+        editor.input.selected_block_index = Some(0);
+
+        let viewport = Vec2::new(1280.0, 720.0);
+        let hit = editor.pick_gizmo_handle(640.0, 360.0, viewport);
+        assert!(hit.is_none());
     }
 
     #[test]
     fn pick_gizmo_handle_honors_selected_block_field_visibility() {
+        let mut editor = EditorSubsystem::default();
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         let camera_pose = TimedTrigger {
             time_seconds: 0.0,
@@ -896,59 +853,34 @@ mod tests {
 
         let mut selected = LevelObject::new(CAMERA_TRIGGER_BLOCK_ID);
         selected.trigger = Some(camera_pose);
-        let mut app = gizmo_test_app(vec![selected.clone()], EditorMode::Scale);
-        let scale_world = Vec3::new(
-            1.0 + gizmo_axis_length_for_screen(center, 9.0),
-            center.y,
-            center.z,
-        );
-        let scale_screen = screen_for_world(scale_world);
-        app.world_mut().write_message(PointerMoved {
-            x: scale_screen.x as f64,
-            y: scale_screen.y as f64,
-        });
-        app.tick();
-        assert!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .hovered_gizmo
-                .is_none(),
+        editor.objects = vec![selected];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
+
+        editor.input.mode = EditorMode::Scale;
+        let scale_lengths = editor.gizmo_axis_lengths_world(center, 9.0, viewport);
+        let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
+        let scale_screen = editor
+            .world_to_screen_v(scale_world, viewport)
+            .expect("scale handle projects");
+        assert_eq!(
+            editor.pick_gizmo_handle(scale_screen.x as f64, scale_screen.y as f64, viewport),
+            None,
             "camera pose blocks hide size fields, so resize gizmos should be hidden"
         );
 
-        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Move;
-        app.world_mut().write_message(PointerMoved {
-            x: center_screen.x as f64,
-            y: center_screen.y as f64,
-        });
-        app.tick();
+        editor.input.mode = EditorMode::Move;
         assert!(matches!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .hovered_gizmo,
+            editor.pick_gizmo_handle(center_screen.x as f64, center_screen.y as f64, viewport),
             Some((GizmoDragKind::Move, _))
         ));
 
-        selected.trigger = Some(camera_follow);
-        replace_editor_objects(app.world_mut(), vec![selected]);
+        editor.objects[0].trigger = Some(camera_follow);
         for mode in [EditorMode::Move, EditorMode::Scale, EditorMode::Rotate] {
-            app.world_mut().resource_mut::<EditorInputRes>().0.mode = mode;
-            app.world_mut().write_message(PointerMoved {
-                x: center_screen.x as f64,
-                y: center_screen.y as f64,
-            });
-            app.tick();
-            assert!(
-                app.world()
-                    .resource::<EditorRuntimeRes>()
-                    .0
-                    .interaction
-                    .hovered_gizmo
-                    .is_none(),
+            editor.input.mode = mode;
+            assert_eq!(
+                editor.pick_gizmo_handle(center_screen.x as f64, center_screen.y as f64, viewport),
+                None,
                 "camera follow blocks hide transform fields, so gizmos should be hidden"
             );
         }
@@ -956,67 +888,61 @@ mod tests {
 
     #[test]
     fn drag_gizmo_move_updates_object_position_along_axis() {
-        let mut app = gizmo_test_app(vec![LevelObject::default()], EditorMode::Move);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
+        editor.objects = vec![LevelObject::default()];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + Vec3::X);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + Vec3::X, viewport)
+            .expect("axis projects");
         let axis_dir = (axis_screen - origin_screen).normalize();
         let target = origin_screen + axis_dir * 40.0;
 
-        {
-            let block = LevelObject::default();
-            let mut runtime = app.world_mut().resource_mut::<EditorRuntimeRes>();
-            runtime.0.interaction.gizmo_drag = Some(EditorGizmoDrag {
-                axis: GizmoAxis::X,
-                kind: GizmoDragKind::Move,
-                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-                start_center_screen: [origin_screen.x, origin_screen.y],
-                start_center_world: center.to_array(),
-                start_blocks: vec![start_block_for_index(0, &block)],
-            });
-        }
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Move,
+            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+            start_center_screen: [origin_screen.x, origin_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.tick();
 
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        assert!(objects[0].position[0] > 0.0);
-        approx::assert_abs_diff_eq!(objects[0].position[1], 0.0, epsilon = 1e-4);
-        approx::assert_abs_diff_eq!(objects[0].position[2], 0.0, epsilon = 1e-4);
+        assert!(editor.drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(editor.objects[0].position[0] > 0.0);
+        approx::assert_abs_diff_eq!(editor.objects[0].position[1], 0.0, epsilon = 1e-4);
+        approx::assert_abs_diff_eq!(editor.objects[0].position[2], 0.0, epsilon = 1e-4);
     }
 
     #[test]
     fn drag_gizmo_move_uses_rotated_axis() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
         let mut block = LevelObject::default();
         block.rotation = [0.0, 90.0, 0.0];
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Move);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+        editor.objects = vec![block];
 
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
         let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + axis);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + axis, viewport)
+            .expect("axis projects");
         let axis_dir = (axis_screen - origin_screen).normalize();
         let target = origin_screen + axis_dir * 40.0;
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
@@ -1024,43 +950,35 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
-        });
-        app.tick();
 
-        let position = collect_editor_objects_from_world(app.world_mut())[0].position;
-        approx::assert_abs_diff_eq!(position[0], 0.0, epsilon = 1e-4);
-        approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-4);
-        assert!(position[2] < -0.1);
+        assert!(editor.drag_gizmo(target.x as f64, target.y as f64, viewport));
+        approx::assert_abs_diff_eq!(editor.objects[0].position[0], 0.0, epsilon = 1e-4);
+        approx::assert_abs_diff_eq!(editor.objects[0].position[1], 0.0, epsilon = 1e-4);
+        assert!(editor.objects[0].position[2] < -0.1);
     }
 
     #[test]
     fn drag_gizmo_move_snap_preserves_rotated_axis() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = true;
+        editor.config.snap_step = 1.0;
         let mut block = LevelObject::default();
         block.rotation = [0.0, 45.0, 0.0];
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Move);
-        {
-            let mut config = app.world_mut().resource_mut::<EditorConfigRes>();
-            config.0.snap_to_grid = true;
-            config.0.snap_step = 1.0;
-        }
+        editor.objects = vec![block];
 
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
         let axis = glam::Quat::from_rotation_y(45.0_f32.to_radians()) * Vec3::X;
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + axis);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + axis, viewport)
+            .expect("axis projects");
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
@@ -1068,17 +986,10 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: axis_screen.x as f64,
-            y: axis_screen.y as f64,
-        });
-        app.tick();
 
-        let position = collect_editor_objects_from_world(app.world_mut())[0].position;
+        assert!(editor.drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport));
+
+        let position = editor.objects[0].position;
         approx::assert_abs_diff_eq!(position[0], std::f32::consts::FRAC_1_SQRT_2, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(position[1], 0.0, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(
@@ -1090,7 +1001,11 @@ mod tests {
 
     #[test]
     fn drag_gizmo_move_updates_selected_transform_trigger_target() {
-        let trigger = LevelObject {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
+        editor.input.mode = EditorMode::Move;
+        editor.objects = vec![LevelObject {
             trigger: Some(TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -1105,72 +1020,58 @@ mod tests {
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
-        };
-        let mut app = gizmo_test_app(vec![trigger.clone()], EditorMode::Move);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
-        {
-            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
-            input.0.selected_block_index = None;
-            input.0.selected_block_indices.clear();
-        }
-        app.world_mut()
-            .resource_mut::<EditorTriggerRes>()
-            .0
-            .selected_index = Some(0);
+        }];
+        editor.set_trigger_selected(Some(0));
 
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + Vec3::X);
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + Vec3::X, viewport)
+            .expect("axis projects");
+        let target = editor
+            .selected_transform_trigger_target()
+            .expect("selected trigger target")
+            .1;
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
             start_center_screen: [origin_screen.x, origin_screen.y],
             start_center_world: [center.x, center.y, center.z],
-            start_blocks: vec![start_block_for_index(0, &trigger)],
+            start_blocks: vec![start_block_for_index(0, &target)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: axis_screen.x as f64,
-            y: axis_screen.y as f64,
-        });
-        app.tick();
+
+        editor.drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport);
 
         assert!(
-            collect_editor_objects_from_world(app.world_mut())[0].position[0] > 0.9,
+            editor.objects[0].position[0] > 0.9,
             "expected trigger target to move on X"
         );
     }
 
     #[test]
     fn drag_gizmo_resize_negative_axis_preserves_opposite_edge() {
-        let block = LevelObject::default();
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Scale);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
+        editor.objects = vec![LevelObject::default()];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + Vec3::X);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + Vec3::X, viewport)
+            .expect("axis projects");
         let axis_dir = (axis_screen - origin_screen).normalize();
         let target = origin_screen + axis_dir * 20.0;
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::XNeg,
             kind: GizmoDragKind::Resize,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
@@ -1178,45 +1079,38 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
-        });
-        app.tick();
 
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        let object = &objects[0];
+        assert!(editor.drag_gizmo(target.x as f64, target.y as f64, viewport));
+
+        let object = &editor.objects[0];
         assert!(object.size[0] >= 0.25);
         approx::assert_abs_diff_eq!(object.position[0] + object.size[0], 1.0, epsilon = 1e-3);
     }
 
     #[test]
     fn drag_gizmo_resize_rotated_positive_axis_preserves_opposite_face() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
         let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
         block.rotation = [0.0, 90.0, 0.0];
         let anchored_face_before = local_face_center(&block, Vec3::X, -1.0);
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Scale);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+        editor.objects = vec![block];
 
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(3.0, 1.5, 3.5);
         let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + axis);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + axis, viewport)
+            .expect("axis projects");
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Resize,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
@@ -1224,18 +1118,10 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: axis_screen.x as f64,
-            y: axis_screen.y as f64,
-        });
-        app.tick();
 
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        let object = &objects[0];
+        assert!(editor.drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+
+        let object = &editor.objects[0];
         assert!(object.size[0] > 2.9);
         let anchored_face_after = local_face_center(object, Vec3::X, -1.0);
         approx::assert_abs_diff_eq!(
@@ -1257,27 +1143,28 @@ mod tests {
 
     #[test]
     fn drag_gizmo_resize_rotated_negative_axis_preserves_opposite_face() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
         let mut block = LevelObject::default();
         block.position = [2.0, 1.0, 3.0];
         block.size = [2.0, 1.0, 1.0];
         block.rotation = [0.0, 90.0, 0.0];
         let anchored_face_before = local_face_center(&block, Vec3::X, 1.0);
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Scale);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+        editor.objects = vec![block];
 
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(3.0, 1.5, 3.5);
         let axis = glam::Quat::from_rotation_y(90.0_f32.to_radians()) * Vec3::X;
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + axis);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + axis, viewport)
+            .expect("axis projects");
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::XNeg,
             kind: GizmoDragKind::Resize,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
@@ -1285,18 +1172,10 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: axis_screen.x as f64,
-            y: axis_screen.y as f64,
-        });
-        app.tick();
 
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        let object = &objects[0];
+        assert!(editor.drag_gizmo(axis_screen.x as f64, axis_screen.y as f64, viewport,));
+
+        let object = &editor.objects[0];
         assert!(object.size[0] < 1.1);
         let anchored_face_after = local_face_center(object, Vec3::X, 1.0);
         approx::assert_abs_diff_eq!(
@@ -1318,22 +1197,21 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_changes_selected_block_rotation() {
-        let block = LevelObject::default();
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Rotate);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_rotation = false;
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_rotation = false;
+        editor.objects = vec![LevelObject::default()];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = screen_for_world(center);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
         let start = origin_screen + Vec2::new(30.0, 0.0);
         let target = origin_screen + Vec2::new(0.0, 30.0);
 
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::Y,
             kind: GizmoDragKind::Rotate,
             start_mouse: [start.x as f64, start.y as f64],
@@ -1341,238 +1219,190 @@ mod tests {
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
-        });
-        app.tick();
 
-        assert!(collect_editor_objects_from_world(app.world_mut())[0].rotation[1].abs() > 1.0);
+        assert!(editor.drag_gizmo(target.x as f64, target.y as f64, viewport));
+        assert!(editor.objects[0].rotation[1].abs() > 1.0);
+    }
+
+    #[test]
+    fn helper_conversions_handle_valid_and_invalid_viewports() {
+        let editor = EditorSubsystem::default();
+        let center = Vec3::new(0.5, 0.5, 0.5);
+
+        let valid =
+            editor.pixels_to_world_along_axis(center, Vec3::X, 64.0, Vec2::new(1280.0, 720.0));
+        assert!(valid.is_some());
+        assert!(valid.unwrap_or_default() > 0.0);
+
+        let invalid =
+            editor.pixels_to_world_along_axis(center, Vec3::X, 64.0, Vec2::new(0.0, 720.0));
+        let _ = invalid;
+
+        let fallback_width = editor.gizmo_axis_width_world(center, 100.0, Vec2::new(0.0, 0.0));
+        let _ = fallback_width;
     }
 
     #[test]
     fn pick_and_begin_gizmo_drag_cover_move_scale_rotate_paths() {
-        let mut app = gizmo_test_app(vec![LevelObject::default()], EditorMode::Move);
+        let mut editor = EditorSubsystem::default();
+
+        editor.objects = vec![LevelObject::default()];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
 
-        app.world_mut().write_message(PrimaryClick {
-            x: center_screen.x as f64,
-            y: center_screen.y as f64,
-        });
-        app.tick();
-        assert!(matches!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .gizmo_drag,
-            Some(EditorGizmoDrag {
-                kind: GizmoDragKind::Move,
-                ..
-            })
-        ));
+        editor.input.mode = EditorMode::Move;
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let move_hit =
+            editor.pick_gizmo_handle(center_screen.x as f64, center_screen.y as f64, viewport);
+        assert!(matches!(move_hit, Some((GizmoDragKind::Move, _))));
+        assert!(editor.begin_gizmo_drag(center_screen.x as f64, center_screen.y as f64, viewport));
 
-        {
-            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
-            input.0.left_mouse_down = false;
-            input.0.mode = EditorMode::Scale;
-        }
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = None;
-        let scale_world = Vec3::new(
-            1.0 + gizmo_axis_length_for_screen(center, 9.0),
-            center.y,
-            center.z,
-        );
-        let scale_screen = screen_for_world(scale_world);
-        app.world_mut().write_message(PointerMoved {
-            x: scale_screen.x as f64,
-            y: scale_screen.y as f64,
-        });
-        app.tick();
-        assert!(matches!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .hovered_gizmo,
-            Some((GizmoDragKind::Resize, _))
-        ));
+        editor.runtime.interaction.gizmo_drag = None;
+        editor.input.mode = EditorMode::Scale;
+        let scale_lengths = editor.gizmo_axis_lengths_world(center, 9.0, viewport);
+        let scale_world = Vec3::new(1.0 + scale_lengths[0], center.y, center.z);
+        let scale_screen = editor
+            .world_to_screen_v(scale_world, viewport)
+            .expect("scale handle projects");
+        let scale_hit =
+            editor.pick_gizmo_handle(scale_screen.x as f64, scale_screen.y as f64, viewport);
+        assert!(matches!(scale_hit, Some((GizmoDragKind::Resize, _))));
 
-        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Rotate;
-        let ring_radius = gizmo_axis_length_for_screen(center, 100.0) * 0.78;
+        editor.input.mode = EditorMode::Rotate;
+        let ring_radius = editor.gizmo_axis_lengths_world(center, 100.0, viewport)[0] * 0.78;
         let rotate_world = center + Vec3::new(ring_radius, 0.0, 0.0);
-        let rotate_screen = screen_for_world(rotate_world);
-        app.world_mut().write_message(PointerMoved {
-            x: rotate_screen.x as f64,
-            y: rotate_screen.y as f64,
-        });
-        app.tick();
-        assert!(matches!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .hovered_gizmo,
-            Some((GizmoDragKind::Rotate, _))
-        ));
+        let rotate_screen = editor
+            .world_to_screen_v(rotate_world, viewport)
+            .expect("rotate ring projects");
+        let rotate_hit =
+            editor.pick_gizmo_handle(rotate_screen.x as f64, rotate_screen.y as f64, viewport);
+        assert!(matches!(rotate_hit, Some((GizmoDragKind::Rotate, _))));
     }
 
     #[test]
-    fn drag_gizmo_from_screen_respects_phase_for_move_and_resize() {
-        let block = LevelObject::default();
-        let mut app = gizmo_test_app(vec![block.clone()], EditorMode::Move);
-        app.world_mut()
-            .resource_mut::<EditorConfigRes>()
-            .0
-            .snap_to_grid = false;
+    fn drag_gizmo_from_screen_respects_phase_and_move_dirty_flag() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
+        editor.objects = vec![LevelObject::default()];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = screen_for_world(center);
-        let axis_screen = screen_for_world(center + Vec3::X);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + Vec3::X, viewport)
+            .expect("axis projects");
         let axis_dir = (axis_screen - origin_screen).normalize();
         let target = origin_screen + axis_dir * 24.0;
 
-        let move_drag = EditorGizmoDrag {
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
             kind: GizmoDragKind::Move,
             start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
             start_center_screen: [origin_screen.x, origin_screen.y],
             start_center_world: center.to_array(),
             start_blocks: vec![start_block_for_index(0, &block)],
-        };
-
-        app.world_mut().insert_resource(State::new(AppPhase::Menu));
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(move_drag.clone());
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
         });
-        app.tick();
-        assert_eq!(
-            collect_editor_objects_from_world(app.world_mut())[0].position,
-            block.position
-        );
 
-        app.world_mut()
-            .insert_resource(State::new(AppPhase::Editor));
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(move_drag);
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
-        });
-        app.tick();
-        assert!(
-            collect_editor_objects_from_world(app.world_mut())[0].position[0] > block.position[0]
-        );
+        editor.runtime.dirty = EditorDirtyFlags::default();
+        assert!(!editor.drag_gizmo_from_screen(
+            target.x as f64,
+            target.y as f64,
+            viewport,
+            AppPhase::Menu,
+        ));
 
-        {
-            let mut runtime = app.world_mut().resource_mut::<EditorRuntimeRes>();
-            runtime.0.interaction.gizmo_drag = Some(EditorGizmoDrag {
-                axis: GizmoAxis::X,
-                kind: GizmoDragKind::Resize,
-                start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-                start_center_screen: [origin_screen.x, origin_screen.y],
-                start_center_world: center.to_array(),
-                start_blocks: vec![start_block_for_index(0, &block)],
-            });
-        }
-        app.world_mut().write_message(PointerMoved {
-            x: target.x as f64,
-            y: target.y as f64,
+        assert!(editor.drag_gizmo_from_screen(
+            target.x as f64,
+            target.y as f64,
+            viewport,
+            AppPhase::Editor,
+        ));
+        assert!(editor.runtime.dirty.rebuild_cursor);
+
+        editor.runtime.dirty = EditorDirtyFlags::default();
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Resize,
+            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+            start_center_screen: [origin_screen.x, origin_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block)],
         });
-        app.tick();
-        assert!(collect_editor_objects_from_world(app.world_mut())[0].size[0] > block.size[0]);
+        assert!(editor.drag_gizmo_from_screen(
+            target.x as f64,
+            target.y as f64,
+            viewport,
+            AppPhase::Editor,
+        ));
+        assert!(!editor.runtime.dirty.rebuild_cursor);
     }
 
     #[test]
     fn begin_gizmo_drag_ext_follows_phase_guards_and_records_history() {
-        let block = LevelObject::default();
+        let mut editor = EditorSubsystem::default();
+
+        editor.objects = vec![LevelObject::default()];
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0];
+        editor.input.mode = EditorMode::Move;
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
-        let mut menu_app = gizmo_test_app(vec![block.clone()], EditorMode::Move);
-        menu_app
-            .world_mut()
-            .insert_resource(State::new(AppPhase::Menu));
-        menu_app.world_mut().write_message(PrimaryClick {
-            x: center_screen.x as f64,
-            y: center_screen.y as f64,
-        });
-        menu_app.tick();
-        assert!(
-            menu_app
-                .world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .gizmo_drag
-                .is_none()
-        );
+        assert!(!editor.begin_gizmo_drag_ext(
+            center_screen.x as f64,
+            center_screen.y as f64,
+            viewport,
+            AppPhase::Menu,
+        ));
 
-        let mut app = gizmo_test_app(vec![block], EditorMode::Move);
-        let history_before = app.world().resource::<EditorHistoryRes>().0.undo.len();
-        app.world_mut().write_message(PrimaryClick {
-            x: center_screen.x as f64,
-            y: center_screen.y as f64,
-        });
-        app.tick();
-        assert!(
-            app.world()
-                .resource::<EditorRuntimeRes>()
-                .0
-                .interaction
-                .gizmo_drag
-                .is_some()
-        );
-        assert_eq!(
-            app.world().resource::<EditorHistoryRes>().0.undo.len(),
-            history_before + 1
-        );
+        let history_before = editor.runtime.history.undo.len();
+        assert!(editor.begin_gizmo_drag_ext(
+            center_screen.x as f64,
+            center_screen.y as f64,
+            viewport,
+            AppPhase::Editor,
+        ));
+        assert_eq!(editor.runtime.history.undo.len(), history_before + 1);
 
-        assert!(screen_for_world(center + Vec3::X).distance(center_screen) > 0.0);
+        let lengths = editor.gizmo_axis_lengths_world(center, 100.0, viewport);
+        assert!(lengths[0] > 0.0 && lengths[1] > 0.0 && lengths[2] > 0.0);
+        assert!(editor.gizmo_axis_width_world(center, 100.0, viewport) > 0.0);
     }
     #[test]
     fn drag_gizmo_y_prevents_compression_when_moving_below_ground() {
+        let mut editor = EditorSubsystem::default();
+        let viewport = Vec2::new(1280.0, 720.0);
+
         // Two blocks at different heights.
         let mut low = LevelObject::default();
         low.position = [0.0, 0.0, 0.0];
         let mut high = LevelObject::default();
         high.position = [0.0, 3.0, 0.0];
-        let mut app = gizmo_test_app(vec![low.clone(), high.clone()], EditorMode::Select);
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .selected_block_indices = vec![0, 1];
+        editor.objects = vec![low, high];
+        editor.input.mode = EditorMode::Select;
+        editor.replace_block_selection(vec![0, 1]);
 
         let center = Vec3::new(0.5, 2.0, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         // Simulate a large negative Y gizmo drag.
-        app.world_mut()
-            .resource_mut::<EditorRuntimeRes>()
-            .0
-            .interaction
-            .gizmo_drag = Some(EditorGizmoDrag {
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::Y,
             kind: GizmoDragKind::Move,
             start_mouse: [center_screen.x as f64, center_screen.y as f64],
@@ -1593,25 +1423,19 @@ mod tests {
                 },
             ],
         });
-        app.world_mut()
-            .resource_mut::<EditorInputRes>()
-            .0
-            .left_mouse_down = true;
 
-        // Drag far below ground (simulate large negative world delta via screen).
+        // Drag far below ground (simulate large negative world_delta via screen).
+        // We call drag_gizmo directly with a fake viewport and a screen position
+        // that yields a large negative Y world delta.
+        // Instead, directly test via the internal method by placing mouse far away.
         let far_screen = Vec2::new(center_screen.x, center_screen.y - 2000.0);
-        app.world_mut().write_message(PointerMoved {
-            x: far_screen.x as f64,
-            y: far_screen.y as f64,
-        });
-        app.tick();
+        editor.drag_gizmo(far_screen.x as f64, far_screen.y as f64, viewport);
 
         // The low block should stop at y=0, the high block should maintain its
         // relative 3-unit offset (staying at y=3 or wherever the delta places it
         // without going negative for the lowest block).
-        let objects = collect_editor_objects_from_world(app.world_mut());
-        let low_y = objects[0].position[1];
-        let high_y = objects[1].position[1];
+        let low_y = editor.objects[0].position[1];
+        let high_y = editor.objects[1].position[1];
         assert!(low_y >= -1e-4, "low block y={low_y} should be >= 0");
         let relative_gap = high_y - low_y;
         assert!(
@@ -1624,7 +1448,7 @@ mod tests {
     /// drag code would produce for the given screen-space mouse positions,
     /// camera, and world-space axis direction.
     fn compute_rotation_delta_degrees(
-        camera: &EditorCameraState,
+        editor: &EditorSubsystem,
         start_mouse: Vec2,
         current_mouse: Vec2,
         center_screen: Vec2,
@@ -1643,8 +1467,12 @@ mod tests {
         } else if diff < -std::f32::consts::PI {
             diff += std::f32::consts::TAU;
         }
-        let target = camera.editor_camera_target();
-        let eye = target + camera.editor_camera_offset();
+        let target = Vec3::new(
+            editor.camera.editor_pan[0],
+            editor.camera.editor_target_z,
+            editor.camera.editor_pan[1],
+        );
+        let eye = target + editor.camera_offset();
         let view_dir = (target - eye).normalize_or_zero();
         let sign = if axis_dir.dot(view_dir) < 0.0 {
             -1.0
@@ -1675,7 +1503,33 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_identity_block_produces_single_axis_change() {
-        let rot = rotate_block_with_gizmo(LevelObject::default(), GizmoAxis::Y, false, 15.0);
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_rotation = false;
+        editor.objects = vec![LevelObject::default()];
+
+        let viewport = Vec2::new(1280.0, 720.0);
+        let center = Vec3::new(0.5, 0.5, 0.5);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+
+        // 90° clockwise screen-space rotation
+        let start_mouse = center_screen + Vec2::new(30.0, 0.0);
+        let current_mouse = center_screen + Vec2::new(0.0, 30.0);
+
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::Y,
+            kind: GizmoDragKind::Rotate,
+            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+            start_center_screen: [center_screen.x, center_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block)],
+        });
+
+        assert!(editor.drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
+
+        let rot = editor.objects[0].rotation;
         // With no pre-rotation, the Y ring axis is world Y.
         // Rotation should mostly affect the Y Euler component.
         assert!(
@@ -1690,14 +1544,33 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_around_x_with_y90_uses_world_axis() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_rotation = false;
+
         let mut block = LevelObject::default();
         block.rotation = [0.0, 90.0, 0.0];
+        editor.objects = vec![block];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         let start_mouse = center_screen + Vec2::new(30.0, 0.0);
         let current_mouse = center_screen + Vec2::new(0.0, 30.0);
-        let actual = rotate_block_with_gizmo(block, GizmoAxis::X, false, 15.0);
+
+        let block_snap = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Rotate,
+            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+            start_center_screen: [center_screen.x, center_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block_snap)],
+        });
+
+        assert!(editor.drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
 
         let start_degrees = [0.0_f32, 90.0, 0.0];
         let start_quat = glam::Quat::from_euler(
@@ -1709,7 +1582,7 @@ mod tests {
         let world_axis = start_quat * Vec3::X;
 
         let delta = compute_rotation_delta_degrees(
-            &EditorCameraState::default(),
+            &editor,
             start_mouse,
             current_mouse,
             center_screen,
@@ -1718,6 +1591,7 @@ mod tests {
         assert!(delta.abs() > 1.0, "delta should be non-trivial");
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+        let actual = editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1737,16 +1611,35 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_around_y_with_xz_rotation_uses_world_axis() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_rotation = false;
+
         // Use X+Z rotation so the world Y axis actually diverges from local Y.
         // (Pure X rotation doesn't change the Y axis direction.)
         let mut block = LevelObject::default();
         block.rotation = [45.0, 0.0, 45.0];
+        editor.objects = vec![block];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         let start_mouse = center_screen + Vec2::new(30.0, 0.0);
         let current_mouse = center_screen + Vec2::new(0.0, 30.0);
-        let actual = rotate_block_with_gizmo(block, GizmoAxis::Y, false, 15.0);
+
+        let block_snap = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::Y,
+            kind: GizmoDragKind::Rotate,
+            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+            start_center_screen: [center_screen.x, center_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block_snap)],
+        });
+
+        assert!(editor.drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
 
         let start_degrees = [45.0_f32, 0.0, 45.0];
         let start_quat = glam::Quat::from_euler(
@@ -1758,7 +1651,7 @@ mod tests {
         let world_axis = start_quat * Vec3::Y;
 
         let delta = compute_rotation_delta_degrees(
-            &EditorCameraState::default(),
+            &editor,
             start_mouse,
             current_mouse,
             center_screen,
@@ -1767,6 +1660,7 @@ mod tests {
         assert!(delta.abs() > 1.0);
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+        let actual = editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1785,14 +1679,33 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_around_z_with_combined_rotation_uses_world_axis() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_rotation = false;
+
         let mut block = LevelObject::default();
         block.rotation = [30.0, 20.0, 0.0];
+        editor.objects = vec![block];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         let start_mouse = center_screen + Vec2::new(30.0, 0.0);
         let current_mouse = center_screen + Vec2::new(0.0, 30.0);
-        let actual = rotate_block_with_gizmo(block, GizmoAxis::Z, false, 15.0);
+
+        let block_snap = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::Z,
+            kind: GizmoDragKind::Rotate,
+            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+            start_center_screen: [center_screen.x, center_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block_snap)],
+        });
+
+        assert!(editor.drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
 
         let start_degrees = [30.0_f32, 20.0, 0.0];
         let start_quat = glam::Quat::from_euler(
@@ -1804,7 +1717,7 @@ mod tests {
         let world_axis = start_quat * Vec3::Z;
 
         let delta = compute_rotation_delta_degrees(
-            &EditorCameraState::default(),
+            &editor,
             start_mouse,
             current_mouse,
             center_screen,
@@ -1813,6 +1726,7 @@ mod tests {
         assert!(delta.abs() > 1.0);
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, delta);
+        let actual = editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
@@ -1821,14 +1735,34 @@ mod tests {
 
     #[test]
     fn drag_gizmo_rotate_with_snap_rounds_delta_before_composition() {
+        let mut editor = EditorSubsystem::default();
+        editor.config.snap_rotation = true;
+        editor.config.snap_rotation_step_degrees = 15.0;
+
         let mut block = LevelObject::default();
         block.rotation = [0.0, 45.0, 0.0];
+        editor.objects = vec![block];
+
+        let viewport = Vec2::new(1280.0, 720.0);
         let center = Vec3::new(0.5, 0.5, 0.5);
-        let center_screen = screen_for_world(center);
+        let center_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
 
         let start_mouse = center_screen + Vec2::new(30.0, 0.0);
         let current_mouse = center_screen + Vec2::new(0.0, 30.0);
-        let actual = rotate_block_with_gizmo(block, GizmoAxis::X, true, 15.0);
+
+        let block_snap = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Rotate,
+            start_mouse: [start_mouse.x as f64, start_mouse.y as f64],
+            start_center_screen: [center_screen.x, center_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block_snap)],
+        });
+
+        assert!(editor.drag_gizmo(current_mouse.x as f64, current_mouse.y as f64, viewport,));
 
         // Compute the snapped delta and verify quaternion composition
         let start_degrees = [0.0_f32, 45.0, 0.0];
@@ -1841,7 +1775,7 @@ mod tests {
         let world_axis = start_quat * Vec3::X;
 
         let raw_delta = compute_rotation_delta_degrees(
-            &EditorCameraState::default(),
+            &editor,
             start_mouse,
             current_mouse,
             center_screen,
@@ -1855,9 +1789,73 @@ mod tests {
         );
 
         let expected = expected_rotation_after_delta(start_degrees, world_axis, snapped_delta);
+        let actual = editor.objects[0].rotation;
 
         approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[1], expected[1], epsilon = 0.5);
         approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = 0.5);
+    }
+
+    #[test]
+    fn drag_gizmo_move_transform_trigger_source_sets_dirty_flag() {
+        let mut editor = EditorSubsystem::default();
+
+        editor.config.snap_to_grid = false;
+        editor.input.mode = EditorMode::Move;
+        // Create a regular block that will be the source of a transform trigger
+        editor.objects = vec![LevelObject {
+            id: "object_0_0_0".to_string(),
+            ..LevelObject::default()
+        }];
+        // Add a transform trigger that targets object 0
+        editor.objects.push(LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                duration_seconds: 1.0,
+                easing: EasingDirection::Linear,
+                target: TriggerTarget::Objects {
+                    object_ids: vec!["object_0_0_0".to_string()],
+                },
+                transform: true,
+                camera: None,
+            }),
+            position: [5.0, 0.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            size: [1.0, 1.0, 1.0],
+            ..LevelObject::new(TRANSFORM_TRIGGER_BLOCK_ID)
+        });
+
+        let viewport = Vec2::new(1280.0, 720.0);
+        let center = Vec3::new(0.5, 0.5, 0.5);
+        let origin_screen = editor
+            .world_to_screen_v(center, viewport)
+            .expect("center projects");
+        let axis_screen = editor
+            .world_to_screen_v(center + Vec3::X, viewport)
+            .expect("axis projects");
+        let axis_dir = (axis_screen - origin_screen).normalize();
+        let target = origin_screen + axis_dir * 40.0;
+
+        let block = editor.objects[0].clone();
+        editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
+            axis: GizmoAxis::X,
+            kind: GizmoDragKind::Move,
+            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
+            start_center_screen: [origin_screen.x, origin_screen.y],
+            start_center_world: center.to_array(),
+            start_blocks: vec![start_block_for_index(0, &block)],
+        });
+
+        editor.runtime.dirty = EditorDirtyFlags::default();
+        assert!(editor.drag_gizmo_from_screen(
+            target.x as f64,
+            target.y as f64,
+            viewport,
+            AppPhase::Editor,
+        ));
+        assert!(
+            editor.runtime.dirty.rebuild_transform_trigger_markers,
+            "Moving a transform trigger source block should mark transform trigger markers dirty"
+        );
     }
 }

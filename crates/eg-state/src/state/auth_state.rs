@@ -5,19 +5,11 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::{
-    ecs::prelude::*,
-    tasks::{IoTaskPool, Task, TaskPool, futures::check_ready},
-};
-use eg_platform::services::AuthServiceMessage;
+use bevy::ecs::prelude::*;
+use eg_platform::services::{trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out};
 use eg_types::AuthSession;
 
 use super::{AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest};
-use crate::events::async_results::AuthServiceResultEvent;
-
-/// One in-flight authentication operation owned by the App world.
-#[derive(Component)]
-pub(crate) struct AuthTask(Task<AuthServiceMessage>);
 
 impl AuthStateRes {
     pub fn display_name(&self) -> Option<&str> {
@@ -32,41 +24,42 @@ impl AuthStateRes {
             })
     }
 
-    fn begin_auth_sign_in(&mut self) -> bool {
+    pub fn submit_auth_sign_in(&mut self) {
         if self.pending {
-            return false;
+            return;
         }
 
         self.pending = true;
         self.message = Some("Complete sign-in in your browser.".to_string());
-        true
+        trigger_auth_sign_in(self.sender.clone());
     }
 
-    fn begin_auth_refresh(&mut self) -> Option<String> {
+    pub fn refresh_auth_session(&mut self) {
         if self.pending || self.refresh_started {
-            return None;
+            return;
         }
 
-        let refresh_token = self
+        let Some(refresh_token) = self
             .session
             .as_ref()
-            .map(|session| session.session.refresh_token.clone())?;
+            .map(|session| session.session.refresh_token.clone())
+        else {
+            return;
+        };
 
         self.refresh_started = true;
-        Some(refresh_token)
+        trigger_auth_refresh(refresh_token, self.sender.clone());
     }
 
-    fn begin_auth_refresh_if_needed(&mut self) -> Option<String> {
+    pub(crate) fn refresh_auth_session_if_needed(&mut self) {
         if self.session.is_some() && !self.refresh_started {
-            self.begin_auth_refresh()
-        } else {
-            None
+            self.refresh_auth_session();
         }
     }
 
-    fn begin_auth_sign_out(&mut self) -> Option<Option<String>> {
+    pub fn sign_out_auth_session(&mut self) {
         if self.pending {
-            return None;
+            return;
         }
 
         let access_token = self
@@ -75,7 +68,7 @@ impl AuthStateRes {
             .map(|session| session.session.access_token.clone());
         self.pending = true;
         self.message = None;
-        Some(access_token)
+        trigger_auth_sign_out(access_token, self.sender.clone());
     }
 
     pub fn open_auth_signup_page(&mut self) {
@@ -132,58 +125,21 @@ impl AuthStateRes {
 }
 
 pub fn process_auth_requests_system(
-    mut commands: Commands,
     mut auth: ResMut<AuthStateRes>,
     mut sign_in_request: ResMut<AuthSubmitSignInRequest>,
     mut sign_out_request: ResMut<AuthSignOutRequest>,
     mut open_signup_request: ResMut<AuthOpenSignupRequest>,
 ) {
-    if sign_in_request.take() && auth.begin_auth_sign_in() {
-        spawn_auth_sign_in_task(&mut commands);
+    if sign_in_request.take() {
+        auth.submit_auth_sign_in();
     }
-    if sign_out_request.take()
-        && let Some(access_token) = auth.begin_auth_sign_out()
-    {
-        spawn_auth_sign_out_task(&mut commands, access_token);
+    if sign_out_request.take() {
+        auth.sign_out_auth_session();
     }
     if open_signup_request.take() {
         auth.open_auth_signup_page();
     }
-    if let Some(refresh_token) = auth.begin_auth_refresh_if_needed() {
-        spawn_auth_refresh_task(&mut commands, refresh_token);
-    }
-}
-
-fn spawn_auth_sign_in_task(commands: &mut Commands) {
-    let task = IoTaskPool::get_or_init(TaskPool::new).spawn(eg_platform::services::sign_in());
-    commands.spawn(AuthTask(task));
-}
-
-fn spawn_auth_refresh_task(commands: &mut Commands, refresh_token: String) {
-    let task =
-        IoTaskPool::get_or_init(TaskPool::new).spawn(eg_platform::services::refresh(refresh_token));
-    commands.spawn(AuthTask(task));
-}
-
-fn spawn_auth_sign_out_task(commands: &mut Commands, access_token: Option<String>) {
-    let task =
-        IoTaskPool::get_or_init(TaskPool::new).spawn(eg_platform::services::sign_out(access_token));
-    commands.spawn(AuthTask(task));
-}
-
-/// Write each completed task result into the established typed auth handler.
-pub fn poll_auth_tasks_system(
-    mut commands: Commands,
-    mut tasks: Query<(Entity, &mut AuthTask)>,
-    mut results: MessageWriter<AuthServiceResultEvent>,
-) {
-    for (entity, mut task) in &mut tasks {
-        let Some(result) = check_ready(&mut task.0) else {
-            continue;
-        };
-        results.write(AuthServiceResultEvent::new(result));
-        commands.entity(entity).despawn();
-    }
+    auth.refresh_auth_session_if_needed();
 }
 
 #[cfg(test)]

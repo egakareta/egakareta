@@ -14,6 +14,7 @@ members = [
     "crates/eg-level",
     "crates/eg-mesh",
     "crates/eg-platform",
+    "crates/eg-render",
     "crates/eg-state",
     "crates/eg-ui",
     "crates/egb",
@@ -30,30 +31,21 @@ license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 async-trait = "0.1"
-async-fs = "2"
 approx = "0.5"
 bevy = { version = "0.19", default-features = false, features = [
     "bevy_clipboard",
     "bevy_state",
     "bevy_material",
     "bevy_log",
-    "bevy_picking",
     "bevy_pbr",
     "bevy_render",
-    "bevy_winit",
-    "default_platform",
-    "serialize",
-    "tonemapping_luts",
-    "webgpu",
 ] }
 bevy_egui = "0.41"
-bevy_render = { version = "0.19", features = ["gles"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
 cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
 criterion = "0.7"
-dirs = "5"
 eg-audio = { path = "crates/eg-audio" }
 eg-block-geometry = { path = "crates/eg-block-geometry" }
 eg-blocks = { path = "crates/eg-blocks" }
@@ -63,11 +55,14 @@ eg-game = { path = "crates/eg-game" }
 eg-level = { path = "crates/eg-level" }
 eg-mesh = { path = "crates/eg-mesh" }
 eg-platform = { path = "crates/eg-platform" }
+eg-render = { path = "crates/eg-render" }
 eg-state = { path = "crates/eg-state" }
 eg-types = { path = "crates/eg-types" }
 eg-ui = { path = "crates/eg-ui" }
-egui = "0.35.0"
-egui-phosphor = "0.13.0"
+egui = "0.34.3"
+egui-phosphor = "0.12.0"
+egui-wgpu = "0.34.3"
+egui-winit = { version = "0.34.3", default-features = false }
 env_logger = "0.11"
 glam = { version = "0.33", features = ["bytemuck"] }
 gloo-console = "0.4"
@@ -80,11 +75,12 @@ include_dir = "0.7"
 js-sys = "0.3"
 log = "0.4"
 naga = { version = "29", features = ["wgsl-in"] }
+opfs = "0.2"
 parking_lot_core = { version = "0.9.12", features = ["nightly"] }
 paste = "1.0.15"
 pollster = "0.4"
-puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
-puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 rayon = "1"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",
@@ -127,8 +123,9 @@ web-sys = { version = "0.3", features = [
     "Navigator",
     "Window",
 ] }
-web-fs = { git = "https://github.com/newDINO/web-fs", rev = "7fa8a9df523f032d01164dfe572abe31aa70f342" }
 web-time = "1.1"
+wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
+winit = "0.30"
 winres = "0.1"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 zstd = "0.13"

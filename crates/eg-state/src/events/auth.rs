@@ -5,7 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Auth, clipboard, and surface-resize intent messages.
+//! Auth + clipboard + surface-resize events. One per `AppCommand` variant
+//! under `AppCommand::Auth` in the legacy enum.
 
 use bevy::{app::App, ecs::prelude::*};
 use eg_types::PhysicalSize;
@@ -52,7 +53,7 @@ pub fn register_events(app: &mut App) {
 
 // `AuthSubmitSignIn` writes a typed request resource. The
 // `state::auth_state::process_auth_requests_system` consumes the request in
-// `Update` and mutates `AuthStateRes`; the root app only mirrors that
+// `StateSchedule` and mutates `AuthStateRes`; Runtime only mirrors that
 // resource back to legacy `State` during the compatibility window.
 pub fn handle_auth_submit_sign_in(
     mut events: MessageReader<AuthSubmitSignIn>,
@@ -87,7 +88,7 @@ pub fn handle_auth_open_signup(
 
 // `CopyLatestPerfFrame` writes a typed request resource. The request is
 // consumed by `state::perf::process_perf_frame_copy_request_system` in
-// `Update`, not by the root app.
+// `StateSchedule`, not by Runtime.
 pub fn handle_copy_latest_perf_frame(
     mut events: MessageReader<CopyLatestPerfFrame>,
     mut copy_request: ResMut<PerfFrameCopyRequest>,

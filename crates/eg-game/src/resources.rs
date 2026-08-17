@@ -120,6 +120,20 @@ pub enum TurnInputKind {
     TurnRight,
 }
 
+/// Per-frame time delta. Set by the gameplay frame driver before running the
+/// schedule. Read by `advance_player_system`, `ground_gravity_system`, and
+/// `completion_system` to know how much wall-clock time to advance.
+///
+/// Production frame timing is sourced from bevy_time::Time<Virtual> by eg-state; this resource remains the gameplay-system input boundary.
+#[derive(Resource, Default, Clone, Copy)]
+pub struct FrameDelta(pub f32);
+
+/// Resource set when the player dies this frame. Drained by
+/// `eg-state` to play the death SFX. A `bool` (or unit) flag is enough — the
+/// audio system polls it once per frame and resets it.
+#[derive(Resource, Default)]
+pub struct DeathSfxFlag(pub bool);
+
 /// Constants used by the gameplay systems. Centralized as a resource so
 /// tests can override them.
 #[derive(Resource, Clone, Copy)]

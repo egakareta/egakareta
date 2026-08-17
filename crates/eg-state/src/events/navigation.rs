@@ -5,7 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Navigation and phase intent messages.
+//! Navigation / phase events. One per `AppCommand` variant under
+//! `AppCommand::Navigation / Phase` in the legacy enum.
 //!
 //! `NextLevel`/`PrevLevel` in the menu, `GameResume`, and
 //! `GameSetPracticeMode` write App-world resources or typed requests directly
@@ -41,9 +42,8 @@ use crate::state::{
     EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectOrder,
     EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
     GameplayResetRes, GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
-    SessionStateRes, apply_imported_level_to_world, collect_editor_object_data,
-    queue_runtime_audio_preload_task, queue_runtime_audio_preload_task_world,
-    replace_editor_objects_commands, with_audio_backend,
+    RuntimeAudioPreloadSenderRes, SessionStateRes, apply_imported_level_to_world,
+    collect_editor_object_data, replace_editor_objects_commands, with_audio_backend,
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -183,6 +183,7 @@ pub struct TurnRightResources<'w, 's> {
     audio: NonSend<'w, AudioBackendRes>,
     editor_audio: Res<'w, EditorAudioCacheRes>,
     runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
+    runtime_preload_sender: Res<'w, RuntimeAudioPreloadSenderRes>,
     clock: ResMut<'w, GameClock>,
     level_meta: Res<'w, LevelMeta>,
     pending_turns: ResMut<'w, PendingTurnInputs>,
@@ -322,9 +323,9 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
 
     resources.objects.objects = objects.clone();
     resources.trigger.0.selected_index = None;
-    queue_runtime_audio_preload_task(
-        &mut resources.commands,
+    queue_runtime_audio_preload(
         &resources.runtime_preload,
+        &resources.runtime_preload_sender,
         &level_name,
     );
     resources.audio.warmup_at(&level_name, 0.0);
@@ -342,6 +343,24 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
             progress: None,
             preserve_practice_state: false,
         });
+}
+
+fn queue_runtime_audio_preload(
+    cache: &RuntimeAudioPreloadRes,
+    sender: &RuntimeAudioPreloadSenderRes,
+    level_name: &str,
+) {
+    let source_key = runtime_asset_source_key(level_name, "audio.mp3");
+    if cache.contains_preloaded(&source_key) || cache.contains_preloading(&source_key) {
+        return;
+    }
+    cache.mark_preloading(source_key.clone());
+
+    #[cfg(test)]
+    let _ = sender;
+
+    #[cfg(not(test))]
+    eg_audio::service::start_audio_preload(source_key, level_name.to_owned(), sender.0.clone());
 }
 
 fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
@@ -557,8 +576,23 @@ fn enter_editor_from_menu(world: &mut World) {
     with_audio_backend(world, |audio| audio.warmup_at(&level_name, 0.0));
 }
 
-fn preload_editor_audio(world: &mut World, level_name: &str) {
-    queue_runtime_audio_preload_task_world(world, level_name);
+fn preload_editor_audio(world: &World, level_name: &str) {
+    let source_key = runtime_asset_source_key(level_name, "audio.mp3");
+    let cache = world.resource::<RuntimeAudioPreloadRes>().clone();
+    if cache.contains_preloaded(&source_key) || cache.contains_preloading(&source_key) {
+        return;
+    }
+    cache.mark_preloading(source_key.clone());
+
+    #[cfg(not(test))]
+    eg_audio::service::start_audio_preload(
+        source_key,
+        level_name.to_owned(),
+        world
+            .resource::<crate::state::RuntimeAudioPreloadSenderRes>()
+            .0
+            .clone(),
+    );
 }
 
 pub fn handle_game_resume(

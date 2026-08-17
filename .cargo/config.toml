@@ -31,9 +31,8 @@ rustflags = [
 ]
 
 [profile.dev.package."*"]
-debug = 0
+debug = 1
 opt-level = 3
 
 [profile.dev]
-debug = "line-tables-only"
 opt-level = 1

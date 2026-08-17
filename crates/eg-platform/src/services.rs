@@ -5,9 +5,14 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use std::sync::mpsc::Sender;
+
 use eg_types::AuthSession;
 
-use crate::io::{pick_audio_file, pick_level_file, save_audio_to_storage};
+use crate::{
+    io::{pick_audio_file, pick_level_file, save_audio_to_storage},
+    task::spawn_background,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthServiceMessage {
@@ -16,44 +21,48 @@ pub enum AuthServiceMessage {
     SignedOut(Result<(), String>),
 }
 
-/// Pick and persist a user audio file, returning the owned import payload.
-///
-/// The caller owns this future through a Bevy `Task`; no service-side channel
-/// or detached producer is required for completion delivery.
-pub async fn import_audio() -> Option<(String, Vec<u8>)> {
-    let (filename, bytes) = pick_audio_file().await?;
-    let _ = save_audio_to_storage(&filename, &bytes).await;
-    Some((filename, bytes))
+pub fn trigger_audio_import(sender: Sender<(String, Vec<u8>)>) {
+    spawn_background(async move {
+        if let Some((filename, bytes)) = pick_audio_file().await {
+            let _ = save_audio_to_storage(&filename, &bytes).await;
+            let _ = sender.send((filename, bytes));
+        }
+    });
 }
 
-/// Pick a level archive or binary payload and return its owned bytes.
-///
-/// Like [`import_audio`], this is a result-returning future owned by the
-/// App-world task component that requested it.
-pub async fn import_level() -> Option<Vec<u8>> {
-    pick_level_file().await
+pub fn trigger_level_import(sender: Sender<Vec<u8>>) {
+    spawn_background(async move {
+        if let Some(bytes) = pick_level_file().await {
+            let _ = sender.send(bytes);
+        }
+    });
 }
 
-/// Complete the browser sign-in flow and return its typed outcome.
-pub async fn sign_in() -> AuthServiceMessage {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = crate::test_hooks::auth_sign_in_result() {
-        return AuthServiceMessage::SignedIn(result);
-    }
+pub fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = crate::test_hooks::auth_sign_in_result() {
+            let _ = sender.send(AuthServiceMessage::SignedIn(result));
+            return;
+        }
 
-    AuthServiceMessage::SignedIn(persist_auth_session_result(crate::auth::sign_in().await).await)
+        let result = persist_auth_session_result(crate::auth::sign_in().await).await;
+        let _ = sender.send(AuthServiceMessage::SignedIn(result));
+    });
 }
 
-/// Refresh an auth session and return its typed outcome.
-pub async fn refresh(refresh_token: String) -> AuthServiceMessage {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = crate::test_hooks::auth_refresh_result() {
-        return AuthServiceMessage::Refreshed(result);
-    }
+pub fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = crate::test_hooks::auth_refresh_result() {
+            let _ = sender.send(AuthServiceMessage::Refreshed(result));
+            return;
+        }
 
-    AuthServiceMessage::Refreshed(
-        persist_auth_session_result(crate::auth::refresh_session(&refresh_token).await).await,
-    )
+        let result =
+            persist_auth_session_result(crate::auth::refresh_session(&refresh_token).await).await;
+        let _ = sender.send(AuthServiceMessage::Refreshed(result));
+    });
 }
 
 async fn persist_auth_session_result(
@@ -66,26 +75,31 @@ async fn persist_auth_session_result(
     Ok(session)
 }
 
-/// Sign out and clear the persisted session, returning the typed outcome.
-pub async fn sign_out(access_token: Option<String>) -> AuthServiceMessage {
-    #[cfg(all(test, not(target_arch = "wasm32")))]
-    if let Some(result) = crate::test_hooks::auth_sign_out_result() {
-        return AuthServiceMessage::SignedOut(result);
-    }
+pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthServiceMessage>) {
+    spawn_background(async move {
+        #[cfg(all(test, not(target_arch = "wasm32")))]
+        if let Some(result) = crate::test_hooks::auth_sign_out_result() {
+            let _ = sender.send(AuthServiceMessage::SignedOut(result));
+            return;
+        }
 
-    let result = match access_token.as_deref().filter(|token| !token.is_empty()) {
-        Some(token) => crate::auth::sign_out(Some(token)).await,
-        None => Ok(()),
-    };
-    let _ = crate::storage::clear_auth_session().await;
-    AuthServiceMessage::SignedOut(result)
+        let result = crate::auth::sign_out(access_token.as_deref()).await;
+        let _ = crate::storage::clear_auth_session().await;
+        let _ = sender.send(AuthServiceMessage::SignedOut(result));
+    });
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
+    use std::sync::mpsc;
 
-    use super::{AuthServiceMessage, import_audio, import_level, refresh, sign_in, sign_out};
+    use eg_types::{AuthSession, AuthSessionTokens, AuthUser};
+    use web_time::Duration;
+
+    use super::{
+        AuthServiceMessage, trigger_audio_import, trigger_auth_refresh, trigger_auth_sign_in,
+        trigger_auth_sign_out, trigger_level_import,
+    };
     use crate::{test_hooks, test_hooks::shared_test_lock};
 
     fn test_auth_session(access_token: &str, refresh_token: &str) -> AuthSession {
@@ -120,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn import_audio_returns_selected_audio() {
+    fn trigger_audio_import_forwards_selected_audio() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -133,13 +147,18 @@ mod tests {
             hooks.save_audio_result = Some(Ok(()));
         });
 
-        let received = pollster::block_on(import_audio()).expect("import should return audio");
+        let (sender, receiver) = mpsc::channel();
+        trigger_audio_import(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("import should send selected audio");
         assert_eq!(received.0, expected_filename);
         assert_eq!(received.1, expected_bytes);
     }
 
     #[test]
-    fn import_audio_returns_none_when_picker_returns_none() {
+    fn trigger_audio_import_sends_nothing_when_picker_returns_none() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -148,11 +167,18 @@ mod tests {
             hooks.pick_audio_result = Some(None);
         });
 
-        assert_eq!(pollster::block_on(import_audio()), None);
+        let (sender, receiver) = mpsc::channel();
+        trigger_audio_import(sender);
+
+        let received = receiver.recv_timeout(Duration::from_millis(150));
+        assert!(
+            received.is_err(),
+            "no selection should produce no import event"
+        );
     }
 
     #[test]
-    fn import_level_returns_selected_level_bytes() {
+    fn trigger_level_import_forwards_selected_level_bytes() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -162,13 +188,17 @@ mod tests {
             hooks.pick_level_result = Some(Some(expected_bytes.clone()));
         });
 
-        let received =
-            pollster::block_on(import_level()).expect("import should return level bytes");
+        let (sender, receiver) = mpsc::channel();
+        trigger_level_import(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("import should send selected level bytes");
         assert_eq!(received, expected_bytes);
     }
 
     #[test]
-    fn import_level_returns_none_when_picker_returns_none() {
+    fn trigger_level_import_sends_nothing_when_picker_returns_none() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -177,11 +207,18 @@ mod tests {
             hooks.pick_level_result = Some(None);
         });
 
-        assert_eq!(pollster::block_on(import_level()), None);
+        let (sender, receiver) = mpsc::channel();
+        trigger_level_import(sender);
+
+        let received = receiver.recv_timeout(Duration::from_millis(150));
+        assert!(
+            received.is_err(),
+            "no selection should produce no import event"
+        );
     }
 
     #[test]
-    fn sign_in_returns_hooked_session() {
+    fn trigger_auth_sign_in_forwards_hooked_session() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -191,12 +228,17 @@ mod tests {
             hooks.auth_sign_in_result = Some(Ok(expected.clone()));
         });
 
-        let received = pollster::block_on(sign_in());
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_in(sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-in result should be sent");
         assert_eq!(received, AuthServiceMessage::SignedIn(Ok(expected)));
     }
 
     #[test]
-    fn refresh_returns_hooked_error() {
+    fn trigger_auth_refresh_forwards_hooked_error() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -205,7 +247,12 @@ mod tests {
             hooks.auth_refresh_result = Some(Err("refresh failed".to_string()));
         });
 
-        let received = pollster::block_on(refresh("refresh-token".to_string()));
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_refresh("refresh-token".to_string(), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("refresh result should be sent");
         assert_eq!(
             received,
             AuthServiceMessage::Refreshed(Err("refresh failed".to_string()))
@@ -213,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn sign_out_returns_hooked_result() {
+    fn trigger_auth_sign_out_forwards_hooked_result() {
         let _lock = shared_test_lock()
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -222,7 +269,12 @@ mod tests {
             hooks.auth_sign_out_result = Some(Ok(()));
         });
 
-        let received = pollster::block_on(sign_out(Some("access-token".to_string())));
+        let (sender, receiver) = mpsc::channel();
+        trigger_auth_sign_out(Some("access-token".to_string()), sender);
+
+        let received = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("sign-out result should be sent");
         assert_eq!(received, AuthServiceMessage::SignedOut(Ok(())));
     }
 }

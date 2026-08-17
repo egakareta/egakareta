@@ -7,360 +7,122 @@
 */
 //! Platform input resources for the Bevy App world.
 
-use std::collections::HashMap;
-
-use bevy::{
-    ecs::prelude::*,
-    input::{
-        ButtonInput,
-        keyboard::KeyCode,
-        mouse::{
-            AccumulatedMouseMotion, AccumulatedMouseScroll, MouseButton as BevyMouseButton,
-            MouseScrollUnit,
-        },
-        touch::{TouchInput, TouchPhase},
-    },
-    state::prelude::State,
-    window::{PrimaryWindow, Window, WindowFocused},
-};
+use bevy::{ecs::prelude::*, state::prelude::State};
 use eg_editor_domain::{TimingDivisionDirection, timing_division_time_in_direction};
-use eg_types::{AppPhase, EditorMode, KeyChord};
+use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
 
 use crate::{
-    events::{
-        block, camera, editor_mode, history, misc, navigation, pointer, selection, session, snap,
-        spawn, timeline,
-    },
+    commands::{AppCommand, InputEvent},
     state::{
         EditorAuthoredObject, EditorConfigRes, EditorInputRes, EditorRuntimeRes, EditorTimelineRes,
-        EditorTimingRes, SessionStateRes,
+        EditorTimingRes, SessionStateRes, editor_command::EditorCommand,
     },
 };
 
 const FALLBACK_TIMELINE_SHIFT_SECONDS: f32 = 0.1;
 
-/// Enables the direct Bevy input path for the production root.
-///
-/// Bevy's `InputPlugin` owns keyboard state; this marker scopes the semantic
-/// input translation systems to the production app composition.
-#[derive(Resource, Default)]
-pub struct BevyInputBridgeEnabled;
-
-/// Egui capture state sampled by the Bevy root before semantic input is
-/// translated. The state crate intentionally does not depend on
-/// `bevy_egui`; the root supplies these two booleans at the input boundary.
-#[derive(Resource, Default)]
-pub struct BevyUiInputCaptureRes {
-    /// An egui widget owns keyboard input for this frame.
-    pub keyboard: bool,
-    /// An egui widget owns pointer input for this frame.
-    pub pointer: bool,
+/// Platform input events captured for the current App world.
+#[derive(Resource, Default, Debug)]
+pub struct PlatformInputQueue {
+    events: Vec<InputEvent>,
 }
 
-/// Last physical pointer position routed to editor semantics by the Bevy root.
-#[derive(Resource, Default)]
-pub struct BevyPointerPositionRes(pub Option<[f64; 2]>);
+impl PlatformInputQueue {
+    /// Push an input event into the queue.
+    pub fn push(&mut self, event: InputEvent) {
+        self.events.push(event);
+    }
 
-/// App-owned touch routing state for the Bevy root input path.
-#[derive(Resource, Default)]
-pub struct BevyTouchRoutingRes {
-    points: HashMap<u64, [f64; 2]>,
-    primary_touch_id: Option<u64>,
-    last_cursor_position: Option<[f64; 2]>,
-    pinch_last_distance: Option<f64>,
-}
+    /// Returns true when no input events are queued.
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
 
-/// Ordering boundary between root-owned egui capture and state-owned input
-/// translation.
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BevyInputBridgeSet {
-    /// Egui capture is sampled after its raw-input processing.
-    Capture,
-    /// Raw Bevy device state is translated into semantic messages.
-    Translate,
+    /// Number of queued input events.
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Read the queued input events.
+    pub fn events(&self) -> &[InputEvent] {
+        &self.events
+    }
+
+    /// Drain queued input events.
+    pub fn drain(&mut self) -> impl Iterator<Item = InputEvent> + '_ {
+        self.events.drain(..)
+    }
 }
 
 /// Register platform input resources on a World.
 pub fn register_platform_input_resources(world: &mut World) {
-    world.init_resource::<ButtonInput<KeyCode>>();
-    world.init_resource::<ButtonInput<BevyMouseButton>>();
-    world.init_resource::<BevyUiInputCaptureRes>();
-    world.init_resource::<BevyPointerPositionRes>();
-    world.init_resource::<BevyTouchRoutingRes>();
+    world.init_resource::<PlatformInputQueue>();
 }
 
-/// Translate Bevy keyboard edges into the existing semantic App messages.
-///
-/// This system runs after Bevy's input update and before the compatibility
-/// queue drain. It deliberately samples rendered-frame edges in `PreUpdate`;
-/// gameplay-facing command handlers then preserve them for the fixed tick.
-pub fn drain_bevy_keyboard_input_system(world: &mut World) {
-    if !world.contains_resource::<BevyInputBridgeEnabled>() {
-        return;
-    }
-    if world.resource::<BevyUiInputCaptureRes>().keyboard {
-        return;
-    }
+/// Queue one platform input event into a World.
+pub fn enqueue_platform_input(world: &mut World, event: InputEvent) {
+    world.resource_mut::<PlatformInputQueue>().push(event);
+}
 
-    let (pressed, released) = {
-        let keyboard = world.resource::<ButtonInput<KeyCode>>();
-        (
-            keyboard.get_just_pressed().copied().collect::<Vec<_>>(),
-            keyboard.get_just_released().copied().collect::<Vec<_>>(),
-        )
+/// Drain platform input into App-world resources and semantic command messages.
+pub fn drain_platform_input_system(world: &mut World) {
+    let events = {
+        let mut queue = world.resource_mut::<PlatformInputQueue>();
+        if queue.is_empty() {
+            return;
+        }
+        queue.drain().collect::<Vec<_>>()
     };
 
-    for key in pressed {
-        write_keyboard_input(world, key, true, true);
-    }
-    for key in released {
-        write_keyboard_input(world, key, false, false);
+    for event in events {
+        write_input_event(world, event);
     }
 }
 
-/// Translate primary-window pointer motion and button edges into editor
-/// messages. Presses respect egui capture; releases always pass through so a
-/// drag begun over the scene cannot remain stuck when it ends over UI.
-pub fn drain_bevy_pointer_input_system(world: &mut World) {
-    if !world.contains_resource::<BevyInputBridgeEnabled>() {
-        return;
-    }
-
-    let pointer_captured = world.resource::<BevyUiInputCaptureRes>().pointer;
-    let position = {
-        let mut windows = world.query_filtered::<&Window, With<PrimaryWindow>>();
-        windows
-            .iter(world)
-            .next()
-            .and_then(Window::physical_cursor_position)
-            .map(|position| [f64::from(position.x), f64::from(position.y)])
-    };
-
-    let (pressed, released) = {
-        let mouse = world.resource::<ButtonInput<BevyMouseButton>>();
-        (
-            mouse
-                .get_just_pressed()
-                .filter_map(bevy_mouse_button_index)
-                .collect::<Vec<_>>(),
-            mouse
-                .get_just_released()
-                .filter_map(bevy_mouse_button_index)
-                .collect::<Vec<_>>(),
-        )
-    };
-
-    if pointer_captured {
-        world.resource_mut::<BevyPointerPositionRes>().0 = position;
-    } else if let Some([x, y]) = position
-        && world.resource::<BevyPointerPositionRes>().0 != Some([x, y])
-    {
-        world.resource_mut::<BevyPointerPositionRes>().0 = Some([x, y]);
-        world.write_message(pointer::PointerMoved { x, y });
-    }
-
-    if !pointer_captured {
-        for button in pressed {
-            world.write_message(pointer::MouseButton {
-                button,
-                pressed: true,
-            });
+fn write_input_event(world: &mut World, event: InputEvent) {
+    match event {
+        InputEvent::Key {
+            key,
+            pressed,
+            just_pressed,
+        } => write_keyboard_input(world, &key, pressed, just_pressed),
+        InputEvent::MouseButton { button, pressed } => {
+            crate::events::write_editor_command_message(
+                world,
+                EditorCommand::MouseButton { button, pressed },
+            );
         }
-    }
-    for button in released {
-        world.write_message(pointer::MouseButton {
-            button,
-            pressed: false,
-        });
-    }
-}
-
-/// Translate Bevy's per-frame accumulated mouse motion and wheel input.
-/// Deltas are already accumulated for the frame and must not be scaled by
-/// frame time. Egui pointer capture owns both inputs while interacting with
-/// UI widgets.
-pub fn drain_bevy_mouse_motion_and_wheel_system(world: &mut World) {
-    if !world.contains_resource::<BevyInputBridgeEnabled>()
-        || world.resource::<BevyUiInputCaptureRes>().pointer
-    {
-        return;
-    }
-
-    let motion = world.resource::<AccumulatedMouseMotion>().delta;
-    if motion != bevy::math::Vec2::ZERO {
-        world.write_message(pointer::CameraDrag {
-            dx: f64::from(motion.x),
-            dy: f64::from(motion.y),
-        });
-    }
-
-    let scroll = *world.resource::<AccumulatedMouseScroll>();
-    let zoom_delta = match scroll.unit {
-        MouseScrollUnit::Line => scroll.delta.y,
-        MouseScrollUnit::Pixel => scroll.delta.y * 0.02,
-    };
-    if zoom_delta != 0.0 {
-        world.write_message(camera::AdjustZoom(zoom_delta));
-    }
-}
-
-/// Route Bevy touch messages into the existing semantic pointer commands.
-#[allow(clippy::too_many_arguments)]
-pub fn drain_bevy_touch_input_system(
-    enabled: Option<Res<BevyInputBridgeEnabled>>,
-    capture: Res<BevyUiInputCaptureRes>,
-    mut route: ResMut<BevyTouchRoutingRes>,
-    touch_events: Option<MessageReader<TouchInput>>,
-    mut pointer_moved: MessageWriter<pointer::PointerMoved>,
-    mut mouse_button: MessageWriter<pointer::MouseButton>,
-    mut camera_drag: MessageWriter<pointer::CameraDrag>,
-    mut adjust_zoom: MessageWriter<camera::AdjustZoom>,
-) {
-    let Some(mut touch_events) = touch_events else {
-        return;
-    };
-    if enabled.is_none() {
-        return;
-    }
-
-    for touch in touch_events.read() {
-        let position = [f64::from(touch.position.x), f64::from(touch.position.y)];
-        let previous_count = route.points.len();
-        match touch.phase {
-            TouchPhase::Started | TouchPhase::Moved => {
-                route.points.insert(touch.id, position);
-            }
-            TouchPhase::Ended | TouchPhase::Canceled => {
-                route.points.remove(&touch.id);
-            }
+        InputEvent::PrimaryClick { x, y } => {
+            crate::events::write_editor_command_message(
+                world,
+                EditorCommand::PrimaryClick { x, y },
+            );
         }
-        let current_count = route.points.len();
-
-        if previous_count == 1
-            && current_count > 1
-            && touch.phase == TouchPhase::Started
-            && route.primary_touch_id.is_some()
-        {
-            mouse_button.write(pointer::MouseButton {
-                button: 0,
-                pressed: false,
-            });
-            route.primary_touch_id = None;
-            route.last_cursor_position = None;
+        InputEvent::PointerMoved { x, y } => {
+            crate::events::write_editor_command_message(
+                world,
+                EditorCommand::PointerMoved { x, y },
+            );
         }
-
-        if capture.pointer {
-            if route.points.is_empty() {
-                route.pinch_last_distance = None;
-                route.primary_touch_id = None;
-                route.last_cursor_position = None;
-            }
-            continue;
+        InputEvent::CameraDrag { dx, dy } => {
+            crate::events::write_editor_command_message(
+                world,
+                EditorCommand::CameraDrag { dx, dy },
+            );
         }
-
-        if previous_count == 0 && current_count == 1 && touch.phase == TouchPhase::Started {
-            route.primary_touch_id = Some(touch.id);
-            pointer_moved.write(pointer::PointerMoved {
-                x: position[0],
-                y: position[1],
-            });
-            mouse_button.write(pointer::MouseButton {
-                button: 0,
-                pressed: true,
-            });
-            route.last_cursor_position = Some(position);
+        InputEvent::Zoom(delta) => {
+            crate::events::write_editor_command_message(world, EditorCommand::AdjustZoom(delta));
         }
-        if current_count == 1
-            && touch.phase == TouchPhase::Moved
-            && route.primary_touch_id == Some(touch.id)
-        {
-            pointer_moved.write(pointer::PointerMoved {
-                x: position[0],
-                y: position[1],
-            });
-            if let Some(last) = route.last_cursor_position {
-                camera_drag.write(pointer::CameraDrag {
-                    dx: position[0] - last[0],
-                    dy: position[1] - last[1],
-                });
-            }
-            route.last_cursor_position = Some(position);
-        }
-        if matches!(touch.phase, TouchPhase::Ended | TouchPhase::Canceled)
-            && route.primary_touch_id == Some(touch.id)
-        {
-            mouse_button.write(pointer::MouseButton {
-                button: 0,
-                pressed: false,
-            });
-            route.primary_touch_id = None;
-            route.last_cursor_position = None;
-        }
-
-        if current_count == 2 {
-            let mut points = route.points.values();
-            if let (Some(first), Some(second)) = (points.next(), points.next()) {
-                let distance = (second[0] - first[0]).hypot(second[1] - first[1]);
-                if let Some(previous) = route.pinch_last_distance {
-                    adjust_zoom.write(camera::AdjustZoom(((distance - previous) * 0.04) as f32));
-                }
-                route.pinch_last_distance = Some(distance);
-            }
-        } else if current_count < 2 {
-            route.pinch_last_distance = None;
+        InputEvent::Resize { width, height } => {
+            crate::events::write_app_command_message(
+                world,
+                AppCommand::ResizeSurface { width, height },
+            );
         }
     }
 }
 
-/// Clear held editor input when Bevy reports that its window lost focus.
-pub fn clear_held_input_on_bevy_focus_loss_system(
-    enabled: Option<Res<BevyInputBridgeEnabled>>,
-    focused_events: Option<MessageReader<WindowFocused>>,
-    mut keyboard: ResMut<ButtonInput<KeyCode>>,
-    mut mouse: ResMut<ButtonInput<BevyMouseButton>>,
-    mut input: ResMut<EditorInputRes>,
-) {
-    let Some(mut focused_events) = focused_events else {
-        return;
-    };
-    if enabled.is_none() || !focused_events.read().any(|event| !event.focused) {
-        return;
-    }
-
-    clear_held_input_resources(&mut keyboard, &mut mouse, &mut input);
-}
-
-fn clear_held_input_resources(
-    keyboard: &mut ButtonInput<KeyCode>,
-    mouse: &mut ButtonInput<BevyMouseButton>,
-    input: &mut EditorInputRes,
-) {
-    *keyboard = ButtonInput::default();
-    *mouse = ButtonInput::default();
-
-    input.0.left_mouse_down = false;
-    input.0.right_dragging = false;
-    input.0.pan_up_held = false;
-    input.0.pan_down_held = false;
-    input.0.pan_left_held = false;
-    input.0.pan_right_held = false;
-    input.0.shift_held = false;
-    input.0.ctrl_held = false;
-    input.0.alt_held = false;
-}
-
-fn bevy_mouse_button_index(button: &BevyMouseButton) -> Option<u32> {
-    match button {
-        BevyMouseButton::Left => Some(0),
-        BevyMouseButton::Middle => Some(1),
-        BevyMouseButton::Right => Some(2),
-        BevyMouseButton::Back => Some(3),
-        BevyMouseButton::Forward => Some(4),
-        BevyMouseButton::Other(index) => Some(u32::from(*index)),
-    }
-}
-
-fn write_keyboard_input(world: &mut World, key: KeyCode, pressed: bool, just_pressed: bool) {
+fn write_keyboard_input(world: &mut World, key: &str, pressed: bool, just_pressed: bool) {
     if apply_modifier_key(world, key, pressed) {
         return;
     }
@@ -380,225 +142,55 @@ fn write_keyboard_input(world: &mut World, key: KeyCode, pressed: bool, just_pre
             return;
         }
 
-        if key == KeyCode::Escape {
-            world.write_message(session::SetKeybindCapture(None));
+        if key == "Escape" {
+            crate::events::write_editor_command_message(
+                world,
+                EditorCommand::SetKeybindCapture(None),
+            );
             return;
         }
 
         let input = world.resource::<EditorInputRes>();
-        let chord = KeyChord::new(key, input.0.ctrl_held, input.0.shift_held, input.0.alt_held);
-        world.write_message(session::SetKeybind {
-            action,
-            slot,
-            chord,
-        });
-        world.write_message(session::SetKeybindCapture(None));
+        let chord = KeyChord::new(
+            normalize_binding_key(key),
+            input.0.ctrl_held,
+            input.0.shift_held,
+            input.0.alt_held,
+        );
+        crate::events::write_editor_command_message(
+            world,
+            EditorCommand::SetKeybind {
+                action,
+                slot,
+                chord,
+            },
+        );
+        crate::events::write_editor_command_message(world, EditorCommand::SetKeybindCapture(None));
         return;
     }
 
-    if key == KeyCode::Escape && world.resource::<SessionStateRes>().editor_show_settings {
-        world.write_message(session::SetShowSettings(false));
+    if key == "Escape" && world.resource::<SessionStateRes>().editor_show_settings {
+        crate::events::write_editor_command_message(world, EditorCommand::SetShowSettings(false));
         return;
     }
 
-    dispatch_direct_keybind_actions(world, key, just_pressed, pressed);
-}
-
-/// Route shortcut actions that already have small, self-contained typed
-/// messages without rebuilding an intermediate command enum.
-fn dispatch_direct_keybind_actions(
-    world: &mut World,
-    key: KeyCode,
-    just_pressed: bool,
-    pressed: bool,
-) {
-    if !pressed {
-        return;
-    }
-    let input = world.resource::<EditorInputRes>();
-    let actions = world
-        .resource::<SessionStateRes>()
-        .app_settings
-        .keybinds
-        .iter()
-        .filter(|binding| {
-            let chord = &binding.chord;
-            chord.key == key
-                && chord.ctrl == input.0.ctrl_held
-                && chord.shift == input.0.shift_held
-                && chord.alt == input.0.alt_held
-        })
-        .map(|binding| binding.action.clone())
-        .collect::<Vec<_>>();
-
-    for action in actions {
-        match action.as_str() {
-            "toggle_settings" if just_pressed && (!is_playing(world) || is_game_paused(world)) => {
-                world.write_message(session::ToggleSettings);
-            }
-            "toggle_editor" if just_pressed && !is_editor(world) => {
-                world.write_message(navigation::ToggleEditor);
-            }
-            "game_turn" if just_pressed && !is_editor(world) => {
-                world.write_message(navigation::TurnRight);
-            }
-            "practice_checkpoint" if just_pressed && is_practice_mode_enabled(world) => {
-                world.write_message(navigation::GameSetPracticeCheckpoint);
-            }
-            "practice_remove_checkpoint" if just_pressed && is_practice_mode_enabled(world) => {
-                world.write_message(navigation::GameRemovePracticeCheckpoint);
-            }
-            "menu_prev_level" if just_pressed && !is_editor(world) => {
-                world.write_message(navigation::PrevLevel);
-            }
-            "menu_next_level" if just_pressed && !is_editor(world) => {
-                world.write_message(navigation::NextLevel);
-            }
-            "toggle_perf_overlay" if just_pressed => {
-                world.write_message(misc::TogglePerfOverlay);
-            }
-            "toggle_timeline_playback" if just_pressed && is_editor(world) => {
-                world.write_message(timeline::ToggleTimelinePlayback);
-            }
-            "playtest" if just_pressed && is_editor(world) => {
-                world.write_message(timeline::Playtest);
-            }
-            "copy" if just_pressed => {
-                world.write_message(block::CopyBlock);
-            }
-            "paste" if just_pressed => {
-                world.write_message(block::PasteBlock);
-            }
-            "duplicate" if just_pressed => {
-                world.write_message(block::DuplicateBlock);
-            }
-            "undo" if just_pressed => {
-                world.write_message(history::Undo);
-            }
-            "redo" if just_pressed => {
-                world.write_message(history::Redo);
-            }
-            "pick_selected_block" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::PickSelectedBlock);
-            }
-            "focus_camera_target" if just_pressed && is_editor(world) => {
-                world.write_message(selection::FocusCameraTarget);
-            }
-            "spawn_set" if just_pressed => {
-                world.write_message(spawn::SetSpawnHere);
-            }
-            "add_camera_trigger" if just_pressed && is_editor(world) => {
-                world.write_message(camera::AddCameraTrigger);
-            }
-            "add_transform_trigger"
-                if just_pressed && is_editor(world) && has_block_selection(world) =>
-            {
-                world.write_message(selection::AddTransformTrigger);
-            }
-            "remove_block" if just_pressed && is_editor(world) => {
-                if editor_effective_mode(world) == EditorMode::Tapping {
-                    if let Some((_, time_seconds, _)) = selected_tap(world) {
-                        world.write_message(timeline::RemoveTapAt(time_seconds));
-                    }
-                } else {
-                    world.write_message(block::RemoveBlock);
-                }
-            }
-            "select_recent_block_1" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SelectRecentBlock(0));
-            }
-            "select_recent_block_2" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SelectRecentBlock(1));
-            }
-            "select_recent_block_3" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SelectRecentBlock(2));
-            }
-            "select_recent_block_4" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SelectRecentBlock(3));
-            }
-            "spawn_rotate" if just_pressed => {
-                if editor_effective_mode(world) == EditorMode::Place {
-                    world.write_message(spawn::RotatePlacementPreview);
-                } else {
-                    world.write_message(spawn::RotateSpawnDirection);
-                }
-            }
-            "add_camera_follow_trigger" if just_pressed && is_editor(world) => {
-                world.write_message(camera::AddCameraFollowTrigger);
-            }
-            "toggle_hitbox_visualization" if just_pressed && is_editor(world) => {
-                world.write_message(misc::ToggleHitboxVisualization);
-            }
-            "timeline_forward" if is_editor(world) => {
-                world.write_message(timeline::ShiftTimeline(timeline_shift_to_division_delta(
-                    world,
-                    TimingDivisionDirection::Forward,
-                )));
-            }
-            "timeline_backward" if is_editor(world) => {
-                world.write_message(timeline::ShiftTimeline(timeline_shift_to_division_delta(
-                    world,
-                    TimingDivisionDirection::Backward,
-                )));
-            }
-            "escape" if just_pressed => {
-                world.write_message(misc::Escape);
-            }
-            "zoom_in" if just_pressed => {
-                world.write_message(camera::AdjustZoom(1.0));
-            }
-            "zoom_out" if just_pressed => {
-                world.write_message(camera::AdjustZoom(-1.0));
-            }
-            "toggle_place_window" if just_pressed && is_editor(world) => {
-                world.write_message(misc::TogglePlaceWindow);
-            }
-            "mode_select" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Select));
-            }
-            "mode_move" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Move));
-            }
-            "mode_scale" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Scale));
-            }
-            "mode_rotate" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Rotate));
-            }
-            "tab_compose" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Place));
-            }
-            "tab_timing" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Timing));
-            }
-            "tab_tapping" if just_pressed && is_editor(world) => {
-                world.write_message(editor_mode::SetEditorMode(EditorMode::Tapping));
-            }
-            "toggle_grid_snap" if just_pressed && is_editor(world) => {
-                let enabled = !world.resource::<EditorConfigRes>().0.snap_to_grid;
-                world.write_message(snap::SetSnapToGrid(enabled));
-            }
-            "toggle_rotation_snap" if just_pressed && is_editor(world) => {
-                let enabled = !world.resource::<EditorConfigRes>().0.snap_rotation;
-                world.write_message(snap::SetSnapRotation(enabled));
-            }
-            _ => {}
-        }
+    for command in keybind_commands(world, key, just_pressed, pressed) {
+        crate::events::write_app_command_message(world, command);
     }
 }
 
-fn apply_modifier_key(world: &mut World, key: KeyCode, pressed: bool) -> bool {
+fn apply_modifier_key(world: &mut World, key: &str, pressed: bool) -> bool {
     let mut input = world.resource_mut::<EditorInputRes>();
     match key {
-        KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+        "Shift" | "ShiftLeft" | "ShiftRight" => {
             input.0.shift_held = pressed;
             true
         }
-        KeyCode::ControlLeft | KeyCode::ControlRight => {
+        "Control" | "ControlLeft" | "ControlRight" => {
             input.0.ctrl_held = pressed;
             true
         }
-        KeyCode::AltLeft | KeyCode::AltRight => {
+        "Alt" | "AltLeft" | "AltRight" => {
             input.0.alt_held = pressed;
             true
         }
@@ -606,11 +198,12 @@ fn apply_modifier_key(world: &mut World, key: KeyCode, pressed: bool) -> bool {
     }
 }
 
-fn apply_pan_keybinds(world: &mut World, key: KeyCode, pressed: bool) {
+fn apply_pan_keybinds(world: &mut World, key: &str, pressed: bool) {
     if !is_editor(world) {
         return;
     }
 
+    let normalized_key = normalize_binding_key(key);
     let input = world.resource::<EditorInputRes>();
     let ctrl = input.0.ctrl_held;
     let alt = input.0.alt_held;
@@ -620,8 +213,8 @@ fn apply_pan_keybinds(world: &mut World, key: KeyCode, pressed: bool) {
         .keybinds
         .iter()
         .filter_map(|binding| {
-            let chord = &binding.chord;
-            let key_match = chord.key == key;
+            let chord = binding.chord.normalized();
+            let key_match = chord.key == normalized_key;
             let modifiers_match = chord.ctrl == ctrl && chord.alt == alt;
             if key_match && (!pressed || modifiers_match) {
                 Some(binding.action.clone())
@@ -643,7 +236,263 @@ fn apply_pan_keybinds(world: &mut World, key: KeyCode, pressed: bool) {
     }
 }
 
-fn timeline_shift_to_division_delta(world: &World, direction: TimingDivisionDirection) -> f32 {
+fn keybind_commands(
+    world: &World,
+    key: &str,
+    just_pressed: bool,
+    pressed: bool,
+) -> Vec<AppCommand> {
+    if !pressed {
+        return Vec::new();
+    }
+
+    let normalized_key = normalize_binding_key(key);
+    let input = world.resource::<EditorInputRes>();
+    let ctrl = input.0.ctrl_held;
+    let shift = input.0.shift_held;
+    let alt = input.0.alt_held;
+
+    let mut commands = Vec::new();
+    for binding in &world.resource::<SessionStateRes>().app_settings.keybinds {
+        let chord = binding.chord.normalized();
+        if chord.key == normalized_key
+            && chord.ctrl == ctrl
+            && chord.shift == shift
+            && chord.alt == alt
+            && let Some(command) = command_for_keybind_action(world, &binding.action, just_pressed)
+        {
+            commands.push(command);
+        }
+    }
+
+    commands
+}
+
+fn command_for_keybind_action(
+    world: &World,
+    action: &str,
+    just_pressed: bool,
+) -> Option<AppCommand> {
+    match action {
+        "toggle_settings" => {
+            if just_pressed && (!is_playing(world) || is_game_paused(world)) {
+                Some(AppCommand::Editor(EditorCommand::ToggleSettings))
+            } else {
+                None
+            }
+        }
+        "toggle_timeline_playback" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback))
+            } else {
+                None
+            }
+        }
+        "playtest" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::Playtest))
+            } else {
+                None
+            }
+        }
+        "remove_block" => {
+            if is_editor(world) && just_pressed {
+                if editor_effective_mode(world) == EditorMode::Tapping {
+                    selected_tap(world).map(|(_, time_seconds, _)| {
+                        AppCommand::Editor(EditorCommand::RemoveTapAt(time_seconds))
+                    })
+                } else {
+                    Some(AppCommand::Editor(EditorCommand::RemoveBlock))
+                }
+            } else {
+                None
+            }
+        }
+        "copy" => just_pressed.then_some(AppCommand::Editor(EditorCommand::CopyBlock)),
+        "paste" => just_pressed.then_some(AppCommand::Editor(EditorCommand::PasteBlock)),
+        "duplicate" => just_pressed.then_some(AppCommand::Editor(EditorCommand::DuplicateBlock)),
+        "undo" => just_pressed.then_some(AppCommand::Editor(EditorCommand::Undo)),
+        "redo" => just_pressed.then_some(AppCommand::Editor(EditorCommand::Redo)),
+        "snap_selection_to_grid" => {
+            if is_editor(world)
+                && just_pressed
+                && (has_block_selection(world) || selected_tap(world).is_some())
+            {
+                Some(AppCommand::Editor(EditorCommand::SnapSelectionToGrid))
+            } else {
+                None
+            }
+        }
+        "pick_selected_block" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::PickSelectedBlock))
+            } else {
+                None
+            }
+        }
+        "select_recent_block_1" => select_recent_block_command(world, just_pressed, 0),
+        "select_recent_block_2" => select_recent_block_command(world, just_pressed, 1),
+        "select_recent_block_3" => select_recent_block_command(world, just_pressed, 2),
+        "select_recent_block_4" => select_recent_block_command(world, just_pressed, 3),
+        "focus_camera_target" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::FocusCameraTarget))
+            } else {
+                None
+            }
+        }
+        "add_transform_trigger" => {
+            if is_editor(world) && just_pressed && has_block_selection(world) {
+                Some(AppCommand::Editor(EditorCommand::AddTransformTrigger))
+            } else {
+                None
+            }
+        }
+        "timeline_forward" => is_editor(world)
+            .then(|| timeline_shift_to_division_command(world, TimingDivisionDirection::Forward)),
+        "timeline_backward" => is_editor(world)
+            .then(|| timeline_shift_to_division_command(world, TimingDivisionDirection::Backward)),
+        "escape" => just_pressed.then_some(AppCommand::Editor(EditorCommand::Escape)),
+        "zoom_in" => just_pressed.then_some(AppCommand::Editor(EditorCommand::AdjustZoom(1.0))),
+        "zoom_out" => just_pressed.then_some(AppCommand::Editor(EditorCommand::AdjustZoom(-1.0))),
+        "toggle_editor" => {
+            if !is_editor(world) && just_pressed {
+                Some(AppCommand::ToggleEditor)
+            } else {
+                None
+            }
+        }
+        "toggle_place_window" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::TogglePlaceWindow))
+            } else {
+                None
+            }
+        }
+        "game_turn" => {
+            if !is_editor(world) && just_pressed {
+                Some(AppCommand::TurnRight)
+            } else {
+                None
+            }
+        }
+        "practice_checkpoint" => {
+            if is_practice_mode_enabled(world) && just_pressed {
+                Some(AppCommand::GameSetPracticeCheckpoint)
+            } else {
+                None
+            }
+        }
+        "practice_remove_checkpoint" => {
+            if is_practice_mode_enabled(world) && just_pressed {
+                Some(AppCommand::GameRemovePracticeCheckpoint)
+            } else {
+                None
+            }
+        }
+        "menu_prev_level" => {
+            if !is_editor(world) && just_pressed {
+                Some(AppCommand::PrevLevel)
+            } else {
+                None
+            }
+        }
+        "menu_next_level" => {
+            if !is_editor(world) && just_pressed {
+                Some(AppCommand::NextLevel)
+            } else {
+                None
+            }
+        }
+        "spawn_set" => just_pressed.then_some(AppCommand::Editor(EditorCommand::SetSpawnHere)),
+        "spawn_rotate" => {
+            if just_pressed {
+                if editor_effective_mode(world) == EditorMode::Place {
+                    Some(AppCommand::Editor(EditorCommand::RotatePlacementPreview))
+                } else {
+                    Some(AppCommand::Editor(EditorCommand::RotateSpawnDirection))
+                }
+            } else {
+                None
+            }
+        }
+        "add_camera_trigger" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::AddCameraTrigger))
+            } else {
+                None
+            }
+        }
+        "add_camera_follow_trigger" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::AddCameraFollowTrigger))
+            } else {
+                None
+            }
+        }
+        "toggle_hitbox_visualization" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::ToggleHitboxVisualization))
+            } else {
+                None
+            }
+        }
+        "toggle_perf_overlay" => {
+            just_pressed.then_some(AppCommand::Editor(EditorCommand::TogglePerfOverlay))
+        }
+        "mode_select" => mode_command(world, just_pressed, EditorMode::Select),
+        "mode_move" => mode_command(world, just_pressed, EditorMode::Move),
+        "mode_scale" => mode_command(world, just_pressed, EditorMode::Scale),
+        "mode_rotate" => mode_command(world, just_pressed, EditorMode::Rotate),
+        "tab_compose" => mode_command(world, just_pressed, EditorMode::Place),
+        "tab_timing" => mode_command(world, just_pressed, EditorMode::Timing),
+        "tab_tapping" => mode_command(world, just_pressed, EditorMode::Tapping),
+        "toggle_grid_snap" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::SetSnapToGrid(
+                    !world.resource::<EditorConfigRes>().0.snap_to_grid,
+                )))
+            } else {
+                None
+            }
+        }
+        "toggle_rotation_snap" => {
+            if is_editor(world) && just_pressed {
+                Some(AppCommand::Editor(EditorCommand::SetSnapRotation(
+                    !world.resource::<EditorConfigRes>().0.snap_rotation,
+                )))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn select_recent_block_command(
+    world: &World,
+    just_pressed: bool,
+    index: usize,
+) -> Option<AppCommand> {
+    if is_editor(world) && just_pressed {
+        Some(AppCommand::Editor(EditorCommand::SelectRecentBlock(index)))
+    } else {
+        None
+    }
+}
+
+fn mode_command(world: &World, just_pressed: bool, mode: EditorMode) -> Option<AppCommand> {
+    if is_editor(world) && just_pressed {
+        Some(AppCommand::Editor(EditorCommand::SetMode(mode)))
+    } else {
+        None
+    }
+}
+
+fn timeline_shift_to_division_command(
+    world: &World,
+    direction: TimingDivisionDirection,
+) -> AppCommand {
     let timeline = world.resource::<EditorTimelineRes>();
     let current_time = timeline.0.clock.time_seconds;
     if let Some(target_time) = timing_division_time_in_direction(
@@ -652,13 +501,14 @@ fn timeline_shift_to_division_delta(world: &World, direction: TimingDivisionDire
         timeline.0.clock.duration_seconds,
         direction,
     ) {
-        return target_time - current_time;
+        return AppCommand::Editor(EditorCommand::ShiftTimeline(target_time - current_time));
     }
 
-    match direction {
+    let fallback_delta = match direction {
         TimingDivisionDirection::Forward => FALLBACK_TIMELINE_SHIFT_SECONDS,
         TimingDivisionDirection::Backward => -FALLBACK_TIMELINE_SHIFT_SECONDS,
-    }
+    };
+    AppCommand::Editor(EditorCommand::ShiftTimeline(fallback_delta))
 }
 
 fn editor_effective_mode(world: &World) -> EditorMode {
@@ -717,15 +567,10 @@ fn is_practice_mode_enabled(world: &World) -> bool {
     world.resource::<SessionStateRes>().practice_mode_enabled
 }
 
-fn is_modifier_key(key: KeyCode) -> bool {
+fn is_modifier_key(key: &str) -> bool {
     matches!(
         key,
-        KeyCode::ShiftLeft
-            | KeyCode::ShiftRight
-            | KeyCode::ControlLeft
-            | KeyCode::ControlRight
-            | KeyCode::AltLeft
-            | KeyCode::AltRight
+        "Shift" | "Control" | "ControlLeft" | "ControlRight" | "Alt" | "AltLeft" | "AltRight"
     )
 }
 
@@ -735,204 +580,107 @@ mod tests {
 
     use super::*;
     use crate::{
-        events::{camera, navigation, pointer},
+        events::{auth, pointer},
         state::plugins::register_state_resources,
     };
 
     #[test]
-    fn direct_bevy_keyboard_path_preserves_edges_and_updates_modifiers() {
+    fn enqueue_platform_input_buffers_event() {
         let mut world = World::new();
-        register_state_resources(&mut world);
-        crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.insert_resource(State::new(AppPhase::Editor));
-        world
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::ControlLeft);
+        register_platform_input_resources(&mut world);
 
-        drain_bevy_keyboard_input_system(&mut world);
-
-        assert!(world.resource::<EditorInputRes>().0.ctrl_held);
-        assert!(
-            world
-                .resource::<ButtonInput<KeyCode>>()
-                .just_pressed(KeyCode::ControlLeft),
-            "the direct path must not clear Bevy's rendered-frame edge"
+        enqueue_platform_input(
+            &mut world,
+            InputEvent::Resize {
+                width: 640,
+                height: 360,
+            },
         );
+
+        let queue = world.resource::<PlatformInputQueue>();
+        assert_eq!(queue.len(), 1);
+        assert!(matches!(
+            queue.events()[0],
+            InputEvent::Resize {
+                width: 640,
+                height: 360
+            }
+        ));
     }
 
     #[test]
-    fn direct_bevy_keyboard_path_writes_one_navigation_message() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.insert_resource(State::new(AppPhase::Menu));
-        world
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyW);
+    fn platform_input_queue_drain_clears_events() {
+        let mut queue = PlatformInputQueue::default();
+        queue.push(InputEvent::Zoom(1.5));
 
-        drain_bevy_keyboard_input_system(&mut world);
+        let drained = queue.drain().collect::<Vec<_>>();
 
-        assert_eq!(world.resource::<Messages<navigation::TurnRight>>().len(), 1);
+        assert_eq!(drained.len(), 1);
+        assert!(queue.is_empty());
     }
 
     #[test]
-    fn direct_bevy_keyboard_path_respects_egui_capture() {
+    fn drain_platform_input_writes_resize_message() {
         let mut world = World::new();
         register_state_resources(&mut world);
         crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.insert_resource(State::new(AppPhase::Editor));
-        world.resource_mut::<BevyUiInputCaptureRes>().keyboard = true;
-        world
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::ControlLeft);
 
-        drain_bevy_keyboard_input_system(&mut world);
-
-        assert!(
-            !world.resource::<EditorInputRes>().0.ctrl_held,
-            "captured keyboard input must not activate editor modifiers"
-        );
-        assert!(
-            world
-                .resource::<ButtonInput<KeyCode>>()
-                .just_pressed(KeyCode::ControlLeft)
-        );
-    }
-
-    #[test]
-    fn direct_bevy_pointer_path_respects_capture_but_routes_releases() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.resource_mut::<BevyUiInputCaptureRes>().pointer = true;
-        world
-            .resource_mut::<ButtonInput<BevyMouseButton>>()
-            .press(BevyMouseButton::Left);
-
-        drain_bevy_pointer_input_system(&mut world);
-        assert!(
-            world
-                .resource::<Messages<pointer::MouseButton>>()
-                .is_empty()
+        enqueue_platform_input(
+            &mut world,
+            InputEvent::Resize {
+                width: 800,
+                height: 600,
+            },
         );
 
-        world
-            .resource_mut::<ButtonInput<BevyMouseButton>>()
-            .release(BevyMouseButton::Left);
-        drain_bevy_pointer_input_system(&mut world);
+        drain_platform_input_system(&mut world);
 
-        let messages = world.resource::<Messages<pointer::MouseButton>>();
+        let messages = world.resource::<Messages<auth::ResizeSurface>>();
         assert_eq!(messages.len(), 1);
     }
 
     #[test]
-    fn direct_bevy_motion_and_wheel_preserve_custom_zoom_scaling() {
+    fn drain_platform_input_writes_pointer_message() {
         let mut world = World::new();
         register_state_resources(&mut world);
         crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.insert_resource(AccumulatedMouseMotion {
-            delta: bevy::math::Vec2::new(5.0, -3.0),
-        });
-        world.insert_resource(AccumulatedMouseScroll {
-            unit: MouseScrollUnit::Pixel,
-            delta: bevy::math::Vec2::new(0.0, 50.0),
-        });
 
-        drain_bevy_mouse_motion_and_wheel_system(&mut world);
+        enqueue_platform_input(&mut world, InputEvent::PointerMoved { x: 10.0, y: 20.0 });
 
-        assert_eq!(world.resource::<Messages<pointer::CameraDrag>>().len(), 1);
-        assert_eq!(world.resource::<Messages<camera::AdjustZoom>>().len(), 1);
+        drain_platform_input_system(&mut world);
+
+        let messages = world.resource::<Messages<pointer::PointerMoved>>();
+        assert_eq!(messages.len(), 1);
     }
 
     #[test]
-    fn direct_bevy_touch_routes_single_finger_drag_and_cancel() {
+    fn drain_platform_input_updates_modifier_before_shortcut_mapping() {
         let mut world = World::new();
         register_state_resources(&mut world);
         crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.init_resource::<Messages<TouchInput>>();
+        world.insert_resource(State::new(AppPhase::Editor));
 
-        for (phase, x, y) in [
-            (TouchPhase::Started, 10.0, 20.0),
-            (TouchPhase::Moved, 15.0, 25.0),
-            (TouchPhase::Canceled, 15.0, 25.0),
-        ] {
-            world.write_message(TouchInput {
-                phase,
-                position: bevy::math::Vec2::new(x, y),
-                window: Entity::PLACEHOLDER,
-                force: None,
-                id: 7,
-            });
-        }
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(drain_bevy_touch_input_system);
-        schedule.run(&mut world);
-
-        assert_eq!(world.resource::<Messages<pointer::PointerMoved>>().len(), 2);
-        assert_eq!(world.resource::<Messages<pointer::CameraDrag>>().len(), 1);
-        assert_eq!(world.resource::<Messages<pointer::MouseButton>>().len(), 2);
-    }
-
-    #[test]
-    fn direct_bevy_touch_uses_two_finger_distance_for_pinch_zoom() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        crate::events::register_command_events_world(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.init_resource::<Messages<TouchInput>>();
-
-        for (phase, id, x) in [
-            (TouchPhase::Started, 1, 0.0),
-            (TouchPhase::Started, 2, 10.0),
-            (TouchPhase::Moved, 2, 20.0),
-        ] {
-            world.write_message(TouchInput {
-                phase,
-                position: bevy::math::Vec2::new(x, 0.0),
-                window: Entity::PLACEHOLDER,
-                force: None,
-                id,
-            });
-        }
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(drain_bevy_touch_input_system);
-        schedule.run(&mut world);
-
-        assert_eq!(world.resource::<Messages<camera::AdjustZoom>>().len(), 1);
-    }
-
-    #[test]
-    fn direct_bevy_focus_loss_clears_held_input() {
-        let mut world = World::new();
-        register_state_resources(&mut world);
-        world.insert_resource(BevyInputBridgeEnabled);
-        world.init_resource::<Messages<WindowFocused>>();
-        world
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyA);
-        world.resource_mut::<EditorInputRes>().0.shift_held = true;
-        world.write_message(WindowFocused {
-            window: Entity::PLACEHOLDER,
-            focused: false,
-        });
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(clear_held_input_on_bevy_focus_loss_system);
-        schedule.run(&mut world);
-
-        assert!(
-            !world
-                .resource::<ButtonInput<KeyCode>>()
-                .pressed(KeyCode::KeyA)
+        enqueue_platform_input(
+            &mut world,
+            InputEvent::Key {
+                key: "Control".to_string(),
+                pressed: true,
+                just_pressed: true,
+            },
         );
-        assert!(!world.resource::<EditorInputRes>().0.shift_held);
+        enqueue_platform_input(
+            &mut world,
+            InputEvent::Key {
+                key: "c".to_string(),
+                pressed: true,
+                just_pressed: true,
+            },
+        );
+
+        drain_platform_input_system(&mut world);
+
+        assert!(world.resource::<EditorInputRes>().0.ctrl_held);
+        let messages = world.resource::<Messages<crate::events::block::CopyBlock>>();
+        assert_eq!(messages.len(), 1);
     }
 }

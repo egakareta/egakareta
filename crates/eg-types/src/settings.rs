@@ -7,7 +7,6 @@
 */
 use std::collections::HashMap;
 
-use bevy::input::keyboard::KeyCode;
 use serde::{Deserialize, Serialize};
 
 use crate::level::PlayerLevelProgress;
@@ -42,7 +41,7 @@ macro_rules! serde_default_float {
     };
 }
 
-pub const APP_SETTINGS_VERSION: u32 = 4;
+pub const APP_SETTINGS_VERSION: u32 = 3;
 serde_default!(default_app_settings_version: u32 = APP_SETTINGS_VERSION);
 serde_default!(default_editor_snap_to_grid_setting: bool = true);
 serde_default_float!(default_editor_snap_step_setting: f32 = 1.0);
@@ -89,7 +88,7 @@ pub enum SettingsSection {
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct KeyChord {
-    pub key: KeyCode,
+    pub key: String,
     #[serde(default)]
     pub ctrl: bool,
     #[serde(default)]
@@ -99,12 +98,21 @@ pub struct KeyChord {
 }
 
 impl KeyChord {
-    pub fn new(key: KeyCode, ctrl: bool, shift: bool, alt: bool) -> Self {
+    pub fn new(key: impl Into<String>, ctrl: bool, shift: bool, alt: bool) -> Self {
         Self {
-            key,
+            key: normalize_binding_key(&key.into()),
             ctrl,
             shift,
             alt,
+        }
+    }
+
+    pub fn normalized(&self) -> Self {
+        Self {
+            key: normalize_binding_key(&self.key),
+            ctrl: self.ctrl,
+            shift: self.shift,
+            alt: self.alt,
         }
     }
 }
@@ -225,11 +233,13 @@ impl AppSettings {
     }
 
     pub fn set_keybind_at_slot(&mut self, action: &str, slot: usize, chord: KeyChord) {
+        let normalized = chord.normalized();
+
         // Prevent duplicate chord for SAME action
         if self
             .keybinds
             .iter()
-            .any(|binding| binding.action == action && binding.chord == chord)
+            .any(|b| b.action == action && b.chord == normalized)
         {
             return;
         }
@@ -243,7 +253,7 @@ impl AppSettings {
             .collect();
 
         if slot < existing_indices.len() {
-            self.keybinds[existing_indices[slot]].chord = chord;
+            self.keybinds[existing_indices[slot]].chord = normalized;
         } else {
             let capacity = essential_keybind_actions()
                 .iter()
@@ -253,7 +263,7 @@ impl AppSettings {
             if existing_indices.len() < capacity {
                 self.keybinds.push(KeybindBinding {
                     action: action.to_string(),
-                    chord,
+                    chord: normalized,
                 });
             }
         }
@@ -351,6 +361,21 @@ impl AppSettings {
     }
 }
 
+pub fn normalize_binding_key(key: &str) -> String {
+    match key {
+        " " => "Space".to_string(),
+        "ControlLeft" | "ControlRight" => "Control".to_string(),
+        "AltLeft" | "AltRight" => "Alt".to_string(),
+        _ => {
+            if key.len() == 1 {
+                key.to_ascii_lowercase()
+            } else {
+                key.to_string()
+            }
+        }
+    }
+}
+
 pub fn format_key_chord(chord: &KeyChord) -> String {
     let mut parts = Vec::new();
     if chord.ctrl {
@@ -363,17 +388,13 @@ pub fn format_key_chord(chord: &KeyChord) -> String {
         parts.push("Alt".to_string());
     }
 
-    parts.push(format_key_code(chord.key));
+    let key = if chord.key.len() == 1 {
+        chord.key.to_ascii_uppercase()
+    } else {
+        chord.key.clone()
+    };
+    parts.push(key);
     parts.join("+")
-}
-
-fn format_key_code(key: KeyCode) -> String {
-    let key_name = format!("{key:?}");
-    key_name
-        .strip_prefix("Key")
-        .or_else(|| key_name.strip_prefix("Digit"))
-        .unwrap_or(&key_name)
-        .to_string()
 }
 
 pub struct KeybindActionMetadata {
@@ -674,261 +695,227 @@ pub fn default_essential_keybinds() -> Vec<KeybindBinding> {
     vec![
         KeybindBinding {
             action: "toggle_settings".to_string(),
-            chord: KeyChord::new(KeyCode::KeyO, true, false, false),
+            chord: KeyChord::new("o", true, false, false),
         },
         KeybindBinding {
             action: "toggle_editor".to_string(),
-            chord: KeyChord::new(KeyCode::KeyE, false, false, false),
+            chord: KeyChord::new("e", false, false, false),
         },
         KeybindBinding {
             action: "toggle_place_window".to_string(),
-            chord: KeyChord::new(KeyCode::KeyE, false, false, false),
+            chord: KeyChord::new("e", false, false, false),
         },
         KeybindBinding {
             action: "game_turn".to_string(),
-            chord: KeyChord::new(KeyCode::KeyW, false, false, false),
+            chord: KeyChord::new("w", false, false, false),
         },
         KeybindBinding {
             action: "game_turn".to_string(),
-            chord: KeyChord::new(KeyCode::Space, false, false, false),
+            chord: KeyChord::new("Space", false, false, false),
         },
         KeybindBinding {
             action: "game_turn".to_string(),
-            chord: KeyChord::new(KeyCode::ArrowUp, false, false, false),
+            chord: KeyChord::new("ArrowUp", false, false, false),
         },
         KeybindBinding {
             action: "menu_prev_level".to_string(),
-            chord: KeyChord::new(KeyCode::KeyA, false, false, false),
+            chord: KeyChord::new("a", false, false, false),
         },
         KeybindBinding {
             action: "menu_prev_level".to_string(),
-            chord: KeyChord::new(KeyCode::ArrowLeft, false, false, false),
+            chord: KeyChord::new("ArrowLeft", false, false, false),
         },
         KeybindBinding {
             action: "menu_next_level".to_string(),
-            chord: KeyChord::new(KeyCode::KeyD, false, false, false),
+            chord: KeyChord::new("d", false, false, false),
         },
         KeybindBinding {
             action: "menu_next_level".to_string(),
-            chord: KeyChord::new(KeyCode::ArrowRight, false, false, false),
+            chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
             action: "practice_checkpoint".to_string(),
-            chord: KeyChord::new(KeyCode::KeyZ, false, false, false),
+            chord: KeyChord::new("z", false, false, false),
         },
         KeybindBinding {
             action: "practice_remove_checkpoint".to_string(),
-            chord: KeyChord::new(KeyCode::KeyX, false, false, false),
+            chord: KeyChord::new("x", false, false, false),
         },
         KeybindBinding {
             action: "toggle_timeline_playback".to_string(),
-            chord: KeyChord::new(KeyCode::Space, false, false, false),
+            chord: KeyChord::new("Space", false, false, false),
         },
         KeybindBinding {
             action: "toggle_timeline_playback".to_string(),
-            chord: KeyChord::new(KeyCode::MediaPlayPause, false, false, false),
+            chord: KeyChord::new("MediaPlayPause", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("MediaPlay", false, false, false),
+        },
+        KeybindBinding {
+            action: "toggle_timeline_playback".to_string(),
+            chord: KeyChord::new("MediaPause", false, false, false),
         },
         KeybindBinding {
             action: "playtest".to_string(),
-            chord: KeyChord::new(KeyCode::Enter, false, false, false),
+            chord: KeyChord::new("Enter", false, false, false),
         },
         KeybindBinding {
             action: "remove_block".to_string(),
-            chord: KeyChord::new(KeyCode::Delete, false, false, false),
+            chord: KeyChord::new("Delete", false, false, false),
         },
         KeybindBinding {
             action: "copy".to_string(),
-            chord: KeyChord::new(KeyCode::KeyC, true, false, false),
+            chord: KeyChord::new("c", true, false, false),
         },
         KeybindBinding {
             action: "paste".to_string(),
-            chord: KeyChord::new(KeyCode::KeyV, true, false, false),
+            chord: KeyChord::new("v", true, false, false),
         },
         KeybindBinding {
             action: "duplicate".to_string(),
-            chord: KeyChord::new(KeyCode::KeyD, true, false, false),
+            chord: KeyChord::new("d", true, false, false),
         },
         KeybindBinding {
             action: "undo".to_string(),
-            chord: KeyChord::new(KeyCode::KeyZ, true, false, false),
+            chord: KeyChord::new("z", true, false, false),
         },
         KeybindBinding {
             action: "redo".to_string(),
-            chord: KeyChord::new(KeyCode::KeyY, true, false, false),
+            chord: KeyChord::new("y", true, false, false),
         },
         KeybindBinding {
             action: "redo".to_string(),
-            chord: KeyChord::new(KeyCode::KeyZ, true, true, false),
+            chord: KeyChord::new("z", true, true, false),
         },
         KeybindBinding {
             action: "pan_up".to_string(),
-            chord: KeyChord::new(KeyCode::KeyW, false, false, false),
+            chord: KeyChord::new("w", false, false, false),
         },
         KeybindBinding {
             action: "pan_down".to_string(),
-            chord: KeyChord::new(KeyCode::KeyS, false, false, false),
+            chord: KeyChord::new("s", false, false, false),
         },
         KeybindBinding {
             action: "pan_left".to_string(),
-            chord: KeyChord::new(KeyCode::KeyA, false, false, false),
+            chord: KeyChord::new("a", false, false, false),
         },
         KeybindBinding {
             action: "pan_right".to_string(),
-            chord: KeyChord::new(KeyCode::KeyD, false, false, false),
+            chord: KeyChord::new("d", false, false, false),
         },
         KeybindBinding {
             action: "snap_selection_to_grid".to_string(),
-            chord: KeyChord::new(KeyCode::KeyG, false, false, false),
+            chord: KeyChord::new("g", false, false, false),
         },
         KeybindBinding {
             action: "toggle_grid_snap".to_string(),
-            chord: KeyChord::new(KeyCode::KeyG, true, false, false),
+            chord: KeyChord::new("g", true, false, false),
         },
         KeybindBinding {
             action: "pick_selected_block".to_string(),
-            chord: KeyChord::new(KeyCode::KeyB, false, false, false),
+            chord: KeyChord::new("b", false, false, false),
         },
         KeybindBinding {
             action: "focus_camera_target".to_string(),
-            chord: KeyChord::new(KeyCode::KeyF, false, false, false),
+            chord: KeyChord::new("f", false, false, false),
         },
         KeybindBinding {
             action: "spawn_set".to_string(),
-            chord: KeyChord::new(KeyCode::KeyP, false, false, false),
+            chord: KeyChord::new("p", false, false, false),
         },
         KeybindBinding {
             action: "spawn_rotate".to_string(),
-            chord: KeyChord::new(KeyCode::KeyR, false, false, false),
+            chord: KeyChord::new("r", false, false, false),
         },
         KeybindBinding {
             action: "add_camera_trigger".to_string(),
-            chord: KeyChord::new(KeyCode::KeyK, false, true, false),
+            chord: KeyChord::new("k", false, true, false),
         },
         KeybindBinding {
             action: "add_transform_trigger".to_string(),
-            chord: KeyChord::new(KeyCode::KeyT, false, false, false),
+            chord: KeyChord::new("t", false, false, false),
         },
         KeybindBinding {
             action: "timeline_forward".to_string(),
-            chord: KeyChord::new(KeyCode::ArrowRight, false, false, false),
+            chord: KeyChord::new("ArrowRight", false, false, false),
         },
         KeybindBinding {
             action: "timeline_backward".to_string(),
-            chord: KeyChord::new(KeyCode::ArrowLeft, false, false, false),
+            chord: KeyChord::new("ArrowLeft", false, false, false),
         },
         KeybindBinding {
             action: "zoom_in".to_string(),
-            chord: KeyChord::new(KeyCode::Equal, false, false, false),
+            chord: KeyChord::new("=", false, false, false),
         },
         KeybindBinding {
             action: "zoom_in".to_string(),
-            chord: KeyChord::new(KeyCode::Equal, false, true, false),
+            chord: KeyChord::new("+", false, false, false),
         },
         KeybindBinding {
             action: "zoom_out".to_string(),
-            chord: KeyChord::new(KeyCode::Minus, false, false, false),
+            chord: KeyChord::new("-", false, false, false),
         },
         KeybindBinding {
             action: "zoom_out".to_string(),
-            chord: KeyChord::new(KeyCode::Minus, false, true, false),
+            chord: KeyChord::new("_", false, false, false),
         },
         KeybindBinding {
             action: "toggle_hitbox_visualization".to_string(),
-            chord: KeyChord::new(KeyCode::KeyH, true, false, false),
+            chord: KeyChord::new("h", true, false, false),
         },
         KeybindBinding {
             action: "toggle_perf_overlay".to_string(),
-            chord: KeyChord::new(KeyCode::F12, true, true, true),
+            chord: KeyChord::new("F12", true, true, true),
         },
         KeybindBinding {
             action: "mode_select".to_string(),
-            chord: KeyChord::new(KeyCode::Digit1, false, false, false),
+            chord: KeyChord::new("1", false, false, false),
         },
         KeybindBinding {
             action: "mode_move".to_string(),
-            chord: KeyChord::new(KeyCode::Digit2, false, false, false),
+            chord: KeyChord::new("2", false, false, false),
         },
         KeybindBinding {
             action: "mode_scale".to_string(),
-            chord: KeyChord::new(KeyCode::Digit3, false, false, false),
+            chord: KeyChord::new("3", false, false, false),
         },
         KeybindBinding {
             action: "mode_rotate".to_string(),
-            chord: KeyChord::new(KeyCode::Digit4, false, false, false),
+            chord: KeyChord::new("4", false, false, false),
         },
         KeybindBinding {
             action: "tab_compose".to_string(),
-            chord: KeyChord::new(KeyCode::Digit1, true, false, false),
+            chord: KeyChord::new("1", true, false, false),
         },
         KeybindBinding {
             action: "tab_timing".to_string(),
-            chord: KeyChord::new(KeyCode::Digit2, true, false, false),
+            chord: KeyChord::new("2", true, false, false),
         },
         KeybindBinding {
             action: "tab_tapping".to_string(),
-            chord: KeyChord::new(KeyCode::Digit3, true, false, false),
+            chord: KeyChord::new("3", true, false, false),
         },
         KeybindBinding {
             action: "select_recent_block_1".to_string(),
-            chord: KeyChord::new(KeyCode::Digit1, false, false, true),
+            chord: KeyChord::new("1", false, false, true),
         },
         KeybindBinding {
             action: "select_recent_block_2".to_string(),
-            chord: KeyChord::new(KeyCode::Digit2, false, false, true),
+            chord: KeyChord::new("2", false, false, true),
         },
         KeybindBinding {
             action: "select_recent_block_3".to_string(),
-            chord: KeyChord::new(KeyCode::Digit3, false, false, true),
+            chord: KeyChord::new("3", false, false, true),
         },
         KeybindBinding {
             action: "select_recent_block_4".to_string(),
-            chord: KeyChord::new(KeyCode::Digit4, false, false, true),
+            chord: KeyChord::new("4", false, false, true),
         },
         KeybindBinding {
             action: "escape".to_string(),
-            chord: KeyChord::new(KeyCode::Escape, false, false, false),
+            chord: KeyChord::new("Escape", false, false, false),
         },
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_chord_roundtrips_bevy_physical_key_code() {
-        let chord = KeyChord::new(KeyCode::KeyW, true, false, false);
-
-        let encoded = serde_json::to_string(&chord).expect("key chord should serialize");
-        let decoded: KeyChord =
-            serde_json::from_str(&encoded).expect("key chord should deserialize");
-
-        assert_eq!(decoded, chord);
-    }
-
-    #[test]
-    fn default_punctuation_bindings_use_physical_keys_and_modifiers() {
-        let defaults = default_essential_keybinds();
-        let zoom_in = defaults
-            .iter()
-            .filter(|binding| binding.action == "zoom_in")
-            .map(|binding| &binding.chord)
-            .collect::<Vec<_>>();
-
-        assert_eq!(zoom_in.len(), 2);
-        assert!(zoom_in.contains(&&KeyChord::new(KeyCode::Equal, false, false, false)));
-        assert!(zoom_in.contains(&&KeyChord::new(KeyCode::Equal, false, true, false)));
-    }
-
-    #[test]
-    fn formats_physical_key_chords_for_the_settings_ui() {
-        assert_eq!(
-            format_key_chord(&KeyChord::new(KeyCode::KeyZ, true, false, false)),
-            "Ctrl+Z"
-        );
-        assert_eq!(
-            format_key_chord(&KeyChord::new(KeyCode::Digit1, false, false, false)),
-            "1"
-        );
-    }
 }

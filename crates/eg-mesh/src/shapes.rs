@@ -84,55 +84,55 @@ pub fn append_prism(
 
     // Top (+Y)
     push_face(
-        [x_min, y_max, z_max],
         [x_min, y_max, z_min],
-        [x_max, y_max, z_min],
+        [x_min, y_max, z_max],
         [x_max, y_max, z_max],
+        [x_max, y_max, z_min],
         color_top,
     );
 
     // +X
     push_face(
-        [x_max, y_min, z_max],
-        [x_max, y_max, z_max],
-        [x_max, y_max, z_min],
         [x_max, y_min, z_min],
+        [x_max, y_max, z_min],
+        [x_max, y_max, z_max],
+        [x_max, y_min, z_max],
         color_side,
     );
 
     // -X
     push_face(
         [x_min, y_min, z_min],
-        [x_min, y_max, z_min],
-        [x_min, y_max, z_max],
         [x_min, y_min, z_max],
+        [x_min, y_max, z_max],
+        [x_min, y_max, z_min],
         color_side,
     );
 
     // +Z
     push_face(
         [x_min, y_min, z_max],
-        [x_min, y_max, z_max],
-        [x_max, y_max, z_max],
         [x_max, y_min, z_max],
+        [x_max, y_max, z_max],
+        [x_min, y_max, z_max],
         color_side,
     );
 
     // -Z
     push_face(
-        [x_max, y_min, z_min],
-        [x_max, y_max, z_min],
-        [x_min, y_max, z_min],
         [x_min, y_min, z_min],
+        [x_min, y_max, z_min],
+        [x_max, y_max, z_min],
+        [x_max, y_min, z_min],
         color_side,
     );
 
     // Bottom (-Y)
     push_face(
         [x_min, y_min, z_min],
-        [x_min, y_min, z_max],
-        [x_max, y_min, z_max],
         [x_max, y_min, z_min],
+        [x_max, y_min, z_max],
+        [x_min, y_min, z_max],
         color_side,
     );
 }

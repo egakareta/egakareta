@@ -7,20 +7,25 @@
 */
 //! Rendering extraction plugin.
 //!
-//! Owns the render resource boundary + system-set graph. The per-frame
-//! schedule mirrors POD frame/uniform values and extracts overlay/block
-//! vertices into App-owned resources. The Bevy presentation plugins
-//! ([`super::bevy_presentation::BevyBlockRenderPlugin`] and
-//! [`super::bevy_presentation::OverlayPresentationPlugin`]) convert those
-//! resources into retained `Mesh3d` + `MeshMaterial3d<BlockMaterial>`
-//! entities.
+//! Owns the render resource boundary + system-set graph. `Runtime`
+//! construction inserts the authoritative heavy resources
+//! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`]);
+//! the per-frame schedule mirrors POD frame/uniform values, uploads extracted
+//! mesh buffers, and presents the scene plus egui from App-owned resources.
 //!
-//! Bevy's render sub-app owns GPU presentation. This plugin only derives the
-//! compact data and retained entities consumed by that presentation path.
+//! REFACTOR POINT(full-bevy): this plugin + system set graph is the
+//! placeholder for `bevy::render`'s render-world + render graph. The
+//! `extract_render_state_system` here becomes a
+//! `RenderApp::extract` system in the full-Bevy migration; the
+//! `RenderPresentSet` is replaced by `bevy::render`'s `Render` set.
 
 use bevy::{
     app::{App, Plugin},
-    ecs::{prelude::*, schedule::Schedule, system::SystemParam},
+    ecs::{
+        prelude::*,
+        schedule::{Schedule, SystemSet},
+        system::SystemParam,
+    },
     state::prelude::State,
 };
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
@@ -42,40 +47,87 @@ use eg_mesh::{
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
     build_transform_trigger_marker_vertices,
 };
+use eg_render::EditorOutlineInstance;
 use eg_types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelMetadata, LevelObject,
     LineUniform, TransformVisibility, TriggerTarget,
 };
 use glam::{Mat4, Vec2, Vec3};
 
-use super::resources::{
-    EditorOutlineInstance, RenderBlockEffectVerticesRes, RenderCameraPoseRes, RenderConfigRes,
-    RenderEditorBlockMeshesRes, RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
-    RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
-    RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
-    RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
-    RenderFrameInputRes, RenderMenuPreviewBlockMeshesRes, RenderPlayingBlockMeshesRes,
-    RenderPracticeCheckpointVerticesRes, RenderResizeRequest, RenderTrailVerticesRes,
-    RenderUniformsRes,
+use super::{
+    draw::render_egui_with_resources,
+    resources::{
+        RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
+        RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
+        RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
+        RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
+        RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
+        RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
+        RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
+        RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
+        RenderUniformsRes,
+    },
 };
-use crate::state::{
-    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-    MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
-    editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
-    evaluate_camera_track_for_objects,
+use crate::{
+    events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind},
+    state::{
+        BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
+        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+        MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+        editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
+        evaluate_camera_track_for_objects,
+    },
 };
+
+/// System sets for the rendering extraction plugin.
+///
+/// These sets mirror the legacy `render_to_view` /
+/// `render_with_overlay` call order so we can slot Bevy systems in
+/// without changing the visible behavior.
+///
+/// Ordering contract (see `docs/bevy-migration.md` Phase 4):
+/// ```text
+///   RebuildMeshSet      // Changed<> detection -> RebuildMeshEvent
+///   RenderExtractSet    // build SceneMeshes + uniform values
+///   RenderPresentSet    // read authoritative render resources
+/// ```
+///
+/// In a future full-Bevy frame the order is:
+///   `Simulation → RebuildMesh → Extract → Present` (see the
+///   per-frame schedule graph in `state/sets.rs`).
+#[allow(dead_code)]
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RenderSet {
+    /// Detect `Changed<>` on authored object components and emit a
+    /// [`RebuildMeshEvent`].
+    RebuildMesh,
+    /// Snapshot the world into render resources.
+    ///
+    /// Today this mirrors POD uniform values from the legacy frame
+    /// update into [`RenderUniformsRes`] and [`RenderFrameInputRes`].
+    /// Future phases add a `rebuild_mesh_batches_system` that walks object
+    /// entities (`Query<(&Position, &Rotation, &Size, &BlockId,
+    /// &ColorTint, Option<&PlayState>)>` + player + camera + effects)
+    /// and fills [`RenderMeshesRes`] via `eg_mesh` builders.
+    Extract,
+    /// Issue the wgpu present.
+    ///
+    /// Reads the authoritative render resources. The compatibility
+    /// frame pipeline still performs the actual egui present until
+    /// Phase 7 moves frame ownership into Bevy.
+    Present,
+}
 
 /// The rendering extraction plugin.
 ///
 /// Registers the POD resources + render messages for an `App`.
-/// Bevy's render sub-app owns heavy graphics resources.
+/// `State` construction inserts real heavy resources after wgpu
+/// initialization.
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RenderUniformsRes>()
-            .init_resource::<RenderCameraPoseRes>()
             .init_resource::<RenderFrameInputRes>()
             .init_resource::<RenderTrailVerticesRes>()
             .init_resource::<RenderEditorCameraArrowVerticesRes>()
@@ -93,7 +145,10 @@ impl Plugin for RenderPlugin {
             .init_resource::<RenderEditorSpawnMarkerVerticesRes>()
             .init_resource::<RenderEditorGizmoVerticesRes>()
             .init_resource::<RenderConfigRes>()
-            .init_resource::<RenderResizeRequest>();
+            .init_resource::<RenderResizeRequest>()
+            .init_non_send::<RenderMeshesRes>()
+            .init_non_send::<RenderSurfaceHostRes>()
+            .add_message::<RebuildMeshEvent>();
     }
 }
 
@@ -103,7 +158,6 @@ impl Plugin for RenderPlugin {
 #[allow(dead_code)]
 pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
-    world.init_resource::<RenderCameraPoseRes>();
     world.init_resource::<RenderFrameInputRes>();
     world.init_resource::<RenderTrailVerticesRes>();
     world.init_resource::<RenderEditorCameraArrowVerticesRes>();
@@ -122,6 +176,68 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderEditorGizmoVerticesRes>();
     world.init_resource::<RenderConfigRes>();
     world.init_resource::<RenderResizeRequest>();
+    // Phase 4c: insert default heavy resources so standalone worlds
+    // can query them. `State` construction overwrites these defaults
+    // with the authoritative `SceneMeshes` / `SurfaceHost` values.
+    world.init_non_send::<RenderMeshesRes>();
+    world.init_non_send::<RenderSurfaceHostRes>();
+    // Phase 4d: register the RebuildMeshEvent message buffer.
+    world.init_resource::<Messages<RebuildMeshEvent>>();
+}
+
+/// Resource-backed `RenderSet::Present` boundary.
+///
+/// Production consumes App-owned GPU, mesh, surface, uniform, frame-input,
+/// and egui resources directly. The legacy State render wrappers remain only
+/// for focused compatibility tests.
+pub fn present_render_frame_system(
+    mut gpu: Option<NonSendMut<RenderGpuRes>>,
+    mut meshes: Option<NonSendMut<RenderMeshesRes>>,
+    surface_host: Option<NonSend<RenderSurfaceHostRes>>,
+    mut egui: Option<NonSendMut<RenderEguiRes>>,
+    uniforms: Res<RenderUniformsRes>,
+    frame_input: Res<RenderFrameInputRes>,
+) {
+    let (Some(mut gpu), Some(mut meshes), Some(mut egui)) =
+        (gpu.take(), meshes.take(), egui.take())
+    else {
+        return;
+    };
+    let RenderEguiRes {
+        renderer,
+        paint_jobs,
+        screen_descriptor,
+    } = &mut *egui;
+    let result = render_egui_with_resources(
+        &mut gpu.0,
+        &mut meshes.0,
+        renderer,
+        paint_jobs,
+        screen_descriptor,
+        frame_input.0,
+        uniforms.camera.view_proj,
+    );
+    if matches!(
+        result,
+        Err(eg_render::RenderSurfaceError::Lost) | Err(eg_render::RenderSurfaceError::Outdated)
+    ) {
+        let size = surface_host
+            .as_ref()
+            .and_then(|host| host.0.as_ref())
+            .map(|host| host.current_size())
+            .unwrap_or(gpu.0.size);
+        if size.width > 0 && size.height > 0 {
+            if let Some(host) = surface_host
+                .as_ref()
+                .and_then(|surface_host| surface_host.0.as_ref())
+            {
+                host.prepare_resize(size);
+            }
+            gpu.0.apply_resize(size);
+        }
+    } else if let Err(error) = result {
+        log::error!("Render error: {error:?}");
+    }
 }
 
 /// Build the per-frame render input directly from App-world resources.
@@ -173,7 +289,7 @@ pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParam
         _ => [0.0, 0.0],
     };
 
-    params.frame_input.0 = super::resources::RenderFrameInput {
+    params.frame_input.0 = eg_render::RenderFrameInput {
         phase: current_phase,
         editor_mode: params.input.0.mode,
         game_over: params.clock.as_ref().is_some_and(|clock| clock.game_over),
@@ -456,8 +572,7 @@ pub(crate) fn extract_playing_block_meshes_system(
     mut static_cache: Local<Option<PlayingStaticBlockMeshCache>>,
 ) {
     if !matches!(*phase.get(), AppPhase::Playing | AppPhase::GameOver) || session.game_paused {
-        static_cache.take();
-        if block_meshes.result.is_some() || block_meshes.chunked.is_some() {
+        if static_cache.take().is_some() {
             block_meshes.result = None;
             block_meshes.chunked = None;
         }
@@ -466,6 +581,9 @@ pub(crate) fn extract_playing_block_meshes_system(
     let Some(clock) = clock else {
         return;
     };
+
+    block_meshes.result = None;
+    block_meshes.chunked = None;
 
     let mut gameplay_objects = objects
         .iter()
@@ -500,9 +618,6 @@ pub(crate) fn extract_playing_block_meshes_system(
         .collect::<Vec<_>>();
     if has_animated_blocks || has_object_transform_triggers || has_camera_timeline_triggers {
         *static_cache = None;
-        if block_meshes.chunked.is_some() {
-            block_meshes.chunked = None;
-        }
         block_meshes.result = Some(build_block_instance_batches_from_refs_at_time(
             &render_object_refs,
             Some(clock.elapsed_seconds),
@@ -511,16 +626,10 @@ pub(crate) fn extract_playing_block_meshes_system(
         let cache = PlayingStaticBlockMeshCache {
             objects: gameplay_objects.clone(),
         };
-        if static_cache.as_ref() == Some(&cache)
-            && block_meshes.result.is_none()
-            && block_meshes.chunked.is_some()
-        {
+        if static_cache.as_ref() == Some(&cache) {
             return;
         }
         *static_cache = Some(cache);
-        if block_meshes.result.is_some() {
-            block_meshes.result = None;
-        }
         block_meshes.chunked = Some(build_chunked_block_mesh_from_refs(&render_object_refs));
     }
 }
@@ -592,7 +701,11 @@ pub(crate) fn extract_editor_block_meshes_system(
         .iter()
         .copied()
         .collect::<std::collections::HashSet<_>>();
-    let static_objects = object_source.iter().collect::<Vec<_>>();
+    let static_objects = object_source
+        .iter()
+        .enumerate()
+        .filter_map(|(index, object)| (!selected_mask.contains(&index)).then_some(object))
+        .collect::<Vec<_>>();
     let time_seconds =
         has_camera_timeline_triggers(&trigger_objects).then_some(timeline.0.clock.time_seconds);
     let cache_key = EditorBlockMeshCache {
@@ -829,6 +942,14 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
         hovered_part,
         dragged_part,
     });
+}
+
+/// Dirty flags are retained for compatibility tests and legacy editor
+/// callers, but App-owned extraction no longer needs them to decide which
+/// presentation buffers to rebuild. Consume them after the scheduled
+/// extraction so the legacy State update cannot become a second renderer.
+pub(crate) fn clear_editor_dirty_flags_system(mut runtime: ResMut<EditorRuntimeRes>) {
+    runtime.0.dirty = Default::default();
 }
 
 /// Extract the editor camera arrow from App-owned camera/timeline resources.
@@ -1574,7 +1695,6 @@ pub(crate) struct RenderUniformsParams<'w, 's> {
             &'static eg_game::PlayerDirection,
         ),
     >,
-    camera_pose: ResMut<'w, RenderCameraPoseRes>,
     uniforms: ResMut<'w, RenderUniformsRes>,
 }
 
@@ -1642,10 +1762,9 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         }
     };
 
-    let view = glam::camera::rh::view::look_at_mat4(eye, target, Vec3::Y);
+    let view = glam::Mat4::look_at_rh(eye, target, Vec3::Y);
     let aspect = width as f32 / height as f32;
-    let proj =
-        glam::camera::rh::proj::opengl::perspective(45f32.to_radians(), aspect, 0.1, 10000.0);
+    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
     let mut line = params.uniforms.line;
     if matches!(*params.phase.get(), AppPhase::Playing | AppPhase::GameOver) {
         line = LineUniform {
@@ -1661,8 +1780,6 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         };
     }
 
-    params.camera_pose.eye = eye.to_array();
-    params.camera_pose.target = target.to_array();
     params.uniforms.camera = CameraUniform {
         view_proj: (proj * view).to_cols_array_2d(),
         camera_position: [eye.x, eye.y, eye.z, 0.0],
@@ -1675,7 +1792,31 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
     };
 }
 
-/// Update the color-space POD value from App-world frame timing.
+/// Upload the extracted camera and line POD values before the compatibility
+/// renderer runs. Color-space upload remains in its dedicated system.
+pub(crate) fn upload_render_uniforms_system(
+    upload: Option<NonSend<RenderUniformUploadRes>>,
+    uniforms: Res<RenderUniformsRes>,
+) {
+    let Some(upload) = upload else {
+        return;
+    };
+    upload.queue.write_buffer(
+        &upload.camera_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.camera),
+    );
+    upload.queue.write_buffer(
+        &upload.line_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.line),
+    );
+}
+
+/// Update the scheduled color-space POD uniform from App-world frame
+/// timing. The scheduled render path consumes this value
+/// to upload the GPU buffer until render presentation moves fully into
+/// systems.
 pub fn update_color_space_uniform_system(
     frame_time: Res<FrameTimeRes>,
     mut uniforms: ResMut<RenderUniformsRes>,
@@ -1683,28 +1824,325 @@ pub fn update_color_space_uniform_system(
     uniforms.color_space.time_seconds = frame_time.global_time_seconds;
 }
 
-/// Apply a window-size change to the App-owned render configuration.
-/// Bevy owns the actual surface resize.
+/// Upload the scheduled color-space POD value before presentation. This is
+/// the first GPU side effect moved into the App schedule; the custom
+/// shell only records that the scheduled upload already happened so direct
+/// legacy callers still retain their fallback behavior.
+pub fn upload_color_space_uniform_system(
+    upload: Option<NonSend<RenderUniformUploadRes>>,
+    uniforms: Res<RenderUniformsRes>,
+) {
+    let Some(upload) = upload else {
+        return;
+    };
+    upload.queue.write_buffer(
+        &upload.color_space_uniform_buffer,
+        0,
+        bytemuck::bytes_of(&uniforms.color_space),
+    );
+}
+
 pub fn apply_resize_surface_system(
     mut request: ResMut<RenderResizeRequest>,
     mut config: ResMut<RenderConfigRes>,
+    mut gpu: Option<NonSendMut<RenderGpuRes>>,
+    surface_host: Option<NonSend<RenderSurfaceHostRes>>,
 ) {
     let Some(size) = request.take() else {
         return;
     };
-    if size.width != 0 && size.height != 0 {
-        config.width = size.width;
-        config.height = size.height;
+    if size.width == 0 || size.height == 0 {
+        return;
+    }
+    config.width = size.width;
+    config.height = size.height;
+
+    if let Some(surface_host) = surface_host
+        && let Some(host) = surface_host.0.as_ref()
+    {
+        host.prepare_resize(size);
+    }
+    if let Some(gpu) = gpu.as_deref_mut() {
+        gpu.0.apply_resize(size);
     }
 }
 
-/// Add App-world extraction bookkeeping to a focused schedule.
+/// Upload the CPU meshes extracted by the App world into the App-owned GPU
+/// mesh storage. This is the final compatibility upload boundary before the
+/// custom renderer is replaced by the full Bevy render world.
+#[derive(SystemParam)]
+pub(crate) struct RenderMeshUploadParams<'w> {
+    gpu: Option<NonSend<'w, RenderGpuRes>>,
+    meshes: Option<NonSendMut<'w, RenderMeshesRes>>,
+    phase: Res<'w, State<AppPhase>>,
+    block_effects: Res<'w, RenderBlockEffectVerticesRes>,
+    playing: Res<'w, RenderPlayingBlockMeshesRes>,
+    menu_preview: Res<'w, RenderMenuPreviewBlockMeshesRes>,
+    editor_blocks: Res<'w, RenderEditorBlockMeshesRes>,
+    spawn_marker: Res<'w, RenderEditorSpawnMarkerVerticesRes>,
+    gizmo: Res<'w, RenderEditorGizmoVerticesRes>,
+    trail: Res<'w, RenderTrailVerticesRes>,
+    practice_checkpoints: Res<'w, RenderPracticeCheckpointVerticesRes>,
+    camera_arrow: Res<'w, RenderEditorCameraArrowVerticesRes>,
+    cursor: Res<'w, RenderEditorCursorVerticesRes>,
+    hitbox: Res<'w, RenderEditorHitboxVerticesRes>,
+    tap_indicator: Res<'w, RenderEditorTapIndicatorVerticesRes>,
+    selection: Res<'w, RenderEditorSelectionOverlayRes>,
+    hover: Res<'w, RenderEditorHoverOverlayRes>,
+    transform_markers: Res<'w, RenderEditorTransformTriggerMarkerVerticesRes>,
+}
+
+pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadParams) {
+    let RenderMeshUploadParams {
+        gpu,
+        meshes,
+        phase,
+        block_effects,
+        playing,
+        menu_preview,
+        editor_blocks,
+        spawn_marker,
+        gizmo,
+        trail,
+        practice_checkpoints,
+        camera_arrow,
+        cursor,
+        hitbox,
+        tap_indicator,
+        selection,
+        hover,
+        transform_markers,
+    } = params;
+    let Some(gpu) = gpu else {
+        return;
+    };
+    let Some(mut meshes) = meshes else {
+        return;
+    };
+    let device = &gpu.0.device;
+    let queue = &gpu.0.queue;
+
+    meshes
+        .0
+        .gem_shatter_effects
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Gem Shatter Vertex Buffer",
+            &block_effects.0,
+        );
+    if let Some(result) = playing.result.as_ref() {
+        meshes
+            .0
+            .blocks_instanced
+            .replace_with_batches(device, "Block Instance Buffer", result);
+        meshes.0.blocks.replace_with_geometry(
+            device,
+            "Block Vertex Buffer",
+            &result.fallback_geometry,
+        );
+        meshes.0.blocks_chunked.clear();
+    } else if let Some(chunked) = playing.chunked.as_ref() {
+        meshes
+            .0
+            .blocks_chunked
+            .replace_with_chunked_mesh(device, "Chunked Block Buffer", chunked);
+        meshes.0.blocks.clear();
+        meshes.0.blocks_instanced.clear();
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_chunked.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks_selected.clear();
+    }
+    if *phase.get() == AppPhase::Menu
+        && let Some(chunked) = menu_preview.chunked.as_ref()
+    {
+        meshes.0.blocks_chunked.replace_with_chunked_mesh(
+            device,
+            "Menu Preview Chunked Block Buffer",
+            chunked,
+        );
+        meshes.0.blocks.clear();
+        meshes.0.blocks_instanced.clear();
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_chunked.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks_selected.clear();
+    }
+    if *phase.get() == AppPhase::Editor {
+        meshes.0.blocks_static_chunked.replace_with_chunked_mesh(
+            device,
+            "Chunked Block Static Buffer",
+            &editor_blocks.static_mesh,
+        );
+        meshes.0.blocks_selected.replace_with_geometry(
+            device,
+            "Block Selected Vertex Buffer",
+            &editor_blocks.selected_geometry,
+        );
+        meshes.0.blocks_static.clear();
+        meshes.0.blocks_static_instanced.clear();
+        meshes.0.blocks.clear();
+        meshes.0.blocks_chunked.clear();
+    }
+
+    meshes.0.spawn_marker.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Spawn Marker Vertex Buffer",
+        &spawn_marker.0,
+    );
+    meshes.0.editor_gizmo.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Editor Gizmo Vertex Buffer",
+        &gizmo.0,
+    );
+    meshes.0.trail.write_streaming_vertices(queue, &trail.0);
+    meshes
+        .0
+        .practice_checkpoints
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Practice Checkpoint Flag Vertex Buffer",
+            &practice_checkpoints.0,
+        );
+    meshes.0.camera_arrow.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Camera Arrow Vertex Buffer",
+        &camera_arrow.0,
+    );
+    meshes.0.editor_cursor.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Editor Cursor Vertex Buffer",
+        &cursor.0,
+    );
+    meshes
+        .0
+        .editor_hitbox_visualization
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hitbox Visualization Vertex Buffer",
+            &hitbox.0,
+        );
+    meshes.0.tap_indicators.replace_with_streaming_vertices(
+        device,
+        queue,
+        "Tap Indicator Vertex Buffer",
+        &tap_indicator.0,
+    );
+    meshes
+        .0
+        .editor_selection_stencil
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Selection Stencil Vertex Buffer",
+            &selection.stencil_vertices,
+        );
+    meshes
+        .0
+        .editor_selection_outline
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Selection Outline Vertex Buffer",
+            &selection.outline_vertices,
+        );
+    meshes.0.editor_selection_outline_instances = selection.instances.clone();
+    meshes
+        .0
+        .editor_hover_stencil
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hover Stencil Vertex Buffer",
+            &hover.stencil_vertices,
+        );
+    meshes
+        .0
+        .editor_hover_outline
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Editor Hover Outline Vertex Buffer",
+            &hover.outline_vertices,
+        );
+    meshes
+        .0
+        .transform_trigger_markers
+        .replace_with_streaming_vertices(
+            device,
+            queue,
+            "Transform Trigger Marker Vertex Buffer",
+            &transform_markers.0,
+        );
+}
+
+/// Bevy [`QueryFilter`] for the authored object fields that trigger
+/// a mesh rebuild on change.
+///
+/// Factored into a type alias to keep the
+/// [`mark_mesh_dirty_system`] signature readable and to stay under
+/// the `clippy::type_complexity` threshold without `#[allow]`s.
+type AuthoredObjectChangedFilter = (
+    With<eg_game::Object>,
+    Or<(
+        Changed<eg_game::ObjectData>,
+        Changed<eg_game::Position>,
+        Changed<eg_game::Rotation>,
+        Changed<eg_game::Size>,
+        Changed<eg_game::BlockId>,
+        Changed<eg_game::ColorTint>,
+    )>,
+);
+
+/// Detect authored object changes and emit mesh rebuild events.
+///
+/// This bridges ECS change detection to the current coarse rebuild
+/// contract. Any authored object field change requests a gameplay
+/// object sync and a block mesh rebuild. Later phases move the rebuild
+/// consumer itself into a Bevy system that writes [`RenderMeshesRes`]
+/// directly.
+pub fn mark_mesh_dirty_system(
+    changed_objects: Query<(), AuthoredObjectChangedFilter>,
+    mut writer: MessageWriter<RebuildMeshEvent>,
+) {
+    if changed_objects.iter().next().is_none() {
+        return;
+    }
+
+    writer.write(RebuildMeshEvent::new(RebuildMeshKind::SyncGameObjects));
+    writer.write(RebuildMeshEvent::new(RebuildMeshKind::RebuildBlockMesh));
+}
+
+/// Add the App-world render bookkeeping systems to a [`Schedule`].
+///
+/// The schedule itself is added by the
+/// [`super::super::plugins::register_state_schedule`] helper
+/// or by the Phase 7 `App` work; this function only adds the systems
+/// that populate the POD render resources.
+///
+/// Callers are expected to add a `RenderSet::Present` system set
+/// afterwards (e.g. `add_command_systems` chains an `add_systems` for
+/// the present boundary).
 pub fn add_state_render_systems(schedule: &mut Schedule) {
     schedule.add_systems((
+        mark_mesh_dirty_system.in_set(RenderSet::RebuildMesh),
         update_render_frame_input_system.after(crate::state::async_bridge::ApplyAsyncResultsSet),
         update_color_space_uniform_system
             .after(crate::state::frame_time::advance_frame_time_system),
-        apply_resize_surface_system.after(crate::events::auth::handle_resize_surface),
+        upload_color_space_uniform_system
+            .after(update_color_space_uniform_system)
+            .after(apply_resize_surface_system)
+            .in_set(RenderSet::Present),
+        apply_resize_surface_system
+            .after(crate::events::auth::handle_resize_surface)
+            .in_set(RenderSet::Present),
     ));
 }
 
@@ -1718,16 +2156,6 @@ mod tests {
         EditorCameraRes, EditorInputRes, SessionStateRes,
         render::resources::render_pod_resources_present,
     };
-
-    #[derive(Resource, Default)]
-    struct PlayingMeshChangeObserved(bool);
-
-    fn observe_playing_mesh_changes(
-        meshes: Res<RenderPlayingBlockMeshesRes>,
-        mut observed: ResMut<PlayingMeshChangeObserved>,
-    ) {
-        observed.0 = meshes.is_changed();
-    }
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {
@@ -1744,39 +2172,6 @@ mod tests {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
         assert!(render_pod_resources_present(&world));
-    }
-
-    #[test]
-    fn static_playing_mesh_extraction_preserves_cached_output() {
-        let mut world = World::new();
-        world.insert_resource(State::new(AppPhase::Playing));
-        world.init_resource::<SessionStateRes>();
-        world.init_resource::<eg_game::GameClock>();
-        world.init_resource::<RenderPlayingBlockMeshesRes>();
-        world.init_resource::<PlayingMeshChangeObserved>();
-        world.spawn((
-            eg_game::Object,
-            eg_game::ObjectId("__obj_0".to_string()),
-            eg_game::ObjectData(LevelObject::default()),
-        ));
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(
-            (
-                extract_playing_block_meshes_system,
-                observe_playing_mesh_changes.after(extract_playing_block_meshes_system),
-            )
-                .chain(),
-        );
-
-        schedule.run(&mut world);
-        assert!(world.resource::<PlayingMeshChangeObserved>().0);
-
-        schedule.run(&mut world);
-        assert!(
-            !world.resource::<PlayingMeshChangeObserved>().0,
-            "unchanged gameplay objects must retain their cached mesh output"
-        );
     }
 
     #[test]
@@ -1803,6 +2198,69 @@ mod tests {
         assert_eq!(frame_input.editor_mode, EditorMode::Timing);
         assert_eq!(frame_input.sky_color, [0.2, 0.4, 0.6]);
         assert_eq!(frame_input.grid_center, [4.0, -2.0]);
+    }
+
+    /// `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted (with
+    /// default values) by `register_render_pod_resources`. `RenderGpuRes`
+    /// is inserted by `State` construction because it has no cheap default.
+    #[test]
+    fn register_inserts_phase4c_heavy_resources() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+        assert!(world.contains_non_send::<RenderMeshesRes>());
+        assert!(world.contains_non_send::<RenderSurfaceHostRes>());
+        assert!(!world.contains_non_send::<RenderGpuRes>());
+    }
+
+    /// Phase 4d: changed authored object components emit rebuild events.
+    #[test]
+    fn mark_mesh_dirty_system_emits_rebuild_events_for_changed_object() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+
+        let object = eg_types::LevelObject::new("core/stone");
+        world.spawn(eg_game::ObjectBundle {
+            object: eg_game::Object,
+            id: eg_game::ObjectId("test-object".to_string()),
+            data: eg_game::ObjectData(object.clone()),
+            position: eg_game::Position(object.position),
+            rotation: eg_game::Rotation(object.rotation),
+            size: eg_game::Size(object.size),
+            block_id: eg_game::BlockId(object.block_id.clone()),
+            color_tint: eg_game::ColorTint(object.color_tint),
+            cached_behavior: eg_game::CachedBlockBehavior::from_block_id(&object.block_id),
+        });
+
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        schedule.add_systems(mark_mesh_dirty_system);
+        schedule.run(&mut world);
+
+        let kinds = world
+            .resource_mut::<Messages<RebuildMeshEvent>>()
+            .drain()
+            .map(|event| event.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            vec![
+                RebuildMeshKind::SyncGameObjects,
+                RebuildMeshKind::RebuildBlockMesh,
+            ]
+        );
+    }
+
+    /// Phase 4e: the present system reads the authoritative render
+    /// resources. Bare test worlds do not have a real GPU, so the GPU
+    /// resource is optional until constructed by `State`.
+    #[test]
+    fn present_render_frame_system_runs_with_render_resources() {
+        let mut world = World::new();
+        register_render_pod_resources(&mut world);
+
+        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        schedule.add_systems(present_render_frame_system);
+        schedule.run(&mut world);
     }
 
     #[test]
@@ -2060,7 +2518,7 @@ mod tests {
         {
             let mut input = app.world_mut().resource_mut::<EditorInputRes>();
             input.0.selected_block_index = Some(0);
-            input.0.selected_block_indices = vec![0, 1];
+            input.0.selected_block_indices = vec![0];
         }
         crate::state::editor_objects::replace_editor_objects(
             app.world_mut(),

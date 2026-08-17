@@ -8,7 +8,10 @@
 use std::collections::HashMap;
 
 use eg_blocks::{BlockDefinition, BlockId, BlockTextureAtlas, BlockTextureLayers};
-use eg_state::state::EditorConfigState;
+use eg_state::{
+    commands::AppCommand,
+    state::{EditorConfigState, editor_command::EditorCommand},
+};
 use eg_types::{CameraMode, EasingDirection, EditorMode, LevelObject, TimedTrigger, TriggerTarget};
 
 use crate::{
@@ -60,8 +63,12 @@ pub(crate) fn show_recent_block_quick_strip(
             egui::Vec2::splat(COMPACT_PREVIEW_BUTTON_SIZE),
             COMPACT_PREVIEW_HEIGHT,
         ) {
-            commands.set_block_id(BlockId::new(&block.id));
-            commands.set_editor_mode(EditorMode::Place);
+            commands.push(AppCommand::Editor(EditorCommand::SetBlockId(BlockId::new(
+                &block.id,
+            ))));
+            commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                EditorMode::Place,
+            )));
         }
     }
     true
@@ -128,7 +135,9 @@ pub(crate) fn show_selected_block_properties_window(
 }
 
 fn push_selected_block_update(commands: &mut impl UiCommandSink, selected: &LevelObject) {
-    commands.update_selected_block(selected.clone());
+    commands.push(AppCommand::Editor(EditorCommand::UpdateSelectedBlock(
+        selected.clone(),
+    )));
 }
 
 fn show_position_controls(ui: &mut egui::Ui, selected: &mut LevelObject) -> bool {
@@ -572,7 +581,6 @@ mod tests {
         block_preview_colors, scale_channel, scale_rgb, show_block_preview_button,
         show_place_block_properties_window, show_selected_block_properties_window,
     };
-    use crate::test_utils::with_world_command_sink;
 
     #[test]
     fn atlas_average_color_returns_some_for_known_default_layer() {
@@ -640,7 +648,7 @@ mod tests {
         let mut clicked_with_texture = true;
 
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show(root_ui, |ui| {
+            egui::CentralPanel::default().show_inside(root_ui, |ui| {
                 clicked_without_texture = show_block_preview_button(ui, block, None);
                 clicked_with_texture =
                     show_block_preview_button(ui, block, Some(egui::TextureId::Managed(1)));
@@ -699,24 +707,25 @@ mod tests {
         };
 
         let ctx = egui::Context::default();
-        let (_world, _) = with_world_command_sink(|commands| {
-            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-                show_selected_block_properties_window(
-                    &ctx,
-                    EditorMode::Select,
-                    Some(&normal_selected),
-                    48.0,
-                    commands,
-                );
-                show_selected_block_properties_window(
-                    &ctx,
-                    EditorMode::Select,
-                    Some(&trigger_selected),
-                    48.0,
-                    commands,
-                );
-            })
+        let mut commands = Vec::new();
+        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+            show_selected_block_properties_window(
+                &ctx,
+                EditorMode::Select,
+                Some(&normal_selected),
+                48.0,
+                &mut commands,
+            );
+            show_selected_block_properties_window(
+                &ctx,
+                EditorMode::Select,
+                Some(&trigger_selected),
+                48.0,
+                &mut commands,
+            );
         });
+
+        assert!(commands.is_empty());
     }
 
     #[test]

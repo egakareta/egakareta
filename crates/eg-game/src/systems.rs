@@ -11,10 +11,7 @@
 
 use std::collections::HashMap;
 
-use bevy::{
-    ecs::{prelude::*, schedule::SystemSet},
-    time::{Fixed, Time},
-};
+use bevy::ecs::{prelude::*, schedule::SystemSet};
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
@@ -24,16 +21,16 @@ use crate::{
         CachedBlockBehavior, Grounded, ObjectData, PlayerDirection, PlayerPosition, PlayerSpeed,
         Trail, VerticalVelocity,
     },
-    events::{ConsumedObjectEvent, PlayerDiedEvent},
+    events::{ConsumedEventsBuffer, ConsumedObjectEvent},
     physics::aabb_overlaps_cuboid_xz,
     resources::{
-        GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress, SpatialIndex,
-        TimedTurnInput, TurnInputKind,
+        DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress,
+        SpatialIndex, TimedTurnInput, TurnInputKind,
     },
 };
 
 /// Ordered gameplay system set. Run as a single tick to advance the
-/// simulation by Bevy's [`Time<Fixed>`] delta.
+/// simulation by the explicit FrameDelta seconds resource.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GameplaySet {
     /// Drain pending turn inputs into the player direction.
@@ -140,14 +137,14 @@ pub fn turn_input_system(
 
 /// Move the player by `speed * dt` along the current `PlayerDirection`.
 pub fn advance_player_system(
-    time: Res<Time<Fixed>>,
+    frame: Res<FrameDelta>,
     clock: Res<GameClock>,
     mut players: Query<(&mut PlayerPosition, &PlayerDirection, &PlayerSpeed)>,
 ) {
     if !clock.started || clock.game_over || clock.level_complete {
         return;
     }
-    let step = time.delta_secs().max(0.0);
+    let step = frame.0.max(0.0);
     for (mut pos, direction, speed) in players.iter_mut() {
         let delta = match direction.0 {
             Direction::Forward => [0.0, 1.0],
@@ -230,15 +227,15 @@ pub fn collision_query_system(
 // ---------------------------------------------------------------------------
 
 /// Apply collision outcomes: despawn consumed objects, update player speed +
-/// progress, and emit typed gameplay messages.
+/// progress, push events to [`ConsumedEventsBuffer`].
 #[allow(clippy::too_many_arguments)]
 pub fn consume_objects_system(
     mut commands: Commands,
     mut clock: ResMut<GameClock>,
     mut progress: ResMut<PlayerProgress>,
     mut outcome: ResMut<CollisionOutcome>,
-    mut deaths: MessageWriter<PlayerDiedEvent>,
-    mut consumed: MessageWriter<ConsumedObjectEvent>,
+    mut death_sfx: ResMut<DeathSfxFlag>,
+    mut events: ResMut<ConsumedEventsBuffer>,
     mut speed: Query<&mut PlayerSpeed>,
     objects: Query<(&ObjectData, &CachedBlockBehavior)>,
 ) {
@@ -256,7 +253,7 @@ pub fn consume_objects_system(
     }
     if killed {
         clock.game_over = true;
-        deaths.write(PlayerDiedEvent);
+        death_sfx.0 = true;
         outcome.clear();
         return;
     }
@@ -288,7 +285,7 @@ pub fn consume_objects_system(
         let object_snapshot = objects.get(entity).ok().map(|(obj, _)| obj.0.clone());
         commands.entity(entity).despawn();
         if emit_event && let Some(obj) = object_snapshot {
-            consumed.write(ConsumedObjectEvent { object: obj });
+            events.events.push(ConsumedObjectEvent { object: obj });
         }
     }
     outcome.clear();
@@ -300,18 +297,18 @@ pub fn consume_objects_system(
 
 /// Apply gravity, snap to support surface, update `Grounded` + `VerticalVelocity`.
 pub fn ground_gravity_system(
-    time: Res<Time<Fixed>>,
+    frame: Res<FrameDelta>,
     mut clock: ResMut<GameClock>,
     tuning: Res<GameRuntimeTuning>,
     spatial: Res<SpatialIndex>,
-    mut deaths: MessageWriter<PlayerDiedEvent>,
+    mut death_sfx: ResMut<DeathSfxFlag>,
     mut players: Query<(&mut PlayerPosition, &mut VerticalVelocity, &mut Grounded)>,
     objects: Query<&ObjectData>,
 ) {
     if !clock.started || clock.game_over || clock.level_complete {
         return;
     }
-    let step = time.delta_secs().max(0.0);
+    let step = frame.0.max(0.0);
     let gravity = tuning.gravity;
     let max_fall = tuning.max_fall_speed;
     let snap = tuning.snap_distance;
@@ -384,7 +381,7 @@ pub fn ground_gravity_system(
 
     if pos.0[1] < tuning.death_y {
         clock.game_over = true;
-        deaths.write(PlayerDiedEvent);
+        death_sfx.0 = true;
     }
 }
 
@@ -455,11 +452,11 @@ pub fn trail_system(
 
 /// Advance the clock, check time-up, complete the level.
 pub fn completion_system(
-    time: Res<Time<Fixed>>,
+    frame: Res<FrameDelta>,
     mut clock: ResMut<GameClock>,
     mut progress: ResMut<PlayerProgress>,
 ) {
-    let dt = time.delta_secs().max(0.0);
+    let dt = frame.0.max(0.0);
     if clock.level_complete {
         clock.completion_hold_seconds = (clock.completion_hold_seconds - dt).max(0.0);
         return;

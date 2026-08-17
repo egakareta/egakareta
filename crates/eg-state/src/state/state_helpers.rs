@@ -5,8 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_editor_domain::normalize_selected_indices;
 use eg_types::LevelObject;
+
+#[cfg(test)]
+use super::EditorSubsystem;
 
 super::editor_context_methods! {
     #[cfg(test)]
@@ -20,11 +22,26 @@ super::editor_context_methods! {
     }
 
     fn normalized_block_selection_indices(&self) -> Vec<usize> {
-        normalize_selected_indices(
-            &self.input.selected_block_indices,
-            self.input.selected_block_index,
-            self.objects.len(),
-        )
+        let object_count = self.objects.len();
+        let mut indices: Vec<usize> = self
+            .input
+            .selected_block_indices
+            .iter()
+            .copied()
+            .filter(|index| *index < object_count)
+            .collect();
+
+        if let Some(index) = self
+            .input
+            .selected_block_index
+            .filter(|index| *index < object_count)
+        {
+            indices.push(index);
+        }
+
+        indices.sort_unstable();
+        indices.dedup();
+        indices
     }
 
     pub fn selected_indices_normalized(&self) -> Vec<usize> {
@@ -39,6 +56,7 @@ super::editor_context_methods! {
             .filter(|index| indices.binary_search(index).is_ok())
             .or_else(|| indices.first().copied());
         self.input.selected_block_indices = indices;
+
         if self
             .input
             .hovered_block_index
@@ -186,13 +204,39 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use eg_editor_domain::normalize_selected_indices;
+    use eg_types::LevelObject;
 
-    #[test]
-    fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
-        assert_eq!(
-            normalize_selected_indices(&[2, 99, 2], Some(1), 3),
-            vec![1, 2]
-        );
+    use super::EditorSubsystem;
+
+    fn block(position: [f32; 3]) -> LevelObject {
+        LevelObject {
+            id: format!(
+                "object_{:.0}_{:.0}_{:.0}",
+                position[0], position[1], position[2]
+            ),
+            position,
+            ..LevelObject::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
+        let mut editor = EditorSubsystem::default();
+        editor.objects = vec![
+            block([0.0, 0.0, 0.0]),
+            block([1.0, 0.0, 0.0]),
+            block([2.0, 0.0, 0.0]),
+        ];
+        editor.input.selected_block_index = Some(1);
+        editor.input.selected_block_indices = vec![2, 99, 2];
+        editor.input.hovered_block_index = Some(42);
+        editor.selected_mask_cache = Some(vec![false, true, true]);
+
+        editor.normalize_block_selection();
+
+        assert_eq!(editor.input.selected_block_index, Some(1));
+        assert_eq!(editor.input.selected_block_indices, vec![1, 2]);
+        assert_eq!(editor.input.hovered_block_index, None);
+        assert!(editor.selected_mask_cache.is_none());
     }
 }

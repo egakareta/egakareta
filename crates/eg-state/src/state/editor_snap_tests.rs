@@ -7,71 +7,44 @@
 */
 #[test]
 fn test_editor_snap_override_with_ctrl() {
+    let mut editor = crate::state::EditorSubsystem::default();
     // 1. Initially enabled
-    let snap_to_grid = true;
-    let snap_rotation = true;
-    let ctrl_held = false;
+    editor.config.snap_to_grid = true;
+    editor.config.snap_rotation = true;
+    editor.input.ctrl_held = false;
 
-    assert!(snap_to_grid);
-    assert!(snap_rotation);
-    assert!(crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
-    assert!(crate::state::effective_snap_enabled(
-        snap_rotation,
-        ctrl_held
-    ));
+    assert!(editor.snap_to_grid());
+    assert!(editor.snap_rotation());
+    assert!(editor.effective_snap_to_grid());
+    assert!(editor.effective_snap_rotation());
 
     // 2. Press Ctrl -> should disable effective snapping
-    let ctrl_held = true;
+    editor.input.ctrl_held = true;
 
-    assert!(!crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
-    assert!(!crate::state::effective_snap_enabled(
-        snap_rotation,
-        ctrl_held
-    ));
+    assert!(!editor.effective_snap_to_grid());
+    assert!(!editor.effective_snap_rotation());
 
     // 3. Release Ctrl -> should re-enable effective snapping
-    let ctrl_held = false;
-    assert!(crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
-    assert!(crate::state::effective_snap_enabled(
-        snap_rotation,
-        ctrl_held
-    ));
+    editor.input.ctrl_held = false;
+    assert!(editor.effective_snap_to_grid());
+    assert!(editor.effective_snap_rotation());
 
     // 4. Disable setting manually -> effective should be false even without Ctrl
-    let snap_to_grid = false;
-    assert!(!crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
-    let ctrl_held = true;
-    assert!(!crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
+    editor.config.snap_to_grid = false;
+    assert!(!editor.effective_snap_to_grid());
+    editor.input.ctrl_held = true;
+    assert!(!editor.effective_snap_to_grid());
 }
 
 #[test]
 fn test_editor_cursor_snapping_respects_ctrl_override() {
-    let snap_to_grid = true;
+    let mut editor = crate::state::EditorSubsystem::default();
+    editor.config.snap_to_grid = true;
+    editor.config.snap_step = 1.0;
 
-    let ctrl_held = false;
-    assert!(crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
+    editor.input.ctrl_held = false;
+    assert!(editor.effective_snap_to_grid());
 
-    let ctrl_held = true;
-    assert!(!crate::state::effective_snap_enabled(
-        snap_to_grid,
-        ctrl_held
-    ));
+    editor.input.ctrl_held = true;
+    assert!(!editor.effective_snap_to_grid());
 }

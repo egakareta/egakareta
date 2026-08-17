@@ -10,5 +10,6 @@
 #![allow(missing_docs)]
 #![recursion_limit = "512"]
 
+pub mod commands;
 pub mod events;
 pub mod state;
