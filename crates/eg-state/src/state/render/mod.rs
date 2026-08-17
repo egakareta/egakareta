@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-pub mod draw;
+pub mod bevy_material;
+pub mod bevy_presentation;
 pub mod plugin;
 pub mod resources;

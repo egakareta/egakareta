@@ -14,11 +14,10 @@ use super::{
         ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
         Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
     },
-    events::ConsumedEventsBuffer,
+    events::{ConsumedObjectEvent, PlayerDiedEvent},
     physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains},
     resources::{
-        FrameDelta, GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput,
-        TurnInputKind,
+        GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput, TurnInputKind,
     },
     simulation::{TimelineSimulationRuntime, simulate_timeline_state},
     test_app::TestApp,
@@ -79,8 +78,7 @@ fn start_game(app: &mut TestApp) {
 }
 
 fn tick(app: &mut TestApp, dt: f32) {
-    app.world_mut().resource_mut::<FrameDelta>().0 = dt;
-    app.tick_gameplay();
+    app.tick_gameplay_for(dt);
 }
 
 fn support_surface_y_at(app: &mut TestApp, x: f32, z: f32, max_y: f32) -> Option<f32> {
@@ -356,11 +354,38 @@ fn gem_overlap_collects_and_tracks_progress() {
     let progress = *app.world().resource::<PlayerProgress>();
     assert_eq!(progress.gems_collected, 1);
     assert_eq!(progress.gems_max, 1);
-    let events = &app.world().resource::<ConsumedEventsBuffer>().events;
+    let events = app
+        .world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<ConsumedObjectEvent>>()
+        .drain()
+        .collect::<Vec<_>>();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].object.block_id, "core/gem");
     assert!(object_snapshots(&mut app).is_empty());
     assert!(!app.world().resource::<GameClock>().game_over);
+}
+
+#[test]
+fn falling_player_emits_a_single_death_message() {
+    let mut app = app_with_objects([]);
+    spawn_player(
+        &mut app,
+        [0.0, -7.0, 0.0],
+        Direction::Forward,
+        BASE_PLAYER_SPEED,
+        false,
+    );
+    start_game(&mut app);
+
+    tick(&mut app, 0.0);
+
+    assert!(app.world().resource::<GameClock>().game_over);
+    let deaths = app
+        .world_mut()
+        .resource_mut::<bevy::ecs::message::Messages<PlayerDiedEvent>>()
+        .drain()
+        .collect::<Vec<_>>();
+    assert_eq!(deaths.len(), 1);
 }
 
 #[test]

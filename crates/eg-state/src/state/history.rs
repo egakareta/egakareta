@@ -5,21 +5,27 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-#[cfg(test)]
-use eg_editor_domain::derive_tap_indicator_positions;
-#[cfg(test)]
-use eg_types::{LevelObject, TriggerTarget, next_level_object_id};
-
-#[cfg(test)]
-use super::EditorClipboard;
 use super::EditorHistorySnapshot;
-#[cfg(test)]
-use super::EditorSubsystem;
 
 #[derive(Default, Clone)]
 pub struct EditorHistoryState {
     pub undo: Vec<EditorHistorySnapshot>,
     pub redo: Vec<EditorHistorySnapshot>,
+}
+
+pub(crate) const MAX_EDITOR_HISTORY: usize = 256;
+
+/// Record a complete pre-mutation editor snapshot, retaining bounded undo
+/// history and invalidating any redo branch.
+pub(crate) fn record_history_snapshot(
+    history: &mut EditorHistoryState,
+    snapshot: EditorHistorySnapshot,
+) {
+    if history.undo.len() >= MAX_EDITOR_HISTORY {
+        history.undo.remove(0);
+    }
+    history.undo.push(snapshot);
+    history.redo.clear();
 }
 
 super::editor_context_methods! {
@@ -48,18 +54,13 @@ super::editor_context_methods! {
     }
 
     pub(super) fn record_history_state_force(&mut self) {
-        const MAX_HISTORY: usize = 256;
-        if self.runtime.history.undo.len() >= MAX_HISTORY {
-            self.runtime.history.undo.remove(0);
-        }
         let snapshot = self.history_snapshot();
-        self.runtime.history.undo.push(snapshot);
-        self.runtime.history.redo.clear();
+        record_history_snapshot(&mut self.runtime.history, snapshot);
     }
 
     #[cfg(test)]
     fn apply_history_snapshot(&mut self, snapshot: EditorHistorySnapshot) {
-        self.objects = snapshot.objects;
+        *self.objects = snapshot.objects;
         self.input.selected_block_index = snapshot.selected_block_index;
         self.input.selected_block_indices = snapshot.selected_block_indices;
         self.normalize_block_selection();
@@ -68,7 +69,7 @@ super::editor_context_methods! {
         self.config.selected_block_id = snapshot.selected_block_id;
         self.config.selected_block_rotation_degrees = snapshot.selected_block_rotation_degrees;
         self.config.recent_block_ids = snapshot.recent_block_ids;
-        self.spawn = snapshot.spawn;
+        *self.spawn = snapshot.spawn;
         self.timeline.clock.time_seconds = snapshot.timeline_time_seconds.max(0.0);
         self.timeline.clock.duration_seconds = snapshot.timeline_duration_seconds.max(0.1);
         self.timeline.taps.tap_times = snapshot.tap_times;
@@ -118,7 +119,7 @@ super::editor_context_methods! {
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
 
-        self.invalidate_samples();
+        self.timeline.invalidate_samples();
         self.pick_spatial_index.invalidate();
     }
 
@@ -146,154 +147,26 @@ super::editor_context_methods! {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn copy_selected(&mut self) {
-        let selected_indices = self.selected_indices_normalized();
-        if !selected_indices.is_empty() {
-            let anchor_index = self
-                .input
-                .selected_block_index
-                .filter(|index| selected_indices.contains(index))
-                .unwrap_or(selected_indices[0]);
-            let anchor = self.objects[anchor_index].position;
-            let objects = selected_indices
-                .into_iter()
-                .map(|index| self.objects[index].clone())
-                .collect();
-            self.runtime.interaction.clipboard = Some(EditorClipboard { objects, anchor });
-            return;
-        }
-
-        if let Some(index) = self.topmost_block_index_at_cursor(self.input.cursor) {
-            let block = self.objects[index].clone();
-            self.runtime.interaction.clipboard = Some(EditorClipboard {
-                anchor: block.position,
-                objects: vec![block],
-            });
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn paste_from_clipboard(&mut self) -> bool {
-        let Some(clipboard) = self.runtime.interaction.clipboard.clone() else {
-            return false;
-        };
-
-        if clipboard.objects.is_empty() {
-            return false;
-        }
-
-        self.record_history_state();
-
-        let paste_anchor = self.input.cursor;
-        let base_len = self.objects.len();
-        let mut new_indices = Vec::with_capacity(clipboard.objects.len());
-
-        let mut pasted_objects = clipboard.objects;
-        regenerate_object_ids_for_clipboard(&mut pasted_objects, &self.objects);
-
-        for mut block in pasted_objects {
-            block.position = [
-                paste_anchor[0] + (block.position[0] - clipboard.anchor[0]),
-                paste_anchor[1] + (block.position[1] - clipboard.anchor[1]),
-                paste_anchor[2] + (block.position[2] - clipboard.anchor[2]),
-            ];
-            self.config.selected_block_id = block.block_id.clone();
-            self.objects.push(block);
-            new_indices.push(base_len + new_indices.len());
-        }
-
-        self.input.selected_block_index = new_indices.first().copied();
-        self.input.selected_block_indices = new_indices;
-        self.sync_primary_selection_from_indices();
-        self.input.hovered_block_index = self.input.selected_block_index;
-        self.sync_trigger_selection_from_objects();
-        self.invalidate_samples();
-        self.pick_spatial_index.invalidate();
-        true
-    }
-
-    #[cfg(test)]
-    pub(super) fn duplicate_selected(&mut self) -> bool {
-        let selected_indices = self.selected_indices_normalized();
-        if selected_indices.is_empty() {
-            return false;
-        }
-
-        let anchor_index = self
-            .input
-            .selected_block_index
-            .filter(|index| selected_indices.contains(index))
-            .unwrap_or(selected_indices[0]);
-        let anchor = self.objects[anchor_index].position;
-        let mut duplicates: Vec<LevelObject> = selected_indices
-            .iter()
-            .map(|index| self.objects[*index].clone())
-            .collect();
-        regenerate_object_ids_for_clipboard(&mut duplicates, &self.objects);
-
-        self.runtime.interaction.clipboard = Some(EditorClipboard {
-            objects: duplicates.clone(),
-            anchor,
-        });
-        self.record_history_state();
-
-        let base_len = self.objects.len();
-        let mut new_indices = Vec::with_capacity(duplicates.len());
-        for duplicated in duplicates {
-            self.config.selected_block_id = duplicated.block_id.clone();
-            self.objects.push(duplicated);
-            new_indices.push(base_len + new_indices.len());
-        }
-
-        self.input.selected_block_index = new_indices.first().copied();
-        self.input.selected_block_indices = new_indices;
-        self.sync_primary_selection_from_indices();
-        self.input.hovered_block_index = self.input.selected_block_index;
-        self.sync_trigger_selection_from_objects();
-        self.invalidate_samples();
-        self.pick_spatial_index.invalidate();
-        true
-    }
-}
-
-#[cfg(test)]
-fn regenerate_object_ids_for_clipboard(
-    objects: &mut [LevelObject],
-    existing_objects: &[LevelObject],
-) {
-    let mut id_map = std::collections::HashMap::<String, String>::new();
-    let mut allocated_objects = existing_objects.to_vec();
-
-    for object in objects.iter_mut() {
-        let old_id = object.id.clone();
-        object.id = next_level_object_id(&allocated_objects);
-        if !old_id.is_empty() {
-            id_map.insert(old_id, object.id.clone());
-        }
-        allocated_objects.push(object.clone());
-    }
-
-    for object in objects {
-        let Some(trigger) = object.trigger.as_mut() else {
-            continue;
-        };
-        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
-            continue;
-        };
-        for object_id in object_ids {
-            if let Some(new_id) = id_map.get(object_id) {
-                *object_id = new_id.clone();
-            }
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use eg_types::LevelObject;
+    use bevy::state::prelude::State;
+    use eg_blocks::BlockId;
+    use eg_types::{AppPhase, LevelObject, SpawnMetadata};
 
-    use super::*;
+    use crate::{
+        events::{
+            block::{CopyBlock, DuplicateBlock, PasteBlock},
+            history::{Redo, Undo},
+        },
+        state::{
+            EditorClipboard, EditorHistoryRes, EditorHistorySnapshot, EditorHistoryState,
+            EditorInputRes, EditorRuntimeRes, EditorTimelineRes, EditorTriggerRes,
+            collect_editor_objects_from_world, record_history_snapshot, replace_editor_objects,
+            test_support::TestApp,
+        },
+    };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -306,156 +179,247 @@ mod tests {
         }
     }
 
+    fn editor_test_app(objects: Vec<LevelObject>, selected_indices: Vec<usize>) -> TestApp {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(AppPhase::Editor));
+        replace_editor_objects(app.world_mut(), objects);
+        let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+        input.0.selected_block_index = selected_indices.first().copied();
+        input.0.selected_block_indices = selected_indices;
+        app
+    }
+
+    fn test_history_snapshot(cursor: [f32; 3]) -> EditorHistorySnapshot {
+        EditorHistorySnapshot {
+            objects: Vec::new(),
+            selected_block_index: None,
+            selected_block_indices: Vec::new(),
+            cursor,
+            selected_block_id: BlockId::new("core/stone"),
+            selected_block_rotation_degrees: [0.0; 3],
+            recent_block_ids: Vec::new(),
+            spawn: SpawnMetadata::default(),
+            timeline_time_seconds: 0.0,
+            timeline_duration_seconds: 1.0,
+            tap_times: Vec::new(),
+            tap_indicator_positions: Vec::new(),
+            selected_tap_index: None,
+            timing_points: Vec::new(),
+            selected_trigger_index: None,
+        }
+    }
+
     #[test]
     fn test_history_max_limit() {
-        let mut editor = EditorSubsystem::default();
+        let mut history = EditorHistoryState::default();
 
         // Record more than 256 times
         for i in 0..300 {
-            editor.input.cursor[0] = i as f32;
-            editor.record_history_state();
+            record_history_snapshot(&mut history, test_history_snapshot([i as f32, 0.0, 0.0]));
         }
 
-        assert_eq!(editor.runtime.history.undo.len(), 256);
+        assert_eq!(history.undo.len(), 256);
         // The first one should be i=44 (300 - 256)
-        assert_eq!(editor.runtime.history.undo[0].cursor[0], 44.0);
+        assert_eq!(history.undo[0].cursor[0], 44.0);
     }
 
     #[test]
     fn test_undo_redo_clears_redo_on_record() {
-        let mut editor = EditorSubsystem::default();
+        let mut history = EditorHistoryState {
+            redo: vec![test_history_snapshot([0.0; 3])],
+            ..EditorHistoryState::default()
+        };
 
-        editor.record_history_state();
-        assert!(editor.undo());
-        assert_eq!(editor.runtime.history.redo.len(), 1);
-
-        editor.record_history_state();
-        assert_eq!(editor.runtime.history.redo.len(), 0);
+        record_history_snapshot(&mut history, test_history_snapshot([1.0, 0.0, 0.0]));
+        assert_eq!(history.undo.len(), 1);
+        assert!(history.redo.is_empty());
     }
 
     #[test]
     fn test_apply_snapshot_constraints() {
-        let mut editor = EditorSubsystem::default();
-
-        let mut snapshot = editor.history_snapshot();
+        let mut app = editor_test_app(Vec::new(), Vec::new());
+        let mut snapshot = test_history_snapshot([0.0; 3]);
         snapshot.timeline_time_seconds = -10.0;
         snapshot.timeline_duration_seconds = 0.0; // Should be clamped to 0.1
         snapshot.tap_times = vec![5.0, -1.0, f32::NAN, 2.0];
+        app.world_mut()
+            .resource_mut::<EditorHistoryRes>()
+            .0
+            .undo
+            .push(snapshot);
 
-        editor.apply_history_snapshot(snapshot);
+        app.world_mut().write_message(Undo);
+        app.tick();
 
-        assert_eq!(editor.timeline.clock.time_seconds, 0.0);
-        assert_eq!(editor.timeline.clock.duration_seconds, 0.1);
+        let timeline = &app.world().resource::<EditorTimelineRes>().0;
+        assert_eq!(timeline.clock.time_seconds, 0.0);
+        assert_eq!(timeline.clock.duration_seconds, 0.1);
 
         // Tap times: -1.0 and NAN removed, 5.0 clamped by duration 0.1, 2.0 clamped by duration 0.1
         // Wait, duration is 0.1, so all tap times > 0.1 are removed by retain(|tap| *tap <= duration)
-        assert_eq!(editor.timeline.taps.tap_times.len(), 0);
+        assert!(timeline.taps.tap_times.is_empty());
     }
 
     #[test]
     fn test_copy_paste_multiple_blocks() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = editor_test_app(
+            vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])],
+            vec![0, 1],
+        );
 
-        editor.objects = vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
-        editor.input.selected_block_indices = vec![0, 1];
-        editor.input.selected_block_index = Some(0); // Anchor
+        app.world_mut().write_message(CopyBlock);
+        app.tick();
+        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [20.0, 5.0, 20.0];
+        app.world_mut().write_message(PasteBlock);
+        app.tick();
 
-        editor.copy_selected();
-
-        editor.input.cursor = [20.0, 5.0, 20.0];
-        assert!(editor.paste_from_clipboard());
-
-        assert_eq!(editor.objects.len(), 4);
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_eq!(objects.len(), 4);
         // Pasted blocks should be relative to anchor [10, 0, 10]
         // Block 0 at [10, 0, 10] -> [20 + (10-10), 5 + (0-0), 20 + (10-10)] = [20, 5, 20]
         // Block 1 at [12, 1, 12] -> [20 + (12-10), 5 + (1-0), 20 + (12-10)] = [22, 6, 22]
-        assert_eq!(editor.objects[2].position, [20.0, 5.0, 20.0]);
-        assert_eq!(editor.objects[3].position, [22.0, 6.0, 22.0]);
+        assert_eq!(objects[2].position, [20.0, 5.0, 20.0]);
+        assert_eq!(objects[3].position, [22.0, 6.0, 22.0]);
 
         // Selection should be the two new blocks
-        assert_eq!(editor.input.selected_block_indices, vec![2, 3]);
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![2, 3]
+        );
     }
 
     #[test]
     fn test_copy_topmost_at_cursor() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = editor_test_app(vec![test_block([10.0, 0.0, 10.0])], Vec::new());
+        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [10.0, 0.0, 10.0];
 
-        editor.objects = vec![test_block([10.0, 0.0, 10.0])];
-        editor.input.selected_block_indices.clear();
-        editor.input.selected_block_index = None;
-        editor.input.cursor = [10.0, 0.0, 10.0];
+        app.world_mut().write_message(CopyBlock);
+        app.tick();
+        assert!(
+            app.world()
+                .resource::<EditorRuntimeRes>()
+                .0
+                .interaction
+                .clipboard
+                .is_some()
+        );
 
-        editor.copy_selected();
-        assert!(editor.runtime.interaction.clipboard.is_some());
-
-        editor.input.cursor = [30.0, 0.0, 30.0];
-        assert!(editor.paste_from_clipboard());
-        assert_eq!(editor.objects.len(), 2);
-        assert_eq!(editor.objects[1].position, [30.0, 0.0, 30.0]);
+        app.world_mut().resource_mut::<EditorInputRes>().0.cursor = [30.0, 0.0, 30.0];
+        app.world_mut().write_message(PasteBlock);
+        app.tick();
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_eq!(objects.len(), 2);
+        assert_eq!(objects[1].position, [30.0, 0.0, 30.0]);
     }
 
     #[test]
     fn test_duplicate_selected_multiple() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = editor_test_app(
+            vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])],
+            vec![1, 0],
+        );
 
-        editor.objects = vec![test_block([10.0, 0.0, 10.0]), test_block([12.0, 1.0, 12.0])];
-        editor.input.selected_block_indices = vec![0, 1];
-        editor.input.selected_block_index = Some(1); // Anchor
-
-        assert!(editor.duplicate_selected());
-
-        assert_eq!(editor.objects.len(), 4);
-        assert_eq!(editor.objects[2].position, [10.0, 0.0, 10.0]);
-        assert_eq!(editor.objects[3].position, [12.0, 1.0, 12.0]);
+        app.world_mut().write_message(DuplicateBlock);
+        app.tick();
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_eq!(objects.len(), 4);
+        assert_eq!(objects[2].position, [10.0, 0.0, 10.0]);
+        assert_eq!(objects[3].position, [12.0, 1.0, 12.0]);
 
         // Selection should be the two new blocks
-        assert_eq!(editor.input.selected_block_indices, vec![2, 3]);
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![2, 3]
+        );
     }
 
     #[test]
     fn test_empty_clipboard_paste() {
-        let mut editor = EditorSubsystem::default();
-        editor.runtime.interaction.clipboard = None;
-        assert!(!editor.paste_from_clipboard());
+        let mut app = editor_test_app(vec![test_block([0.0, 0.0, 0.0])], Vec::new());
+        app.world_mut().write_message(PasteBlock);
+        app.tick();
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
 
-        editor.runtime.interaction.clipboard = Some(EditorClipboard {
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .clipboard = Some(EditorClipboard {
             objects: vec![],
             anchor: [0.0, 0.0, 0.0],
         });
-        assert!(!editor.paste_from_clipboard());
+        app.world_mut().write_message(PasteBlock);
+        app.tick();
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
     }
 
     #[test]
     fn test_undo_redo_empty_stacks() {
-        let mut editor = EditorSubsystem::default();
-        editor.runtime.history.undo.clear();
-        editor.runtime.history.redo.clear();
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(AppPhase::Editor));
+        app.world_mut()
+            .resource_mut::<EditorHistoryRes>()
+            .0
+            .undo
+            .clear();
+        app.world_mut()
+            .resource_mut::<EditorHistoryRes>()
+            .0
+            .redo
+            .clear();
 
-        assert!(!editor.undo());
-        assert!(!editor.redo());
+        app.world_mut().write_message(Undo);
+        app.tick();
+        app.world_mut().write_message(Redo);
+        app.tick();
+        let history = &app.world().resource::<EditorHistoryRes>().0;
+        assert!(history.undo.is_empty());
+        assert!(history.redo.is_empty());
     }
 
     #[test]
     fn test_duplicate_empty_selection() {
-        let mut editor = EditorSubsystem::default();
-        editor.input.selected_block_indices.clear();
-        assert!(!editor.duplicate_selected());
+        let mut app = editor_test_app(vec![test_block([0.0, 0.0, 0.0])], Vec::new());
+        app.world_mut().write_message(DuplicateBlock);
+        app.tick();
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
     }
 
     #[test]
     fn test_apply_snapshot_selection_filtering() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        let mut snapshot = editor.history_snapshot();
+        let object = test_block([0.0, 0.0, 0.0]);
+        let mut app = editor_test_app(vec![object.clone()], Vec::new());
+        let mut snapshot = test_history_snapshot([0.0; 3]);
+        snapshot.objects = vec![object];
         snapshot.selected_block_index = Some(10); // Out of bounds
         snapshot.selected_block_indices = vec![0, 10]; // 10 is out of bounds
         snapshot.selected_trigger_index = Some(5); // Out of bounds
+        app.world_mut()
+            .resource_mut::<EditorHistoryRes>()
+            .0
+            .undo
+            .push(snapshot);
 
-        editor.apply_history_snapshot(snapshot);
+        app.world_mut().write_message(Undo);
+        app.tick();
 
-        assert_eq!(editor.input.selected_block_index, Some(0));
-        assert_eq!(editor.input.selected_block_indices, vec![0]);
-        assert!(editor.triggers.selected_index.is_none());
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, Some(0));
+        assert_eq!(input.selected_block_indices, vec![0]);
+        assert!(
+            app.world()
+                .resource::<EditorTriggerRes>()
+                .0
+                .selected_index
+                .is_none()
+        );
     }
 }

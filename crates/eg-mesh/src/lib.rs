@@ -140,26 +140,6 @@ impl Vertex {
         self.animation_params = params;
         self.animation_params2 = params2;
     }
-
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
-            0 => Float32x3,
-            1 => Float32x4,
-            2 => Float32x2,
-            3 => Float32x2,
-            4 => Float32,
-            5 => Float32x4,
-            6 => Float32,
-            7 => Float32x4,
-            8 => Float32x4,
-            9 => Float32x4
-        ];
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as u64,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &ATTRS,
-        }
-    }
 }
 
 #[repr(C)]
@@ -171,21 +151,6 @@ pub struct BlockInstance {
 }
 
 impl BlockInstance {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
-            10 => Float32x4,
-            11 => Float32x4,
-            12 => Float32x4,
-            13 => Float32x4,
-            14 => Float32x4
-        ];
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<BlockInstance>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &ATTRS,
-        }
-    }
-
     pub fn transform_position(&self, local_position: [f32; 3]) -> [f32; 3] {
         let [x, y, z] = local_position;
         [
@@ -206,6 +171,7 @@ impl BlockInstance {
 }
 
 pub mod advanced_shapes;
+pub mod bevy_mesh;
 pub mod blocks;
 pub mod builders;
 pub mod chunked;
@@ -217,6 +183,7 @@ pub mod shapes;
 mod tests;
 pub mod transforms;
 
+pub use bevy_mesh::*;
 pub use blocks::*;
 pub use builders::*;
 pub use chunked::*;

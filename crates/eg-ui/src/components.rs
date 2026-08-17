@@ -5,7 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::{AppSettings, EditorMode};
 
 use crate::UiCommandSink;
@@ -27,7 +26,6 @@ pub(crate) struct TimelineBarInputs<'a> {
     pub tap_times: &'a [f32],
     pub timing_points: &'a [eg_types::TimingPoint],
     pub waveform_zoom: f32,
-    pub waveform_scroll: f32,
     pub trigger_objects: &'a [eg_types::LevelObject],
     pub trigger_selected_index: Option<usize>,
     pub duration_seconds: f32,
@@ -84,6 +82,15 @@ pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
     duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS)
 }
 
+fn timeline_wheel_delta(input: &egui::InputState) -> egui::Vec2 {
+    input
+        .events
+        .iter()
+        .any(|event| matches!(event, egui::Event::MouseWheel { .. }))
+        .then(|| input.smooth_scroll_delta())
+        .unwrap_or_default()
+}
+
 fn timeline_bar_nearest_tap_index(
     tap_times: &[f32],
     pointer_x: f32,
@@ -135,13 +142,9 @@ fn timeline_bar_push_tap_click_commands(
         return false;
     };
 
-    commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-        inputs.tap_times[index],
-    )));
+    commands.set_timeline_time(inputs.tap_times[index]);
     if timeline_bar_is_tapping(inputs.mode, inputs.last_mode) {
-        commands.push(AppCommand::Editor(EditorCommand::SetSelectedTap(Some(
-            index,
-        ))));
+        commands.set_selected_tap(Some(index));
     }
     true
 }
@@ -193,7 +196,6 @@ pub(crate) fn show_timeline_bar(
     let tap_times = inputs.tap_times;
     let timing_points = inputs.timing_points;
     let waveform_zoom = inputs.waveform_zoom;
-    let waveform_scroll = inputs.waveform_scroll;
     let trigger_objects = inputs.trigger_objects;
     let trigger_selected_index = inputs.trigger_selected_index;
     let duration_seconds = inputs.duration_seconds;
@@ -201,13 +203,7 @@ pub(crate) fn show_timeline_bar(
     let duration_seconds = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
     let timeline_zoom = waveform_zoom;
     let visible_duration = timeline_visible_duration(duration_seconds, timeline_zoom);
-    // Removed max_scroll/clamp to allow playhead to stay centered at start/end by going beyond 0..duration
     let centered_scroll = timeline_time_seconds - visible_duration * 0.5;
-    if (centered_scroll - waveform_scroll).abs() > 0.0001 {
-        commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
-            centered_scroll,
-        )));
-    }
     let view_start = centered_scroll;
     let view_end = view_start + visible_duration;
 
@@ -232,9 +228,7 @@ pub(crate) fn show_timeline_bar(
             .inner
             .changed()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                time_seconds,
-            )));
+            commands.set_timeline_time(time_seconds);
         }
 
         let button_size = egui::vec2(timeline_control_height.max(22.0), timeline_control_height);
@@ -254,7 +248,7 @@ pub(crate) fn show_timeline_bar(
             ))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::ToggleTimelinePlayback));
+            commands.toggle_timeline_playback();
         }
 
         if ui
@@ -269,7 +263,7 @@ pub(crate) fn show_timeline_bar(
             .clicked()
         {
             let new_zoom = (timeline_zoom / 1.25).clamp(0.1, 10.0);
-            commands.push(AppCommand::Editor(EditorCommand::SetWaveformZoom(new_zoom)));
+            commands.set_waveform_zoom(new_zoom);
         }
         if ui
             .add_sized(
@@ -283,7 +277,7 @@ pub(crate) fn show_timeline_bar(
             .clicked()
         {
             let new_zoom = (timeline_zoom * 1.25).clamp(0.1, 10.0);
-            commands.push(AppCommand::Editor(EditorCommand::SetWaveformZoom(new_zoom)));
+            commands.set_waveform_zoom(new_zoom);
         }
 
         let playtest_button_width = 72.0;
@@ -430,20 +424,18 @@ pub(crate) fn show_timeline_bar(
                 let time_per_pixel = visible_duration / rect.width().max(1.0);
                 let new_time = (timeline_time_seconds - pointer_delta_x * time_per_pixel)
                     .clamp(0.0, duration_seconds);
-                commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(new_time)));
-                commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
-                    new_time - visible_duration * 0.5,
-                )));
+                commands.set_timeline_time(new_time);
+                commands.set_waveform_scroll(new_time - visible_duration * 0.5);
             }
         }
 
         // Mouse wheel over the timeline bar adjusts window width.
         if response.hovered() {
-            let scroll_delta = ui.input(|i| i.smooth_scroll_delta());
+            let scroll_delta = ui.input(timeline_wheel_delta);
             if scroll_delta.y.abs() > 0.0 {
                 let zoom_factor = 1.0 + scroll_delta.y * 0.002;
                 let new_zoom = (timeline_zoom * zoom_factor).clamp(0.1, 10.0);
-                commands.push(AppCommand::Editor(EditorCommand::SetWaveformZoom(new_zoom)));
+                commands.set_waveform_zoom(new_zoom);
             }
         }
 
@@ -457,9 +449,7 @@ pub(crate) fn show_timeline_bar(
                 visible_duration,
             )
         {
-            commands.push(AppCommand::Editor(EditorCommand::RemoveTapAt(
-                tap_times[index],
-            )));
+            commands.remove_tap_at(tap_times[index]);
         }
 
         if response.clicked_by(egui::PointerButton::Primary)
@@ -494,24 +484,20 @@ pub(crate) fn show_timeline_bar(
             }
 
             if let Some(index) = nearest_trigger_index.filter(|_| nearest_distance <= 8.0) {
-                commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(Some(
-                    index,
-                ))));
-                commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
+                commands.set_trigger_selected(Some(index));
+                commands.set_timeline_time(
                     trigger_objects[index]
                         .trigger
                         .as_ref()
                         .map(|trigger| trigger.time_seconds)
                         .unwrap_or(0.0)
                         .clamp(0.0, duration_seconds),
-                )));
+                );
             } else {
                 let normalized_x = ((pointer.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
                 let clicked_time = view_start + normalized_x * visible_duration;
-                commands.push(AppCommand::Editor(EditorCommand::SetTriggerSelected(None)));
-                commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(
-                    clicked_time.clamp(0.0, duration_seconds),
-                )));
+                commands.set_trigger_selected(None);
+                commands.set_timeline_time(clicked_time.clamp(0.0, duration_seconds));
             }
         }
 
@@ -528,7 +514,7 @@ pub(crate) fn show_timeline_bar(
             ))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::Playtest));
+            commands.playtest();
         }
     });
 }
@@ -717,10 +703,7 @@ pub(crate) fn show_waveform_panel(
             .on_hover_text("Add timing point at playhead")
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::AddTimingPoint {
-                time_seconds: current_time,
-                bpm: 120.0,
-            }));
+            commands.add_timing_point(current_time, 120.0);
         }
     }
 
@@ -731,25 +714,25 @@ pub(crate) fn show_waveform_panel(
             let time_per_pixel = visible_duration / rect.width().max(1.0);
             let new_time = (timeline_time_seconds - pointer_delta_x * time_per_pixel)
                 .clamp(0.0, duration_seconds);
-            commands.push(AppCommand::Editor(EditorCommand::SetTimelineTime(new_time)));
-            commands.push(AppCommand::Editor(EditorCommand::SetWaveformScroll(
-                new_time - visible_duration * 0.5,
-            )));
+            commands.set_timeline_time(new_time);
+            commands.set_waveform_scroll(new_time - visible_duration * 0.5);
         }
     }
 
     // Scroll with mouse wheel to zoom
     if response.hovered() {
-        let scroll_delta = ui.input(|i| i.smooth_scroll_delta());
+        let scroll_delta = ui.input(timeline_wheel_delta);
         if scroll_delta.y.abs() > 0.0 {
             let zoom_factor = 1.0 + scroll_delta.y * 0.002;
             let new_zoom = (zoom * zoom_factor).clamp(0.1, 10.0);
-            commands.push(AppCommand::Editor(EditorCommand::SetWaveformZoom(new_zoom)));
+            commands.set_waveform_zoom(new_zoom);
         }
     }
 }
 #[cfg(test)]
 mod tests {
+    use bevy::ecs::{message::Messages, world::World};
+    use eg_state::events::timeline;
     use eg_types::{
         AppSettings, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection,
         EditorMode, LevelObject, MusicMetadata, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
@@ -757,7 +740,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::test_utils::editor_ui_view;
+    use crate::test_utils::{editor_ui_view, with_world_command_sink};
+
+    fn message_count<T: bevy::ecs::message::Message>(world: &World) -> usize {
+        let messages = world.resource::<Messages<T>>();
+        let mut reader = messages.get_cursor();
+        reader.read(messages).count()
+    }
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -769,7 +758,6 @@ mod tests {
         timeline_time_seconds: f32,
         timeline_duration_seconds: f32,
         waveform_zoom: f32,
-        waveform_scroll: f32,
         playing: bool,
         trigger_selected_index: Option<usize>,
     ) -> crate::test_utils::EditorUiTestInputs {
@@ -780,7 +768,6 @@ mod tests {
         view.tap_times = tap_times.to_vec();
         view.timing_points = timing_points.to_vec();
         view.waveform_zoom = waveform_zoom;
-        view.waveform_scroll = waveform_scroll;
         view.waveform_samples = waveform_samples.to_vec();
         view.waveform_sample_rate = 44_100;
         view.waveform_complete = true;
@@ -836,6 +823,23 @@ mod tests {
 
         let min_zoom = (0.12_f32 * 0.8).clamp(0.1, 10.0);
         approx::assert_abs_diff_eq!(min_zoom, 0.1, epsilon = 0.001);
+    }
+
+    #[test]
+    fn timeline_wheel_delta_ignores_lingering_smooth_scroll() {
+        let mut input = egui::InputState::default();
+        input.smooth_scroll_delta = egui::vec2(0.0, 24.0);
+
+        assert_eq!(timeline_wheel_delta(&input), egui::Vec2::ZERO);
+
+        input.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, 24.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+
+        assert_eq!(timeline_wheel_delta(&input), egui::vec2(0.0, 24.0));
     }
 
     #[test]
@@ -902,42 +906,38 @@ mod tests {
             0.0,
             20.0,
             1.0,
-            0.0,
             false,
             None,
         );
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
-        let mut commands = Vec::new();
+        let (world, clicked) = with_world_command_sink(|commands| {
+            timeline_bar_push_tap_click_commands(
+                &TimelineBarInputs {
+                    app_settings: &app_settings,
+                    mode: EditorMode::Timing,
+                    last_mode: Some(EditorMode::Timing),
+                    playing: view.playing,
+                    timeline_time_seconds: view.timeline_time_seconds,
+                    tap_times: &view.tap_times,
+                    timing_points: &view.timing_points,
+                    waveform_zoom: view.waveform_zoom,
+                    trigger_objects: &view.trigger_objects,
+                    trigger_selected_index: view.trigger_selected_index,
+                    duration_seconds: view.timeline_duration_seconds,
+                },
+                198.0,
+                rect,
+                0.0,
+                10.0,
+                commands,
+            )
+        });
 
-        assert!(timeline_bar_push_tap_click_commands(
-            &TimelineBarInputs {
-                app_settings: &app_settings,
-                mode: EditorMode::Timing,
-                last_mode: Some(EditorMode::Timing),
-                playing: view.playing,
-                timeline_time_seconds: view.timeline_time_seconds,
-                tap_times: &view.tap_times,
-                timing_points: &view.timing_points,
-                waveform_zoom: view.waveform_zoom,
-                waveform_scroll: view.waveform_scroll,
-                trigger_objects: &view.trigger_objects,
-                trigger_selected_index: view.trigger_selected_index,
-                duration_seconds: view.timeline_duration_seconds,
-            },
-            198.0,
-            rect,
-            0.0,
-            10.0,
-            &mut commands,
-        ));
-
-        assert_eq!(commands.len(), 1);
-        match &commands[0] {
-            AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
-                approx::assert_abs_diff_eq!(*value, 5.0, epsilon = 0.001)
-            }
-            other => panic!("expected timeline seek command, got {other:?}"),
-        }
+        assert!(clicked);
+        let messages = world.resource::<Messages<timeline::SetTimelineTime>>();
+        let mut reader = messages.get_cursor();
+        let message = reader.read(messages).next().expect("timeline seek message");
+        approx::assert_abs_diff_eq!(message.0, 5.0, epsilon = 0.001);
     }
 
     #[test]
@@ -956,45 +956,50 @@ mod tests {
             0.0,
             20.0,
             1.0,
-            0.0,
             false,
             None,
         );
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
-        let mut commands = Vec::new();
+        let (world, clicked) = with_world_command_sink(|commands| {
+            timeline_bar_push_tap_click_commands(
+                &TimelineBarInputs {
+                    app_settings: &app_settings,
+                    mode: EditorMode::Tapping,
+                    last_mode: Some(EditorMode::Tapping),
+                    playing: view.playing,
+                    timeline_time_seconds: view.timeline_time_seconds,
+                    tap_times: &view.tap_times,
+                    timing_points: &view.timing_points,
+                    waveform_zoom: view.waveform_zoom,
+                    trigger_objects: &view.trigger_objects,
+                    trigger_selected_index: view.trigger_selected_index,
+                    duration_seconds: view.timeline_duration_seconds,
+                },
+                198.0,
+                rect,
+                0.0,
+                10.0,
+                commands,
+            )
+        });
 
-        assert!(timeline_bar_push_tap_click_commands(
-            &TimelineBarInputs {
-                app_settings: &app_settings,
-                mode: EditorMode::Tapping,
-                last_mode: Some(EditorMode::Tapping),
-                playing: view.playing,
-                timeline_time_seconds: view.timeline_time_seconds,
-                tap_times: &view.tap_times,
-                timing_points: &view.timing_points,
-                waveform_zoom: view.waveform_zoom,
-                waveform_scroll: view.waveform_scroll,
-                trigger_objects: &view.trigger_objects,
-                trigger_selected_index: view.trigger_selected_index,
-                duration_seconds: view.timeline_duration_seconds,
-            },
-            198.0,
-            rect,
-            0.0,
-            10.0,
-            &mut commands,
-        ));
-
-        assert_eq!(commands.len(), 2);
-        match &commands[0] {
-            AppCommand::Editor(EditorCommand::SetTimelineTime(value)) => {
-                approx::assert_abs_diff_eq!(*value, 5.0, epsilon = 0.001)
-            }
-            other => panic!("expected timeline seek command, got {other:?}"),
-        }
+        assert!(clicked);
+        let timeline_messages = world.resource::<Messages<timeline::SetTimelineTime>>();
+        let mut timeline_reader = timeline_messages.get_cursor();
+        let message = timeline_reader
+            .read(timeline_messages)
+            .next()
+            .expect("timeline seek message");
+        approx::assert_abs_diff_eq!(message.0, 5.0, epsilon = 0.001);
+        let selection_messages = world.resource::<Messages<timeline::SetSelectedTap>>();
+        let mut selection_reader = selection_messages.get_cursor();
         assert_eq!(
-            commands[1],
-            AppCommand::Editor(EditorCommand::SetSelectedTap(Some(1))),
+            selection_reader
+                .read(selection_messages)
+                .next()
+                .expect("tap selection message")
+                .0,
+            Some(1),
         );
     }
 
@@ -1023,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn show_timeline_bar_emits_recentering_scroll_command() {
+    fn show_timeline_bar_does_not_mutate_scroll_while_idle() {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
         let timing_points = vec![TimingPoint {
@@ -1042,43 +1047,36 @@ mod tests {
             30.0,
             60.0,
             1.0,
-            0.0,
             false,
             None,
         );
 
-        let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(
-                    ui,
-                    &TimelineBarInputs {
-                        app_settings: &app_settings,
-                        mode: EditorMode::Timing,
-                        last_mode: Some(EditorMode::Timing),
-                        playing: view.playing,
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        tap_times: &view.tap_times,
-                        timing_points: &view.timing_points,
-                        waveform_zoom: view.waveform_zoom,
-                        waveform_scroll: view.waveform_scroll,
-                        trigger_objects: &view.trigger_objects,
-                        trigger_selected_index: view.trigger_selected_index,
-                        duration_seconds: 60.0,
-                    },
-                    &mut commands,
-                );
-            });
+        let (world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_timeline_bar(
+                        ui,
+                        &TimelineBarInputs {
+                            app_settings: &app_settings,
+                            mode: EditorMode::Timing,
+                            last_mode: Some(EditorMode::Timing),
+                            playing: view.playing,
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            tap_times: &view.tap_times,
+                            timing_points: &view.timing_points,
+                            waveform_zoom: view.waveform_zoom,
+                            trigger_objects: &view.trigger_objects,
+                            trigger_selected_index: view.trigger_selected_index,
+                            duration_seconds: 60.0,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
 
-        assert_eq!(commands.len(), 1);
-        match &commands[0] {
-            AppCommand::Editor(EditorCommand::SetWaveformScroll(value)) => {
-                approx::assert_abs_diff_eq!(*value, 20.0, epsilon = 0.001)
-            }
-            other => panic!("expected scroll recenter command, got {other:?}"),
-        }
+        assert_eq!(message_count::<timeline::SetWaveformScroll>(&world), 0);
     }
 
     #[test]
@@ -1145,37 +1143,36 @@ mod tests {
             5.0,
             20.0,
             1.0,
-            -5.0,
             true,
             Some(1),
         );
 
-        let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timeline_bar(
-                    ui,
-                    &TimelineBarInputs {
-                        app_settings: &app_settings,
-                        mode: EditorMode::Timing,
-                        last_mode: Some(EditorMode::Timing),
-                        playing: view.playing,
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        tap_times: &view.tap_times,
-                        timing_points: &view.timing_points,
-                        waveform_zoom: view.waveform_zoom,
-                        waveform_scroll: view.waveform_scroll,
-                        trigger_objects: &view.trigger_objects,
-                        trigger_selected_index: view.trigger_selected_index,
-                        duration_seconds: 20.0,
-                    },
-                    &mut commands,
-                );
-            });
+        let (world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_timeline_bar(
+                        ui,
+                        &TimelineBarInputs {
+                            app_settings: &app_settings,
+                            mode: EditorMode::Timing,
+                            last_mode: Some(EditorMode::Timing),
+                            playing: view.playing,
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            tap_times: &view.tap_times,
+                            timing_points: &view.timing_points,
+                            waveform_zoom: view.waveform_zoom,
+                            trigger_objects: &view.trigger_objects,
+                            trigger_selected_index: view.trigger_selected_index,
+                            duration_seconds: 20.0,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
 
-        assert!(commands.is_empty());
+        assert_eq!(message_count::<timeline::SetWaveformScroll>(&world), 0);
     }
 
     #[test]
@@ -1198,34 +1195,34 @@ mod tests {
             10.0,
             32.0,
             1.0,
-            0.0,
             false,
             None,
         );
 
-        let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_waveform_panel(
-                    ui,
-                    &WaveformPanelInputs {
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        timeline_duration_seconds: view.timeline_duration_seconds,
-                        timing_points: &view.timing_points,
-                        waveform_zoom: view.waveform_zoom,
-                        waveform_samples: &view.waveform_samples,
-                        waveform_sample_rate: view.waveform_sample_rate,
-                        waveform_window_size: view.waveform_window_size,
-                        waveform_loading: view.waveform_loading,
-                        waveform_complete: view.waveform_complete,
-                    },
-                    &mut commands,
-                );
-            });
+        let (world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_waveform_panel(
+                        ui,
+                        &WaveformPanelInputs {
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            timeline_duration_seconds: view.timeline_duration_seconds,
+                            timing_points: &view.timing_points,
+                            waveform_zoom: view.waveform_zoom,
+                            waveform_samples: &view.waveform_samples,
+                            waveform_sample_rate: view.waveform_sample_rate,
+                            waveform_window_size: view.waveform_window_size,
+                            waveform_loading: view.waveform_loading,
+                            waveform_complete: view.waveform_complete,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
 
-        assert!(commands.is_empty());
+        assert_eq!(message_count::<timeline::SetTimelineTime>(&world), 0);
     }
 
     #[test]
@@ -1268,33 +1265,33 @@ mod tests {
             10.0,
             60.0,
             1.0,
-            0.0,
             false,
             None,
         );
 
-        let mut commands = Vec::<AppCommand>::new();
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_waveform_panel(
-                    ui,
-                    &WaveformPanelInputs {
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        timeline_duration_seconds: view.timeline_duration_seconds,
-                        timing_points: &view.timing_points,
-                        waveform_zoom: view.waveform_zoom,
-                        waveform_samples: &view.waveform_samples,
-                        waveform_sample_rate: view.waveform_sample_rate,
-                        waveform_window_size: view.waveform_window_size,
-                        waveform_loading: view.waveform_loading,
-                        waveform_complete: view.waveform_complete,
-                    },
-                    &mut commands,
-                );
-            });
+        let (world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_waveform_panel(
+                        ui,
+                        &WaveformPanelInputs {
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            timeline_duration_seconds: view.timeline_duration_seconds,
+                            timing_points: &view.timing_points,
+                            waveform_zoom: view.waveform_zoom,
+                            waveform_samples: &view.waveform_samples,
+                            waveform_sample_rate: view.waveform_sample_rate,
+                            waveform_window_size: view.waveform_window_size,
+                            waveform_loading: view.waveform_loading,
+                            waveform_complete: view.waveform_complete,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
 
-        assert!(commands.is_empty());
+        assert_eq!(message_count::<timeline::SetTimelineTime>(&world), 0);
     }
 }

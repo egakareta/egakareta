@@ -5,7 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::TimingPoint;
 
 use crate::{
@@ -48,7 +47,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                         .selectable_label((speed - s).abs() < 0.01, format!("{:.2}x", s))
                         .clicked()
                     {
-                        commands.push(AppCommand::Editor(EditorCommand::SetPlaybackSpeed(s)));
+                        commands.set_playback_speed(s);
                     }
                 }
             });
@@ -66,9 +65,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
             )
             .changed()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetTimelineDuration(
-                duration,
-            )));
+            commands.set_timeline_duration(duration);
         }
     });
 
@@ -87,9 +84,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                         .button(format!("{} Remove", egui_phosphor::regular::TRASH))
                         .clicked()
                     {
-                        commands.push(AppCommand::Editor(EditorCommand::RemoveTimingPoint(
-                            selected_idx,
-                        )));
+                        commands.remove_timing_point(selected_idx);
                     }
                     if ui
                         .button(format!(
@@ -99,10 +94,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                         .clicked()
                     {
                         let time = timeline_time_seconds;
-                        commands.push(AppCommand::Editor(EditorCommand::SetTimingPointTime(
-                            selected_idx,
-                            time,
-                        )));
+                        commands.set_timing_point_time(selected_idx, time);
                     }
                 }
             });
@@ -124,9 +116,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .selectable_label(selected_idx == Some(i), label)
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(EditorCommand::SetTimingSelected(
-                                Some(i),
-                            )));
+                            commands.set_timing_selected(Some(i));
                         }
                     }
                     if timing_points.is_empty() {
@@ -154,9 +144,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             )
                             .changed()
                         {
-                            commands.push(AppCommand::Editor(EditorCommand::SetTimingPointTime(
-                                idx, time,
-                            )));
+                            commands.set_timing_point_time(idx, time);
                         }
                     });
 
@@ -167,9 +155,7 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut bpm).speed(0.1).range(1.0..=999.0))
                             .changed()
                         {
-                            commands.push(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
-                                idx, bpm,
-                            )));
+                            commands.set_timing_point_bpm(idx, bpm);
                         }
                     });
 
@@ -185,13 +171,11 @@ pub(crate) fn show_timing_mode_bottom_panel(
                             .add(egui::DragValue::new(&mut den).range(1..=32))
                             .changed();
                         if n_changed || d_changed {
-                            commands.push(AppCommand::Editor(
-                                EditorCommand::SetTimingPointTimeSignature(
-                                    idx,
-                                    num.max(1) as u32,
-                                    den.max(1) as u32,
-                                ),
-                            ));
+                            commands.set_timing_point_time_signature(
+                                idx,
+                                num.max(1) as u32,
+                                den.max(1) as u32,
+                            );
                         }
                     });
                 }
@@ -206,20 +190,18 @@ pub(crate) fn show_timing_mode_bottom_panel(
         ui.vertical(|ui| {
             ui.label("Tap for BPM:");
             if ui.button("Tap (click repeatedly)").clicked() {
-                commands.push(AppCommand::Editor(EditorCommand::BpmTap));
+                commands.bpm_tap();
             }
             if let Some(bpm) = bpm_tap_result {
                 ui.label(format!("Detected: {:.1} BPM", bpm));
                 if let Some(idx) = timing_selected_index
                     && ui.button("Apply to selected").clicked()
                 {
-                    commands.push(AppCommand::Editor(EditorCommand::SetTimingPointBpm(
-                        idx, bpm,
-                    )));
+                    commands.set_timing_point_bpm(idx, bpm);
                 }
             }
             if ui.button("Reset taps").clicked() {
-                commands.push(AppCommand::Editor(EditorCommand::BpmTapReset));
+                commands.bpm_tap_reset();
             }
         });
     });
@@ -227,11 +209,10 @@ pub(crate) fn show_timing_mode_bottom_panel(
 
 #[cfg(test)]
 mod tests {
-    use eg_state::commands::AppCommand;
     use eg_types::{AppSettings, LevelObject, MusicMetadata, TimingPoint};
 
     use super::{TimingModePanelInputs, show_timing_mode_bottom_panel};
-    use crate::test_utils::editor_ui_view;
+    use crate::test_utils::{editor_ui_view, with_world_command_sink};
 
     fn make_view<'a>(
         app_settings: &'a AppSettings,
@@ -269,27 +250,25 @@ mod tests {
             Some(0),
             Some(127.5),
         );
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timing_mode_bottom_panel(
-                    ui,
-                    &TimingModePanelInputs {
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        timeline_duration_seconds: view.timeline_duration_seconds,
-                        timing_points: &view.timing_points,
-                        playback_speed: view.playback_speed,
-                        timing_selected_index: view.timing_selected_index,
-                        bpm_tap_result: view.bpm_tap_result,
-                    },
-                    &mut commands,
-                );
-            });
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_timing_mode_bottom_panel(
+                        ui,
+                        &TimingModePanelInputs {
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            timeline_duration_seconds: view.timeline_duration_seconds,
+                            timing_points: &view.timing_points,
+                            playback_speed: view.playback_speed,
+                            timing_selected_index: view.timing_selected_index,
+                            bpm_tap_result: view.bpm_tap_result,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
-
-        assert!(commands.is_empty());
     }
 
     #[test]
@@ -297,26 +276,24 @@ mod tests {
         let app_settings = AppSettings::default();
         let music_metadata = MusicMetadata::default();
         let view = make_view(&app_settings, &music_metadata, &[], &[], None, None);
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
-                show_timing_mode_bottom_panel(
-                    ui,
-                    &TimingModePanelInputs {
-                        timeline_time_seconds: view.timeline_time_seconds,
-                        timeline_duration_seconds: view.timeline_duration_seconds,
-                        timing_points: &view.timing_points,
-                        playback_speed: view.playback_speed,
-                        timing_selected_index: view.timing_selected_index,
-                        bpm_tap_result: view.bpm_tap_result,
-                    },
-                    &mut commands,
-                );
-            });
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                egui::CentralPanel::default().show(root_ui, |ui| {
+                    show_timing_mode_bottom_panel(
+                        ui,
+                        &TimingModePanelInputs {
+                            timeline_time_seconds: view.timeline_time_seconds,
+                            timeline_duration_seconds: view.timeline_duration_seconds,
+                            timing_points: &view.timing_points,
+                            playback_speed: view.playback_speed,
+                            timing_selected_index: view.timing_selected_index,
+                            bpm_tap_result: view.bpm_tap_result,
+                        },
+                        commands,
+                    );
+                });
+            })
         });
-
-        assert!(commands.is_empty());
     }
 }

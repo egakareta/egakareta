@@ -23,8 +23,11 @@ use std::collections::{BTreeMap, HashMap};
 use bevy::ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::{
-    commands::AppCommand,
-    state::{EditorConfigState, editor_command::EditorCommand},
+    events::{
+        auth, block, bpm, camera, editor_mode, history, misc, navigation, pointer, selection,
+        session, snap, spawn, timeline, timing,
+    },
+    state::EditorConfigState,
 };
 use eg_types::{
     AppSettings, BasicLevelMetadata, EditorMode, LevelObject, MusicMetadata, SettingsSection,
@@ -33,10 +36,10 @@ use eg_types::{
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use glam::{Mat3, Vec3};
 pub use menu::{
-    MenuTextures, load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
-    show_pause_menu_ui, show_practice_checkpoint_ui,
+    MenuTextures, load_menu_textures, register_custom_fonts, show_menu_favicon_ui,
+    show_menu_play_ui, show_menu_topbar_ui, show_pause_menu_ui, show_practice_checkpoint_ui,
 };
-pub use plugin::{UiPlugin, register_ui_resources_world, write_ui_command, write_ui_commands};
+pub use plugin::UiPlugin;
 
 use crate::{
     components::{
@@ -54,19 +57,187 @@ use crate::{
     },
 };
 
-/// Destination for semantic UI commands emitted while egui is running.
-///
-/// Production uses [`WorldUiCommandSink`] so commands become Bevy messages
-/// immediately. `Vec<AppCommand>` remains useful for focused UI tests.
-pub trait UiCommandSink {
-    /// Emit one semantic UI command.
-    fn push(&mut self, command: AppCommand);
+macro_rules! ui_command_sink {
+    ($( $(#[$meta:meta])* fn $name:ident($($args:tt)*); )*) => {
+        /// Destination for semantic UI commands emitted while egui is running.
+        ///
+        /// [`WorldUiCommandSink`] writes each command to the App world's typed
+        /// message buffer immediately in both production and focused tests.
+        pub trait UiCommandSink {
+            $(
+                $(#[$meta])*
+                fn $name($($args)*);
+            )*
+        }
+    };
 }
 
-impl UiCommandSink for Vec<AppCommand> {
-    fn push(&mut self, command: AppCommand) {
-        Vec::push(self, command);
-    }
+ui_command_sink! {
+    /// Select the block used by the editor placement tool.
+    fn set_block_id(&mut self, block_id: BlockId);
+    /// Change the active editor interaction mode.
+    fn set_editor_mode(&mut self, mode: EditorMode);
+    /// Apply changed properties to the selected authored block.
+    fn update_selected_block(&mut self, object: LevelObject);
+    /// Enable or disable position and size snapping.
+    fn set_snap_to_grid(&mut self, enabled: bool);
+    /// Set the position and size snap increment.
+    fn set_snap_step(&mut self, step: f32);
+    /// Enable or disable rotation snapping.
+    fn set_snap_rotation(&mut self, enabled: bool);
+    /// Set the rotation snap increment in degrees.
+    fn set_snap_rotation_step(&mut self, step: f32);
+    /// Add a tap at the current timeline position.
+    fn add_tap(&mut self);
+    /// Remove every authored tap.
+    fn clear_taps(&mut self);
+    /// Remove the selected tap.
+    fn remove_tap(&mut self);
+    /// Set the selected tap time in seconds.
+    fn set_selected_tap_time(&mut self, time_seconds: f32);
+    /// Set editor preview playback speed.
+    fn set_playback_speed(&mut self, speed: f32);
+    /// Set the editor timeline duration.
+    fn set_timeline_duration(&mut self, duration_seconds: f32);
+    /// Remove a timing point by index.
+    fn remove_timing_point(&mut self, index: usize);
+    /// Update a timing point's time offset.
+    fn set_timing_point_time(&mut self, index: usize, time: f32);
+    /// Update a timing point's BPM.
+    fn set_timing_point_bpm(&mut self, index: usize, bpm: f32);
+    /// Update a timing point's time signature.
+    fn set_timing_point_time_signature(&mut self, index: usize, numerator: u32, denominator: u32);
+    /// Select an optional timing point.
+    fn set_timing_selected(&mut self, index: Option<usize>);
+    /// Record one beat for BPM detection.
+    fn bpm_tap(&mut self);
+    /// Clear the BPM tap detector.
+    fn bpm_tap_reset(&mut self);
+    /// Seek the editor timeline.
+    fn set_timeline_time(&mut self, time_seconds: f32);
+    /// Select an optional authored tap.
+    fn set_selected_tap(&mut self, index: Option<usize>);
+    /// Set waveform/timeline scroll offset.
+    fn set_waveform_scroll(&mut self, scroll: f32);
+    /// Toggle editor timeline playback.
+    fn toggle_timeline_playback(&mut self);
+    /// Set waveform/timeline zoom.
+    fn set_waveform_zoom(&mut self, zoom: f32);
+    /// Remove an authored tap at an exact time.
+    fn remove_tap_at(&mut self, time_seconds: f32);
+    /// Select an optional camera trigger.
+    fn set_trigger_selected(&mut self, index: Option<usize>);
+    /// Start an editor playtest.
+    fn playtest(&mut self);
+    /// Add a timing point with the supplied time and BPM.
+    fn add_timing_point(&mut self, time_seconds: f32, bpm: f32);
+    /// Start the selected level or turn during gameplay.
+    fn turn_right(&mut self);
+    /// Toggle between the menu/gameplay and the editor.
+    fn toggle_editor(&mut self);
+    /// Resume paused gameplay.
+    fn game_resume(&mut self);
+    /// Restart the active gameplay level.
+    fn game_restart_level(&mut self);
+    /// Return from gameplay to the menu.
+    fn game_quit_to_menu(&mut self);
+    /// Enable or disable practice mode.
+    fn game_set_practice_mode(&mut self, enabled: bool);
+    /// Store a practice checkpoint.
+    fn game_set_practice_checkpoint(&mut self);
+    /// Remove the active practice checkpoint.
+    fn game_remove_practice_checkpoint(&mut self);
+    /// Toggle the settings panel.
+    fn toggle_settings(&mut self);
+    /// Start the configured sign-in flow.
+    fn auth_submit_sign_in(&mut self);
+    /// Sign out of the active account.
+    fn auth_sign_out(&mut self);
+    /// Open the configured signup page.
+    fn auth_open_signup(&mut self);
+    /// Undo the most recent editor edit.
+    fn undo(&mut self);
+    /// Redo the most recently undone editor edit.
+    fn redo(&mut self);
+    /// Copy the selected authored blocks.
+    fn copy_block(&mut self);
+    /// Remove the selected authored blocks.
+    fn remove_block(&mut self);
+    /// Paste copied authored blocks at the cursor.
+    fn paste_block(&mut self);
+    /// Duplicate selected authored blocks.
+    fn duplicate_block(&mut self);
+    /// Update the editor cursor from a screen-space location.
+    fn update_cursor_from_screen(&mut self, x: f64, y: f64);
+    /// Snap the selected authored item to the active grid.
+    fn snap_selection_to_grid(&mut self);
+    /// Focus the editor camera on the active selection.
+    fn focus_camera_target(&mut self);
+    /// Pick the selected block's placement type.
+    fn pick_selected_block(&mut self);
+    /// Add a transform trigger to the selection.
+    fn add_transform_trigger(&mut self);
+    /// Toggle the block-catalog placement window.
+    fn toggle_place_window(&mut self);
+    /// Move the editor spawn to the cursor.
+    fn set_spawn_here(&mut self);
+    /// Add a camera trigger at the cursor.
+    fn add_camera_trigger(&mut self);
+    /// Add a camera-follow trigger at the cursor.
+    fn add_camera_follow_trigger(&mut self);
+    /// Toggle editor hitbox visualization.
+    fn toggle_hitbox_visualization(&mut self);
+    /// Show or hide the settings sidebar.
+    fn set_show_settings(&mut self, show: bool);
+    /// Select the active settings sidebar section.
+    fn set_settings_section(&mut self, section: SettingsSection);
+    /// Set the selected graphics backend.
+    fn set_graphics_backend(&mut self, backend: String);
+    /// Set the selected audio backend.
+    fn set_audio_backend(&mut self, backend: String);
+    /// Set the UI-scale multiplier.
+    fn set_ui_scale_multiplier(&mut self, scale: f32);
+    /// Restore all configurable shortcuts to their defaults.
+    fn reset_keybinds(&mut self);
+    /// Load an editor level by name.
+    fn load_level(&mut self, name: String);
+    /// Export the active editor level.
+    fn export_level(&mut self);
+    /// Open the level-import flow.
+    fn complete_import(&mut self);
+    /// Show or hide the level-metadata window.
+    fn set_show_metadata(&mut self, show: bool);
+    /// Rename the active editor level.
+    fn rename_level(&mut self, name: String);
+    /// Open the audio-import flow.
+    fn trigger_audio_import(&mut self);
+    /// Apply edited music metadata.
+    fn update_music(&mut self, metadata: MusicMetadata);
+    /// Apply edited creator metadata.
+    fn update_creator_metadata(&mut self, metadata: BasicLevelMetadata);
+    /// Apply the editor sky color.
+    fn update_sky_color(&mut self, color: [f32; 3]);
+    /// Store the current camera as the menu preview camera.
+    fn capture_menu_preview_camera(&mut self);
+    /// Derive the menu preview camera from the spawn configuration.
+    fn use_auto_menu_preview_camera(&mut self);
+    /// Copy the latest profiler frame to the clipboard.
+    fn copy_latest_perf_frame(&mut self);
+    /// Toggle the profiler overlay.
+    fn toggle_perf_overlay(&mut self);
+    /// Restore one shortcut action to its default bindings.
+    fn reset_keybind(&mut self, action: String);
+    /// Set or clear the shortcut currently capturing a chord.
+    fn set_keybind_capture(&mut self, capture: Option<(String, usize)>);
+    /// Clear one shortcut-binding slot.
+    fn clear_keybind_slot(&mut self, action: String, slot: usize);
+    /// Set camera orientation, optionally animating the transition.
+    fn set_camera_orientation(
+        &mut self,
+        rotation: f32,
+        pitch: f32,
+        transition_seconds: Option<f32>,
+    );
 }
 
 /// Writes UI commands directly into the App world's typed message buffers.
@@ -82,8 +253,356 @@ impl<'w> WorldUiCommandSink<'w> {
 }
 
 impl UiCommandSink for WorldUiCommandSink<'_> {
-    fn push(&mut self, command: AppCommand) {
-        plugin::write_ui_command(self.world, command);
+    fn set_block_id(&mut self, block_id: BlockId) {
+        self.world.write_message(editor_mode::SetBlockId(block_id));
+    }
+
+    fn set_editor_mode(&mut self, mode: EditorMode) {
+        self.world.write_message(editor_mode::SetEditorMode(mode));
+    }
+
+    fn update_selected_block(&mut self, object: LevelObject) {
+        self.world.write_message(block::UpdateSelectedBlock(object));
+    }
+
+    fn set_snap_to_grid(&mut self, enabled: bool) {
+        self.world.write_message(snap::SetSnapToGrid(enabled));
+    }
+
+    fn set_snap_step(&mut self, step: f32) {
+        self.world.write_message(snap::SetSnapStep(step));
+    }
+
+    fn set_snap_rotation(&mut self, enabled: bool) {
+        self.world.write_message(snap::SetSnapRotation(enabled));
+    }
+
+    fn set_snap_rotation_step(&mut self, step: f32) {
+        self.world.write_message(snap::SetSnapRotationStep(step));
+    }
+
+    fn add_tap(&mut self) {
+        self.world.write_message(timeline::AddTap);
+    }
+
+    fn clear_taps(&mut self) {
+        self.world.write_message(timeline::ClearTaps);
+    }
+
+    fn remove_tap(&mut self) {
+        self.world.write_message(timeline::RemoveTap);
+    }
+
+    fn set_selected_tap_time(&mut self, time_seconds: f32) {
+        self.world
+            .write_message(timeline::SetSelectedTapTime(time_seconds));
+    }
+
+    fn set_playback_speed(&mut self, speed: f32) {
+        self.world.write_message(timeline::SetPlaybackSpeed(speed));
+    }
+
+    fn set_timeline_duration(&mut self, duration_seconds: f32) {
+        self.world
+            .write_message(timeline::SetTimelineDuration(duration_seconds));
+    }
+
+    fn remove_timing_point(&mut self, index: usize) {
+        self.world.write_message(timing::RemoveTimingPoint(index));
+    }
+
+    fn set_timing_point_time(&mut self, index: usize, time: f32) {
+        self.world
+            .write_message(timing::SetTimingPointTime { index, time });
+    }
+
+    fn set_timing_point_bpm(&mut self, index: usize, bpm: f32) {
+        self.world
+            .write_message(timing::SetTimingPointBpm { index, bpm });
+    }
+
+    fn set_timing_point_time_signature(&mut self, index: usize, numerator: u32, denominator: u32) {
+        self.world
+            .write_message(timing::SetTimingPointTimeSignature {
+                index,
+                numerator,
+                denominator,
+            });
+    }
+
+    fn set_timing_selected(&mut self, index: Option<usize>) {
+        self.world.write_message(timing::SetTimingSelected(index));
+    }
+
+    fn bpm_tap(&mut self) {
+        self.world.write_message(bpm::BpmTap);
+    }
+
+    fn bpm_tap_reset(&mut self) {
+        self.world.write_message(bpm::BpmTapReset);
+    }
+
+    fn set_timeline_time(&mut self, time_seconds: f32) {
+        self.world
+            .write_message(timeline::SetTimelineTime(time_seconds));
+    }
+
+    fn set_selected_tap(&mut self, index: Option<usize>) {
+        self.world.write_message(timeline::SetSelectedTap(index));
+    }
+
+    fn set_waveform_scroll(&mut self, scroll: f32) {
+        self.world
+            .write_message(timeline::SetWaveformScroll(scroll));
+    }
+
+    fn toggle_timeline_playback(&mut self) {
+        self.world.write_message(timeline::ToggleTimelinePlayback);
+    }
+
+    fn set_waveform_zoom(&mut self, zoom: f32) {
+        self.world.write_message(timeline::SetWaveformZoom(zoom));
+    }
+
+    fn remove_tap_at(&mut self, time_seconds: f32) {
+        self.world
+            .write_message(timeline::RemoveTapAt(time_seconds));
+    }
+
+    fn set_trigger_selected(&mut self, index: Option<usize>) {
+        self.world.write_message(camera::SetTriggerSelected(index));
+    }
+
+    fn playtest(&mut self) {
+        self.world.write_message(timeline::Playtest);
+    }
+
+    fn add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
+        self.world
+            .write_message(timing::AddTimingPoint { time_seconds, bpm });
+    }
+
+    fn turn_right(&mut self) {
+        self.world.write_message(navigation::TurnRight);
+    }
+
+    fn toggle_editor(&mut self) {
+        self.world.write_message(navigation::ToggleEditor);
+    }
+
+    fn game_resume(&mut self) {
+        self.world.write_message(navigation::GameResume);
+    }
+
+    fn game_restart_level(&mut self) {
+        self.world.write_message(navigation::GameRestartLevel);
+    }
+
+    fn game_quit_to_menu(&mut self) {
+        self.world.write_message(navigation::GameQuitToMenu);
+    }
+
+    fn game_set_practice_mode(&mut self, enabled: bool) {
+        self.world
+            .write_message(navigation::GameSetPracticeMode { enabled });
+    }
+
+    fn game_set_practice_checkpoint(&mut self) {
+        self.world
+            .write_message(navigation::GameSetPracticeCheckpoint);
+    }
+
+    fn game_remove_practice_checkpoint(&mut self) {
+        self.world
+            .write_message(navigation::GameRemovePracticeCheckpoint);
+    }
+
+    fn toggle_settings(&mut self) {
+        self.world.write_message(session::ToggleSettings);
+    }
+
+    fn auth_submit_sign_in(&mut self) {
+        self.world.write_message(auth::AuthSubmitSignIn);
+    }
+
+    fn auth_sign_out(&mut self) {
+        self.world.write_message(auth::AuthSignOut);
+    }
+
+    fn auth_open_signup(&mut self) {
+        self.world.write_message(auth::AuthOpenSignup);
+    }
+
+    fn undo(&mut self) {
+        self.world.write_message(history::Undo);
+    }
+
+    fn redo(&mut self) {
+        self.world.write_message(history::Redo);
+    }
+
+    fn copy_block(&mut self) {
+        self.world.write_message(block::CopyBlock);
+    }
+
+    fn remove_block(&mut self) {
+        self.world.write_message(block::RemoveBlock);
+    }
+
+    fn paste_block(&mut self) {
+        self.world.write_message(block::PasteBlock);
+    }
+
+    fn duplicate_block(&mut self) {
+        self.world.write_message(block::DuplicateBlock);
+    }
+
+    fn update_cursor_from_screen(&mut self, x: f64, y: f64) {
+        self.world
+            .write_message(pointer::UpdateCursorFromScreen { x, y });
+    }
+
+    fn snap_selection_to_grid(&mut self) {
+        self.world.write_message(selection::SnapSelectionToGrid);
+    }
+
+    fn focus_camera_target(&mut self) {
+        self.world.write_message(selection::FocusCameraTarget);
+    }
+
+    fn pick_selected_block(&mut self) {
+        self.world.write_message(editor_mode::PickSelectedBlock);
+    }
+
+    fn add_transform_trigger(&mut self) {
+        self.world.write_message(selection::AddTransformTrigger);
+    }
+
+    fn toggle_place_window(&mut self) {
+        self.world.write_message(misc::TogglePlaceWindow);
+    }
+
+    fn set_spawn_here(&mut self) {
+        self.world.write_message(spawn::SetSpawnHere);
+    }
+
+    fn add_camera_trigger(&mut self) {
+        self.world.write_message(camera::AddCameraTrigger);
+    }
+
+    fn add_camera_follow_trigger(&mut self) {
+        self.world.write_message(camera::AddCameraFollowTrigger);
+    }
+
+    fn toggle_hitbox_visualization(&mut self) {
+        self.world.write_message(misc::ToggleHitboxVisualization);
+    }
+
+    fn set_show_settings(&mut self, show: bool) {
+        self.world.write_message(session::SetShowSettings(show));
+    }
+
+    fn set_settings_section(&mut self, section: SettingsSection) {
+        self.world
+            .write_message(session::SetSettingsSection(section));
+    }
+
+    fn set_graphics_backend(&mut self, backend: String) {
+        self.world
+            .write_message(session::SetGraphicsBackend(backend));
+    }
+
+    fn set_audio_backend(&mut self, backend: String) {
+        self.world.write_message(session::SetAudioBackend(backend));
+    }
+
+    fn set_ui_scale_multiplier(&mut self, scale: f32) {
+        self.world
+            .write_message(session::SetUiScaleMultiplier(scale));
+    }
+
+    fn reset_keybinds(&mut self) {
+        self.world.write_message(session::ResetKeybinds);
+    }
+
+    fn load_level(&mut self, name: String) {
+        self.world.write_message(session::LoadLevel(name));
+    }
+
+    fn export_level(&mut self) {
+        self.world.write_message(session::ExportLevel);
+    }
+
+    fn complete_import(&mut self) {
+        self.world.write_message(session::CompleteImport);
+    }
+
+    fn set_show_metadata(&mut self, show: bool) {
+        self.world.write_message(session::SetShowMetadata(show));
+    }
+
+    fn rename_level(&mut self, name: String) {
+        self.world.write_message(session::RenameLevel(name));
+    }
+
+    fn trigger_audio_import(&mut self) {
+        self.world.write_message(session::TriggerAudioImport);
+    }
+
+    fn update_music(&mut self, metadata: MusicMetadata) {
+        self.world.write_message(session::UpdateMusic(metadata));
+    }
+
+    fn update_creator_metadata(&mut self, metadata: BasicLevelMetadata) {
+        self.world
+            .write_message(session::UpdateCreatorMetadata(metadata));
+    }
+
+    fn update_sky_color(&mut self, color: [f32; 3]) {
+        self.world.write_message(session::UpdateSkyColor(color));
+    }
+
+    fn capture_menu_preview_camera(&mut self) {
+        self.world.write_message(session::CaptureMenuPreviewCamera);
+    }
+
+    fn use_auto_menu_preview_camera(&mut self) {
+        self.world.write_message(session::UseAutoMenuPreviewCamera);
+    }
+
+    fn copy_latest_perf_frame(&mut self) {
+        self.world.write_message(auth::CopyLatestPerfFrame);
+    }
+
+    fn toggle_perf_overlay(&mut self) {
+        self.world.write_message(misc::TogglePerfOverlay);
+    }
+
+    fn reset_keybind(&mut self, action: String) {
+        self.world.write_message(session::ResetKeybind(action));
+    }
+
+    fn set_keybind_capture(&mut self, capture: Option<(String, usize)>) {
+        self.world
+            .write_message(session::SetKeybindCapture(capture));
+    }
+
+    fn clear_keybind_slot(&mut self, action: String, slot: usize) {
+        self.world
+            .write_message(session::ClearKeybindSlot { action, slot });
+    }
+
+    fn set_camera_orientation(
+        &mut self,
+        rotation: f32,
+        pitch: f32,
+        transition_seconds: Option<f32>,
+    ) {
+        self.world.write_message(camera::SetCameraOrientation {
+            rotation,
+            pitch,
+            transition_seconds,
+        });
     }
 }
 
@@ -307,45 +826,13 @@ fn pointer_over_ui_rects(point: egui::Pos2, rects: &[[f32; 4]]) -> bool {
     rects.iter().any(|rect| point_in_rect_bounds(point, *rect))
 }
 
-fn context_menu_button(
+fn context_menu_button<S: UiCommandSink>(
     ui: &mut egui::Ui,
-    commands: &mut impl UiCommandSink,
+    commands: &mut S,
     enabled: bool,
     icon: &str,
     label: &str,
-    command: AppCommand,
-    hotkey: Option<&str>,
-) -> bool {
-    context_menu_button_impl(ui, commands, enabled, icon, label, (None, command), hotkey)
-}
-
-fn context_menu_button_with_before(
-    ui: &mut egui::Ui,
-    commands: &mut impl UiCommandSink,
-    enabled: bool,
-    icon: &str,
-    label: &str,
-    command_pair: (AppCommand, AppCommand),
-    hotkey: Option<&str>,
-) -> bool {
-    context_menu_button_impl(
-        ui,
-        commands,
-        enabled,
-        icon,
-        label,
-        (Some(command_pair.0), command_pair.1),
-        hotkey,
-    )
-}
-
-fn context_menu_button_impl(
-    ui: &mut egui::Ui,
-    commands: &mut impl UiCommandSink,
-    enabled: bool,
-    icon: &str,
-    label: &str,
-    command_pair: (Option<AppCommand>, AppCommand),
+    action: impl FnOnce(&mut S),
     hotkey: Option<&str>,
 ) -> bool {
     let mut clicked = false;
@@ -365,10 +852,7 @@ fn context_menu_button_impl(
         }
     });
     if clicked {
-        if let Some(before_command) = command_pair.0 {
-            commands.push(before_command);
-        }
-        commands.push(command_pair.1);
+        action(commands);
         true
     } else {
         false
@@ -451,7 +935,7 @@ fn show_editor_context_menu(
                     can_undo,
                     egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
                     "Undo",
-                    AppCommand::Editor(EditorCommand::Undo),
+                    UiCommandSink::undo,
                     hint("undo").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -460,7 +944,7 @@ fn show_editor_context_menu(
                     can_redo,
                     egui_phosphor::regular::ARROW_CLOCKWISE,
                     "Redo",
-                    AppCommand::Editor(EditorCommand::Redo),
+                    UiCommandSink::redo,
                     hint("redo").as_deref(),
                 );
 
@@ -496,8 +980,8 @@ fn show_editor_context_menu(
                         }
                     });
                     if cut_clicked {
-                        commands.push(AppCommand::Editor(EditorCommand::CopyBlock));
-                        commands.push(AppCommand::Editor(EditorCommand::RemoveBlock));
+                        commands.copy_block();
+                        commands.remove_block();
                         close_menu = true;
                     }
                 }
@@ -507,22 +991,22 @@ fn show_editor_context_menu(
                     has_block_selection,
                     egui_phosphor::regular::COPY,
                     "Copy",
-                    AppCommand::Editor(EditorCommand::CopyBlock),
+                    UiCommandSink::copy_block,
                     hint("copy").as_deref(),
                 );
-                close_menu |= context_menu_button_with_before(
+                close_menu |= context_menu_button(
                     ui,
                     commands,
                     has_clipboard,
                     egui_phosphor::regular::CLIPBOARD_TEXT,
                     "Paste",
-                    (
-                        AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
-                            x: (menu_position.x * ctx.pixels_per_point()) as f64,
-                            y: (menu_position.y * ctx.pixels_per_point()) as f64,
-                        }),
-                        AppCommand::Editor(EditorCommand::PasteBlock),
-                    ),
+                    |commands| {
+                        commands.update_cursor_from_screen(
+                            (menu_position.x * ctx.pixels_per_point()) as f64,
+                            (menu_position.y * ctx.pixels_per_point()) as f64,
+                        );
+                        commands.paste_block();
+                    },
                     hint("paste").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -531,7 +1015,7 @@ fn show_editor_context_menu(
                     has_block_selection && !is_tapping,
                     egui_phosphor::regular::COPY_SIMPLE,
                     "Duplicate",
-                    AppCommand::Editor(EditorCommand::DuplicateBlock),
+                    UiCommandSink::duplicate_block,
                     hint("duplicate").as_deref(),
                 );
 
@@ -542,7 +1026,7 @@ fn show_editor_context_menu(
                         true,
                         egui_phosphor::regular::TRASH,
                         "Delete Tap",
-                        AppCommand::Editor(EditorCommand::RemoveTapAt(selected_tap_time_seconds)),
+                        |commands| commands.remove_tap_at(selected_tap_time_seconds),
                         hint("remove_block").as_deref(),
                     );
                 } else {
@@ -552,7 +1036,7 @@ fn show_editor_context_menu(
                         has_block_selection,
                         egui_phosphor::regular::TRASH,
                         "Delete",
-                        AppCommand::Editor(EditorCommand::RemoveBlock),
+                        UiCommandSink::remove_block,
                         hint("remove_block").as_deref(),
                     );
                 }
@@ -565,7 +1049,7 @@ fn show_editor_context_menu(
                     has_block_selection || has_tap_selection,
                     egui_phosphor::regular::CORNERS_OUT,
                     "Snap to Grid",
-                    AppCommand::Editor(EditorCommand::SnapSelectionToGrid),
+                    UiCommandSink::snap_selection_to_grid,
                     hint("snap_selection_to_grid").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -574,7 +1058,7 @@ fn show_editor_context_menu(
                     has_focus_target,
                     egui_phosphor::regular::CROSSHAIR,
                     "Focus View",
-                    AppCommand::Editor(EditorCommand::FocusCameraTarget),
+                    UiCommandSink::focus_camera_target,
                     hint("focus_camera_target").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -583,7 +1067,7 @@ fn show_editor_context_menu(
                     has_block_selection,
                     egui_phosphor::regular::EYEDROPPER,
                     "Pick Block Type",
-                    AppCommand::Editor(EditorCommand::PickSelectedBlock),
+                    UiCommandSink::pick_selected_block,
                     hint("pick_selected_block").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -592,7 +1076,7 @@ fn show_editor_context_menu(
                     has_block_selection && !is_tapping,
                     egui_phosphor::regular::ARROWS_CLOCKWISE,
                     "Add Transform Trigger",
-                    AppCommand::Editor(EditorCommand::AddTransformTrigger),
+                    UiCommandSink::add_transform_trigger,
                     hint("add_transform_trigger").as_deref(),
                 );
 
@@ -604,22 +1088,22 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::CUBE,
                     "Block Catalog",
-                    AppCommand::Editor(EditorCommand::TogglePlaceWindow),
+                    UiCommandSink::toggle_place_window,
                     hint("toggle_place_window").as_deref(),
                 );
-                close_menu |= context_menu_button_with_before(
+                close_menu |= context_menu_button(
                     ui,
                     commands,
                     true,
                     egui_phosphor::regular::MAP_PIN,
                     "Set Spawn Here",
-                    (
-                        AppCommand::Editor(EditorCommand::UpdateCursorFromScreen {
-                            x: (menu_position.x * ctx.pixels_per_point()) as f64,
-                            y: (menu_position.y * ctx.pixels_per_point()) as f64,
-                        }),
-                        AppCommand::Editor(EditorCommand::SetSpawnHere),
-                    ),
+                    |commands| {
+                        commands.update_cursor_from_screen(
+                            (menu_position.x * ctx.pixels_per_point()) as f64,
+                            (menu_position.y * ctx.pixels_per_point()) as f64,
+                        );
+                        commands.set_spawn_here();
+                    },
                     hint("spawn_set").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -628,7 +1112,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::CAMERA,
                     "Add Camera Trigger",
-                    AppCommand::Editor(EditorCommand::AddCameraTrigger),
+                    UiCommandSink::add_camera_trigger,
                     hint("add_camera_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -637,7 +1121,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::CAMERA_ROTATE,
                     "Add Camera Follow Trigger",
-                    AppCommand::Editor(EditorCommand::AddCameraFollowTrigger),
+                    UiCommandSink::add_camera_follow_trigger,
                     hint("add_camera_follow_trigger").as_deref(),
                 );
                 close_menu |= context_menu_button(
@@ -646,7 +1130,7 @@ fn show_editor_context_menu(
                     true,
                     egui_phosphor::regular::SELECTION,
                     "Toggle Hitboxes",
-                    AppCommand::Editor(EditorCommand::ToggleHitboxVisualization),
+                    UiCommandSink::toggle_hitbox_visualization,
                     hint("toggle_hitbox_visualization").as_deref(),
                 );
 
@@ -752,7 +1236,7 @@ fn show_settings_sidebar_header(ui: &mut egui::Ui, commands: &mut impl UiCommand
                 .on_hover_text("Close settings")
                 .clicked()
             {
-                commands.push(AppCommand::Editor(EditorCommand::SetShowSettings(false)));
+                commands.set_show_settings(false);
             }
         });
     });
@@ -792,9 +1276,7 @@ fn show_settings_section_tab(
         .selectable_label(current_section == tab_section, label)
         .clicked()
     {
-        commands.push(AppCommand::Editor(EditorCommand::SetSettingsSection(
-            tab_section,
-        )));
+        commands.set_settings_section(tab_section);
     }
 }
 
@@ -824,7 +1306,7 @@ fn show_backend_settings(
             backend_options: graphics_backend_options,
             locked: graphics_backend_locked,
         },
-        EditorCommand::SetGraphicsBackend,
+        UiCommandSink::set_graphics_backend,
     );
 
     if settings_restart_required {
@@ -848,7 +1330,7 @@ fn show_backend_settings(
             backend_options: audio_backend_options,
             locked: audio_backend_locked,
         },
-        EditorCommand::SetAudioBackend,
+        UiCommandSink::set_audio_backend,
     );
 
     ui.separator();
@@ -863,11 +1345,11 @@ struct BackendSelector<'a> {
     locked: bool,
 }
 
-fn show_backend_selector(
+fn show_backend_selector<S: UiCommandSink>(
     ui: &mut egui::Ui,
-    commands: &mut impl UiCommandSink,
+    commands: &mut S,
     selector: BackendSelector<'_>,
-    command: impl FnOnce(String) -> EditorCommand,
+    set_backend: impl FnOnce(&mut S, String),
 ) {
     ui.label(selector.label);
 
@@ -888,7 +1370,7 @@ fn show_backend_selector(
     });
 
     if !selector.locked && backend_choice != selector.configured_backend {
-        commands.push(AppCommand::Editor(command(backend_choice)));
+        set_backend(commands, backend_choice);
     }
 }
 
@@ -908,9 +1390,7 @@ fn show_ui_scale_setting(
         )
         .changed()
     {
-        commands.push(AppCommand::Editor(EditorCommand::SetUiScaleMultiplier(
-            ui_scale_multiplier,
-        )));
+        commands.set_ui_scale_multiplier(ui_scale_multiplier);
     }
 }
 
@@ -964,7 +1444,7 @@ fn show_keybind_settings(
 
             ui.separator();
             if ui.button("Reset to Defaults").clicked() {
-                commands.push(AppCommand::Editor(EditorCommand::ResetKeybinds));
+                commands.reset_keybinds();
             }
         });
 }
@@ -1029,7 +1509,6 @@ pub struct EditorUiInputs<'a> {
     pub playback_speed: f32,
     pub timing_selected_index: Option<usize>,
     pub waveform_zoom: f32,
-    pub waveform_scroll: f32,
     pub waveform_samples: &'a [f32],
     pub waveform_sample_rate: u32,
     pub waveform_window_size: usize,
@@ -1043,7 +1522,6 @@ pub struct EditorUiInputs<'a> {
 
 /// Render the editor UI from an App-owned view and write semantic commands to
 /// the supplied sink. Returns the rectangles used by platform input routing.
-#[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
     inputs: EditorUiInputs<'_>,
@@ -1087,7 +1565,6 @@ pub fn show_editor_ui(
         playback_speed,
         timing_selected_index,
         waveform_zoom,
-        waveform_scroll,
         waveform_samples,
         waveform_sample_rate,
         waveform_window_size,
@@ -1122,107 +1599,104 @@ pub fn show_editor_ui(
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
-    let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            // Top-level tabs: Compose / Tapping / Timing
-            if ui
-                .selectable_label(is_compose, "Compose")
-                .on_hover_text(format!(
-                    "Compose Tab{}",
-                    app_settings.hotkey_hint("tab_compose")
-                ))
-                .clicked()
-                && !is_compose
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Place,
-                )));
-            }
-            if ui
-                .selectable_label(is_timing, "Timing")
-                .on_hover_text(format!(
-                    "Timing Tab{}",
-                    app_settings.hotkey_hint("tab_timing")
-                ))
-                .clicked()
-                && !is_timing
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Timing,
-                )));
-            }
-            if ui
-                .selectable_label(is_tapping, "Tapping")
-                .on_hover_text(format!(
-                    "Tapping Tab{}",
-                    app_settings.hotkey_hint("tab_tapping")
-                ))
-                .clicked()
-                && !is_tapping
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Tapping,
-                )));
-            }
-
-            ui.separator();
-
-            ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
-
-            let selected = level_name.unwrap_or("Untitled");
-
-            egui::ComboBox::from_id_salt("level_select")
-                .selected_text(selected)
-                .show_ui(ui, |ui| {
-                    for level in available_levels {
-                        if ui.selectable_label(selected == level, level).clicked() {
-                            commands
-                                .push(AppCommand::Editor(EditorCommand::LoadLevel(level.clone())));
-                        }
+    let top_bar_response = egui::Area::new("editor_top_bar".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.set_min_width(ctx.content_rect().width());
+            egui::Frame::side_top_panel(&ctx.global_style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // Top-level tabs: Compose / Tapping / Timing
+                    if ui
+                        .selectable_label(is_compose, "Compose")
+                        .on_hover_text(format!(
+                            "Compose Tab{}",
+                            app_settings.hotkey_hint("tab_compose")
+                        ))
+                        .clicked()
+                        && !is_compose
+                    {
+                        commands.set_editor_mode(EditorMode::Place);
                     }
+                    if ui
+                        .selectable_label(is_timing, "Timing")
+                        .on_hover_text(format!(
+                            "Timing Tab{}",
+                            app_settings.hotkey_hint("tab_timing")
+                        ))
+                        .clicked()
+                        && !is_timing
+                    {
+                        commands.set_editor_mode(EditorMode::Timing);
+                    }
+                    if ui
+                        .selectable_label(is_tapping, "Tapping")
+                        .on_hover_text(format!(
+                            "Tapping Tab{}",
+                            app_settings.hotkey_hint("tab_tapping")
+                        ))
+                        .clicked()
+                        && !is_tapping
+                    {
+                        commands.set_editor_mode(EditorMode::Tapping);
+                    }
+
+                    ui.separator();
+
+                    ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
+
+                    let selected = level_name.unwrap_or("Untitled");
+
+                    egui::ComboBox::from_id_salt("level_select")
+                        .selected_text(selected)
+                        .show_ui(ui, |ui| {
+                            for level in available_levels {
+                                if ui.selectable_label(selected == level, level).clicked() {
+                                    commands.load_level(level.clone());
+                                }
+                            }
+                        });
+
+                    ui.separator();
+
+                    if ui
+                        .button(format!("{} Export", egui_phosphor::regular::DOWNLOAD))
+                        .clicked()
+                    {
+                        commands.export_level();
+                    }
+
+                    if ui
+                        .button(format!("{} Import", egui_phosphor::regular::UPLOAD))
+                        .clicked()
+                    {
+                        commands.complete_import();
+                    }
+
+                    if ui
+                        .button(format!("{} Metadata", egui_phosphor::regular::INFO))
+                        .clicked()
+                    {
+                        commands.set_show_metadata(!show_metadata);
+                    }
+
+                    if ui
+                        .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                        .on_hover_text(format!(
+                            "Settings{}",
+                            app_settings.hotkey_hint("toggle_settings")
+                        ))
+                        .clicked()
+                    {
+                        commands.toggle_settings();
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(format!("{editor_fps:.0}fps"));
+                    });
                 });
-
-            ui.separator();
-
-            if ui
-                .button(format!("{} Export", egui_phosphor::regular::DOWNLOAD))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::ExportLevel));
-            }
-
-            if ui
-                .button(format!("{} Import", egui_phosphor::regular::UPLOAD))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::CompleteImport));
-            }
-
-            if ui
-                .button(format!("{} Metadata", egui_phosphor::regular::INFO))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetShowMetadata(
-                    !show_metadata,
-                )));
-            }
-
-            if ui
-                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
-                .on_hover_text(format!(
-                    "Settings{}",
-                    app_settings.hotkey_hint("toggle_settings")
-                ))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("{editor_fps:.0}fps"));
             });
         });
-    });
     ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
 
     if show_metadata {
@@ -1236,7 +1710,7 @@ pub fn show_editor_ui(
                         ui.label(format!("{} Level Name:", egui_phosphor::regular::PENCIL));
                         let mut name = level_name.unwrap_or("Untitled").to_string();
                         if ui.text_edit_singleline(&mut name).changed() {
-                            commands.push(AppCommand::Editor(EditorCommand::RenameLevel(name)));
+                            commands.rename_level(name);
                         }
                     });
 
@@ -1265,7 +1739,7 @@ pub fn show_editor_ui(
                             ))
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(EditorCommand::TriggerAudioImport));
+                            commands.trigger_audio_import();
                         }
                     });
 
@@ -1288,7 +1762,7 @@ pub fn show_editor_ui(
                     });
 
                     if changed {
-                        commands.push(AppCommand::Editor(EditorCommand::UpdateMusic(music)));
+                        commands.update_music(music);
                     }
 
                     ui.separator();
@@ -1333,9 +1807,7 @@ pub fn show_editor_ui(
                     }
 
                     if creator_metadata_changed {
-                        commands.push(AppCommand::Editor(EditorCommand::UpdateCreatorMetadata(
-                            creator_metadata,
-                        )));
+                        commands.update_creator_metadata(creator_metadata);
                     }
 
                     ui.separator();
@@ -1344,8 +1816,7 @@ pub fn show_editor_ui(
                         ui.label(format!("{} Sky:", egui_phosphor::regular::CIRCLE));
                         let mut sky_color = sky_color;
                         if ui.color_edit_button_rgb(&mut sky_color).changed() {
-                            commands
-                                .push(AppCommand::Editor(EditorCommand::UpdateSkyColor(sky_color)));
+                            commands.update_sky_color(sky_color);
                         }
                     });
 
@@ -1355,20 +1826,18 @@ pub fn show_editor_ui(
                         egui_phosphor::regular::CAMERA
                     ));
                     ui.horizontal_wrapped(|ui| {
-                        push_command_when_clicked(
-                            commands,
-                            ui.button(format!(
+                        if ui
+                            .button(format!(
                                 "{} Capture Current Camera",
                                 egui_phosphor::regular::CAMERA
                             ))
-                            .clicked(),
-                            AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera),
-                        );
-                        push_command_when_clicked(
-                            commands,
-                            ui.button("Use Auto from Spawn").clicked(),
-                            AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera),
-                        );
+                            .clicked()
+                        {
+                            commands.capture_menu_preview_camera();
+                        }
+                        if ui.button("Use Auto from Spawn").clicked() {
+                            commands.use_auto_menu_preview_camera();
+                        }
                     });
 
                     ui.separator();
@@ -1384,7 +1853,7 @@ pub fn show_editor_ui(
         }
 
         if !metadata_open {
-            commands.push(AppCommand::Editor(EditorCommand::SetShowMetadata(false)));
+            commands.set_show_metadata(false);
         }
     }
 
@@ -1437,15 +1906,9 @@ pub fn show_editor_ui(
                                         block,
                                         block_icon_texture_ids.get(&block.id.to_string()).copied(),
                                     ) {
-                                        commands.push(AppCommand::Editor(
-                                            EditorCommand::SetBlockId(BlockId::new(&block.id)),
-                                        ));
-                                        commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                                            EditorMode::Place,
-                                        )));
-                                        commands.push(AppCommand::Editor(
-                                            EditorCommand::TogglePlaceWindow,
-                                        ));
+                                        commands.set_block_id(BlockId::new(&block.id));
+                                        commands.set_editor_mode(EditorMode::Place);
+                                        commands.toggle_place_window();
                                     }
                                 } else {
                                     ui.allocate_exact_size(
@@ -1468,58 +1931,61 @@ pub fn show_editor_ui(
         ctx.data_mut(|data| data.insert_persisted(place_category_id, selected_place_category));
 
         if !place_open {
-            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
+            commands.toggle_place_window();
         }
     }
 
-    let bottom_bar_response = egui::Panel::bottom("block_selection_bar")
-        .resizable(false)
+    let bottom_bar_response = egui::Area::new("block_selection_bar".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.vertical(|ui| {
-                let duration_seconds = timeline_metrics(timeline_duration_seconds);
+            ui.set_width(ctx.content_rect().width());
+            egui::Frame::side_top_panel(&ctx.global_style()).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    let duration_seconds = timeline_metrics(timeline_duration_seconds);
 
-                if is_timing {
-                    show_timing_mode_bottom_panel(
+                    if is_timing {
+                        show_timing_mode_bottom_panel(
+                            ui,
+                            &TimingModePanelInputs {
+                                timeline_time_seconds,
+                                timeline_duration_seconds,
+                                timing_points,
+                                playback_speed,
+                                timing_selected_index,
+                                bpm_tap_result,
+                            },
+                            commands,
+                        );
+                    } else if is_tapping {
+                        show_tapping_mode_bottom_panel(
+                            ui,
+                            timeline_preview_position,
+                            timeline_preview_direction,
+                            editor_camera_preview_position,
+                            editor_camera_preview_target,
+                            commands,
+                        );
+                    }
+
+                    show_timeline_bar(
                         ui,
-                        &TimingModePanelInputs {
+                        &TimelineBarInputs {
+                            app_settings,
+                            mode: editor_mode,
+                            last_mode: editor_last_mode,
+                            playing: timeline_playing,
                             timeline_time_seconds,
-                            timeline_duration_seconds,
+                            tap_times: timeline_tap_times,
                             timing_points,
-                            playback_speed,
-                            timing_selected_index,
-                            bpm_tap_result,
+                            waveform_zoom,
+                            trigger_objects,
+                            trigger_selected_index,
+                            duration_seconds,
                         },
                         commands,
                     );
-                } else if is_tapping {
-                    show_tapping_mode_bottom_panel(
-                        ui,
-                        timeline_preview_position,
-                        timeline_preview_direction,
-                        editor_camera_preview_position,
-                        editor_camera_preview_target,
-                        commands,
-                    );
-                }
-
-                show_timeline_bar(
-                    ui,
-                    &TimelineBarInputs {
-                        app_settings,
-                        mode: editor_mode,
-                        last_mode: editor_last_mode,
-                        playing: timeline_playing,
-                        timeline_time_seconds,
-                        tap_times: timeline_tap_times,
-                        timing_points,
-                        waveform_zoom,
-                        waveform_scroll,
-                        trigger_objects,
-                        trigger_selected_index,
-                        duration_seconds,
-                    },
-                    commands,
-                );
+                });
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1554,7 +2020,7 @@ pub fn show_editor_ui(
                             .on_hover_text(format!("Place Block{}", hotkey_hint))
                             .clicked()
                         {
-                            commands.push(AppCommand::Editor(EditorCommand::TogglePlaceWindow));
+                            commands.toggle_place_window();
                         }
                     });
                 });
@@ -1599,27 +2065,31 @@ pub fn show_editor_ui(
 
     // Waveform visualization central panel (Timing mode only)
     if is_timing {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::central_panel(&ctx.global_style())
-                    .fill(egui::Color32::from_rgb(15, 20, 28)),
-            )
+        let viewport = ctx.content_rect();
+        egui::Area::new("timing_waveform_panel".into())
+            .order(egui::Order::Background)
+            .fixed_pos(viewport.min)
             .show(ctx, |ui| {
-                show_waveform_panel(
-                    ui,
-                    &WaveformPanelInputs {
-                        timeline_time_seconds,
-                        timeline_duration_seconds,
-                        timing_points,
-                        waveform_zoom,
-                        waveform_samples,
-                        waveform_sample_rate,
-                        waveform_window_size,
-                        waveform_loading,
-                        waveform_complete,
-                    },
-                    commands,
-                );
+                ui.set_min_size(viewport.size());
+                egui::Frame::central_panel(&ctx.global_style())
+                    .fill(egui::Color32::from_rgb(15, 20, 28))
+                    .show(ui, |ui| {
+                        show_waveform_panel(
+                            ui,
+                            &WaveformPanelInputs {
+                                timeline_time_seconds,
+                                timeline_duration_seconds,
+                                timing_points,
+                                waveform_zoom,
+                                waveform_samples,
+                                waveform_sample_rate,
+                                waveform_window_size,
+                                waveform_loading,
+                                waveform_complete,
+                            },
+                            commands,
+                        );
+                    });
             });
     }
 
@@ -1710,7 +2180,7 @@ pub fn show_perf_overlay(
                         .on_hover_text("Copy the latest profiling frame to clipboard")
                         .clicked()
                     {
-                        commands.push(AppCommand::CopyLatestPerfFrame);
+                        commands.copy_latest_perf_frame();
                     }
                 });
             });
@@ -1719,22 +2189,12 @@ pub fn show_perf_overlay(
         });
 
     if !profiler_open {
-        commands.push(AppCommand::Editor(EditorCommand::TogglePerfOverlay));
+        commands.toggle_perf_overlay();
     }
 }
 
 fn perf_overlay_window_order() -> egui::Order {
     egui::Order::Foreground
-}
-
-fn push_command_when_clicked(
-    commands: &mut impl UiCommandSink,
-    clicked: bool,
-    command: AppCommand,
-) {
-    if clicked {
-        commands.push(command);
-    }
 }
 
 fn show_keybind_action_row(
@@ -1789,10 +2249,8 @@ fn show_keybind_controls(
                 .on_hover_text("Reset to default")
                 .clicked()
             {
-                commands.push(AppCommand::Editor(EditorCommand::ResetKeybind(
-                    action.to_string(),
-                )));
-                commands.push(AppCommand::Editor(EditorCommand::SetKeybindCapture(None)));
+                commands.reset_keybind(action.to_string());
+                commands.set_keybind_capture(None);
             }
         });
     }
@@ -1819,11 +2277,9 @@ fn show_keybind_controls(
                 .clicked()
             {
                 if is_capturing {
-                    commands.push(AppCommand::Editor(EditorCommand::SetKeybindCapture(None)));
+                    commands.set_keybind_capture(None);
                 } else {
-                    commands.push(AppCommand::Editor(EditorCommand::SetKeybindCapture(Some(
-                        (action.to_string(), slot),
-                    ))));
+                    commands.set_keybind_capture(Some((action.to_string(), slot)));
                 }
             }
 
@@ -1833,11 +2289,8 @@ fn show_keybind_controls(
                     .on_hover_text("Clear binding")
                     .clicked()
             {
-                commands.push(AppCommand::Editor(EditorCommand::ClearKeybindSlot {
-                    action: action.to_string(),
-                    slot,
-                }));
-                commands.push(AppCommand::Editor(EditorCommand::SetKeybindCapture(None)));
+                commands.clear_keybind_slot(action.to_string(), slot);
+                commands.set_keybind_capture(None);
             }
         });
     }
@@ -2192,11 +2645,11 @@ fn show_view_selector_cube(
             if dragging_cube {
                 let pointer_delta = ui.input(|input| input.pointer.delta());
                 if pointer_delta != egui::Vec2::ZERO {
-                    commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
-                        rotation: camera_rotation - pointer_delta.x * ROTATE_SPEED,
-                        pitch: camera_pitch + pointer_delta.y * PITCH_SPEED,
-                        transition_seconds: None,
-                    }));
+                    commands.set_camera_orientation(
+                        camera_rotation - pointer_delta.x * ROTATE_SPEED,
+                        camera_pitch + pointer_delta.y * PITCH_SPEED,
+                        None,
+                    );
                 }
             }
 
@@ -2205,11 +2658,7 @@ fn show_view_selector_cube(
                 && let Some(idx) = hovered_face
             {
                 let face = &rendered_faces[idx];
-                commands.push(AppCommand::Editor(EditorCommand::SetCameraOrientation {
-                    rotation: face.rotation,
-                    pitch: face.pitch,
-                    transition_seconds: Some(0.25),
-                }));
+                commands.set_camera_orientation(face.rotation, face.pitch, Some(0.25));
             }
 
             painter.text(
@@ -2229,19 +2678,15 @@ fn show_view_selector_cube(
 #[cfg(test)]
 mod tests {
     use eg_blocks::{BlockCategory, BlockDefinition};
-    use eg_state::{
-        commands::AppCommand,
-        state::{EditorConfigState, editor_command::EditorCommand},
-    };
+    use eg_state::state::EditorConfigState;
     use eg_types::{AppSettings, EditorMode, MusicMetadata, SettingsSection};
     use glam::{Mat3, Vec3};
 
     use super::{
         EditorUiInputs, SettingsSidebarInputs, UiCommandSink, VIEW_CUBE_FACES, WorldUiCommandSink,
         block_matches_catalog_category, combined_ui_scale_factor, is_compact_editor_ui,
-        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, push_command_when_clicked,
-        responsive_ui_scale_multiplier, settings_sidebar_default_width, show_editor_ui,
-        show_perf_overlay, sort_quad_by_angle,
+        marquee_screen_pos_to_egui_pos, perf_overlay_window_order, responsive_ui_scale_multiplier,
+        settings_sidebar_default_width, show_editor_ui, show_perf_overlay, sort_quad_by_angle,
     };
 
     fn camera_forward_from_orientation(rotation: f32, pitch: f32) -> Vec3 {
@@ -2280,105 +2725,83 @@ mod tests {
         marquee_selection_rect_screen: Option<([f64; 2], [f64; 2], bool)>,
     ) {
         let ctx = egui::Context::default();
+        let ui_ctx = ctx.clone();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let editor_config = EditorConfigState::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            let ctx = root_ui.ctx();
-            let mut commands = Vec::new();
-            let app_settings = AppSettings::default();
-            let music_metadata = MusicMetadata::default();
-            let creator_metadata = eg_types::BasicLevelMetadata::default();
-            let _ = show_editor_ui(
-                ctx,
-                EditorUiInputs {
-                    is_editor,
-                    available_levels: &[],
-                    level_name: Some("Test Level"),
-                    music_metadata: &music_metadata,
-                    creator_metadata: &creator_metadata,
-                    sky_color: eg_types::LevelMetadata::default().sky_color,
-                    settings: SettingsSidebarInputs {
-                        show_settings,
-                        is_menu: false,
+        let (_world, _) = crate::test_utils::with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+                let app_settings = AppSettings::default();
+                let music_metadata = MusicMetadata::default();
+                let creator_metadata = eg_types::BasicLevelMetadata::default();
+                let _ = show_editor_ui(
+                    &ui_ctx,
+                    EditorUiInputs {
                         is_editor,
-                        is_game_paused: false,
-                        app_settings: &app_settings,
-                        graphics_backend: "Auto",
-                        graphics_backend_options: &[],
-                        graphics_backend_locked: false,
-                        settings_restart_required: false,
-                        audio_backend: "Default",
-                        audio_backend_options: &[],
-                        audio_backend_locked: false,
-                        settings_section,
-                        keybind_capture_action: None,
+                        available_levels: &[],
+                        level_name: Some("Test Level"),
+                        music_metadata: &music_metadata,
+                        creator_metadata: &creator_metadata,
+                        sky_color: eg_types::LevelMetadata::default().sky_color,
+                        settings: SettingsSidebarInputs {
+                            show_settings,
+                            is_menu: false,
+                            is_editor,
+                            is_game_paused: false,
+                            app_settings: &app_settings,
+                            graphics_backend: "Auto",
+                            graphics_backend_options: &[],
+                            graphics_backend_locked: false,
+                            settings_restart_required: false,
+                            audio_backend: "Default",
+                            audio_backend_options: &[],
+                            audio_backend_locked: false,
+                            settings_section,
+                            keybind_capture_action: None,
+                        },
+                        editor_fps: 60.0,
+                        editor_object_count: 0,
+                        editor_marquee_selection_rect_screen: marquee_selection_rect_screen,
+                        editor_config: &editor_config,
+                        editor_place_preview_position: [0.0, 0.0, 0.0],
+                        editor_selected_block: None,
+                        editor_selected_block_count: 0,
+                        editor_clipboard_block_count: 0,
+                        editor_can_undo: false,
+                        editor_can_redo: false,
+                        editor_mode,
+                        editor_last_mode: Some(editor_mode),
+                        editor_camera_position: [0.0, 0.0, 0.0],
+                        editor_camera_preview_position: [0.0, 0.0, 0.0],
+                        editor_camera_preview_target: [0.0, 0.0, 0.0],
+                        editor_camera_rotation: 0.0,
+                        editor_camera_pitch: 0.0,
+                        show_metadata,
+                        show_place_window: false,
+                        timeline_playing: view.playing,
+                        timeline_time_seconds: view.timeline_time_seconds,
+                        timeline_duration_seconds: view.timeline_duration_seconds,
+                        timeline_tap_times: &view.tap_times,
+                        timeline_selected_tap: view.selected_tap,
+                        timeline_preview_position: view.timeline_preview_position,
+                        timeline_preview_direction: view.timeline_preview_direction,
+                        timing_points: &view.timing_points,
+                        playback_speed: view.playback_speed,
+                        timing_selected_index: view.timing_selected_index,
+                        waveform_zoom: view.waveform_zoom,
+                        waveform_samples: &view.waveform_samples,
+                        waveform_sample_rate: view.waveform_sample_rate,
+                        waveform_window_size: view.waveform_window_size,
+                        waveform_loading: view.waveform_loading,
+                        waveform_complete: view.waveform_complete,
+                        bpm_tap_result: view.bpm_tap_result,
+                        trigger_objects: &view.trigger_objects,
+                        trigger_selected_index: view.trigger_selected_index,
+                        block_icon_texture_ids: &block_icon_texture_ids,
                     },
-                    editor_fps: 60.0,
-                    editor_object_count: 0,
-                    editor_marquee_selection_rect_screen: marquee_selection_rect_screen,
-                    editor_config: &editor_config,
-                    editor_place_preview_position: [0.0, 0.0, 0.0],
-                    editor_selected_block: None,
-                    editor_selected_block_count: 0,
-                    editor_clipboard_block_count: 0,
-                    editor_can_undo: false,
-                    editor_can_redo: false,
-                    editor_mode,
-                    editor_last_mode: Some(editor_mode),
-                    editor_camera_position: [0.0, 0.0, 0.0],
-                    editor_camera_preview_position: [0.0, 0.0, 0.0],
-                    editor_camera_preview_target: [0.0, 0.0, 0.0],
-                    editor_camera_rotation: 0.0,
-                    editor_camera_pitch: 0.0,
-                    show_metadata,
-                    show_place_window: false,
-                    timeline_playing: view.playing,
-                    timeline_time_seconds: view.timeline_time_seconds,
-                    timeline_duration_seconds: view.timeline_duration_seconds,
-                    timeline_tap_times: &view.tap_times,
-                    timeline_selected_tap: view.selected_tap,
-                    timeline_preview_position: view.timeline_preview_position,
-                    timeline_preview_direction: view.timeline_preview_direction,
-                    timing_points: &view.timing_points,
-                    playback_speed: view.playback_speed,
-                    timing_selected_index: view.timing_selected_index,
-                    waveform_zoom: view.waveform_zoom,
-                    waveform_scroll: view.waveform_scroll,
-                    waveform_samples: &view.waveform_samples,
-                    waveform_sample_rate: view.waveform_sample_rate,
-                    waveform_window_size: view.waveform_window_size,
-                    waveform_loading: view.waveform_loading,
-                    waveform_complete: view.waveform_complete,
-                    bpm_tap_result: view.bpm_tap_result,
-                    trigger_objects: &view.trigger_objects,
-                    trigger_selected_index: view.trigger_selected_index,
-                    block_icon_texture_ids: &block_icon_texture_ids,
-                },
-                &mut commands,
-            );
+                    commands,
+                );
+            })
         });
-    }
-
-    #[test]
-    fn push_command_when_clicked_only_pushes_on_click() {
-        let mut commands = Vec::new();
-
-        push_command_when_clicked(
-            &mut commands,
-            false,
-            AppCommand::Editor(EditorCommand::CaptureMenuPreviewCamera),
-        );
-        assert!(commands.is_empty());
-
-        push_command_when_clicked(
-            &mut commands,
-            true,
-            AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera),
-        );
-        assert_eq!(
-            commands,
-            vec![AppCommand::Editor(EditorCommand::UseAutoMenuPreviewCamera)]
-        );
     }
 
     #[test]
@@ -2387,7 +2810,7 @@ mod tests {
         app.add_plugins(crate::plugin::UiPlugin);
 
         let mut sink = WorldUiCommandSink::new(app.world_mut());
-        sink.push(AppCommand::TurnRight);
+        sink.turn_right();
         drop(sink);
 
         let messages = app
@@ -2582,11 +3005,11 @@ mod tests {
     #[test]
     fn show_perf_overlay_renders_outside_editor() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            let ctx = root_ui.ctx();
-            let mut commands = Vec::new();
-            show_perf_overlay(ctx, true, "", "", 60.0, false, &mut commands);
-            assert!(commands.is_empty());
+        let (_world, _) = crate::test_utils::with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |root_ui| {
+                let ctx = root_ui.ctx();
+                show_perf_overlay(ctx, true, "", "", 60.0, false, commands);
+            })
         });
     }
 
@@ -2650,7 +3073,23 @@ mod tests {
 
 #[cfg(test)]
 mod test_utils {
+    use bevy::ecs::world::World;
     use eg_types::{AppSettings, Direction, LevelObject, MusicMetadata, TimingPoint};
+
+    use crate::WorldUiCommandSink;
+
+    /// Run a UI test with the same typed-message sink used by production.
+    pub fn with_world_command_sink<R>(
+        f: impl FnOnce(&mut WorldUiCommandSink<'_>) -> R,
+    ) -> (World, R) {
+        let mut world = World::new();
+        eg_state::events::register_command_events_world(&mut world);
+        let result = {
+            let mut sink = WorldUiCommandSink::new(&mut world);
+            f(&mut sink)
+        };
+        (world, result)
+    }
 
     pub struct EditorUiTestInputs {
         pub playing: bool,
@@ -2664,7 +3103,6 @@ mod test_utils {
         pub playback_speed: f32,
         pub timing_selected_index: Option<usize>,
         pub waveform_zoom: f32,
-        pub waveform_scroll: f32,
         pub waveform_samples: Vec<f32>,
         pub waveform_sample_rate: u32,
         pub waveform_window_size: usize,
@@ -2691,7 +3129,6 @@ mod test_utils {
             playback_speed: 1.0,
             timing_selected_index: None,
             waveform_zoom: 1.0,
-            waveform_scroll: 0.0,
             waveform_samples: Vec::new(),
             waveform_sample_rate: 0,
             waveform_window_size: 256,

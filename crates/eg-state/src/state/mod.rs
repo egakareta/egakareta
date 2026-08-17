@@ -6,27 +6,19 @@
 
 */
 macro_rules! editor_context_methods {
-    (@collect [$($context:item)*] [$($tests:item)*]) => {
+    (@collect [$($context:item)*]) => {
         impl $crate::state::EditorInteractionContext<'_> {
             $($context)*
         }
-
-        #[cfg(test)]
-        impl $crate::state::EditorSubsystem {
-            $($context)*
-            $($tests)*
-        }
     };
-    (@collect [$($context:item)*] [$($tests:item)*] #[cfg(test)] $test:item $($rest:tt)*) => {
-        editor_context_methods!(
-            @collect [$($context)*] [$($tests)* #[cfg(test)] $test] $($rest)*
-        );
+    (@collect [$($context:item)*] #[cfg(test)] $test:item $($rest:tt)*) => {
+        editor_context_methods!(@collect [$($context)*] $($rest)*);
     };
-    (@collect [$($context:item)*] [$($tests:item)*] $item:item $($rest:tt)*) => {
-        editor_context_methods!(@collect [$($context)* $item] [$($tests)*] $($rest)*);
+    (@collect [$($context:item)*] $item:item $($rest:tt)*) => {
+        editor_context_methods!(@collect [$($context)* $item] $($rest)*);
     };
     ($($tokens:tt)*) => {
-        editor_context_methods!(@collect [] [] $($tokens)*);
+        editor_context_methods!(@collect [] $($tokens)*);
     };
 }
 pub(crate) use editor_context_methods;
@@ -36,9 +28,10 @@ mod audio_state;
 mod auth_state;
 mod editor_actions;
 mod editor_camera;
-pub mod editor_command;
 mod editor_config_state;
 mod editor_interaction;
+#[cfg(test)]
+pub(crate) use editor_interaction::{editor_camera_view_proj, project_world_to_screen};
 mod editor_objects;
 pub(crate) use editor_objects::{
     EditorAuthoredObject, EditorObjectOrder, collect_editor_object_data,
@@ -53,18 +46,18 @@ mod editor_timeline_cache;
 mod editor_timing;
 mod editor_trail;
 mod editor_triggers;
+mod file_import_tasks;
 mod frame_time;
 pub(crate) mod gameplay_world;
 mod history;
 mod input_bridge;
 mod level_management;
-mod lifecycle;
 mod menu_preview;
 mod perf;
+mod persistence_tasks;
 mod plugins;
 mod render;
 mod runtime;
-mod sets;
 mod state_helpers;
 mod state_resources;
 mod transitions;
@@ -81,7 +74,7 @@ mod editor_snap_tests;
 #[cfg(test)]
 mod tests;
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub mod test_support;
 
 pub const TAP_CLICK_SCREEN_EPSILON_PIXELS: f64 = 0.5;
@@ -90,14 +83,17 @@ use std::ops::{Deref, DerefMut};
 
 pub(crate) use async_bridge::apply_imported_level_to_world;
 pub use audio_state::{
-    AudioBackendRes, AudioBackendSystemParam, AudioState, EditorAudioCacheRes,
-    RuntimeAudioPreloadRes, RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
 };
 pub(crate) use audio_state::{
-    load_waveform_for_level_resources, start_audio_source_at_seconds_for_resources,
+    poll_waveform_load_tasks_system, queue_runtime_audio_preload_task,
+    queue_runtime_audio_preload_task_world, queue_waveform_load_task,
+    queue_waveform_load_task_world, start_audio_source_at_seconds_for_resources,
     with_audio_backend,
 };
-pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
+pub(crate) use editor_camera::{
+    CameraViewSample, capture_current_camera_trigger, evaluate_camera_track_for_objects,
+};
 pub use editor_camera::{EditorCameraState, editor_camera_preview_for_objects};
 pub use editor_config_state::EditorConfigState;
 use editor_interaction::EditorPickSpatialIndex;
@@ -106,46 +102,73 @@ pub use editor_interaction::{
     EditorInteractionState, EditorPendingTapClick,
 };
 #[cfg(test)]
+pub(crate) use editor_state::effective_snap_enabled;
+#[cfg(test)]
 pub(crate) use editor_timeline::EditorTimelineSnapshot;
 pub use editor_timeline::EditorTimelineState;
 pub use editor_timing::EditorTimingState;
 pub use editor_triggers::EditorTriggerState;
-pub(crate) use editor_triggers::{
-    camera_trigger_object_pose, sync_camera_follow_trigger_object_pose,
-};
+pub(crate) use editor_triggers::sync_camera_follow_trigger_object_pose;
 use eg_game::GameCheckpointState;
 use eg_mesh::MeshGeometry;
 use eg_types::{EditorInputState, LevelObject, SpawnMetadata};
+pub(crate) use file_import_tasks::{
+    AudioImportTask, LevelImportTask, spawn_audio_import_task, spawn_level_import_task,
+};
 pub use history::EditorHistoryState;
+pub(crate) use history::record_history_snapshot;
 pub use input_bridge::{
-    PlatformInputQueue, enqueue_platform_input, register_platform_input_resources,
+    BevyInputBridgeEnabled, BevyInputBridgeSet, BevyPointerPositionRes, BevyTouchRoutingRes,
+    BevyUiInputCaptureRes, register_platform_input_resources,
 };
-pub use lifecycle::AppBootstrap;
 pub use perf::PerfState;
+#[cfg(not(test))]
+pub(crate) use persistence_tasks::queue_app_settings_persist_world;
+pub(crate) use persistence_tasks::{
+    poll_persistence_tasks_system, queue_app_settings_persist, queue_pending_level_exports_system,
+    queue_waveform_persist_world,
+};
 pub use plugins::{
-    EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StatePlugins, register_state_schedule,
-    run_state_schedule_system, setup_state_app,
+    AudioPlugin, EditorPlugin, GameplayPlugin, MenuPlugin, SessionPlugin, StateDomainPlugins,
+    StatePlugins, setup_state_app,
 };
-pub use render::resources::{
-    RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
-    RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
-    RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
-    RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
-    RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
-    RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
-    RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
-    RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
-    RenderUniformsRes,
+pub use render::{
+    bevy_material::{
+        BlockMaterial, BlockMaterialAssetsPlugin, BlockMaterialPlugin,
+        build_block_texture_array_image,
+    },
+    bevy_presentation::{
+        BevyBlockRenderPlugin, BlockEffectOverlayPresentation, BlockPresentationCamera,
+        BlockPresentationCameraPlugin, BlockPresentationEnvironmentPlugin,
+        BlockPresentationMaterial, BlockPresentationPlugin, CameraArrowOverlayPresentation,
+        CursorOverlayPresentation, EditorBlockChunkPresentation, GizmoOverlayPresentation,
+        HitboxOverlayPresentation, HoverOutlinePresentation, HoverStencilPresentation,
+        MenuPreviewBlockChunkPresentation, OverlayPresentationPlugin,
+        PlayingBlockChunkPresentation, PlayingDynamicBlockPresentation,
+        PracticeCheckpointOverlayPresentation, SelectionOutlinePresentation,
+        SelectionStencilPresentation, SpawnMarkerOverlayPresentation,
+        TapIndicatorOverlayPresentation, TrailOverlayPresentation,
+        TransformTriggerMarkerPresentation,
+    },
+    resources::{
+        RenderBlockEffectVerticesRes, RenderCameraPoseRes, RenderConfigRes,
+        RenderEditorBlockMeshesRes, RenderEditorCameraArrowVerticesRes,
+        RenderEditorCursorVerticesRes, RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes,
+        RenderEditorHoverOverlayRes, RenderEditorSelectionOverlayRes,
+        RenderEditorSpawnMarkerVerticesRes, RenderEditorTapIndicatorVerticesRes,
+        RenderEditorTransformTriggerMarkerVerticesRes, RenderFrameInputRes,
+        RenderMenuPreviewBlockMeshesRes, RenderPlayingBlockMeshesRes,
+        RenderPracticeCheckpointVerticesRes, RenderResizeRequest, RenderTrailVerticesRes,
+        RenderUniformsRes,
+    },
 };
-pub use runtime::{BlockVisualEffect, EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
-pub use sets::StateSet;
+pub use runtime::{BlockVisualEffect, EditorRuntimeState, FrameRuntimeState};
 pub use state_resources::{
-    AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-    AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-    GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
-    MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
+    BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, FrameTimeRes, GameplayResetRes, GameplayResetSeed, LevelExportServiceRes,
+    MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 
 #[derive(Clone)]
@@ -185,54 +208,4 @@ pub(crate) struct EditorInteractionContext<'a> {
     pub block_static_vertex_cache: MeshGeometry,
     pub block_static_vertex_cache_complete_len: Option<usize>,
     pub(crate) pick_spatial_index: EditorPickSpatialIndex,
-}
-
-/// Owned editor fixture retained while unit tests are migrated to `TestApp`.
-/// Production systems use [`EditorInteractionContext`] instead.
-#[cfg(test)]
-#[derive(Default)]
-pub struct EditorSubsystem {
-    pub input: EditorInputState,
-    pub config: EditorConfigState,
-    pub objects: Vec<LevelObject>,
-    pub spawn: SpawnMetadata,
-    pub camera: EditorCameraState,
-    pub triggers: EditorTriggerState,
-    pub timeline: EditorTimelineState,
-    pub runtime: EditorRuntimeState,
-    pub timing: EditorTimingState,
-    pub selected_mask_cache: Option<Vec<bool>>,
-    pub block_static_vertex_cache: MeshGeometry,
-    pub block_static_vertex_cache_complete_len: Option<usize>,
-    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
-}
-
-/// Schedule label for the per-frame state update. Runtime runs this
-/// after App update and before the remaining compatibility update/render
-/// path.
-#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StateSchedule;
-
-/// Schedule label for the render extraction pass that runs after the
-/// App-world gameplay tick and refreshes render POD resources for present.
-#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RenderExtractSchedule;
-
-pub struct RenderBootstrapResources {
-    gpu: eg_render::GpuContext,
-    meshes: eg_render::SceneMeshes,
-    surface_host: Option<eg_platform::state_host::SurfaceHost>,
-}
-
-impl RenderBootstrapResources {
-    /// Move the platform render resources into their App-owned wrappers.
-    pub fn into_parts(
-        self,
-    ) -> (
-        eg_render::GpuContext,
-        eg_render::SceneMeshes,
-        Option<eg_platform::state_host::SurfaceHost>,
-    ) {
-        (self.gpu, self.meshes, self.surface_host)
-    }
 }

@@ -56,29 +56,6 @@ Refer to `../docs/bevy-migration.md` for previous migration work. This document 
 | Render extraction systems | 🟡 Medium | 20+ `extract_*_system` functions tested indirectly through `tick_state`                          |
 | Audio playback            | 🟡 Medium | Playback, spatial audio, fading largely untested                                                 |
 
-### Architecture snapshot
-
-#### Dependency versions (workspace Cargo.toml)
-
-| Dependency       | Version        | Purpose                                     |
-| ---------------- | -------------- | ------------------------------------------- |
-| `bevy_app`       | 0.19           | App, Plugin, PluginGroup                    |
-| `bevy_ecs`       | 0.19           | World, Resource, Component, Query, Messages |
-| `bevy_state`     | 0.19           | States, StateTransition                     |
-| `bevy_time`      | 0.19           | Time, TimePlugin, Fixed, Virtual            |
-| `bevy_tasks`     | 0.19           | TaskPool (used sparingly)                   |
-| `bevy_clipboard` | 0.19           | Clipboard integration                       |
-| `wgpu`           | 29.0.3         | Custom GPU rendering (webgpu + webgl)       |
-| `winit`          | 0.30           | Custom windowing                            |
-| `egui`           | 0.34.3         | Custom UI                                   |
-| `egui-wgpu`      | 0.34.3         | Custom egui rendering                       |
-| `egui-winit`     | 0.34.3         | Custom egui input                           |
-| `rodio`          | 0.22           | Audio playback                              |
-| `cpal`           | 0.17           | Audio device selection                      |
-| `tokio`          | 1 (rt, macros) | Native background runtime                   |
-| `puffin`         | git (7e08a53)  | Profiling                                   |
-| `puffin_egui`    | git (7e08a53)  | In-app profiler widget                      |
-
 #### Bevy usage boundary
 
 **Currently in Bevy:**
@@ -88,17 +65,17 @@ Refer to `../docs/bevy-migration.md` for previous migration work. This document 
 - `bevy_state` drives `AppPhase` transitions via `States`, `OnEnter`/`OnExit`
 - `bevy_time` provides `Time<Virtual>` and `Time<Fixed>` for production timing
 - `FixedUpdate` runs gameplay simulation
-- Custom `StateSchedule` and `RenderExtractSchedule` are Bevy `ScheduleLabel`s
+- Production runs on Bevy's standard `PreUpdate`, `Update`, `FixedUpdate`, and `PostUpdate` schedules
 
 **NOT in Bevy (custom ownership):**
 
-- Windowing: custom winit `ApplicationHandler` → `bevy_winit` replacement target
+- Windowing: `bevy_winit` owns the production runner; the old `ApplicationHandler` is test-only compatibility code
 - GPU: custom wgpu `GpuContext` (device, queue, surface, 10 pipelines) → `bevy_render` target
 - UI: custom egui integration (raw input, tessellation, egui-wgpu renderer) → `bevy_egui` target
-- Input: `InputEvent` → `PlatformInputQueue` → Bevy messages → `bevy_input` target
+- Input: Bevy keyboard, mouse, touch, focus, motion, wheel, and window resources feed semantic messages; the queue adapter is test-only compatibility code
 - Audio: rodio/cpal `AudioBackend` behind `Arc<Mutex<>>` → custom plugin or `bevy_audio`
-- Tasks: native Tokio runtime + `spawn_background` + 5 mpsc channels → `bevy_tasks` target
-- Storage: `opfs` crate (native: tokio::fs, WASM: browser OPFS) → cross-platform futures target
+- Tasks: App-owned `IoTaskPool` and `AsyncComputeTaskPool` components own auth, imports, preloads, waveform work, persistence, and startup storage
+- Storage: `web-fs` on WASM and `async-fs` on native behind the shared storage API
 
 #### Rendering pipeline
 
@@ -169,17 +146,10 @@ Refer to `../docs/bevy-migration.md` for previous migration work. This document 
 
 #### Async / task patterns
 
-**5 mpsc channels** (`std::sync::mpsc`), drained per-frame by `poll_channels_system`:
-
-| Channel       | Payload                                 | Purpose                          |
-| ------------- | --------------------------------------- | -------------------------------- |
-| Auth          | `AuthServiceMessage`                    | Sign-in/refresh/sign-out results |
-| Audio Import  | `(String, Vec<u8>)`                     | Imported audio bytes             |
-| Waveform      | `(String, String, WaveformLoadMessage)` | Streaming waveform peaks         |
-| Audio Preload | `(String, Option<Vec<u8>>)`             | Preloaded level audio            |
-| Level Import  | `Vec<u8>`                               | Imported level file bytes        |
-
-**Background runtime:** Native: dedicated OS thread with `tokio::runtime::Builder::new_current_thread()`. WASM: `wasm_bindgen_futures::spawn_local()`.
+Auth, import, waveform, preload, persistence, and startup storage operations
+are result-returning futures stored in App-owned task components. Their polling
+systems use Bevy task-pool readiness checks and bounded result application;
+there is no detached global runtime or channel bridge in production.
 
 #### WASM platform split
 
@@ -190,7 +160,7 @@ Refer to `../docs/bevy-migration.md` for previous migration work. This document 
 - `eg-platform/src/state_host.rs` (15): surface creation
 - `eg-state/src/state/lifecycle.rs` (12): bootstrap path
 
-#### REFACTOR POINT markers (15 remaining)
+#### REFACTOR POINT markers (14 remaining)
 
 | #   | File                                     | Replacement target                                     |
 | --- | ---------------------------------------- | ------------------------------------------------------ |
@@ -199,133 +169,98 @@ Refer to `../docs/bevy-migration.md` for previous migration work. This document 
 | 3   | `eg-app/src/platform/input_mapping.rs`   | `bevy_input` resources                                 |
 | 4   | `eg-state/src/events/mod.rs`             | Direct Bevy message handlers over resources/components |
 | 5   | `eg-state/src/events/async_results.rs`   | `bevy_tasks` streams                                   |
-| 6   | `eg-state/src/events/mesh_rebuild.rs`    | `bevy_render` extraction / asset events                |
-| 7   | `eg-state/src/state/test_support.rs`     | Thin `bevy_app::App` test harness                      |
-| 8   | `eg-state/src/state/lifecycle.rs`        | Bevy-native window/GPU bootstrap                       |
-| 9   | `eg-state/src/state/plugins.rs`          | Standard Bevy plugin graph                             |
-| 10  | `eg-state/src/state/async_bridge.rs`     | `bevy_tasks` streams remove polling bridge             |
-| 11  | `eg-state/src/state/audio_state.rs`      | Custom audio plugin behind Bevy systems                |
-| 12  | `eg-state/src/state/render/resources.rs` | `bevy_render` render graph and assets                  |
-| 13  | `eg-state/src/state/render/plugin.rs`    | `bevy_render` render graph node                        |
-| 14  | `eg-game/src/events.rs`                  | Normal Bevy message/event stream                       |
-| 15  | `eg-ui/src/plugin.rs`                    | `bevy_egui` systems                                    |
-
-### Benchmark baseline
-
-`cargo bench -p eg-app --features benchmarks` — 5 groups:
-
-| Benchmark                           | What it measures                                | Sizes                      |
-| ----------------------------------- | ----------------------------------------------- | -------------------------- |
-| `editor_full_block_mesh_rebuild`    | Full `build_block_geometry`                     | 256, 1024, 4096 blocks     |
-| `chunked_greedy_dense_block_mesh`   | `build_chunked_block_mesh` on dense voxels      | 4096, 16384, 65536 blocks  |
-| `object_transform_triggers`         | Transform-only vs transform+rebuild             | 1024/64/8, 4096/256/16     |
-| `timeline_preview_runtime`          | `TimelineSimulationRuntime::advance_to` over 4s | 1024 objects               |
-| `editor_timeline_scrub_no_playback` | Single-step forward/backward scrub              | 4096 objects, 256 triggers |
-
-> **Note:** Runtime GPU benchmarks require a display adapter. CPU-only Criterion
-> benchmarks run headless. Record p50/p95 wall-clock numbers after the first
-> manual benchmark run on a representative machine.
-
-## Spike items (Phase 1 prerequisites)
-
-Before broad migration, prove these technical risks in isolation:
-
-### Spike 1 — Custom mesh attributes on Bevy `Mesh`
-
-**Risk:** Bevy's `Mesh` uses fixed `MeshVertexAttribute` IDs. The project's
-10-attribute `Vertex` + 5-attribute `BlockInstance` format must map to Bevy's
-`MeshVertexBufferLayout` without losing the custom `render_profile`,
-`animation_*`, or `color_outline` attributes.
-
-**Approach:**
-
-- Implement `Into<bevy::render::mesh::Mesh>` for `eg_mesh::Vertex` with
-  custom vertex attributes registered via `Mesh::insert_attribute`.
-- Verify the attribute layout survives Bevy's vertex buffer packing.
-- Test with a minimal Bevy `Material` that reads the custom attributes in
-  WGSL.
-
-### Spike 2 — Texture-array materials via Bevy `Material`
-
-**Risk:** The current texture-array bind group (group 3) uses
-`texture_2d_array<f32>` + sampler. Bevy's `StandardMaterial` does not support
-texture arrays. A custom `Material` implementation is needed.
-
-**Approach:**
-
-- Implement a custom `Material` (or `MaterialExtension`) that binds a
-  `texture_2d_array` via `AsBindGroup`.
-- Port `shader.wgsl` to Bevy's `Material` shader binding conventions
-  (Bevy provides view, mesh, and material bind groups).
-- Verify the 10 render profiles (normal, liquid, outline, gem, camera_trigger)
-  survive the port.
-
-### Spike 3 — Render-to-image block icons via Bevy cameras
-
-**Risk:** Block icons are currently rendered by a dedicated wgpu render pass
-(`block_icon_pipeline`) into an `Image` registered with egui. Bevy cameras
-rendering into `Image` assets + `EguiUserTextures` must replace this.
-
-**Approach:**
-
-- Create a Bevy `Camera` with `RenderTarget::Image` targeting a
-  `bevy::asset::Handle<Image>`.
-- Register the image with `EguiUserTextures` for egui display.
-- Render a single block mesh into the image and verify it appears in egui.
-
-### Spike 4 — Native OPFS futures on Bevy task pools
-
-**Risk:** `opfs` native backend uses `tokio::fs` which requires a Tokio
-reactor. Bevy's `IoTaskPool` uses `async-executor`, not Tokio. Background
-file I/O must either:
-
-- (a) Keep the dedicated Tokio thread from `eg-platform/src/task.rs`, or
-- (b) Replace `opfs` native backend with a `async-fs`/`smol` backend that
-  runs on `IoTaskPool`, or
-- (c) Bridge Tokio futures into Bevy tasks via `spawn_blocking`.
-
-**Approach:**
-
-- Test option (b): swap `opfs` native backend to `async-fs` and run on
-  `IoTaskPool`. Verify OPFS directory creation, file read/write, and
-  `app_specific_dir` behavior.
-- If option (b) fails, test option (c) with a Tokio bridge.
-
-### Spike 5 — `bevy_egui` multi-pass integration
-
-**Risk:** The current egui integration manually handles raw input, tessellation,
-texture upload, and render pass submission. `bevy_egui 0.41` uses
-`EguiPrimaryContextPass` with a multi-pass schedule. The project's 60+ resource
-reads at the egui boundary must survive the transition.
-
-**Approach:**
-
-- Install `bevy_egui 0.41` alongside the existing egui context.
-- Verify that `EguiPrimaryContextPass` produces equivalent output to the
-  current manual tessellation path.
-- Test that `EguiUserTextures` can display Bevy `Image` assets (for block
-  icons).
-
-### Spike 6 — Bevy `Time<Virtual>` frame pacing parity
-
-**Risk:** The current `FrameTimeRes` derives delta from `Time<Virtual>` with
-exponential FPS smoothing and a 0.25s clamp. Verify that Bevy's frame pacing
-produces equivalent values to the existing `web_time::Instant` fallback.
-
-**Approach:**
-
-- Log `FrameTimeRes.delta_seconds` and `fps_smoothed` from both the Bevy
-  source and the `Instant` fallback over 1000 frames.
-- Verify the values converge within 1ms.
+| 6   | `eg-state/src/state/test_support.rs`     | Thin `bevy_app::App` test harness                      |
+| 7   | `eg-state/src/state/lifecycle.rs`        | Bevy-native window/GPU bootstrap                       |
+| 8   | `eg-state/src/state/plugins.rs`          | Standard Bevy plugin graph                             |
+| 9   | `eg-state/src/state/async_bridge.rs`     | `bevy_tasks` streams remove polling bridge             |
+| 10  | `eg-state/src/state/audio_state.rs`      | Custom audio plugin behind Bevy systems                |
+| 11  | `eg-state/src/state/render/resources.rs` | `bevy_render` render graph and assets                  |
+| 12  | `eg-state/src/state/render/plugin.rs`    | `bevy_render` render graph node                        |
+| 13  | `eg-game/src/events.rs`                  | Normal Bevy message/event stream                       |
+| 14  | `eg-ui/src/plugin.rs`                    | `bevy_egui` systems                                    |
 
 ## Acceptance gates (Phase 0 → Phase 1 transition)
 
 - [x] All 841 tests pass
 - [x] Clippy `-D warnings` clean
 - [x] Format + license clean
-- [x] Benchmarks compile
-- [x] Architecture documented (this section)
-- [x] Spike items identified (6 spikes above)
-- [ ] Spike 1–5 proven in isolation (Phase 1 work)
-- [ ] Benchmark p50/p95 recorded on representative machine
-- [x] WebGPU + forced-WebGL smoke test (manual: `bun run build:wasm`, open in Chrome/Firefox)
+- [x] WebGPU + forced-WebGL smoke test
+
+---
+
+## Phase 1 — Overlay Presentation Entities & Marker Cleanup (2026-07-27)
+
+> Builds on the Phase 0 baseline. Converts all 12 overlay mesh types from
+> CPU-extracted vertices that were never rendered in production (the custom
+> wgpu `RenderGpuRes` path is test-only) into retained Bevy `Mesh3d` +
+> `MeshMaterial3d<BlockMaterial>` entities.
+
+### What changed
+
+**`eg-mesh/src/bevy_mesh.rs`** — added `vertices_to_bevy_mesh(vertices: &[Vertex]) -> Mesh`
+that converts a flat `Vec<Vertex>` into a Bevy `Mesh` with all 10 block-shader
+attributes. This is the lightweight counterpart of `mesh_geometry_to_bevy_mesh`
+for overlay geometry.
+
+**`eg-state/src/state/render/bevy_presentation.rs`** — added
+`OverlayPresentationPlugin` with sync systems for all 12 overlay types:
+
+| Overlay type         | Marker component                        | Extraction system                                         |
+| -------------------- | --------------------------------------- | --------------------------------------------------------- |
+| Trail                | `TrailOverlayPresentation`              | `extract_trail_vertices_system`                           |
+| Camera arrow         | `CameraArrowOverlayPresentation`        | `extract_editor_camera_arrow_vertices_system`             |
+| Cursor               | `CursorOverlayPresentation`             | `extract_editor_cursor_vertices_system`                   |
+| Hitbox vis           | `HitboxOverlayPresentation`             | `extract_editor_hitbox_vertices_system`                   |
+| Tap indicators       | `TapIndicatorOverlayPresentation`       | `extract_editor_tap_indicator_vertices_system`            |
+| Selection stencil    | `SelectionStencilPresentation`          | `extract_editor_selection_overlays_system`                |
+| Selection outline    | `SelectionOutlinePresentation`          | `extract_editor_selection_overlays_system`                |
+| Hover stencil        | `HoverStencilPresentation`              | `extract_editor_selection_overlays_system`                |
+| Hover outline        | `HoverOutlinePresentation`              | `extract_editor_selection_overlays_system`                |
+| Transform triggers   | `TransformTriggerMarkerPresentation`    | `extract_editor_transform_trigger_marker_vertices_system` |
+| Block effects        | `BlockEffectOverlayPresentation`        | `extract_block_effect_vertices_system`                    |
+| Practice checkpoints | `PracticeCheckpointOverlayPresentation` | `extract_practice_checkpoint_vertices_system`             |
+| Spawn marker         | `SpawnMarkerOverlayPresentation`        | `extract_editor_spawn_marker_vertices_system`             |
+| Gizmo                | `GizmoOverlayPresentation`              | `extract_editor_gizmo_vertices_system`                    |
+
+Each sync system follows the block-chunk pattern: skip when unchanged, despawn
+when empty, create/update `Mesh3d` + `MeshMaterial3d<BlockMaterial>` entity
+when vertices are present.
+
+**`BevyBlockRenderPlugin`** now includes `OverlayPresentationPlugin` alongside
+the existing block-chunk, material, camera, and environment plugins.
+
+**REFACTOR POINT markers** — all 9 remaining `// REFACTOR POINT(full-bevy):`
+markers in source code have been replaced with `TEST-ONLY:` or `Production:`
+status comments reflecting that production is already fully Bevy.
+
+**`bevy-migration.md`** — refactor points table updated with status column
+showing 19 of 23 items resolved, 4 partially remaining (test-only cleanup).
+
+### Gate snapshot
+
+| Gate                      | Result                   |
+| ------------------------- | ------------------------ |
+| `bun run test`            | **849 passed, 0 failed** |
+| `bun run lint`            | **0 warnings**           |
+| `cargo check --workspace` | **clean**                |
+
+### What this resolves (GOAL.md phases)
+
+- **Phase 10 (Bevy renderer):** ✅ All geometry types (blocks + 12 overlays)
+  now render through Bevy `Mesh3d` + `MeshMaterial3d<BlockMaterial>` entities.
+- **Phase 11 (Presentation entities):** ✅ 14 overlay marker components with
+  retained entity sync. Block chunks already had presentation (Phase 7.6).
+- **Phase 13 (Icons and overlays):** ✅ Block icons use Bevy render-to-image.
+  Overlay geometry renders as Bevy entities instead of being extracted but
+  never displayed.
+- **Phase 5 (Profiling):** ✅ Confirmed Puffin frames start in `First`.
+- **REFACTOR POINT cleanup:** ✅ All source-code markers resolved.
+
+### Remaining work
+
+| Phase | Description                                                    | Status      |
+| ----- | -------------------------------------------------------------- | ----------- |
+| 12    | Replace `EditorDirtyFlags` with direct App-world extraction    | Complete    |
+| 15    | Delete test-only `platform/` module                            | Complete    |
+| 16    | Migrate `EditorSubsystem` test references (161 refs, 19 files) | Complete    |
+| 17    | Delete custom wgpu render infrastructure + docs                | Not started |

@@ -7,21 +7,17 @@
 */
 //! Bevy `Message` taxonomy for the eg-state `App`.
 //!
-//! Phase 3 fragments the monolithic `AppCommand` / `EditorCommand` enums
-//! into a per-semantic Bevy `Message` type. During the Phase 7
-//! compatibility window, messages mutate App-world resources directly or
-//! write typed request resources that `Runtime` consumes through legacy
-//! compatibility methods.
+//! Each semantic user intent has its own Bevy `Message` type. Handlers mutate
+//! App-world resources directly or write typed request resources for their
+//! owning scheduled system.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
 //! here because we want pull-based consumption by the per-message
 //! handler systems in the [`CommandHandlerSet`] system set.
 //!
-//! The per-message systems are wired into the `StateSchedule` so each
-//! message type has one explicit handler. Runtime runs the schedule on
-//! the App world, then consumes request resources for side effects that
-//! still live on legacy `State`. Input-state and direct command messages
+//! The per-message systems are wired into Bevy's standard `Update` schedule so each
+//! message type has one explicit handler. Input-state and direct command messages
 //! update App-world resources directly.
 //!
 //! ## Why messages?
@@ -30,10 +26,9 @@
 //!   each handler its own `MessageReader<T>`, so multiple readers of
 //!   the same message can be added in any order without cross-reader
 //!   nondeterminism.
-//! - **`Changed<T>` change detection** — distinct messages unlock
-//!   component-level change detection (e.g. a "rebuild mesh" system
-//!   can `Query<Changed<Position>, Changed<Rotation>, ...>`) and let
-//!   us eventually delete `EditorDirtyFlags` entirely.
+//! - **`Changed<T>` change detection** — distinct messages keep
+//!   component-level change detection available where incremental extraction
+//!   becomes worthwhile (e.g. `Query<Changed<Position>, Changed<Rotation>, ...>`).
 //! - **UI / winit decoupling** — UI / winit code can write
 //!   `Messages<T>::write(event)` from anywhere; no need to thread a
 //!   `&mut State` through every UI closure.
@@ -51,16 +46,13 @@
 //! - `MouseButton` / `PrimaryClick` / `PointerMoved` /
 //!   `UpdateCursorFromScreen` / `CameraDrag` (direct resource writes)
 //!
-//! REFACTOR POINT(full-bevy): the messages defined here migrate to
-//! `bevy_input` `Input<KeyCode>` / `ButtonInput<MouseButton>` in the
-//! full-Bevy migration. The Bevy `Message` types themselves stay.
+//! Production uses `bevy_input` resources via the Bevy input bridge
+//! (`BevyInputBridgeEnabled`).
 
 use bevy::{
     app::App,
     ecs::{prelude::*, schedule::SystemSet},
 };
-
-use crate::{commands::AppCommand, state::editor_command::EditorCommand};
 
 pub mod async_results;
 pub mod auth;
@@ -70,7 +62,6 @@ pub mod camera;
 pub mod editor_mode;
 pub mod history;
 pub mod input_state;
-pub mod mesh_rebuild;
 pub mod misc;
 pub mod navigation;
 pub mod pointer;
@@ -94,7 +85,7 @@ pub mod timing;
 ///
 /// All systems in this set read a single `MessageReader<T>`. Handlers mutate
 /// App-world resources directly or write typed request resources consumed by
-/// Runtime. They run as part of the `StateSchedule`.
+/// Runtime. They run as part of the standard `Update` schedule.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandHandlerSet;
 
@@ -128,8 +119,7 @@ pub fn register_command_events(app: &mut App) {
 /// that work with a bare `World` (e.g. `State` constructs its `World`
 /// directly without going through an `App`). Initializes the
 /// `Messages<T>` resource for every event type; does **not** add a
-/// schedule — see `register_state_schedule` for the full
-/// `World` setup.
+/// schedule — direct bare-world tests install the handlers they need.
 pub fn register_command_events_world(world: &mut World) {
     use bevy::ecs::message::Messages;
     // Navigation
@@ -253,358 +243,6 @@ pub fn register_command_events_world(world: &mut World) {
     world.init_resource::<Messages<pointer::CameraDrag>>();
 }
 
-/// Write a legacy app command into the Bevy message bus.
-///
-/// UI and compatibility callers use this as the single command-ingress
-/// adapter while the public UI surface still returns `AppCommand` values.
-pub fn write_app_command_message(world: &mut World, command: AppCommand) {
-    match command {
-        AppCommand::TurnRight => {
-            world.write_message(navigation::TurnRight);
-        }
-        AppCommand::NextLevel => {
-            world.write_message(navigation::NextLevel);
-        }
-        AppCommand::PrevLevel => {
-            world.write_message(navigation::PrevLevel);
-        }
-        AppCommand::ToggleEditor => {
-            world.write_message(navigation::ToggleEditor);
-        }
-        AppCommand::GameResume => {
-            world.write_message(navigation::GameResume);
-        }
-        AppCommand::GameRestartLevel => {
-            world.write_message(navigation::GameRestartLevel);
-        }
-        AppCommand::GameSetPracticeMode(enabled) => {
-            world.write_message(navigation::GameSetPracticeMode { enabled });
-        }
-        AppCommand::GameSetPracticeCheckpoint => {
-            world.write_message(navigation::GameSetPracticeCheckpoint);
-        }
-        AppCommand::GameRemovePracticeCheckpoint => {
-            world.write_message(navigation::GameRemovePracticeCheckpoint);
-        }
-        AppCommand::GameQuitToMenu => {
-            world.write_message(navigation::GameQuitToMenu);
-        }
-        AppCommand::AuthSubmitSignIn => {
-            world.write_message(auth::AuthSubmitSignIn);
-        }
-        AppCommand::AuthSignOut => {
-            world.write_message(auth::AuthSignOut);
-        }
-        AppCommand::AuthOpenSignup => {
-            world.write_message(auth::AuthOpenSignup);
-        }
-        AppCommand::CopyLatestPerfFrame => {
-            world.write_message(auth::CopyLatestPerfFrame);
-        }
-        AppCommand::ResizeSurface { width, height } => {
-            world.write_message(auth::ResizeSurface { width, height });
-        }
-        AppCommand::Editor(command) => write_editor_command_message(world, command),
-    }
-}
-
-/// Write multiple legacy app commands into the Bevy message bus.
-pub fn write_app_command_messages(
-    world: &mut World,
-    commands: impl IntoIterator<Item = AppCommand>,
-) {
-    for command in commands {
-        write_app_command_message(world, command);
-    }
-}
-
-/// Write a legacy editor command into the Bevy message bus.
-pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
-    match command {
-        EditorCommand::SetMode(mode) => {
-            world.write_message(editor_mode::SetEditorMode(mode));
-        }
-        EditorCommand::SetBlockId(block_id) => {
-            world.write_message(editor_mode::SetBlockId(block_id));
-        }
-        EditorCommand::SelectRecentBlock(index) => {
-            world.write_message(editor_mode::SelectRecentBlock(index));
-        }
-        EditorCommand::PickSelectedBlock => {
-            world.write_message(editor_mode::PickSelectedBlock);
-        }
-        EditorCommand::PickBlockAt { x, y } => {
-            world.write_message(editor_mode::PickBlockAt { x, y });
-        }
-        EditorCommand::SetSnapToGrid(enabled) => {
-            world.write_message(snap::SetSnapToGrid(enabled));
-        }
-        EditorCommand::SetSnapStep(step) => {
-            world.write_message(snap::SetSnapStep(step));
-        }
-        EditorCommand::SetSnapRotation(enabled) => {
-            world.write_message(snap::SetSnapRotation(enabled));
-        }
-        EditorCommand::SetSnapRotationStep(step) => {
-            world.write_message(snap::SetSnapRotationStep(step));
-        }
-        EditorCommand::RemoveBlock => {
-            world.write_message(block::RemoveBlock);
-        }
-        EditorCommand::DuplicateBlock => {
-            world.write_message(block::DuplicateBlock);
-        }
-        EditorCommand::CopyBlock => {
-            world.write_message(block::CopyBlock);
-        }
-        EditorCommand::PasteBlock => {
-            world.write_message(block::PasteBlock);
-        }
-        EditorCommand::UpdateSelectedBlock(object) => {
-            world.write_message(block::UpdateSelectedBlock(object));
-        }
-        EditorCommand::SnapSelectionToGrid => {
-            world.write_message(selection::SnapSelectionToGrid);
-        }
-        EditorCommand::FocusCameraTarget => {
-            world.write_message(selection::FocusCameraTarget);
-        }
-        EditorCommand::AddTransformTrigger => {
-            world.write_message(selection::AddTransformTrigger);
-        }
-        EditorCommand::ToggleTimelinePlayback => {
-            world.write_message(timeline::ToggleTimelinePlayback);
-        }
-        EditorCommand::ShiftTimeline(delta_seconds) => {
-            world.write_message(timeline::ShiftTimeline(delta_seconds));
-        }
-        EditorCommand::SetTimelineTime(time_seconds) => {
-            world.write_message(timeline::SetTimelineTime(time_seconds));
-        }
-        EditorCommand::SetTimelineDuration(duration_seconds) => {
-            world.write_message(timeline::SetTimelineDuration(duration_seconds));
-        }
-        EditorCommand::AddTap => {
-            world.write_message(timeline::AddTap);
-        }
-        EditorCommand::RemoveTap => {
-            world.write_message(timeline::RemoveTap);
-        }
-        EditorCommand::RemoveTapAt(time_seconds) => {
-            world.write_message(timeline::RemoveTapAt(time_seconds));
-        }
-        EditorCommand::SetSelectedTap(index) => {
-            world.write_message(timeline::SetSelectedTap(index));
-        }
-        EditorCommand::SetSelectedTapTime(time_seconds) => {
-            world.write_message(timeline::SetSelectedTapTime(time_seconds));
-        }
-        EditorCommand::ClearTaps => {
-            world.write_message(timeline::ClearTaps);
-        }
-        EditorCommand::SetPlaybackSpeed(speed) => {
-            world.write_message(timeline::SetPlaybackSpeed(speed));
-        }
-        EditorCommand::SetWaveformZoom(zoom) => {
-            world.write_message(timeline::SetWaveformZoom(zoom));
-        }
-        EditorCommand::SetWaveformScroll(scroll) => {
-            world.write_message(timeline::SetWaveformScroll(scroll));
-        }
-        EditorCommand::Playtest => {
-            world.write_message(timeline::Playtest);
-        }
-        EditorCommand::AddTimingPoint { time_seconds, bpm } => {
-            world.write_message(timing::AddTimingPoint { time_seconds, bpm });
-        }
-        EditorCommand::RemoveTimingPoint(index) => {
-            world.write_message(timing::RemoveTimingPoint(index));
-        }
-        EditorCommand::SetTimingPointTime(index, time) => {
-            world.write_message(timing::SetTimingPointTime { index, time });
-        }
-        EditorCommand::SetTimingPointBpm(index, bpm) => {
-            world.write_message(timing::SetTimingPointBpm { index, bpm });
-        }
-        EditorCommand::SetTimingPointTimeSignature(index, numerator, denominator) => {
-            world.write_message(timing::SetTimingPointTimeSignature {
-                index,
-                numerator,
-                denominator,
-            });
-        }
-        EditorCommand::SetTimingSelected(index) => {
-            world.write_message(timing::SetTimingSelected(index));
-        }
-        EditorCommand::BpmTap => {
-            world.write_message(bpm::BpmTap);
-        }
-        EditorCommand::BpmTapReset => {
-            world.write_message(bpm::BpmTapReset);
-        }
-        EditorCommand::SetSpawnHere => {
-            world.write_message(spawn::SetSpawnHere);
-        }
-        EditorCommand::RotateSpawnDirection => {
-            world.write_message(spawn::RotateSpawnDirection);
-        }
-        EditorCommand::RotatePlacementPreview => {
-            world.write_message(spawn::RotatePlacementPreview);
-        }
-        EditorCommand::Undo => {
-            world.write_message(history::Undo);
-        }
-        EditorCommand::Redo => {
-            world.write_message(history::Redo);
-        }
-        EditorCommand::AdjustZoom(delta) => {
-            world.write_message(camera::AdjustZoom(delta));
-        }
-        EditorCommand::SetCameraOrientation {
-            rotation,
-            pitch,
-            transition_seconds,
-        } => {
-            world.write_message(camera::SetCameraOrientation {
-                rotation,
-                pitch,
-                transition_seconds,
-            });
-        }
-        EditorCommand::AddCameraTrigger => {
-            world.write_message(camera::AddCameraTrigger);
-        }
-        EditorCommand::AddCameraFollowTrigger => {
-            world.write_message(camera::AddCameraFollowTrigger);
-        }
-        EditorCommand::SetTriggerSelected(index) => {
-            world.write_message(camera::SetTriggerSelected(index));
-        }
-        EditorCommand::ToggleHitboxVisualization => {
-            world.write_message(misc::ToggleHitboxVisualization);
-        }
-        EditorCommand::TogglePerfOverlay => {
-            world.write_message(misc::TogglePerfOverlay);
-        }
-        EditorCommand::LoadLevel(name) => {
-            world.write_message(session::LoadLevel(name));
-        }
-        EditorCommand::RenameLevel(name) => {
-            world.write_message(session::RenameLevel(name));
-        }
-        EditorCommand::ExportLevel => {
-            world.write_message(session::ExportLevel);
-        }
-        EditorCommand::SetShowMetadata(show) => {
-            world.write_message(session::SetShowMetadata(show));
-        }
-        EditorCommand::ToggleSettings => {
-            world.write_message(session::ToggleSettings);
-        }
-        EditorCommand::SetShowSettings(show) => {
-            world.write_message(session::SetShowSettings(show));
-        }
-        EditorCommand::SetSettingsSection(section) => {
-            world.write_message(session::SetSettingsSection(section));
-        }
-        EditorCommand::SetGraphicsBackend(backend) => {
-            world.write_message(session::SetGraphicsBackend(backend));
-        }
-        EditorCommand::SetAudioBackend(backend) => {
-            world.write_message(session::SetAudioBackend(backend));
-        }
-        EditorCommand::SetUiScaleMultiplier(scale) => {
-            world.write_message(session::SetUiScaleMultiplier(scale));
-        }
-        EditorCommand::SetKeybindCapture(capture) => {
-            world.write_message(session::SetKeybindCapture(capture));
-        }
-        EditorCommand::SetKeybind {
-            action,
-            slot,
-            chord,
-        } => {
-            world.write_message(session::SetKeybind {
-                action,
-                slot,
-                chord,
-            });
-        }
-        EditorCommand::ClearKeybindSlot { action, slot } => {
-            world.write_message(session::ClearKeybindSlot { action, slot });
-        }
-        EditorCommand::ResetKeybind(action) => {
-            world.write_message(session::ResetKeybind(action));
-        }
-        EditorCommand::ResetKeybinds => {
-            world.write_message(session::ResetKeybinds);
-        }
-        EditorCommand::CompleteImport => {
-            world.write_message(session::CompleteImport);
-        }
-        EditorCommand::UpdateMusic(metadata) => {
-            world.write_message(session::UpdateMusic(metadata));
-        }
-        EditorCommand::UpdateCreatorMetadata(metadata) => {
-            world.write_message(session::UpdateCreatorMetadata(metadata));
-        }
-        EditorCommand::UpdateSkyColor(color) => {
-            world.write_message(session::UpdateSkyColor(color));
-        }
-        EditorCommand::TriggerAudioImport => {
-            world.write_message(session::TriggerAudioImport);
-        }
-        EditorCommand::CaptureMenuPreviewCamera => {
-            world.write_message(session::CaptureMenuPreviewCamera);
-        }
-        EditorCommand::UseAutoMenuPreviewCamera => {
-            world.write_message(session::UseAutoMenuPreviewCamera);
-        }
-        EditorCommand::SetShiftHeld(held) => {
-            world.write_message(input_state::SetShiftHeld(held));
-        }
-        EditorCommand::SetCtrlHeld(held) => {
-            world.write_message(input_state::SetCtrlHeld(held));
-        }
-        EditorCommand::SetAltHeld(held) => {
-            world.write_message(input_state::SetAltHeld(held));
-        }
-        EditorCommand::SetPanUpHeld(held) => {
-            world.write_message(input_state::SetPanUpHeld(held));
-        }
-        EditorCommand::SetPanDownHeld(held) => {
-            world.write_message(input_state::SetPanDownHeld(held));
-        }
-        EditorCommand::SetPanLeftHeld(held) => {
-            world.write_message(input_state::SetPanLeftHeld(held));
-        }
-        EditorCommand::SetPanRightHeld(held) => {
-            world.write_message(input_state::SetPanRightHeld(held));
-        }
-        EditorCommand::MouseButton { button, pressed } => {
-            world.write_message(pointer::MouseButton { button, pressed });
-        }
-        EditorCommand::PrimaryClick { x, y } => {
-            world.write_message(pointer::PrimaryClick { x, y });
-        }
-        EditorCommand::PointerMoved { x, y } => {
-            world.write_message(pointer::PointerMoved { x, y });
-        }
-        EditorCommand::UpdateCursorFromScreen { x, y } => {
-            world.write_message(pointer::UpdateCursorFromScreen { x, y });
-        }
-        EditorCommand::CameraDrag { dx, dy } => {
-            world.write_message(pointer::CameraDrag { dx, dy });
-        }
-        EditorCommand::TogglePlaceWindow => {
-            world.write_message(misc::TogglePlaceWindow);
-        }
-        EditorCommand::Escape => {
-            world.write_message(misc::Escape);
-        }
-    }
-}
-
 /// Add every per-message drain system to a `Schedule`.
 ///
 /// Runtime runs the schedule once per frame, so these systems execute
@@ -614,8 +252,8 @@ pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
 pub fn add_command_systems(schedule: &mut Schedule) {
     // Bevy's `IntoScheduleConfigs` only goes up to 16 systems in a flat
     // tuple, so we add each domain's systems in its own `add_systems`
-    // call. Every group is tagged with `CommandHandlerSet`, giving the
-    // StateSchedule an explicit command boundary for downstream systems.
+    // call. Every group is tagged with `CommandHandlerSet`, giving `Update`
+    // an explicit command boundary for downstream systems.
     schedule
         // Navigation
         .add_systems(
@@ -822,6 +460,8 @@ pub fn add_command_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::{Deref, DerefMut};
+
     use bevy::{ecs::message::Messages, state::prelude::State};
     use eg_types::{
         AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
@@ -836,6 +476,32 @@ mod tests {
         navigation::TurnRight,
         snap::SetSnapToGrid,
     };
+    /// App-backed fixture for semantic-message tests.
+    ///
+    /// It deliberately dereferences to its world so established resource and
+    /// query assertions stay compact, while every frame advances through
+    /// the normal Bevy app schedule.
+    struct EventTestApp(bevy::app::App);
+
+    impl EventTestApp {
+        fn update(&mut self) {
+            self.0.update();
+        }
+    }
+
+    impl Deref for EventTestApp {
+        type Target = bevy::ecs::world::World;
+
+        fn deref(&self) -> &Self::Target {
+            self.0.world()
+        }
+    }
+
+    impl DerefMut for EventTestApp {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.0.world_mut()
+        }
+    }
 
     fn replace_authored_objects(world: &mut bevy::ecs::world::World, objects: Vec<LevelObject>) {
         crate::state::replace_editor_objects(world, objects);
@@ -876,10 +542,9 @@ mod tests {
         }
     }
 
-    /// Build a `World` that has the message resources + the per-message
-    /// drain schedule.
-    fn build_event_world() -> bevy::ecs::world::World {
-        let mut world = bevy::ecs::world::World::new();
+    /// Build an App-backed fixture with the semantic-message schedule.
+    fn build_event_world() -> EventTestApp {
+        let mut world = EventTestApp(bevy::app::App::new());
         // All per-message drain systems run in the same schedule, so the
         // helper must register every resource any of them reads. The
         // carve-out handlers (input_state, pointer) reach for
@@ -912,9 +577,8 @@ mod tests {
         world.init_resource::<eg_game::GameClock>();
         world.init_resource::<eg_game::PendingTurnInputs>();
         world.init_resource::<eg_game::PlayerProgress>();
-        world.init_resource::<eg_game::FrameDelta>();
 
-        world.init_resource::<eg_game::DeathSfxFlag>();
+        world.init_resource::<bevy::ecs::message::Messages<eg_game::PlayerDiedEvent>>();
         world.init_resource::<eg_game::SpatialIndex>();
         world.init_resource::<eg_game::GameRuntimeTuning>();
         world.init_resource::<eg_game::LevelMeta>();
@@ -931,16 +595,12 @@ mod tests {
         world.init_resource::<crate::state::GameplayResetRes>();
         world.init_resource::<crate::state::BuiltinLevelCatalogRes>();
         world.init_resource::<crate::state::LevelExportServiceRes>();
-        world.init_resource::<crate::state::LevelImportSenderRes>();
-        world.init_resource::<crate::state::AudioImportSenderRes>();
         #[cfg(not(target_arch = "wasm32"))]
         world.init_resource::<crate::state::AudioBackendRes>();
         #[cfg(target_arch = "wasm32")]
         world.init_non_send::<crate::state::AudioBackendRes>();
         world.init_resource::<crate::state::EditorAudioCacheRes>();
         world.init_resource::<crate::state::RuntimeAudioPreloadRes>();
-        world.init_resource::<crate::state::RuntimeAudioPreloadSenderRes>();
-        world.init_resource::<crate::state::WaveformLoadSenderRes>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -954,9 +614,15 @@ mod tests {
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         }));
         register_command_events_world(&mut world);
-        let mut schedule = bevy::ecs::schedule::Schedule::new(crate::state::StateSchedule);
+        world
+            .0
+            .add_schedule(bevy::ecs::schedule::Schedule::new(bevy::app::Update));
+        let schedule = world
+            .0
+            .get_schedule_mut(bevy::app::Update)
+            .expect("Update schedule was just registered");
         schedule.configure_sets(crate::events::CommandHandlerSet);
-        add_command_systems(&mut schedule);
+        add_command_systems(schedule);
         schedule.add_systems(
             bevy::ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet),
         );
@@ -967,7 +633,6 @@ mod tests {
                 .after(crate::events::navigation::handle_game_restart_level)
                 .after(crate::events::timeline::handle_playtest),
         );
-        world.add_schedule(schedule);
         world.clear_trackers();
         world
     }
@@ -976,7 +641,7 @@ mod tests {
     fn turn_right_from_menu_starts_app_owned_gameplay() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Playing);
         assert_eq!(
             world
@@ -997,7 +662,7 @@ mod tests {
             .playing_level_name = Some("NavigationLevelA".to_string());
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(world.resource::<eg_game::GameClock>().started);
     }
@@ -1008,7 +673,7 @@ mod tests {
         set_test_phase(&mut world, AppPhase::GameOver);
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             test_phase(&world),
@@ -1026,7 +691,7 @@ mod tests {
             .game_paused = true;
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             test_phase(&world),
@@ -1049,7 +714,7 @@ mod tests {
         world.resource_mut::<eg_game::GameClock>().game_over = true;
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(!world.resource::<crate::state::GameplayResetRes>().pending);
         assert!(!world.resource::<eg_game::GameClock>().game_over);
@@ -1086,7 +751,7 @@ mod tests {
             });
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(!world.resource::<eg_game::GameClock>().game_over);
         assert_eq!(world.resource::<eg_game::GameClock>().elapsed_seconds, 3.5);
@@ -1115,7 +780,7 @@ mod tests {
             .practice_mode_enabled = true;
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(!world.resource::<eg_game::GameClock>().game_over);
         assert!(
@@ -1152,7 +817,7 @@ mod tests {
         });
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let pending = world.resource::<eg_game::PendingTurnInputs>();
         assert_eq!(pending.taps.len(), 1);
@@ -1179,7 +844,7 @@ mod tests {
         });
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(world.resource::<eg_game::PendingTurnInputs>().taps.len(), 1);
     }
@@ -1194,7 +859,7 @@ mod tests {
             .cursor = [2.0, 0.0, 3.0];
 
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let objects = authored_objects(&mut world);
         assert_eq!(objects.len(), 1);
@@ -1217,7 +882,7 @@ mod tests {
     fn toggle_editor_from_menu_enters_app_owned_editor() {
         let mut world = build_event_world();
         world.write_message(navigation::ToggleEditor);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Editor);
         assert_eq!(
             world
@@ -1237,7 +902,7 @@ mod tests {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
         world.write_message(navigation::ToggleEditor);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), AppPhase::Menu);
         assert!(
@@ -1256,7 +921,7 @@ mod tests {
             .playtesting_editor = true;
 
         world.write_message(navigation::ToggleEditor);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), AppPhase::Editor);
         let session = world.resource::<crate::state::SessionStateRes>();
@@ -1272,7 +937,7 @@ mod tests {
             width: 1920,
             height: 1080,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         let resize = world.resource::<crate::state::RenderResizeRequest>();
         assert!(resize.pending);
         assert_eq!(resize.size.width, 1920);
@@ -1283,7 +948,7 @@ mod tests {
     fn carve_out_copy_latest_perf_frame_writes_copy_request() {
         let mut world = build_event_world();
         world.write_message(CopyLatestPerfFrame);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -1300,7 +965,7 @@ mod tests {
     fn carve_out_auth_submit_sign_in_writes_request() {
         let mut world = build_event_world();
         world.write_message(AuthSubmitSignIn);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -1317,7 +982,7 @@ mod tests {
     fn carve_out_auth_sign_out_writes_request() {
         let mut world = build_event_world();
         world.write_message(AuthSignOut);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world.resource::<crate::state::AuthSignOutRequest>().pending,
@@ -1332,7 +997,7 @@ mod tests {
     fn carve_out_auth_open_signup_writes_request() {
         let mut world = build_event_world();
         world.write_message(AuthOpenSignup);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -1346,8 +1011,7 @@ mod tests {
     //
     // The navigation handlers mutate App resources directly where the
     // lifecycle side effects have moved; remaining menu/playtest branches
-    // still write dedicated request resources instead of staging
-    // `AppCommand`s through the legacy command bridge.
+    // still write dedicated request resources.
 
     use crate::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
@@ -1358,7 +1022,7 @@ mod tests {
     fn game_quit_to_menu_is_noop_outside_playing() {
         let mut world = build_event_world();
         world.write_message(GameQuitToMenu);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), AppPhase::Menu);
         assert!(
@@ -1379,7 +1043,7 @@ mod tests {
             .playtesting_editor = false;
 
         world.write_message(GameQuitToMenu);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), AppPhase::Menu);
         let session = world.resource::<crate::state::SessionStateRes>();
@@ -1394,7 +1058,7 @@ mod tests {
     fn game_restart_level_is_noop_outside_playing() {
         let mut world = build_event_world();
         world.write_message(GameRestartLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             !world.resource::<crate::state::GameplayResetRes>().pending,
@@ -1437,7 +1101,7 @@ mod tests {
         });
 
         world.write_message(GameRestartLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let player = {
             let mut query = world.query::<(
@@ -1491,7 +1155,7 @@ mod tests {
             spawn_direction: eg_game::SpawnDirection(eg_types::Direction::Forward),
         });
         world.write_message(GameSetPracticeCheckpoint);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let checkpoints = &world
             .resource::<crate::state::SessionStateRes>()
@@ -1518,7 +1182,7 @@ mod tests {
         }
 
         world.write_message(GameRemovePracticeCheckpoint);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -1535,7 +1199,7 @@ mod tests {
         world.write_message(HistorySnapshot {
             label: "drag_release".to_string(),
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
     }
 
     #[test]
@@ -1583,7 +1247,7 @@ mod tests {
             });
 
         world.write_message(Undo);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let object = {
             let mut query = world
@@ -1616,7 +1280,7 @@ mod tests {
         );
 
         world.write_message(Redo);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(authored_objects(&mut world), vec![current_object]);
         assert_eq!(
@@ -1668,7 +1332,7 @@ mod tests {
         }
 
         world.write_message(RemoveBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let mut objects = {
             let mut query = world.query_filtered::<
@@ -1719,7 +1383,7 @@ mod tests {
         }
 
         world.write_message(CopyBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world
                 .resource::<crate::state::EditorRuntimeRes>()
@@ -1730,7 +1394,7 @@ mod tests {
         );
 
         world.write_message(DuplicateBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         let authored_count = {
             let mut query =
                 world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
@@ -1739,7 +1403,7 @@ mod tests {
         assert_eq!(authored_count, 2);
 
         world.write_message(PasteBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let mut objects = {
             let mut query = world.query_filtered::<
@@ -1801,7 +1465,7 @@ mod tests {
             block_id: eg_blocks::BlockId::new("core/lava"),
             ..LevelObject::default()
         }));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let object = {
             let mut query = world
@@ -1860,7 +1524,7 @@ mod tests {
         }
 
         world.write_message(SnapSelectionToGrid);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let objects = authored_objects(&mut world);
         assert_eq!(objects[0].position, [0.0, 0.0, 1.0]);
@@ -1900,7 +1564,7 @@ mod tests {
         }
 
         world.write_message(SnapSelectionToGrid);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(
@@ -1950,7 +1614,7 @@ mod tests {
         }
 
         world.write_message(FocusCameraTarget);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [11.0, 33.0]);
@@ -1985,7 +1649,7 @@ mod tests {
         }
 
         world.write_message(FocusCameraTarget);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [5.5, 6.5]);
@@ -2023,7 +1687,7 @@ mod tests {
         );
 
         world.write_message(FocusCameraTarget);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, [3.0, 5.0]);
@@ -2081,7 +1745,7 @@ mod tests {
         }
 
         world.write_message(AddTransformTrigger);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let objects = authored_objects(&mut world);
         assert_eq!(objects.len(), 5);
@@ -2138,12 +1802,12 @@ mod tests {
     }
 
     #[test]
-    fn schedule_drains_set_editor_mode_into_editor_command() {
+    fn schedule_drains_set_editor_mode_message_into_resource() {
         // `SetEditorMode` is a Phase 3.13 carve-out: the handler
         // mutates `EditorInputRes.0.mode` directly.
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.mode,
@@ -2161,7 +1825,7 @@ mod tests {
         world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Place;
 
         world.write_message(SetEditorMode(EditorMode::Timing));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timing = &world.resource::<crate::state::EditorTimingRes>().0;
         assert!(timing.waveform_loading);
@@ -2196,7 +1860,7 @@ mod tests {
         }
 
         world.write_message(SetSnapToGrid(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -2240,14 +1904,14 @@ mod tests {
         world.write_message(TurnRight);
         world.write_message(TurnRight);
         world.write_message(TurnRight);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Playing);
     }
 
     #[test]
     fn empty_message_buffer_is_noop() {
         let mut world = build_event_world();
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
     }
 
     #[test]
@@ -2257,7 +1921,7 @@ mod tests {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -2288,9 +1952,7 @@ mod tests {
     };
 
     /// `SetShiftHeld` is a carve-out: the handler writes the held state
-    /// directly to `EditorInputRes` instead of staging a legacy
-    /// `EditorCommand`. Pin the resource is updated and no legacy
-    /// command is queued.
+    /// directly to `EditorInputRes`. Pin the resource is updated.
     #[test]
     fn carve_out_set_shift_held_mutates_editor_input_resource() {
         let mut world = build_event_world();
@@ -2300,7 +1962,7 @@ mod tests {
         assert!(!world.resource::<EditorInputRes>().0.shift_held);
 
         world.write_message(SetShiftHeld(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world.resource::<EditorInputRes>().0.shift_held,
@@ -2321,16 +1983,14 @@ mod tests {
         world.write_message(SetPanRightHeld(true));
         world.write_message(SetPanRightHeld(false));
         world.write_message(SetPanRightHeld(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(world.resource::<EditorInputRes>().0.pan_right_held);
     }
 
     /// `SetBlockId` is a carve-out: the handler writes the selected
-    /// block id directly to `EditorConfigRes.0.selected_block_id`
-    /// instead of staging a legacy `EditorCommand::SetBlockId`. Pin
-    /// the resource is updated and no legacy command is queued. The
-    /// legacy `State` sync (and the recent-blocks side effect) is
+    /// block id directly to `EditorConfigRes.0.selected_block_id`.
+    /// Pin the resource is updated. The recent-blocks side effect is
     /// exercised end-to-end in `eg-app` runtime tests.
     #[test]
     fn carve_out_set_block_id_mutates_editor_config_resource() {
@@ -2346,7 +2006,7 @@ mod tests {
         assert_ne!(initial, new_id, "test precondition: new id must differ");
 
         world.write_message(SetBlockId(new_id.clone()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2389,7 +2049,7 @@ mod tests {
         );
 
         world.write_message(BpmTap);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         // First tap: list grows by 1, no result yet (needs >= 2 taps).
         assert_eq!(
@@ -2421,7 +2081,7 @@ mod tests {
         drop(res);
 
         world.write_message(BpmTapReset);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -2472,7 +2132,7 @@ mod tests {
         world.resource_mut::<SessionStateRes>().editor_level_name = None;
 
         world.write_message(RenameLevel("AppWorldName".to_string()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2492,7 +2152,7 @@ mod tests {
         assert!(!world.resource::<SessionStateRes>().editor_show_metadata);
 
         world.write_message(SetShowMetadata(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world.resource::<SessionStateRes>().editor_show_metadata,
@@ -2506,7 +2166,7 @@ mod tests {
         world.resource_mut::<SessionStateRes>().editor_show_settings = false;
 
         world.write_message(SetShowSettings(true));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(world.resource::<SessionStateRes>().editor_show_settings);
     }
@@ -2518,12 +2178,12 @@ mod tests {
 
         // First toggle: false -> true.
         world.write_message(ToggleSettings);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(world.resource::<SessionStateRes>().editor_show_settings);
 
         // Second toggle: true -> false.
         world.write_message(ToggleSettings);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(!world.resource::<SessionStateRes>().editor_show_settings);
     }
 
@@ -2536,7 +2196,7 @@ mod tests {
             .editor_settings_section = SettingsSection::Backends;
 
         world.write_message(SetSettingsSection(new_section));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<SessionStateRes>().editor_settings_section,
@@ -2553,7 +2213,7 @@ mod tests {
 
         let capture = Some(("editor.place".to_string(), 0));
         world.write_message(SetKeybindCapture(capture.clone()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2572,7 +2232,7 @@ mod tests {
             .ui_scale_multiplier = 1.0;
 
         world.write_message(SetUiScaleMultiplier(8.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         approx::assert_abs_diff_eq!(
             world
@@ -2595,7 +2255,7 @@ mod tests {
         }
 
         world.write_message(SetGraphicsBackend("ManualBackend".to_string()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<SessionStateRes>();
         assert_eq!(session.app_settings.graphics_backend, "ManualBackend");
@@ -2616,7 +2276,7 @@ mod tests {
         }
 
         world.write_message(SetGraphicsBackend("IgnoredBackend".to_string()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<SessionStateRes>();
         assert_eq!(session.app_settings.graphics_backend, "LockedBackend");
@@ -2629,13 +2289,13 @@ mod tests {
     #[test]
     fn carve_out_set_keybind_mutates_session_resource() {
         let mut world = build_event_world();
-        let chord = KeyChord::new("K", true, false, false);
+        let chord = KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false);
         world.write_message(SetKeybind {
             action: "copy".to_string(),
             slot: 0,
             chord: chord.clone(),
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<SessionStateRes>();
         assert!(
@@ -2655,7 +2315,7 @@ mod tests {
             let mut session = world.resource_mut::<SessionStateRes>();
             session.app_settings.keybinds = vec![KeybindBinding {
                 action: "copy".to_string(),
-                chord: KeyChord::new("k", true, false, false),
+                chord: KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false),
             }];
         }
 
@@ -2663,7 +2323,7 @@ mod tests {
             action: "copy".to_string(),
             slot: 0,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -2682,12 +2342,12 @@ mod tests {
             let mut session = world.resource_mut::<SessionStateRes>();
             session.app_settings.keybinds = vec![KeybindBinding {
                 action: "copy".to_string(),
-                chord: KeyChord::new("k", true, false, false),
+                chord: KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false),
             }];
         }
 
         world.write_message(ResetKeybind("copy".to_string()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let expected_defaults: Vec<_> = default_essential_keybinds()
             .into_iter()
@@ -2712,21 +2372,21 @@ mod tests {
         let mut world = build_event_world();
         let custom = KeybindBinding {
             action: "custom.action".to_string(),
-            chord: KeyChord::new("x", false, false, false),
+            chord: KeyChord::new(bevy::input::keyboard::KeyCode::KeyX, false, false, false),
         };
         {
             let mut session = world.resource_mut::<SessionStateRes>();
             session.app_settings.keybinds = vec![
                 KeybindBinding {
                     action: "copy".to_string(),
-                    chord: KeyChord::new("k", true, false, false),
+                    chord: KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false),
                 },
                 custom.clone(),
             ];
         }
 
         world.write_message(ResetKeybinds);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<SessionStateRes>();
         assert!(
@@ -2753,7 +2413,7 @@ mod tests {
         };
 
         world.write_message(UpdateCreatorMetadata(metadata.clone()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             &world.resource::<SessionStateRes>().editor_creator_metadata,
@@ -2771,7 +2431,7 @@ mod tests {
         };
 
         world.write_message(UpdateMusic(metadata.clone()));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             &world.resource::<SessionStateRes>().editor_music_metadata,
@@ -2786,7 +2446,7 @@ mod tests {
         world.resource_mut::<SessionStateRes>().editor_sky_color = [0.0, 0.0, 0.0];
 
         world.write_message(UpdateSkyColor([-1.0, 0.5, 2.0]));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<SessionStateRes>().editor_sky_color,
@@ -2816,7 +2476,7 @@ mod tests {
         };
 
         world.write_message(CaptureMenuPreviewCamera);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2838,7 +2498,7 @@ mod tests {
         });
 
         world.write_message(UseAutoMenuPreviewCamera);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2862,7 +2522,7 @@ mod tests {
 
         world.write_message(CaptureMenuPreviewCamera);
         world.write_message(UseAutoMenuPreviewCamera);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -2885,7 +2545,7 @@ mod tests {
     };
 
     /// `AddTimingPoint` appends to the list and sorts ascending by
-    /// `time_seconds` (mirroring `EditorSubsystem::add_timing_point`).
+    /// `time_seconds`.
     /// Pin the list grows, the revision bumps, and no legacy command
     /// is staged.
     #[test]
@@ -2909,7 +2569,7 @@ mod tests {
             time_seconds: 0.5,
             bpm: 90.0,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timing = &world.resource::<EditorTimingRes>().0;
         assert_eq!(timing.timing_points.len(), 2);
@@ -2948,7 +2608,7 @@ mod tests {
         let prev_revision = world.resource::<EditorTimingRes>().0.revision;
 
         world.write_message(RemoveTimingPoint(0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timing = &world.resource::<EditorTimingRes>().0;
         assert_eq!(timing.timing_points.len(), 1);
@@ -2973,7 +2633,7 @@ mod tests {
         let prev_revision = world.resource::<EditorTimingRes>().0.revision;
 
         world.write_message(RemoveTimingPoint(99));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(world.resource::<EditorTimingRes>().0.timing_points.len(), 1);
         assert_eq!(
@@ -3010,7 +2670,7 @@ mod tests {
             index: 0,
             time: 5.0,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timing = &world.resource::<EditorTimingRes>().0;
         assert_eq!(timing.timing_points.len(), 2);
@@ -3033,7 +2693,7 @@ mod tests {
         }
 
         world.write_message(SetTimingPointBpm { index: 0, bpm: 0.5 });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         // Clamped to >= 1.0.
         assert!(
@@ -3062,7 +2722,7 @@ mod tests {
             numerator: 0,
             denominator: 0,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let tp = &world.resource::<EditorTimingRes>().0.timing_points[0];
         assert_eq!(tp.time_signature_numerator, 1, "clamped to >= 1");
@@ -3079,14 +2739,14 @@ mod tests {
         );
 
         world.write_message(SetTimingSelected(Some(2)));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<EditorTimingRes>().0.timing_selected_index,
             Some(2)
         );
 
         world.write_message(SetTimingSelected(None));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<EditorTimingRes>().0.timing_selected_index,
             None
@@ -3120,7 +2780,7 @@ mod tests {
         world.resource_mut::<EditorInputRes>().0.cursor = [4.0, 8.0, 12.0];
 
         world.write_message(SetSpawnHere);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<EditorSpawnRes>().0.position,
@@ -3137,14 +2797,14 @@ mod tests {
         world.resource_mut::<EditorSpawnRes>().0.direction = Direction::Forward;
 
         world.write_message(RotateSpawnDirection);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<EditorSpawnRes>().0.direction,
             Direction::Right
         );
 
         world.write_message(RotateSpawnDirection);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<EditorSpawnRes>().0.direction,
             Direction::Forward
@@ -3165,7 +2825,7 @@ mod tests {
 
         for expected in [90.0, 180.0, 270.0, 0.0] {
             world.write_message(RotatePlacementPreview);
-            world.run_schedule(crate::state::StateSchedule);
+            world.update();
             assert!(
                 (world
                     .resource::<crate::state::EditorConfigRes>()
@@ -3208,7 +2868,7 @@ mod tests {
 
         // Positive zoom should move the pan by some non-zero amount.
         world.write_message(AdjustZoom(1.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<EditorCameraRes>().0;
         assert!(
@@ -3235,7 +2895,7 @@ mod tests {
             pitch: 0.5,
             transition_seconds: None,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<EditorCameraRes>().0;
         approx::assert_abs_diff_eq!(camera.editor_yaw, 1.0, epsilon = 1e-6);
@@ -3257,7 +2917,7 @@ mod tests {
             pitch: 0.3,
             transition_seconds: Some(0.5),
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let camera = &world.resource::<EditorCameraRes>().0;
         // Yaw/pitch are NOT directly updated when a transition is
@@ -3284,14 +2944,14 @@ mod tests {
         world.resource_mut::<EditorTriggerRes>().0.selected_index = None;
 
         world.write_message(SetTriggerSelected(Some(2)));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<EditorTriggerRes>().0.selected_index,
             Some(2)
         );
 
         world.write_message(SetTriggerSelected(None));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(world.resource::<EditorTriggerRes>().0.selected_index, None);
     }
 
@@ -3313,7 +2973,7 @@ mod tests {
             .time_seconds = 8.0;
 
         world.write_message(AddCameraTrigger);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let object = {
             let mut query = world
@@ -3376,7 +3036,7 @@ mod tests {
         }
 
         world.write_message(AddCameraFollowTrigger);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let object = {
             let mut query = world
@@ -3406,7 +3066,7 @@ mod tests {
 
         world.write_message(AddCameraTrigger);
         world.write_message(AddCameraFollowTrigger);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let mut query = world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
         assert_eq!(
@@ -3445,7 +3105,7 @@ mod tests {
         );
 
         world.write_message(ToggleHitboxVisualization);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world
                 .resource::<EditorInputRes>()
@@ -3456,7 +3116,7 @@ mod tests {
 
         // Toggle back.
         world.write_message(ToggleHitboxVisualization);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             !world
                 .resource::<EditorInputRes>()
@@ -3478,7 +3138,7 @@ mod tests {
         assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
 
         world.write_message(TogglePerfOverlay);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world.resource::<crate::state::PerfRes>().0.overlay_enabled,
             "TogglePerfOverlay handler must mutate PerfRes"
@@ -3486,7 +3146,7 @@ mod tests {
 
         // Toggle back.
         world.write_message(TogglePerfOverlay);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
     }
 
@@ -3506,7 +3166,7 @@ mod tests {
         );
 
         world.write_message(TogglePlaceWindow);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -3516,7 +3176,7 @@ mod tests {
 
         // Toggle back.
         world.write_message(TogglePlaceWindow);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             !world
                 .resource::<crate::state::SessionStateRes>()
@@ -3531,7 +3191,7 @@ mod tests {
         let mut world = build_event_world();
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), eg_types::AppPhase::Menu);
     }
@@ -3547,7 +3207,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -3556,7 +3216,7 @@ mod tests {
             "real-gameplay Escape must pause through SessionStateRes"
         );
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             !world
@@ -3577,7 +3237,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             !world
@@ -3619,7 +3279,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let input = &world.resource::<crate::state::EditorInputRes>().0;
         assert_eq!(input.selected_block_index, None);
@@ -3653,7 +3313,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert!(!timeline.playback.playing);
@@ -3689,7 +3349,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         approx::assert_abs_diff_eq!(
             world
@@ -3709,7 +3369,7 @@ mod tests {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Editor);
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), eg_types::AppPhase::Menu);
         assert!(
@@ -3736,7 +3396,7 @@ mod tests {
         );
 
         world.write_message(SetEditorMode(EditorMode::Tapping));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Tapping,
@@ -3745,7 +3405,7 @@ mod tests {
 
         // Switch back.
         world.write_message(SetEditorMode(EditorMode::Select));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.mode,
             EditorMode::Select
@@ -3781,7 +3441,7 @@ mod tests {
 
         // Out-of-range index: no-op, no legacy command staged.
         world.write_message(SelectRecentBlock(10));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3793,7 +3453,7 @@ mod tests {
 
         // Index 0 picks the first recent block.
         world.write_message(SelectRecentBlock(0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3810,7 +3470,7 @@ mod tests {
 
         // Index 1 picks the second recent block.
         world.write_message(SelectRecentBlock(1));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::EditorConfigRes>()
@@ -3831,7 +3491,7 @@ mod tests {
     /// `PickSelectedBlock` is a carve-out: the handler reads the
     /// selected authored entity through `EditorInputRes`,
     /// writes the selected block id into `EditorConfigRes`, and enters
-    /// Place mode without staging `EditorCommand::PickSelectedBlock`.
+    /// Place mode directly.
     #[test]
     fn carve_out_pick_selected_block_mutates_resources() {
         use crate::events::editor_mode::PickSelectedBlock;
@@ -3854,7 +3514,7 @@ mod tests {
         }
 
         world.write_message(PickSelectedBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -3908,7 +3568,7 @@ mod tests {
             .playing = true;
 
         world.write_message(PickSelectedBlock);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -3933,13 +3593,15 @@ mod tests {
 
     /// `PickBlockAt` is a carve-out: the handler reuses the existing
     /// editor screen picker against App-world resources, writes the
-    /// picked block id into `EditorConfigRes`, enters Place mode, and
-    /// does not stage `EditorCommand::PickBlockAt`.
+    /// picked block id into `EditorConfigRes`, and enters Place mode.
     #[test]
     fn carve_out_pick_block_at_mutates_resources() {
         use glam::{Vec2, Vec3};
 
-        use crate::{events::editor_mode::PickBlockAt, state::EditorSubsystem};
+        use crate::{
+            events::editor_mode::PickBlockAt,
+            state::{EditorCameraState, editor_camera_view_proj, project_world_to_screen},
+        };
 
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/grass");
@@ -3961,15 +3623,19 @@ mod tests {
             .color_space
             .viewport_size = [1280.0, 720.0];
 
-        let screen = EditorSubsystem::default()
-            .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), Vec2::new(1280.0, 720.0))
-            .expect("block center should project to screen");
+        let viewport = Vec2::new(1280.0, 720.0);
+        let screen = project_world_to_screen(
+            editor_camera_view_proj(&EditorCameraState::default(), viewport),
+            Vec3::new(0.5, 0.5, 0.5),
+            viewport,
+        )
+        .expect("block center should project to screen");
 
         world.write_message(PickBlockAt {
             x: screen.x as f64,
             y: screen.y as f64,
         });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world
@@ -4002,7 +3668,7 @@ mod tests {
             .duration_seconds = 5.0;
 
         world.write_message(Playtest);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(test_phase(&world), AppPhase::Playing);
         let session = world.resource::<crate::state::SessionStateRes>();
@@ -4053,7 +3719,7 @@ mod tests {
             .duration_seconds = 5.0;
 
         world.write_message(Playtest);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<crate::state::SessionStateRes>();
         let snapshot = session
@@ -4096,12 +3762,11 @@ mod tests {
             .clock
             .duration_seconds = 5.0;
 
-        // Enter the playtest, then leave it via Escape. The test world
-        // only runs the `StateSchedule`; the AppPhase state transition is
-        // applied separately so we step it through `apply_test_phase_transition`
-        // just like the existing playtest tests.
+        // Enter the playtest, then leave it via Escape. The focused fixture
+        // runs only its `Update` handler set, so it applies AppPhase changes
+        // through the adjacent test system just like the playtest tests.
         world.write_message(Playtest);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Playing);
         assert!(
             world
@@ -4124,7 +3789,7 @@ mod tests {
         }
 
         world.write_message(Escape);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Editor);
 
         let mut query =
@@ -4176,11 +3841,11 @@ mod tests {
             .duration_seconds = 5.0;
 
         world.write_message(Playtest);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Playing);
 
         world.write_message(ToggleEditor);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(test_phase(&world), AppPhase::Editor);
 
         let mut query = world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
@@ -4188,7 +3853,7 @@ mod tests {
     }
 
     /// Built-in loading mutates App resources directly. Remaining export/audio
-    /// side effects are Runtime requests, while import pickers use App senders.
+    /// side effects are Runtime requests, while import pickers use App tasks.
     #[test]
     fn carve_out_session_side_effects_route_through_app_resources() {
         use crate::events::session::{
@@ -4223,7 +3888,7 @@ mod tests {
         world.write_message(SetAudioBackend("Default".to_string()));
         world.write_message(CompleteImport);
         world.write_message(TriggerAudioImport);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let session = world.resource::<crate::state::SessionStateRes>();
         assert_eq!(session.editor_level_name.as_deref(), Some("Flowerfield"));
@@ -4249,18 +3914,10 @@ mod tests {
                 .audio_backend,
             "Default"
         );
-        assert_eq!(
-            world
-                .resource::<crate::state::LevelImportSenderRes>()
-                .trigger_count(),
-            1
-        );
-        assert_eq!(
-            world
-                .resource::<crate::state::AudioImportSenderRes>()
-                .trigger_count(),
-            1
-        );
+        let mut level_tasks = world.query::<&crate::state::LevelImportTask>();
+        assert_eq!(level_tasks.iter(&world).count(), 1);
+        let mut audio_tasks = world.query::<&crate::state::AudioImportTask>();
+        assert_eq!(audio_tasks.iter(&world).count(), 1);
     }
 
     // --- App-owned navigation tests ---
@@ -4278,9 +3935,8 @@ mod tests {
     };
 
     /// `GameResume` is a carve-out: the handler writes the pause
-    /// flag directly to `SessionStateRes.game_paused` instead of
-    /// staging a legacy `AppCommand::GameResume`. Pin the resource is
-    /// updated and no legacy command is queued.
+    /// flag directly to `SessionStateRes.game_paused`. Pin the resource is
+    /// updated.
     #[test]
     fn carve_out_game_resume_mutates_session_resource() {
         let mut world = build_event_world();
@@ -4289,7 +3945,7 @@ mod tests {
             .game_paused = true;
 
         world.write_message(GameResume);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             !world
@@ -4301,9 +3957,7 @@ mod tests {
 
     /// `GameSetPracticeMode(enabled)` is a carve-out: the
     /// handler writes the bool directly to
-    /// `SessionStateRes.practice_mode_enabled` instead of
-    /// staging a legacy `AppCommand::GameSetPracticeMode`. Pin
-    /// the resource is updated and no legacy command is queued.
+    /// `SessionStateRes.practice_mode_enabled`. Pin the resource is updated.
     #[test]
     fn carve_out_game_set_practice_mode_mutates_session_resource() {
         let mut world = build_event_world();
@@ -4318,7 +3972,7 @@ mod tests {
 
         // Enable practice mode.
         world.write_message(GameSetPracticeMode { enabled: true });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             world.resource::<SessionStateRes>().practice_mode_enabled,
             "GameSetPracticeMode(true) handler must mutate SessionStateRes.practice_mode_enabled"
@@ -4326,7 +3980,7 @@ mod tests {
 
         // Disable practice mode.
         world.write_message(GameSetPracticeMode { enabled: false });
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert!(
             !world.resource::<SessionStateRes>().practice_mode_enabled,
             "GameSetPracticeMode(false) handler must mutate SessionStateRes.practice_mode_enabled"
@@ -4348,7 +4002,7 @@ mod tests {
             .selected_level = 2;
 
         world.write_message(NextLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::MenuStateRes>()
@@ -4359,7 +4013,7 @@ mod tests {
         );
 
         world.write_message(PrevLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::MenuStateRes>()
@@ -4390,7 +4044,7 @@ mod tests {
         }
 
         world.write_message(NextLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.cursor,
@@ -4399,7 +4053,7 @@ mod tests {
         );
 
         world.write_message(PrevLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.cursor,
@@ -4431,7 +4085,7 @@ mod tests {
 
         world.write_message(NextLevel);
         world.write_message(PrevLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert_eq!(
             world.resource::<crate::state::EditorInputRes>().0.cursor,
@@ -4456,7 +4110,7 @@ mod tests {
 
         world.write_message(NextLevel);
         world.write_message(PrevLevel);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
     }
 
     #[test]
@@ -4469,7 +4123,7 @@ mod tests {
         }
 
         world.write_message(ShiftTimeline(1.5));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4481,7 +4135,7 @@ mod tests {
         );
 
         world.write_message(ShiftTimeline(10.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4509,7 +4163,7 @@ mod tests {
         }
 
         world.write_message(SetTimelineTime(1.25));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4535,13 +4189,13 @@ mod tests {
             .0
             .ctrl_held = true;
         world.write_message(SetTimelineTime(0.5));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         let camera = &world.resource::<crate::state::EditorCameraRes>().0;
         assert_eq!(camera.editor_pan, preserved_pan);
         assert_eq!(camera.editor_target_z, preserved_target_z);
 
         world.write_message(SetTimelineTime(9.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4563,13 +4217,13 @@ mod tests {
         }
 
         world.write_message(SetTimelineDuration(2.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         approx::assert_abs_diff_eq!(timeline.clock.duration_seconds, 2.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(timeline.clock.time_seconds, 2.0, epsilon = 1e-6);
 
         world.write_message(SetTimelineDuration(0.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4592,7 +4246,7 @@ mod tests {
         }
 
         world.write_message(SetSelectedTap(Some(1)));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4603,7 +4257,7 @@ mod tests {
         );
 
         world.write_message(SetSelectedTap(Some(99)));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         assert_eq!(
             world
                 .resource::<crate::state::EditorTimelineRes>()
@@ -4634,7 +4288,7 @@ mod tests {
             .cursor = [9.0, 0.0, 9.0];
 
         world.write_message(SetSelectedTapTime(1.75));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5, 1.75]);
@@ -4652,7 +4306,7 @@ mod tests {
         );
 
         world.write_message(SetSelectedTapTime(9.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5, 2.0]);
@@ -4677,7 +4331,7 @@ mod tests {
         }
 
         world.write_message(RemoveTap);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.25, 1.5]);
@@ -4692,7 +4346,7 @@ mod tests {
         );
 
         world.write_message(RemoveTapAt(1.5));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.25]);
@@ -4710,7 +4364,7 @@ mod tests {
         world.resource_mut::<crate::state::EditorInputRes>().0.mode = eg_types::EditorMode::Timing;
 
         world.write_message(ToggleTimelinePlayback);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         assert!(
             world
@@ -4733,7 +4387,7 @@ mod tests {
         );
 
         world.write_message(ToggleTimelinePlayback);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert!(!timeline.playback.playing);
@@ -4771,7 +4425,7 @@ mod tests {
         }
 
         world.write_message(AddTap);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times, vec![0.25, 1.0, 1.5]);
@@ -4783,7 +4437,7 @@ mod tests {
         assert_eq!(timeline.taps.selected_index, Some(1));
 
         world.write_message(AddTap);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert_eq!(
@@ -4805,7 +4459,7 @@ mod tests {
         }
 
         world.write_message(ClearTaps);
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
 
         let timeline = &world.resource::<crate::state::EditorTimelineRes>().0;
         assert!(timeline.taps.tap_times.is_empty());
@@ -4817,7 +4471,7 @@ mod tests {
     fn carve_out_set_playback_speed_mutates_editor_timing_resource() {
         let mut world = build_event_world();
         world.write_message(SetPlaybackSpeed(1.5));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimingRes>()
@@ -4828,7 +4482,7 @@ mod tests {
         );
 
         world.write_message(SetPlaybackSpeed(9.0));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimingRes>()
@@ -4843,7 +4497,7 @@ mod tests {
     fn carve_out_set_waveform_zoom_mutates_editor_timing_resource() {
         let mut world = build_event_world();
         world.write_message(SetWaveformZoom(3.5));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimingRes>()
@@ -4854,7 +4508,7 @@ mod tests {
         );
 
         world.write_message(SetWaveformZoom(0.01));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimingRes>()
@@ -4869,7 +4523,7 @@ mod tests {
     fn carve_out_set_waveform_scroll_mutates_editor_timing_resource() {
         let mut world = build_event_world();
         world.write_message(SetWaveformScroll(2.25));
-        world.run_schedule(crate::state::StateSchedule);
+        world.update();
         approx::assert_abs_diff_eq!(
             world
                 .resource::<crate::state::EditorTimingRes>()

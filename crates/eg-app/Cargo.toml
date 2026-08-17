@@ -23,32 +23,27 @@ benchmarks = []
 
 [dependencies]
 bevy = { workspace = true }
+bevy_egui = { workspace = true }
+bevy_render = { workspace = true }
+eg-audio = { workspace = true }
 eg-blocks = { workspace = true }
 eg-types = { workspace = true }
 eg-game = { workspace = true }
 eg-mesh = { workspace = true }
 eg-platform = { workspace = true }
-eg-render = { workspace = true }
 eg-state = { workspace = true }
 eg-ui = { workspace = true }
-pollster = { workspace = true }
 log = { workspace = true }
 egui = { workspace = true }
-egui-wgpu = { workspace = true }
-egui-phosphor = { workspace = true }
-tokio = { workspace = true }
 puffin = { workspace = true }
-winit = { workspace = true }
+puffin_egui = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = { workspace = true, features = ["default"] }
 env_logger = { workspace = true }
-image = { workspace = true, features = ["ico"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
-egui-winit = { workspace = true, default-features = false }     # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
 gloo-console = { workspace = true }
 js-sys = { workspace = true }
 parking_lot_core = { workspace = true, features = ["nightly"] }
@@ -71,11 +66,7 @@ zstd = { workspace = true }
 [dev-dependencies]
 approx = { workspace = true }
 criterion = { workspace = true }
-naga = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
-tokio = { workspace = true }
-eg-state = { workspace = true, features = ["test-support"] }
 
 [[bench]]
 name = "perf_hot_paths"

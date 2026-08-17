@@ -11,6 +11,8 @@ mod gizmo;
 mod picking;
 mod selection;
 
+#[cfg(test)]
+pub(crate) use camera::{editor_camera_view_proj, project_world_to_screen};
 use eg_blocks::BlockId;
 use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{EditorMode, EditorTapDivisionPick, LevelObject, SpawnMetadata};

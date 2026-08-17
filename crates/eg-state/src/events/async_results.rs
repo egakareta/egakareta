@@ -5,40 +5,26 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Async result events (Phase 6a).
+//! Async result messages.
 //!
-//! Platform services and background tasks write five `mpsc` channels
-//! (auth service, audio service, level importer). App-owned `StateSchedule`
-//! drains those channels and emits typed result messages into the World.
-//!
-//! Phase 6a introduced a Bevy `Message` per channel so a
-//! `PollChannelsSet` system can drain the receivers and emit
-//! per-message result events into the World. Phase 6b added handler
-//! systems that consume the messages and mutate App-world resources or
-//! enqueue typed requests for unavoidable external side effects.
+//! App-owned task components publish these typed messages when their futures
+//! finish. Handler systems then mutate authoritative App-world resources.
 //!
 //! ## Why messages and not direct resource writes?
 //!
 //! - One reader per message type - distinct `Message<T>` types
 //!   give each handler its own `MessageReader<T>`, so multiple
-//!   readers of the same channel can be added without
-//!   cross-reader nondeterminism (see the Phase 3 plan notes).
+//!   readers can observe the same completed task result without
+//!   cross-reader nondeterminism.
 //! - Testable in isolation - a test can write a synthetic
 //!   `AudioImportResult` into the `Messages<AudioImportResultEvent>`
 //!   buffer and assert the handler behavior without going through
 //!   the platform layer.
 //! - Unlocks async-result consumers - `bevy::tasks`-based
-//!   systems can read the events without holding the channel
-//!   receiver (which is `!Sync`).
-//!
-//! REFACTOR POINT(full-bevy): the messages here migrate to
-//! `bevy::tasks` async event streams in the full-Bevy migration. The
-//! `mpsc` channels disappear entirely; background tasks write
-//! directly into `Messages<T>` (or `AssetEvent<T>` for asset
-//! loading).
+//!   systems own cancellation and lifetime without an external polling bridge.
 
 use bevy::ecs::prelude::*;
-use eg_audio::service::{AudioPreloadResult, WaveformResult};
+use eg_audio::service::WaveformResult;
 
 /// Result of an async auth service call.
 #[allow(dead_code)]
@@ -75,8 +61,8 @@ impl AudioImportResultEvent {
 /// Result of an async waveform-load request.
 ///
 /// Note: `WaveformLoadMessage` does not implement `Clone`, so this
-/// event is **not** `Clone` — it's moved into the `Messages<>` buffer
-/// by the poll system and consumed once by the handler system.
+/// event is **not** `Clone` — it is moved into the `Messages<>` buffer
+/// and consumed once by the handler system.
 #[allow(dead_code)]
 #[derive(Message, Debug)]
 pub struct WaveformResultEvent {
@@ -95,26 +81,6 @@ impl WaveformResultEvent {
             source: result.0,
             level_name: result.1,
             message: result.2,
-        }
-    }
-}
-
-/// Result of an async audio preload request.
-#[allow(dead_code)]
-#[derive(Message, Debug, Clone)]
-pub struct AudioPreloadResultEvent {
-    /// Source key.
-    pub source_key: String,
-    /// Preloaded bytes on success.
-    pub bytes: Option<Vec<u8>>,
-}
-
-impl AudioPreloadResultEvent {
-    /// Construct from an AudioPreloadResult.
-    pub fn from_result(result: &AudioPreloadResult) -> Self {
-        Self {
-            source_key: result.0.clone(),
-            bytes: result.1.clone(),
         }
     }
 }
@@ -189,21 +155,6 @@ mod tests {
             event.message,
             eg_audio::service::WaveformLoadMessage::Failed { .. }
         ));
-    }
-
-    #[test]
-    fn audio_preload_result_event_from_result_preserves_payload() {
-        let result: AudioPreloadResult = ("Level1:audio.mp3".to_string(), Some(vec![9, 9, 9]));
-        let event = AudioPreloadResultEvent::from_result(&result);
-        assert_eq!(event.source_key, "Level1:audio.mp3");
-        assert_eq!(event.bytes, Some(vec![9, 9, 9]));
-    }
-
-    #[test]
-    fn audio_preload_result_event_supports_failure() {
-        let result: AudioPreloadResult = ("Level1:audio.mp3".to_string(), None);
-        let event = AudioPreloadResultEvent::from_result(&result);
-        assert!(event.bytes.is_none());
     }
 
     #[test]

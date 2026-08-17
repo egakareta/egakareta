@@ -5,16 +5,15 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-#[cfg(test)]
-use eg_types::AppPhase;
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{
+    Mat4, Vec2, Vec3, Vec4,
+    camera::rh::{proj::opengl::perspective, view::look_at_mat4},
+};
 
 super::super::editor_context_methods! {
     #[cfg(test)]
     pub fn camera_axes_xy(&self) -> (Vec2, Vec2) {
-        let right = Vec2::new(self.camera.editor_yaw.cos(), -self.camera.editor_yaw.sin());
-        let up = Vec2::new(self.camera.editor_yaw.sin(), self.camera.editor_yaw.cos());
-        (right, up)
+        editor_camera_axes_xy(self.camera.editor_yaw)
     }
 
     pub fn screen_to_ray(&self, x: f64, y: f64, viewport: Vec2) -> Option<(Vec3, Vec3)> {
@@ -77,27 +76,13 @@ super::super::editor_context_methods! {
             self.camera.editor_pan[1],
         );
         let eye = target + self.camera_offset();
-        let up = Vec3::new(0.0, 1.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+        let view = look_at_mat4(eye, target, Vec3::Y);
+        let proj = perspective(45f32.to_radians(), aspect, 0.1, 10000.0);
         proj * view
     }
 
     pub fn world_to_screen_v(&self, world: Vec3, viewport: Vec2) -> Option<Vec2> {
-        let view_proj = self.view_proj(viewport);
-        let clip = view_proj * world.extend(1.0);
-        if clip.w.abs() <= f32::EPSILON {
-            return None;
-        }
-
-        let ndc = clip.truncate() / clip.w;
-        if ndc.z < -1.0 || ndc.z > 1.0 {
-            return None;
-        }
-
-        let screen_x = (ndc.x + 1.0) * 0.5 * viewport.x;
-        let screen_y = (1.0 - ndc.y) * 0.5 * viewport.y;
-        Some(Vec2::new(screen_x, screen_y))
+        project_world_to_screen(self.view_proj(viewport), world, viewport)
     }
 
     #[cfg(test)]
@@ -170,24 +155,67 @@ super::super::editor_context_methods! {
 }
 
 #[cfg(test)]
-mod tests {
-    use glam::{Vec2, Vec3};
+pub(crate) fn editor_camera_axes_xy(yaw: f32) -> (Vec2, Vec2) {
+    (
+        Vec2::new(yaw.cos(), -yaw.sin()),
+        Vec2::new(yaw.sin(), yaw.cos()),
+    )
+}
 
-    use super::super::super::EditorSubsystem;
+#[cfg(test)]
+pub(crate) fn editor_camera_view_proj(
+    camera: &super::super::EditorCameraState,
+    viewport: Vec2,
+) -> Mat4 {
+    let aspect = viewport.x / viewport.y;
+    let target = camera.editor_camera_target();
+    let eye = target + camera.editor_camera_offset();
+    let view = look_at_mat4(eye, target, Vec3::Y);
+    let proj = perspective(45f32.to_radians(), aspect, 0.1, 10000.0);
+    proj * view
+}
+
+pub(crate) fn project_world_to_screen(
+    view_proj: Mat4,
+    world: Vec3,
+    viewport: Vec2,
+) -> Option<Vec2> {
+    let clip = view_proj * world.extend(1.0);
+    if clip.w.abs() <= f32::EPSILON {
+        return None;
+    }
+
+    let ndc = clip.truncate() / clip.w;
+    if ndc.z < -1.0 || ndc.z > 1.0 {
+        return None;
+    }
+
+    let screen_x = (ndc.x + 1.0) * 0.5 * viewport.x;
+    let screen_y = (1.0 - ndc.y) * 0.5 * viewport.y;
+    Some(Vec2::new(screen_x, screen_y))
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::state::prelude::State;
+    use eg_types::AppPhase;
+    use glam::Vec2;
+
+    use super::{editor_camera_axes_xy, editor_camera_view_proj, project_world_to_screen};
+    use crate::{
+        events::camera::SetCameraOrientation,
+        state::{EditorCameraRes, EditorCameraState, test_support::TestApp},
+    };
 
     #[test]
     fn camera_axes_follow_editor_rotation() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.camera.editor_yaw = 0.0;
-        let (right, up) = editor.camera_axes_xy();
+        let (right, up) = editor_camera_axes_xy(0.0);
         approx::assert_abs_diff_eq!(right.x, 1.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(right.y, 0.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(up.x, 0.0, epsilon = 1e-6);
         approx::assert_abs_diff_eq!(up.y, 1.0, epsilon = 1e-6);
 
-        editor.camera.editor_yaw = std::f32::consts::FRAC_PI_2;
-        let (right, up) = editor.camera_axes_xy();
+        let (right, up) = editor_camera_axes_xy(std::f32::consts::FRAC_PI_2);
         approx::assert_abs_diff_eq!(right.x, 0.0, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(right.y, -1.0, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(up.x, 1.0, epsilon = 1e-5);
@@ -196,51 +224,57 @@ mod tests {
 
     #[test]
     fn camera_offset_clamps_pitch_and_world_projection_handles_visibility() {
-        let mut editor = EditorSubsystem::default();
+        let mut camera = EditorCameraState::default();
 
-        editor.camera.editor_yaw = 0.0;
-        editor.camera.editor_pitch = 10.0;
-        let offset_clamped_high = editor.camera_offset();
+        camera.editor_yaw = 0.0;
+        camera.editor_pitch = 10.0;
+        let offset_clamped_high = camera.editor_camera_offset();
 
-        editor.camera.editor_pitch = 89.9f32.to_radians();
-        let offset_at_limit = editor.camera_offset();
+        camera.editor_pitch = 89.9f32.to_radians();
+        let offset_at_limit = camera.editor_camera_offset();
 
         approx::assert_abs_diff_eq!(offset_clamped_high.x, offset_at_limit.x, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(offset_clamped_high.y, offset_at_limit.y, epsilon = 1e-4);
         approx::assert_abs_diff_eq!(offset_clamped_high.z, offset_at_limit.z, epsilon = 1e-4);
 
         let viewport = Vec2::new(1280.0, 720.0);
-        let target = Vec3::new(
-            editor.camera.editor_pan[0],
-            editor.camera.editor_target_z,
-            editor.camera.editor_pan[1],
-        );
+        let target = camera.editor_camera_target();
+        let view_proj = editor_camera_view_proj(&camera, viewport);
 
-        let on_screen = editor.world_to_screen_v(target, viewport);
+        let on_screen = project_world_to_screen(view_proj, target, viewport);
         assert!(on_screen.is_some());
 
-        let behind_camera = target + editor.camera_offset() * 2.0;
-        let off_screen = editor.world_to_screen_v(behind_camera, viewport);
+        let behind_camera = target + camera.editor_camera_offset() * 2.0;
+        let off_screen = project_world_to_screen(view_proj, behind_camera, viewport);
         assert!(off_screen.is_none());
     }
 
     #[test]
     fn camera_orientation_transition_wraps_and_interpolates() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.camera.editor_yaw = 3.0;
-        editor.camera.editor_pitch = 0.2;
-
-        editor.set_editor_camera_orientation(-3.0, 0.6, Some(1.0));
-        let transition = editor.camera.transition.as_ref().expect("transition");
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(AppPhase::Editor));
+        {
+            let mut camera = app.world_mut().resource_mut::<EditorCameraRes>();
+            camera.0.editor_yaw = 3.0;
+            camera.0.editor_pitch = 0.2;
+        }
+        app.world_mut().write_message(SetCameraOrientation {
+            rotation: -3.0,
+            pitch: 0.6,
+            transition_seconds: Some(1.0),
+        });
+        app.tick();
+        let camera = &mut app.world_mut().resource_mut::<EditorCameraRes>().0;
+        let transition = camera.transition.as_ref().expect("transition");
         assert!(transition.target_yaw > transition.start_yaw);
         approx::assert_abs_diff_eq!(transition.target_pitch, 0.6, epsilon = 1e-6);
 
-        assert!(editor.update_camera_transition(0.5));
-        assert!(editor.camera.transition.is_some());
+        assert!(camera.update_camera_transition(0.5));
+        assert!(camera.transition.is_some());
 
-        assert!(editor.update_camera_transition(0.6));
-        assert!(editor.camera.transition.is_none());
-        approx::assert_abs_diff_eq!(editor.camera.editor_pitch, 0.6, epsilon = 1e-3);
+        assert!(camera.update_camera_transition(0.6));
+        assert!(camera.transition.is_none());
+        approx::assert_abs_diff_eq!(camera.editor_pitch, 0.6, epsilon = 1e-3);
     }
 }

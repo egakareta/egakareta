@@ -45,9 +45,9 @@ use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
-    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorInputRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes,
+    GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
     start_audio_source_at_seconds_for_resources,
 };
 
@@ -184,19 +184,9 @@ pub fn handle_toggle_timeline_playback(
                 &mut resources.timeline,
             ) {
                 resources.audio.stop();
-                resources
-                    .runtime
-                    .0
-                    .dirty
-                    .merge(EditorDirtyFlags::playback_mode_changed());
             }
         } else {
             start_editor_timeline_playback(&mut resources);
-            resources
-                .runtime
-                .0
-                .dirty
-                .merge(EditorDirtyFlags::playback_mode_changed());
         }
     }
 }

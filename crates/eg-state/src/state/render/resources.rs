@@ -7,70 +7,30 @@
 */
 //! ECS resources for the rendering extraction plugin (Phase 4a).
 //!
-//! The full plan calls for `GpuContextRes`, `SceneMeshesRes`,
-//! `SurfaceHostRes`, `CameraUniform`, `LineUniform`, and
-//! `ColorSpaceUniform` to be lifted out of the legacy `State` struct
-//! and become `bevy::ecs::Resource`s. This file defines the resource
-//! types. The POD resources ([`RenderUniformsRes`],
-//! [`RenderFrameInputRes`]) are still mirrored while the legacy frame
-//! update computes uniforms, and the heavy resources
-//! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`])
-//! own the authoritative values transferred during `Runtime` construction.
-//!
-//! ## Why split POD vs heavy?
-//!
-//! - `wgpu::Device`, `wgpu::Queue`, `wgpu::Buffer`, `wgpu::Surface`,
-//!   `wgpu::BindGroup` and friends are render-thread-owned handles.
-//!   Some of their web backends contain non-`Send` DOM values, so Phase
-//!   4 stores these heavy values as Bevy non-send resources behind
-//!   App-owned non-send resources.
-//! - Mirroring just the POD types first establishes the resource
-//!   boundary, the system-set graph, and the extraction system
-//!   contract. Subsequent phases replace the POD mirror with direct
-//!   resource writes owned by Bevy systems.
-//!
-//! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
-//! entire module with `bevy::render` render-world resources
-//! (`bevy::render::render_resource::Buffer`) plus
-//! `bevy::render::camera::Camera` etc. The Bevy `Message`-driven
-//! `extract` system here is replaced by the `RenderApp` extract
-//! schedule in the `bevy::render` graph.
+//! Rendering extraction resources owned by the application world. Bevy's
+//! render sub-app owns GPU, surface, and egui renderer state; these resources
+//! are compact domain snapshots used to derive retained presentation entities.
 
 use bevy::ecs::prelude::*;
-use eg_platform::state_host::SurfaceHost;
-use eg_render::{EditorOutlineInstance, RenderFrameInput, SceneMeshes};
 use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};
 
-/// App-owned egui GPU presentation state.
-///
-/// The winit shell still owns the egui context and menu-specific UI assets,
-/// but the renderer and the current paint jobs belong to the render present
-/// boundary so the scene and UI are submitted by one App-world system.
-pub struct RenderEguiRes {
-    pub renderer: egui_wgpu::Renderer,
-    pub paint_jobs: Vec<egui::ClippedPrimitive>,
-    pub screen_descriptor: egui_wgpu::ScreenDescriptor,
+/// Per-frame presentation state derived from App-world resources.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RenderFrameInput {
+    pub phase: eg_types::AppPhase,
+    pub editor_mode: eg_types::EditorMode,
+    pub game_over: bool,
+    pub sky_color: [f32; 3],
+    pub grid_center: [f32; 2],
+    pub apply_gamma_correction: bool,
 }
 
-impl RenderEguiRes {
-    pub fn new(renderer: egui_wgpu::Renderer) -> Self {
-        Self {
-            renderer,
-            paint_jobs: Vec::new(),
-            screen_descriptor: egui_wgpu::ScreenDescriptor {
-                size_in_pixels: [1, 1],
-                pixels_per_point: 1.0,
-            },
-        }
-    }
+/// A pair of mesh ranges used by a selected-object outline.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorOutlineInstance {
+    pub mask_vertices: std::ops::Range<u32>,
+    pub outline_vertices: std::ops::Range<u32>,
 }
-
-/// Wrapper resource for the full [`eg_render::GpuContext`].
-///
-/// Inserted by `Runtime` construction with the authoritative wgpu
-/// context. Bare test worlds that do not initialize wgpu may omit it.
-#[allow(dead_code)]
-pub struct RenderGpuRes(pub eg_render::GpuContext);
 
 /// App-owned render configuration needed by extraction without borrowing the
 /// full surface/GPU context.
@@ -81,15 +41,7 @@ pub struct RenderConfigRes {
     pub apply_gamma_correction: bool,
 }
 
-impl RenderConfigRes {
-    pub fn from_gpu(gpu: &eg_render::GpuContext) -> Self {
-        Self {
-            width: gpu.config.width.max(1),
-            height: gpu.config.height.max(1),
-            apply_gamma_correction: gpu.apply_gamma_correction,
-        }
-    }
-}
+impl RenderConfigRes {}
 
 impl Default for RenderConfigRes {
     fn default() -> Self {
@@ -101,47 +53,6 @@ impl Default for RenderConfigRes {
     }
 }
 
-/// Queue and uniform-buffer handles used by scheduled App-world uploads.
-///
-/// These handles are cheap clones of the compatibility GPU context and point
-/// at the same underlying wgpu objects. Keeping only the upload surface here
-/// avoids duplicating ownership of the platform surface.
-pub struct RenderUniformUploadRes {
-    pub queue: wgpu::Queue,
-    pub camera_uniform_buffer: wgpu::Buffer,
-    pub line_uniform_buffer: wgpu::Buffer,
-    pub color_space_uniform_buffer: wgpu::Buffer,
-}
-
-impl RenderUniformUploadRes {
-    pub fn from_gpu(gpu: &eg_render::GpuContext) -> Self {
-        Self {
-            queue: gpu.queue.clone(),
-            camera_uniform_buffer: gpu.camera_uniform_buffer.clone(),
-            line_uniform_buffer: gpu.line_uniform_buffer.clone(),
-            color_space_uniform_buffer: gpu.color_space_uniform_buffer.clone(),
-        }
-    }
-}
-
-/// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
-///
-/// Production moves the former `State::render.meshes` field into this
-/// resource so scene mesh storage is held by the Bevy world. Test-only
-/// compatibility callers may still use `State::render_meshes()`.
-#[allow(dead_code)]
-#[derive(Default)]
-pub struct RenderMeshesRes(pub SceneMeshes);
-
-/// Wrapper resource for the optional platform [`SurfaceHost`].
-///
-/// Production moves the former `State::render.surface_host` field into
-/// this resource so surface ownership is held by the Bevy world. Test-only
-/// compatibility callers may still use `State::surface_host()`.
-#[allow(dead_code)]
-#[derive(Default)]
-pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
-
 /// Bundle of the three `Copy` uniforms that drive the per-frame
 /// shader constants (`CameraUniform`, `LineUniform`,
 /// `ColorSpaceUniform`).
@@ -150,9 +61,8 @@ pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 /// the [`RenderExtractSet`](super::plugin) phase. The mirror
 /// is a free operation: the uniform values are tiny POD types
 /// (a `Mat4` and a handful of `f32`s), and the actual GPU buffers
-/// stay in `RenderGpuRes`. Bevy systems can use this
-/// resource to read the per-frame uniform values without touching
-/// the legacy state.
+/// stay in Bevy's render world. Bevy systems can use this resource to read
+/// the per-frame values without touching renderer internals.
 #[allow(dead_code)]
 #[derive(Resource, Clone, Copy)]
 pub struct RenderUniformsRes {
@@ -181,6 +91,28 @@ impl Default for RenderUniformsRes {
                 time_seconds: 0.0,
                 viewport_size: [1.0, 1.0],
             },
+        }
+    }
+}
+
+/// Authoritative camera pose extracted from the App world for Bevy scene
+/// presentation.
+///
+/// This stays separate from [`RenderUniformsRes`] so retained Bevy camera
+/// entities do not need to reconstruct a transform from a GPU uniform.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct RenderCameraPoseRes {
+    /// World-space camera position.
+    pub eye: [f32; 3],
+    /// World-space point the camera faces.
+    pub target: [f32; 3],
+}
+
+impl Default for RenderCameraPoseRes {
+    fn default() -> Self {
+        Self {
+            eye: [0.0, 20.0, -20.0],
+            target: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -215,7 +147,7 @@ impl Default for RenderFrameInputRes {
 /// Extracted gameplay trail vertices consumed by the compatibility renderer.
 ///
 /// The vertex list is built from App-owned gameplay components in
-/// `RenderExtractSchedule`; Runtime only uploads the result while the legacy
+/// `PostUpdate`; Runtime only uploads the result while the legacy
 /// `SceneMeshes` storage remains in `State`.
 #[derive(Resource, Default, Clone)]
 pub struct RenderTrailVerticesRes(pub Vec<eg_mesh::Vertex>);
@@ -272,8 +204,7 @@ pub struct RenderBlockEffectVerticesRes(pub Vec<eg_mesh::Vertex>);
 pub struct RenderPracticeCheckpointVerticesRes(pub Vec<eg_mesh::Vertex>);
 
 /// CPU block batches extracted for a gameplay frame that needs time-dependent
-/// rendering. Runtime uploads the result into the compatibility mesh slots
-/// until GPU mesh storage is App-owned.
+/// rendering. Retained Bevy presentation entities consume this output.
 #[derive(Resource, Default, Clone)]
 pub struct RenderPlayingBlockMeshesRes {
     pub result: Option<eg_mesh::BlockInstanceBuildResult>,
@@ -281,8 +212,7 @@ pub struct RenderPlayingBlockMeshesRes {
 }
 
 /// Static menu-preview blocks extracted from the App-owned preview objects.
-/// Runtime uploads the cached chunk mesh into the compatibility presenter
-/// until the custom wgpu scene storage is App-owned.
+/// Retained Bevy presentation entities consume the cached chunk mesh.
 #[derive(Resource, Default, Clone)]
 pub struct RenderMenuPreviewBlockMeshesRes {
     pub preview_level_index: Option<usize>,
@@ -303,8 +233,7 @@ pub struct RenderEditorBlockMeshesRes {
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorSpawnMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor transform-gizmo vertices consumed by the compatibility
-/// renderer.
+/// Extracted editor transform-gizmo vertices consumed by Bevy presentation.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorGizmoVerticesRes(pub Vec<eg_mesh::Vertex>);
 
@@ -313,8 +242,8 @@ pub struct RenderEditorGizmoVerticesRes(pub Vec<eg_mesh::Vertex>);
 /// The platform layer (winit / wasm canvas) pushes the latest surface
 /// size into this resource on `WindowEvent::Resized` / canvas resize.
 /// The [`RenderPlugin`](super::plugin) drains it during
-/// `RenderPresentSet` and applies the size to [`RenderGpuRes`] plus
-/// [`RenderSurfaceHostRes`] when they are present.
+/// `RenderPresentSet` and applies it to the domain render configuration;
+/// Bevy's window/render integration applies the actual surface resize.
 ///
 /// The resource is inserted with an empty default so Bevy schedules can
 /// reach it even in bare test worlds.

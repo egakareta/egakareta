@@ -14,10 +14,10 @@ use crate::{
         ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
         Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
     },
-    events::{ConsumedEventsBuffer, ConsumedObjectEvent},
+    events::ConsumedObjectEvent,
     physics::BASE_PLAYER_SPEED,
     plugin::{build_fixed_update_schedule, initialize_gameplay_world},
-    resources::{FrameDelta, GameClock, LevelMeta, SpatialIndex},
+    resources::{GameClock, LevelMeta, SpatialIndex},
 };
 
 #[derive(Clone, Copy)]
@@ -253,7 +253,9 @@ impl TimelineSimulationRuntime {
                 continue;
             }
 
-            self.world.resource_mut::<FrameDelta>().0 = step_dt;
+            self.world
+                .resource_mut::<bevy::time::Time<bevy::time::Fixed>>()
+                .advance_by(std::time::Duration::from_secs_f32(step_dt));
             self.schedule.run(&mut self.world);
             self.elapsed_seconds = step_target;
             self.state.elapsed_seconds = step_target;
@@ -290,8 +292,10 @@ impl TimelineSimulationRuntime {
     }
 
     pub fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
-        let world = &mut self.world;
-        std::mem::take(&mut world.resource_mut::<ConsumedEventsBuffer>().events)
+        self.world
+            .resource_mut::<bevy::ecs::message::Messages<ConsumedObjectEvent>>()
+            .drain()
+            .collect()
     }
 
     pub fn trail_segments(&self) -> &[Vec<[f32; 3]>] {

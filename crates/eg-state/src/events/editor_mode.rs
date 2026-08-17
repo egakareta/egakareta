@@ -13,6 +13,7 @@ use bevy::{
     state::prelude::State,
 };
 use eg_blocks::BlockId;
+use eg_editor_domain::normalize_selected_indices;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
@@ -20,8 +21,7 @@ use crate::state::{
     EditorAudioCacheRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
     EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
     EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
-    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, collect_editor_object_data,
-    load_waveform_for_level_resources,
+    RuntimeAudioPreloadRes, SessionStateRes, collect_editor_object_data, queue_waveform_load_task,
 };
 
 /// Switch the editor mode.
@@ -63,29 +63,45 @@ pub fn register_events(app: &mut App) {
 // interaction, UI, and render extraction consume `EditorInputRes`; legacy
 // `State::set_editor_mode` remains only for isolated State compatibility paths.
 
-pub fn handle_set_editor_mode(
+#[derive(SystemParam)]
+pub(crate) struct EditorModeResources<'w> {
+    input: ResMut<'w, EditorInputRes>,
+    runtime: ResMut<'w, EditorRuntimeRes>,
+    session: Res<'w, SessionStateRes>,
+    cache: Res<'w, EditorAudioCacheRes>,
+    preload: Res<'w, RuntimeAudioPreloadRes>,
+    timing: ResMut<'w, EditorTimingRes>,
+}
+
+pub(crate) fn handle_set_editor_mode(
+    mut commands: Commands,
     mut events: MessageReader<SetEditorMode>,
-    mut input: ResMut<EditorInputRes>,
-    session: Res<SessionStateRes>,
-    cache: Res<EditorAudioCacheRes>,
-    preload: Res<RuntimeAudioPreloadRes>,
-    sender: Res<WaveformLoadSenderRes>,
-    mut timing: ResMut<EditorTimingRes>,
+    mut resources: EditorModeResources,
 ) {
     for event in events.read() {
-        let entering_timing = input.0.mode != EditorMode::Timing && event.0 == EditorMode::Timing;
-        input.0.mode = event.0;
+        let entering_timing =
+            resources.input.0.mode != EditorMode::Timing && event.0 == EditorMode::Timing;
+        resources.input.0.mode = event.0;
+        resources.runtime.0.interaction.gizmo_drag = None;
+        resources.runtime.0.interaction.block_drag = None;
+        resources.input.0.marquee_start_screen = None;
+        resources.input.0.marquee_current_screen = None;
+        if !event.0.can_select() {
+            resources.input.0.selected_block_index = None;
+            resources.input.0.selected_block_indices.clear();
+        }
         if entering_timing {
-            let level_name = session
+            let level_name = resources
+                .session
                 .editor_level_name
                 .clone()
                 .unwrap_or_else(|| "Untitled".to_string());
-            load_waveform_for_level_resources(
+            queue_waveform_load_task(
+                &mut commands,
                 level_name,
-                &cache,
-                &preload,
-                &mut timing.0,
-                sender.0.clone(),
+                &resources.cache,
+                &resources.preload,
+                &mut resources.timing.0,
             );
         }
     }
@@ -299,19 +315,9 @@ fn set_effective_place_mode(
 }
 
 fn selected_indices_normalized(input: &EditorInputState, object_count: usize) -> Vec<usize> {
-    let mut indices = input
-        .selected_block_indices
-        .iter()
-        .copied()
-        .filter(|index| *index < object_count)
-        .collect::<Vec<_>>();
-    if let Some(index) = input
-        .selected_block_index
-        .filter(|index| *index < object_count)
-    {
-        indices.push(index);
-    }
-    indices.sort_unstable();
-    indices.dedup();
-    indices
+    normalize_selected_indices(
+        &input.selected_block_indices,
+        input.selected_block_index,
+        object_count,
+    )
 }

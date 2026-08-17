@@ -5,55 +5,13 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-#[cfg(test)]
-use eg_blocks::BlockId;
 use eg_editor_domain::add_tap_with_indicator;
-#[cfg(test)]
-use eg_editor_domain::{
-    clear_taps_with_indicators, remove_tap_with_indicator, snap_cell_to_step,
-    snap_component_to_step,
-};
-#[cfg(test)]
-use eg_types::EditorMode;
-#[cfg(test)]
-use eg_types::{Direction, LevelObject, TimingPoint};
-#[cfg(test)]
-use eg_types::{EasingDirection, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget};
 
-#[cfg(test)]
-use super::EditorDirtyFlags;
-#[cfg(test)]
-use super::EditorSubsystem;
-
-#[cfg(test)]
-const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
-
-#[cfg(test)]
-fn remove_replaced_transform_trigger_targets(
-    objects: &mut [LevelObject],
-    time_seconds: f32,
-    object_ids_to_replace: &[String],
-) {
-    for object in objects {
-        let Some(trigger) = object.trigger.as_mut() else {
-            continue;
-        };
-        if (trigger.time_seconds - time_seconds).abs() > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
-            || !trigger.transform
-        {
-            continue;
-        }
-        let TriggerTarget::Objects { object_ids } = &mut trigger.target else {
-            continue;
-        };
-        if !object_ids
-            .iter()
-            .any(|object_id| object_ids_to_replace.contains(object_id))
-        {
-            continue;
-        }
-        object_ids.retain(|object_id| !object_ids_to_replace.contains(object_id));
-    }
+/// Whether a configured snap mode is active for the current input state.
+///
+/// Holding Ctrl temporarily disables both position and rotation snapping.
+pub(crate) fn effective_snap_enabled(configured: bool, ctrl_held: bool) -> bool {
+    configured && !ctrl_held
 }
 
 super::editor_context_methods! {
@@ -176,18 +134,6 @@ super::editor_context_methods! {
     }
 
     #[cfg(test)]
-    pub fn set_mode(&mut self, mode: EditorMode) {
-        self.input.mode = mode;
-        self.runtime.interaction.gizmo_drag = None;
-        self.runtime.interaction.block_drag = None;
-        self.input.marquee_start_screen = None;
-        self.input.marquee_current_screen = None;
-        if !mode.can_select() {
-            self.clear_block_selection();
-        }
-    }
-
-    #[cfg(test)]
     pub fn mode(&self) -> EditorMode {
         self.input.mode
     }
@@ -198,7 +144,7 @@ super::editor_context_methods! {
     }
 
     pub fn effective_snap_to_grid(&self) -> bool {
-        self.config.snap_to_grid && !self.input.ctrl_held
+        effective_snap_enabled(self.config.snap_to_grid, self.input.ctrl_held)
     }
 
     #[cfg(test)]
@@ -212,7 +158,7 @@ super::editor_context_methods! {
     }
 
     pub fn effective_snap_rotation(&self) -> bool {
-        self.config.snap_rotation && !self.input.ctrl_held
+        effective_snap_enabled(self.config.snap_rotation, self.input.ctrl_held)
     }
 
     #[cfg(test)]
@@ -440,70 +386,6 @@ super::editor_context_methods! {
         self.timeline.taps.selected_index = None;
     }
 
-    pub fn invalidate_samples(&mut self) {
-        self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
-        self.timeline.snapshot_cache_revision = 0;
-        self.timeline.snapshot_cache.clear();
-        self.timeline.trail_point_cache.clear();
-        self.timeline.trail_segment_start_cache.clear();
-        self.timeline.scrub_runtime = None;
-        self.timeline.scrub_runtime_revision = 0;
-    }
-
-    #[cfg(test)]
-    pub fn invalidate_samples_from(&mut self, from_seconds: f32) {
-        self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
-
-        // Partial invalidation: keep cached snapshots before the change point
-        let step_seconds = self.timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
-        if !self.timeline.snapshot_cache.is_empty() && from_seconds > step_seconds {
-            let keep_count = (from_seconds / step_seconds).floor() as usize;
-            let keep_count = keep_count.min(self.timeline.snapshot_cache.len());
-            if keep_count > 0 {
-                self.timeline.snapshot_cache.truncate(keep_count);
-                self.truncate_cached_timeline_trail_to_snapshot_prefix();
-                // Mark as partial so rebuild can continue from the retained prefix
-                self.timeline.snapshot_cache_revision = 0;
-            } else {
-                self.timeline.snapshot_cache.clear();
-                self.timeline.trail_point_cache.clear();
-                self.timeline.trail_segment_start_cache.clear();
-                self.timeline.snapshot_cache_revision = 0;
-            }
-        } else {
-            self.timeline.snapshot_cache.clear();
-            self.timeline.trail_point_cache.clear();
-            self.timeline.trail_segment_start_cache.clear();
-            self.timeline.snapshot_cache_revision = 0;
-        }
-
-        // Invalidate scrub runtime if it's past the change point
-        if let Some(runtime) = &self.timeline.scrub_runtime {
-            if runtime.elapsed_seconds() >= from_seconds {
-                self.timeline.scrub_runtime = None;
-                self.timeline.scrub_runtime_revision = 0;
-            }
-        } else {
-            self.timeline.scrub_runtime_revision = 0;
-        }
-    }
-
-    #[cfg(test)]
-    fn truncate_cached_timeline_trail_to_snapshot_prefix(&mut self) {
-        let Some(snapshot) = self.timeline.snapshot_cache.last() else {
-            self.timeline.trail_point_cache.clear();
-            self.timeline.trail_segment_start_cache.clear();
-            return;
-        };
-
-        self.timeline
-            .trail_point_cache
-            .truncate(snapshot.trail_point_count);
-        self.timeline
-            .trail_segment_start_cache
-            .truncate(snapshot.trail_segment_count);
-    }
-
     #[cfg(test)]
     pub fn timeline_preview(&self) -> ([f32; 3], Direction) {
         (
@@ -584,11 +466,6 @@ super::editor_context_methods! {
     }
 
     #[cfg(test)]
-    pub fn bpm_tap_result(&self) -> Option<f32> {
-        self.timing.bpm_tap_result
-    }
-
-    #[cfg(test)]
     pub fn add_timing_point(&mut self, time_seconds: f32, bpm: f32) {
         self.timing.timing_points.push(TimingPoint {
             time_seconds,
@@ -641,29 +518,6 @@ super::editor_context_methods! {
             tp.time_signature_denominator = denominator.max(1);
             self.timing.mark_timing_points_changed();
         }
-    }
-
-    #[cfg(test)]
-    pub fn bpm_tap(&mut self, now_secs: f64) {
-        self.timing.bpm_tap_times.push(now_secs);
-        if self.timing.bpm_tap_times.len() > 1 {
-            let mut diffs = Vec::new();
-            for i in 1..self.timing.bpm_tap_times.len() {
-                diffs.push(self.timing.bpm_tap_times[i] - self.timing.bpm_tap_times[i - 1]);
-            }
-            let avg_diff = diffs.iter().sum::<f64>() / diffs.len() as f64;
-            let bpm = (60.0 / avg_diff) as f32;
-            self.timing.bpm_tap_result = Some(bpm);
-        }
-        if self.timing.bpm_tap_times.len() > 16 {
-            self.timing.bpm_tap_times.remove(0);
-        }
-    }
-
-    #[cfg(test)]
-    pub fn bpm_tap_reset(&mut self) {
-        self.timing.bpm_tap_times.clear();
-        self.timing.bpm_tap_result = None;
     }
 
     #[cfg(test)]
@@ -734,24 +588,27 @@ super::editor_context_methods! {
         self.replace_block_selection(created_trigger_indices);
         self.input.hovered_block_index = self.input.selected_block_index;
         self.sync_primary_selection_from_indices();
-        let mut dirty = EditorDirtyFlags::trigger_object_added();
-        dirty.rebuild_selection_overlays = true;
-        self.mark_dirty(dirty);
         true
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use bevy::state::prelude::State;
     use eg_blocks::BlockId;
-    use eg_game::TimelineSimulationRuntime;
-    use eg_mesh::{GizmoAxis, GizmoDragKind};
     use eg_types::{
         Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
         TimedTrigger, TriggerTarget,
     };
 
-    use super::EditorSubsystem;
+    use crate::{
+        events::{block::UpdateSelectedBlock, selection::AddTransformTrigger},
+        state::{
+            EditorConfigRes, EditorInputRes, EditorTimelineRes, EditorTimelineState,
+            EditorTimingState, collect_editor_objects_from_world, replace_editor_objects,
+            test_support::TestApp,
+        },
+    };
 
     fn test_level_object(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -797,49 +654,95 @@ mod tests {
         transform_trigger(time_seconds, target_ids, [9.0, 0.0, 0.0])
     }
 
+    fn transform_trigger_test_app(
+        objects: Vec<LevelObject>,
+        selected_indices: Vec<usize>,
+        time_seconds: f32,
+    ) -> TestApp {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(eg_types::AppPhase::Editor));
+        replace_editor_objects(app.world_mut(), objects);
+        {
+            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.selected_block_index = selected_indices.first().copied();
+            input.0.selected_block_indices = selected_indices;
+            input.0.mode = EditorMode::Rotate;
+        }
+        {
+            let mut timeline = app.world_mut().resource_mut::<EditorTimelineRes>();
+            timeline.0.clock.time_seconds = time_seconds;
+            timeline.0.clock.duration_seconds = 8.0;
+        }
+        app.world_mut().write_message(AddTransformTrigger);
+        app.tick();
+        app
+    }
+
     #[test]
     fn add_transform_trigger_ignores_trigger_block_selection() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = transform_trigger_test_app(
+            vec![transform_trigger_object(1.0, vec!["object_0"])],
+            vec![0],
+            1.0,
+        );
 
-        editor.objects = vec![transform_trigger_object(1.0, vec!["object_0"])];
-        editor.sync_trigger_selection_from_objects();
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-
-        assert!(!editor.add_transform_trigger());
-        assert_eq!(editor.objects.len(), 1);
-        assert_eq!(editor.trigger_objects().len(), 1);
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_eq!(objects.len(), 1);
+        assert_eq!(
+            objects
+                .iter()
+                .filter(|object| object.trigger.is_some())
+                .count(),
+            1
+        );
     }
 
     #[test]
     fn add_transform_trigger_creates_selected_markers_for_selected_blocks() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = transform_trigger_test_app(
+            vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                test_level_object([4.0, 0.0, 0.0]),
+            ],
+            vec![0, 1],
+            2.5,
+        );
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
-        editor.timeline.clock.time_seconds = 2.5;
-        editor.timeline.clock.duration_seconds = 8.0;
-        editor.objects = vec![
-            test_level_object([0.0, 0.0, 0.0]),
-            test_level_object([4.0, 0.0, 0.0]),
-        ];
-        editor.input.selected_block_indices = vec![0, 1];
-        editor.input.selected_block_index = Some(0);
-        editor.input.mode = EditorMode::Rotate;
+        assert_eq!(
+            app.world().resource::<EditorInputRes>().0.mode,
+            EditorMode::Rotate
+        );
+        assert_object_pose(&objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_object_pose(&objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(objects.len(), 4);
+        assert_eq!(objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(objects[2].rotation, [0.0, 0.0, 0.0]);
+        assert_eq!(objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
+        assert_object_pose(&objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(objects[3].rotation, [0.0, 0.0, 0.0]);
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_index,
+            Some(2)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![2, 3]
+        );
 
-        assert!(editor.add_transform_trigger());
-        assert_eq!(editor.input.mode, EditorMode::Rotate);
-        assert_object_pose(&editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_object_pose(&editor.objects[1], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(editor.objects.len(), 4);
-        assert_eq!(editor.objects[2].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        assert_object_pose(&editor.objects[2], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(editor.objects[2].rotation, [0.0, 0.0, 0.0]);
-        assert_eq!(editor.objects[3].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-        assert_object_pose(&editor.objects[3], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(editor.objects[3].rotation, [0.0, 0.0, 0.0]);
-        assert_eq!(editor.input.selected_block_index, Some(2));
-        assert_eq!(editor.input.selected_block_indices, vec![2, 3]);
-
-        let mut triggers = editor.trigger_objects();
+        let mut triggers = objects
+            .iter()
+            .filter(|object| object.trigger.is_some())
+            .cloned()
+            .collect::<Vec<_>>();
         triggers.sort_by_key(|object| match &object.trigger.as_ref().unwrap().target {
             TriggerTarget::Objects { object_ids } => object_ids[0].clone(),
             TriggerTarget::Camera => String::new(),
@@ -869,28 +772,36 @@ mod tests {
 
     #[test]
     fn add_transform_trigger_targets_block_after_existing_trigger_object() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = transform_trigger_test_app(
+            vec![
+                test_level_object([0.0, 0.0, 0.0]),
+                transform_trigger_object(1.0, vec!["object_0"]),
+                test_level_object([4.0, 0.0, 0.0]),
+            ],
+            vec![2],
+            2.5,
+        );
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
-        editor.timeline.clock.time_seconds = 2.5;
-        editor.timeline.clock.duration_seconds = 8.0;
-        editor.objects = vec![
-            test_level_object([0.0, 0.0, 0.0]),
-            transform_trigger_object(1.0, vec!["object_0"]),
-            test_level_object([4.0, 0.0, 0.0]),
-        ];
-        editor.sync_trigger_selection_from_objects();
-        editor.input.selected_block_indices = vec![2];
-        editor.input.selected_block_index = Some(2);
-
-        assert!(editor.add_transform_trigger());
-
-        assert_eq!(editor.objects.len(), 4);
-        assert_object_pose(&editor.objects[2], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(editor.input.selected_block_index, Some(3));
-        assert_eq!(editor.input.selected_block_indices, vec![3]);
+        assert_eq!(objects.len(), 4);
+        assert_object_pose(&objects[2], [4.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_index,
+            Some(3)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![3]
+        );
 
         let mut found_retargeted_capture = false;
-        for trigger_object in &editor.trigger_objects() {
+        for trigger_object in objects.iter().filter(|object| object.trigger.is_some()) {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -912,28 +823,23 @@ mod tests {
 
     #[test]
     fn add_transform_trigger_preserves_existing_moved_trigger_object_pose() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.timeline.clock.time_seconds = 2.5;
-        editor.timeline.clock.duration_seconds = 8.0;
-        editor.objects = vec![
+        let mut objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
         ];
-        editor
-            .objects
-            .push(transform_trigger(2.5, vec!["object_0"], [8.0, 0.0, 0.0]));
-        editor.objects[2].position = [12.0, 1.0, 3.0];
-        editor.objects[2].size = [2.0, 3.0, 4.0];
-        editor.objects[2].rotation = [10.0, 20.0, 30.0];
-        editor.input.selected_block_indices = vec![1];
-        editor.input.selected_block_index = Some(1);
+        objects.push(transform_trigger(2.5, vec!["object_0"], [8.0, 0.0, 0.0]));
+        objects[2].position = [12.0, 1.0, 3.0];
+        objects[2].size = [2.0, 3.0, 4.0];
+        objects[2].rotation = [10.0, 20.0, 30.0];
+        let mut app = transform_trigger_test_app(objects, vec![1], 2.5);
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
-        assert!(editor.add_transform_trigger());
-
-        assert_object_pose(&editor.objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
-        assert_eq!(editor.objects[2].rotation, [10.0, 20.0, 30.0]);
-        let triggers = editor.trigger_objects();
+        assert_object_pose(&objects[2], [12.0, 1.0, 3.0], [2.0, 3.0, 4.0]);
+        assert_eq!(objects[2].rotation, [10.0, 20.0, 30.0]);
+        let triggers = objects
+            .iter()
+            .filter(|object| object.trigger.is_some())
+            .collect::<Vec<_>>();
         let existing_trigger_object = triggers
             .iter()
             .find(|object| match &object.trigger.as_ref().unwrap().target {
@@ -948,25 +854,19 @@ mod tests {
 
     #[test]
     fn add_transform_trigger_overrides_existing_same_time_object_triggers() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.timeline.clock.time_seconds = 2.5;
-        editor.timeline.clock.duration_seconds = 8.0;
-        editor.objects = vec![
+        let mut objects = vec![
             test_level_object([0.0, 0.0, 0.0]),
             test_level_object([4.0, 0.0, 0.0]),
             test_level_object([8.0, 0.0, 0.0]),
         ];
-        editor.input.selected_block_indices = vec![0, 1];
-        editor.input.selected_block_index = Some(0);
-        editor.objects.extend(vec![
+        objects.extend(vec![
             transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_4", "object_8"], [20.0, 0.0, 0.0]),
             transform_trigger(2.5, vec!["object_8"], [30.0, 0.0, 0.0]),
             transform_trigger(4.0, vec!["object_0"], [40.0, 0.0, 0.0]),
         ]);
-
-        assert!(editor.add_transform_trigger());
+        let mut app = transform_trigger_test_app(objects, vec![0, 1], 2.5);
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
         let mut object_zero_same_time_count = 0;
         let mut object_one_same_time_count = 0;
@@ -974,7 +874,7 @@ mod tests {
         let mut retained_object_two_standalone = false;
         let mut retained_different_time_object_zero = false;
 
-        for trigger_object in &editor.trigger_objects() {
+        for trigger_object in objects.iter().filter(|object| object.trigger.is_some()) {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -1023,23 +923,15 @@ mod tests {
 
     #[test]
     fn add_transform_trigger_preserves_replaced_trigger_with_no_sources() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.timeline.clock.time_seconds = 2.5;
-        editor.timeline.clock.duration_seconds = 8.0;
-        editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-        editor
-            .objects
-            .push(transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]));
-
-        assert!(editor.add_transform_trigger());
+        let mut objects = vec![test_level_object([0.0, 0.0, 0.0])];
+        objects.push(transform_trigger(2.5, vec!["object_0"], [10.0, 0.0, 0.0]));
+        let mut app = transform_trigger_test_app(objects, vec![0], 2.5);
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
         let mut found_target_only_trigger = false;
         let mut found_replacement_trigger = false;
 
-        for trigger_object in &editor.trigger_objects() {
+        for trigger_object in objects.iter().filter(|object| object.trigger.is_some()) {
             let trigger = trigger_object
                 .trigger
                 .as_ref()
@@ -1068,104 +960,71 @@ mod tests {
 
     #[test]
     fn transform_trigger_keybind_creates_selected_trigger_block() {
-        let mut editor = EditorSubsystem::default();
+        let mut app =
+            transform_trigger_test_app(vec![test_level_object([0.0, 0.0, 0.0])], vec![0], 0.0);
+        let objects = collect_editor_objects_from_world(app.world_mut());
 
-        editor.objects = vec![test_level_object([0.0, 0.0, 0.0])];
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-
-        assert!(editor.add_transform_trigger());
-        assert_object_pose(&editor.objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(editor.trigger_objects().len(), 1);
-        assert_eq!(editor.input.selected_block_indices, vec![1]);
-        assert_eq!(editor.objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
-    }
-
-    #[test]
-    fn editor_mode_switch_clears_selection_and_drag_state_when_mode_cannot_select() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.input.selected_block_index = Some(0);
-        editor.input.selected_block_indices = vec![0, 1];
-        editor.input.hovered_block_index = Some(1);
-        editor.input.marquee_start_screen = Some([10.0, 20.0]);
-        editor.input.marquee_current_screen = Some([30.0, 40.0]);
-        editor.runtime.interaction.gizmo_drag = Some(super::super::EditorGizmoDrag {
-            axis: GizmoAxis::X,
-            kind: GizmoDragKind::Move,
-            start_mouse: [0.0, 0.0],
-            start_center_screen: [0.0, 0.0],
-            start_center_world: [0.0, 0.0, 0.0],
-            start_blocks: Vec::new(),
-        });
-        editor.runtime.interaction.block_drag = Some(super::super::EditorBlockDrag {
-            start_mouse: [0.0, 0.0],
-            start_center_world: [0.0, 0.0, 0.0],
-            start_drag_world: [0.0, 0.0, 0.0],
-            start_cursor: [0.0, 0.0, 0.0],
-            start_blocks: Vec::new(),
-        });
-
-        editor.set_mode(EditorMode::Null);
-
-        assert_eq!(editor.mode(), EditorMode::Null);
-        assert!(editor.runtime.interaction.gizmo_drag.is_none());
-        assert!(editor.runtime.interaction.block_drag.is_none());
-        assert!(editor.input.selected_block_index.is_none());
-        assert!(editor.input.selected_block_indices.is_empty());
-        assert!(editor.input.hovered_block_index.is_none());
-        assert!(editor.input.marquee_start_screen.is_none());
-        assert!(editor.input.marquee_current_screen.is_none());
+        assert_object_pose(&objects[0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        assert_eq!(
+            objects
+                .iter()
+                .filter(|object| object.trigger.is_some())
+                .count(),
+            1
+        );
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .selected_block_indices,
+            vec![1]
+        );
+        assert_eq!(objects[1].block_id, TRANSFORM_TRIGGER_BLOCK_ID);
     }
 
     #[test]
     fn selected_block_mutators_apply_snap_and_clamp_rules() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = transform_trigger_test_app(vec![LevelObject::default()], vec![0], 0.0);
+        {
+            let mut config = app.world_mut().resource_mut::<EditorConfigRes>();
+            config.0.snap_to_grid = true;
+            config.0.snap_step = 0.5;
+            config.0.snap_rotation = true;
+            config.0.snap_rotation_step_degrees = 15.0;
+        }
 
-        editor.objects.push(LevelObject::default());
-        editor.input.selected_block_index = Some(0);
-        editor.config.snap_to_grid = true;
-        editor.config.snap_step = 0.5;
-        editor.config.snap_rotation = true;
-        editor.config.snap_rotation_step_degrees = 15.0;
-        editor.input.ctrl_held = false;
+        app.world_mut()
+            .write_message(UpdateSelectedBlock(LevelObject {
+                position: [1.24, -1.0, 2.26],
+                size: [0.1, 0.4, 0.62],
+                rotation: [7.0, 22.0, 44.0],
+                color_tint: [-1.0, 0.4, 2.0],
+                block_id: BlockId::new("stone"),
+                ..LevelObject::default()
+            }));
+        app.tick();
 
-        editor.set_selected_block_position([1.24, -1.0, 2.26]);
-        assert_eq!(editor.objects[0].position, [1.0, 0.0, 2.5]);
-        assert_eq!(editor.input.cursor, [1.0, 0.0, 2.5]);
-
-        editor.set_selected_block_size([0.1, 0.4, 0.62]);
-        assert_eq!(editor.objects[0].size, [0.5, 0.5, 0.5]);
-
-        editor.set_selected_block_rotation([7.0, 22.0, 44.0]);
-        assert_eq!(editor.objects[0].rotation, [0.0, 15.0, 45.0]);
-
-        editor.set_selected_block_color_tint([-1.0, 0.4, 2.0]);
-        assert_eq!(editor.objects[0].color_tint, [0.0, 0.4, 1.0]);
-
-        editor.set_selected_block_id(BlockId::new("stone"));
-        assert_eq!(editor.objects[0].block_id, "core/stone");
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_eq!(objects[0].position, [1.0, 0.0, 2.5]);
+        assert_eq!(
+            app.world().resource::<EditorInputRes>().0.cursor,
+            [1.0, 0.0, 2.5]
+        );
+        assert_eq!(objects[0].size, [0.5, 0.5, 0.5]);
+        assert_eq!(objects[0].rotation, [0.0, 15.0, 45.0]);
+        assert_eq!(objects[0].color_tint, [0.0, 0.4, 1.0]);
+        assert_eq!(objects[0].block_id, "core/stone");
     }
 
     #[test]
-    fn timeline_clamp_and_cache_invalidation_helpers_work() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.timeline.clock.duration_seconds = 2.0;
-        assert!(editor.set_timeline_time_seconds(5.0));
-        assert_eq!(editor.timeline.clock.time_seconds, 2.0);
-        assert!(!editor.set_timeline_time_seconds(2.0));
-
-        editor.timeline.clock.time_seconds = 10.0;
-        editor.set_timeline_duration_seconds(0.01);
-        assert_eq!(editor.timeline.clock.duration_seconds, 0.1);
-        assert_eq!(editor.timeline.clock.time_seconds, 0.1);
+    fn timeline_cache_invalidation_helpers_work() {
+        let mut timeline = EditorTimelineState::default();
 
         let mut runtime =
-            TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
+            eg_game::TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
         runtime.advance_to(1.5);
-        editor.timeline.snapshot_cache_step_seconds = 0.5;
-        editor.timeline.snapshot_cache = vec![
+        timeline.snapshot_cache_step_seconds = 0.5;
+        timeline.snapshot_cache = vec![
             crate::state::editor_timeline::EditorTimelineSnapshot {
                 position: [0.0, 0.0, 0.0],
                 direction: Direction::Forward,
@@ -1199,38 +1058,38 @@ mod tests {
                 trail_point_count: 0,
             },
         ];
-        editor.timeline.snapshot_cache_revision = 123;
-        editor.timeline.scrub_runtime = Some(runtime);
-        editor.timeline.scrub_runtime_revision = 55;
+        timeline.snapshot_cache_revision = 123;
+        timeline.scrub_runtime = Some(runtime);
+        timeline.scrub_runtime_revision = 55;
 
-        editor.invalidate_samples_from(1.0);
-        assert_eq!(editor.timeline.snapshot_cache.len(), 2);
-        assert_eq!(editor.timeline.snapshot_cache_revision, 0);
-        assert!(editor.timeline.scrub_runtime.is_none());
-        assert_eq!(editor.timeline.scrub_runtime_revision, 0);
+        timeline.invalidate_samples_from(1.0);
+        assert_eq!(timeline.snapshot_cache.len(), 2);
+        assert_eq!(timeline.snapshot_cache_revision, 0);
+        assert!(timeline.scrub_runtime.is_none());
+        assert_eq!(timeline.scrub_runtime_revision, 0);
 
-        editor.invalidate_samples();
-        assert!(editor.timeline.snapshot_cache.is_empty());
-        assert_eq!(editor.timeline.snapshot_cache_revision, 0);
-        assert!(editor.timeline.scrub_runtime.is_none());
-        assert_eq!(editor.timeline.scrub_runtime_revision, 0);
+        timeline.invalidate_samples();
+        assert!(timeline.snapshot_cache.is_empty());
+        assert_eq!(timeline.snapshot_cache_revision, 0);
+        assert!(timeline.scrub_runtime.is_none());
+        assert_eq!(timeline.scrub_runtime_revision, 0);
     }
 
     #[test]
     fn bpm_tap_estimates_tempo_and_reset_clears_state() {
-        let mut editor = EditorSubsystem::default();
+        let mut timing = EditorTimingState::default();
 
-        editor.bpm_tap(1.0);
-        assert!(editor.bpm_tap_result().is_none());
+        timing.record_bpm_tap_at(1.0);
+        assert!(timing.bpm_tap_result.is_none());
 
-        editor.bpm_tap(1.5);
-        editor.bpm_tap(2.0);
+        timing.record_bpm_tap_at(1.5);
+        timing.record_bpm_tap_at(2.0);
 
-        let bpm = editor.bpm_tap_result().expect("bpm should exist");
+        let bpm = timing.bpm_tap_result.expect("bpm should exist");
         approx::assert_abs_diff_eq!(bpm, 120.0, epsilon = 1e-3);
 
-        editor.bpm_tap_reset();
-        assert!(editor.bpm_tap_result().is_none());
-        assert!(editor.timing.bpm_tap_times.is_empty());
+        timing.reset_bpm_tap();
+        assert!(timing.bpm_tap_result.is_none());
+        assert!(timing.bpm_tap_times.is_empty());
     }
 }

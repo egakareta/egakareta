@@ -14,7 +14,8 @@ use bevy::{
 };
 use eg_blocks::BlockId;
 use eg_editor_domain::{
-    TimelineNearSearch, derive_timeline_time_for_world_target_near_time, snap_cell_to_step,
+    TimelineNearSearch, derive_timeline_time_for_world_target_near_time,
+    normalize_selected_indices, snap_cell_to_step,
 };
 use eg_types::{
     AppPhase, EasingDirection, EditorInputState, EditorMode, LevelObject,
@@ -487,21 +488,11 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
 }
 
 fn selected_indices_normalized(input: &EditorInputState, object_count: usize) -> Vec<usize> {
-    let mut indices = input
-        .selected_block_indices
-        .iter()
-        .copied()
-        .filter(|index| *index < object_count)
-        .collect::<Vec<_>>();
-    if let Some(index) = input
-        .selected_block_index
-        .filter(|index| *index < object_count)
-    {
-        indices.push(index);
-    }
-    indices.sort_unstable();
-    indices.dedup();
-    indices
+    normalize_selected_indices(
+        &input.selected_block_indices,
+        input.selected_block_index,
+        object_count,
+    )
 }
 
 fn sync_trigger_selection_from_objects(resources: &mut SelectionResources<'_, '_>) {

@@ -1,21 +1,25 @@
 # Bevy ECS Migration — Refactor Point Registry
 
-> Living document. Every site that will eventually be replaced by a full-Bevy
-> feature has a `// REFACTOR POINT(full-bevy):` comment in the code AND a row in
-> the table below. Remove both together when the swap lands.
+> **Migration status: production cutover complete.** All `REFACTOR POINT(full-bevy):`
+> markers have been removed from source code. Production uses `build_bevy_app().run()`
+> for both native and WASM. The remaining refactor points below document legacy
+> test-only code that will be deleted in Phase 17.
 
 ## Strategy
 
-**Now (Phase 0-9 in progress):** `eg-game` has a headless ECS core,
-`eg-state` exposes a Bevy `Message`/schedule/resource boundary, `eg-ui` writes
-commands into that boundary, and `eg-app` drives a `bevy_app::App` from the
-winit redraw path. The duplicate `State::world`, `FramePipeline`, and legacy
-`State` shell have been deleted. App owns the live gameplay, editor, UI, GPU,
-scene-mesh, surface-host, and scheduled present resources; Runtime retains only
-platform raw-input ingress and the custom winit/egui shell.
+**Production cutover complete:** `build_bevy_app()` composes `DefaultPlugins` +
+`EgakaretaPlugin` (→ `StateDomainPlugins` + `BevyBlockRenderPlugin` +
+`OverlayPresentationPlugin` + `EguiPlugin`). Bevy owns the window, GPU, asset
+pipeline, task pools, time, states, schedules, input, egui integration, and
+presentation. The legacy `State` shell, `FramePipeline`, `Runtime`, custom
+`ApplicationHandler`, custom wgpu bootstrap, and custom egui presenter are all
+deleted or test-only.
 
-**Later (full Bevy):** drop the custom wgpu / egui-wgpu / winit plumbing in
-favor of the Bevy umbrella. The migration is designed to be mechanical.
+**Remaining cleanup (test-only code):** The custom wgpu rendering
+(`RenderGpuRes`, `RenderMeshesRes`, `RenderSurfaceHostRes`,
+`RenderEguiRes`, `draw.rs`, wgpu bootstrap in `lifecycle.rs`) is behind
+`#[cfg(any(test, feature = "test-support"))]`. All of this will be deleted in
+the final Phase 17 cleanup pass.
 
 ## Compatibility Boundary Ledger
 
@@ -24,14 +28,13 @@ single-world deletion pass. New State-to-World mirrors, request consumers, or
 snapshot paths are out of scope; a slice must instead move the owning data and
 side effect into the App world.
 
-| Boundary                                     | Current role                                                                                                                                                                                                     | Deletion gate                                                                                                  |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `Runtime::run_app_frame`                     | Ingests raw input, runs egui, stores paint jobs/texture deltas in App resources, and drives the App schedules. App-world render extraction and `RenderSet::Present` own mesh upload and scene/egui presentation. | Runtime only prepares platform/UI input and calls the App schedules; no legacy update/render callback remains. |
-| `FramePipeline::run_frame`                   | Deleted. Its egui context, renderer, menu textures, cache, tessellation, texture upload, and present ordering now live in App Update and `RenderExtractSchedule`.                                                | Keep raw input ingress in Runtime; no State compatibility shell remains.                                       |
-| `State::update`                              | Deleted. App schedules own editor interaction, gameplay, timeline, render extraction, and presentation preparation.                                                                                              | Must remain deleted.                                                                                           |
-| `State::render_egui`                         | Deleted. `RenderSet::Present` calls the resource presenter with App-owned GPU, mesh, egui, uniform, and frame-input resources.                                                                                   | Must remain deleted; remaining pixel tests use direct render fixtures only.                                    |
-| `UiStateData`                                | Deleted. Editor, timeline, timing, waveform, trigger, tap, mode, selection, camera, settings, and performance inputs flow directly from App-owned resources through the egui boundary.                           | Must remain deleted; do not reintroduce a UI aggregate or snapshot resource.                                   |
-| `State::dispatch` / `State::dispatch_editor` | Deleted command bridge.                                                                                                                                                                                          | Must remain deleted; new handlers may not revive them or a replacement bridge.                                 |
+| Boundary                                     | Current role                                                                                                                                                                           | Deletion gate                                                                  |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `FramePipeline::run_frame`                   | Deleted. Its egui context, renderer, menu textures, cache, tessellation, texture upload, and present ordering now live in App Update and `RenderExtractSchedule`.                      | Keep raw input ingress in Runtime; no State compatibility shell remains.       |
+| `State::update`                              | Deleted. App schedules own editor interaction, gameplay, timeline, render extraction, and presentation preparation.                                                                    | Must remain deleted.                                                           |
+| `State::render_egui`                         | Deleted. `RenderSet::Present` calls the resource presenter with App-owned GPU, mesh, egui, uniform, and frame-input resources.                                                         | Must remain deleted; remaining pixel tests use direct render fixtures only.    |
+| `UiStateData`                                | Deleted. Editor, timeline, timing, waveform, trigger, tap, mode, selection, camera, settings, and performance inputs flow directly from App-owned resources through the egui boundary. | Must remain deleted; do not reintroduce a UI aggregate or snapshot resource.   |
+| `State::dispatch` / `State::dispatch_editor` | Deleted command bridge.                                                                                                                                                                | Must remain deleted; new handlers may not revive them or a replacement bridge. |
 
 ## App-World Ownership Map
 
@@ -63,31 +66,34 @@ side effect that must migrate before the compatibility shell can disappear.
 
 ## Refactor points (full-Bevy future)
 
-| #   | Site (code)                                                                                 | Current                                                                                     | Full-Bevy replacement                                                          |
-| --- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 1   | `crates/eg-app/src/platform/application.rs`                                                 | Custom winit `ApplicationHandler` owns window/canvas events                                 | `bevy_winit` plugin + `App::run()`                                             |
-| 2   | `crates/eg-app/src/platform/runtime.rs`                                                     | `Runtime` keeps only the App; egui/render helpers are App-owned resources                   | App resources own egui/render/window state directly                            |
-| 3   | `crates/eg-app/src/platform/pipeline.rs`                                                    | Deleted; manual egui/wgpu ordering is App-schedule driven                                   | `bevy_egui`, `bevy_render`, and Bevy schedule-driven presentation              |
-| 4   | `crates/eg-app/src/platform/input_mapping.rs`                                               | winit input translated into project `InputEvent` strings                                    | `bevy_input` `ButtonInput<KeyCode>` / mouse / touch / gamepad resources        |
-| 5   | `crates/eg-ui/src/plugin.rs`                                                                | `manual egui presentation` + UI command bridge                                              | `bevy_egui` systems writing Bevy events/input directly                         |
-| 6   | `crates/eg-game/src/checkpoint.rs`                                                          | Plain `GameCheckpointState` value used by App-owned practice state                          | Keep checkpoint data as a value; no gameplay compatibility wrapper remains     |
-| 7   | `crates/eg-game/src/simulation.rs`                                                          | Timeline scrub uses a private ECS `World` plus an isolated standard `FixedUpdate` schedule  | Bevy sub-app/render-world integration for full-Bevy editor preview             |
-| 8   | `crates/eg-game/src/resources.rs`                                                           | `GameClock`, `FrameDelta` gameplay-domain resources                                         | Bevy `Time<Fixed>` / `Time<Virtual>` resources for gameplay timing             |
-| 9   | `crates/eg-game/src/plugin.rs`                                                              | `GameplaySet` systems are registered directly on Bevy `FixedUpdate`                         | Standard Bevy gameplay schedule sets and fixed-time systems                    |
-| 10  | `crates/eg-game/src/events.rs`                                                              | `ConsumedEventsBuffer` remains a gameplay-domain compatibility resource                     | Normal Bevy message/event stream                                               |
-| 11  | `crates/eg-state/src/events/mod.rs`                                                         | Bevy `Message` taxonomy mutates App resources or writes typed service requests              | Direct Bevy message handlers over resources/components                         |
-| 12  | `crates/eg-state/src/events/async_results.rs` + `crates/eg-state/src/state/async_bridge.rs` | mpsc channel polling into direct App-world handlers                                         | `bevy_tasks` streams remove the polling bridge                                 |
-| 13  | `crates/eg-state/src/events/mesh_rebuild.rs`                                                | Rebuild messages bridge `Changed<>` to legacy mesh dirties                                  | `bevy_render` extraction / asset events drive render rebuilds                  |
-| 14  | `crates/eg-state/src/state/state_resources.rs`                                              | `State<AppPhase>` plus `NextState<AppPhase>`; no phase mirror                               | Keep phase ownership in Bevy state resources                                   |
-| 15  | `crates/eg-state/src/state/transitions.rs`                                                  | Bevy `States`, `OnEnter`, and `OnExit` schedules                                            | Keep transition hooks on Bevy state schedules; no compatibility bridge remains |
-| 16  | `crates/eg-state/src/state/state_resources.rs`                                              | Derived `FrameTimeRes` FPS/presentation metrics                                             | Bevy `Time<Virtual>` / `Time<Fixed>` resources                                 |
-| 17  | `crates/eg-state/src/state/render/plugin.rs` + `crates/eg-state/src/state/frame_time.rs`    | Scheduled render extraction derives POD values and uploads them through App-owned resources | Render prep/upload lives in `bevy_render` extract/prepare systems              |
-| 18  | `crates/eg-state/src/state/plugins.rs`                                                      | Project plugin shells and custom schedule labels                                            | Standard Bevy plugin graph and schedule labels                                 |
-| 19  | `crates/eg-state/src/state/mod.rs`                                                          | Legacy `State` subsystem fields remain authoritative                                        | State lives in App-world resources/components                                  |
-| 20  | `crates/eg-state/src/state/input_bridge.rs` + `events::*`                                   | Input/UI command enums translate into typed App-world messages                              | Full-Bevy input/action systems without compatibility enums                     |
-| 21  | `crates/eg-state/src/state/audio_state.rs`                                                  | Custom audio subsystem polled through `State`                                               | Bevy audio resources/systems or retained custom backend behind systems         |
-| 22  | `crates/eg-state/src/state/render/`                                                         | Custom wgpu resources, extraction, and present bridge                                       | `bevy_render` render graph, assets, extract schedule, `ShaderRef`              |
-| 23  | `crates/eg-state/src/state/test_support.rs`                                                 | `TestApp` wraps the App plugin graph for headless fixtures                                  | Thin `bevy_app::App` test harness only                                         |
+> All `REFACTOR POINT(full-bevy):` markers have been removed from source code.
+> The table below tracks the final cleanup items that remain as test-only code.
+
+| #   | Site (code)                                                                                 | Status        | Remaining cleanup                                                  |
+| --- | ------------------------------------------------------------------------------------------- | ------------- | ------------------------------------------------------------------ |
+| 1   | `crates/eg-app/src/platform/application.rs`                                                 | ✅ Deleted    | —                                                                  |
+| 2   | `crates/eg-app/src/platform/runtime.rs`                                                     | ✅ Deleted    | —                                                                  |
+| 3   | `crates/eg-app/src/platform/pipeline.rs`                                                    | ✅ Deleted    | —                                                                  |
+| 4   | `crates/eg-app/src/platform/input_mapping.rs`                                               | ✅ Deleted    | —                                                                  |
+| 5   | `crates/eg-ui/src/plugin.rs`                                                                | ✅ Production | Test-only egui presenter — delete with test-support code           |
+| 6   | `crates/eg-game/src/checkpoint.rs`                                                          | ✅ Done       | —                                                                  |
+| 7   | `crates/eg-game/src/simulation.rs`                                                          | ✅ Done       | —                                                                  |
+| 8   | `crates/eg-game/src/resources.rs`                                                           | ✅ Done       | —                                                                  |
+| 9   | `crates/eg-game/src/plugin.rs`                                                              | ✅ Done       | —                                                                  |
+| 10  | `crates/eg-game/src/events.rs`                                                              | ✅ Done       | —                                                                  |
+| 11  | `crates/eg-state/src/events/mod.rs`                                                         | ✅ Production | —                                                                  |
+| 12  | `crates/eg-state/src/events/async_results.rs` + `crates/eg-state/src/state/async_bridge.rs` | ✅ Done       | —                                                                  |
+| 13  | `crates/eg-state/src/state/render/plugin.rs`                                                | 🟡 Partial    | Extraction derives presentation directly from App-world state      |
+| 14  | `crates/eg-state/src/state/state_resources.rs`                                              | ✅ Done       | —                                                                  |
+| 15  | `crates/eg-state/src/state/transitions.rs`                                                  | ✅ Done       | —                                                                  |
+| 16  | `crates/eg-state/src/state/state_resources.rs`                                              | ✅ Done       | —                                                                  |
+| 17  | `crates/eg-state/src/state/render/plugin.rs` + `crates/eg-state/src/state/frame_time.rs`    | ✅ Production | Test-only upload/present systems — delete with test-support code   |
+| 18  | `crates/eg-state/src/state/plugins.rs`                                                      | ✅ Production | Test-only schedule labels — retained for headless test composition |
+| 19  | `crates/eg-state/src/state/mod.rs`                                                          | ✅ Deleted    | —                                                                  |
+| 20  | `crates/eg-state/src/state/input_bridge.rs` + `events::*`                                   | ✅ Production | —                                                                  |
+| 21  | `crates/eg-state/src/state/audio_state.rs`                                                  | ✅ Production | —                                                                  |
+| 22  | `crates/eg-state/src/state/render/`                                                         | 🟡 Partial    | Custom wgpu resources/test-support — delete in Phase 17            |
+| 23  | `crates/eg-state/src/state/test_support.rs`                                                 | ✅ Done       | —                                                                  |
 
 ## Plugin replacement table
 
@@ -96,24 +102,24 @@ side effect that must migrate before the compatibility shell can disappear.
 | `GameplayPlugin`        | `eg-game` ECS systems + `GameplaySet` on `FixedUpdate`     | Bevy `FixedUpdate` / gameplay schedule sets with `bevy_time` |
 | `EditorPlugin`          | `eg-state` editor resources + legacy handlers              | Bevy systems over editor resources/components                |
 | `SessionPlugin`         | `eg-state` session resources + platform service boundaries | App-world session resources                                  |
+| `AudioPlugin`           | Custom rodio/cpal backend plus playback resources/systems  | `bevy_audio` resources and systems                           |
 | `MenuPlugin`            | `MenuStateRes` + Bevy `State<AppPhase>`                    | Bevy `States` + menu resources                               |
 | `RenderPlugin`          | Custom wgpu resources + extraction/present sets            | `bevy_render` render graph and render-world extraction       |
-| `UiPlugin`              | `manual egui presentation` + command bridge                | `bevy_egui` systems                                          |
+| `UiPlugin`              | manual egui presentation + typed message sink              | `bevy_egui` systems                                          |
 | Async bridge            | mpsc receivers + `PollChannelsSet` / handlers              | `bevy_tasks` streams and asset events                        |
 | Runtime/app boundary    | winit + `Runtime::run_app_frame`                           | `bevy_winit` + `App::run()`                                  |
 
 ## Event taxonomy (post Phase 3)
 
-`AppCommand` (15 variants) + `EditorCommand` (~87 variants) fragment into Bevy
-`Message` structs, one per semantic command. 12 input-state variants
+Every semantic user intent is a dedicated Bevy `Message` struct. The former
+command enums and their central translation adapter are deleted. Twelve input-state variants
 (`SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` / `SetPan{Up,Down,Left,Right}Held`
 
 - `MouseButton` / `PrimaryClick` / `PointerMoved` / `UpdateCursorFromScreen` /
   `CameraDrag`) are **not** commands — their message handlers write App-world
-  editor input/camera resources directly during the compatibility window. The
-  remaining command messages now mutate App-world resources directly or write
-  typed service requests consumed inside `StateSchedule`; Runtime no longer
-  consumes gameplay/navigation request bridges.
+  editor input/camera resources directly. The remaining messages mutate
+  App-world resources directly or write typed service requests consumed by their
+  owning scheduled systems; the root app does not consume command bridges.
   See the system-set graph below for ordering.
 
     After Phases 3.5–3.14 the count shifts: 4 snap messages + 1
@@ -176,8 +182,8 @@ Cross-domain ordering constraints (sample):
 - `SimulationSet.before(ExtractSet)`
 - `UiSet.before(ExtractSet)`
 - `ExtractSet.before(RenderSet)`
-- `StateSchedule` runs before the remaining test-only session compatibility
-  sync. Production frames stay entirely App-world owned.
+- Production and focused tests use Bevy's ordinary `PreUpdate → Update →
+PostUpdate` frame path; no project-owned schedule driver remains.
 
 ## Migration Checklist (single-world ECS migration plan)
 
@@ -197,7 +203,7 @@ Migration` plan in `AGENTS.md` / the in-session `plan.md`. The 11
 | 3   | Move legacy subsystem ownership into App resources            | **done** | Production startup installs individual editor resources directly and seeds authored `ObjectBundle` entities. Ordered query helpers are the only `Vec<LevelObject>` boundary.                                                                                                                                                                                                   |
 | 4   | Convert messages from `ToLegacy` to direct handlers by domain | **done** | `LegacyCommand`/`ToLegacy` are deleted. Pointer, snap, camera, selection, block, history, session, navigation, and editor-mode handlers borrow App-world resources and authored-entity queries directly.                                                                                                                                                                       |
 | 5   | Delete the command compatibility bridge                       | **done** | `LegacyCommand`/`ToLegacy`, the runtime pending-command drain, `PendingCommands`, `State::dispatch`, `State::dispatch_editor`, `State::process_keyboard_input`, `State::process_input_event`, `command_dispatch.rs`, and `editor_dispatch.rs` are deleted. UI and platform input ingress now translate into typed Bevy messages through `events::*` and `state::input_bridge`. |
-| 6   | Move `State::update` into scheduled systems                   | **done** | `StateSchedule`, Bevy `FixedUpdate`, and `RenderExtractSchedule` own frame mutation and extraction. `State::update` and `state/update.rs` are deleted.                                                                                                                                                                                                                         |
+| 6   | Move `State::update` into scheduled systems                   | **done** | Production and tests use `PreUpdate`, `Update`, `PostUpdate`, Bevy `FixedUpdate`, and `Time<Virtual>` / `Time<Fixed>` for frame mutation and extraction. `StateSchedule`, `RenderExtractSchedule`, `State::update`, and `state/update.rs` are deleted.                                                                                                                         |
 | 7   | Replace manual phase/time compatibility                       | **done** | `TimePlugin`, production `Time<Virtual>`, `Time<Fixed>`, `FixedUpdate`, `State<AppPhase>`, and `NextState<AppPhase>` are installed. Transition producers write `NextState<AppPhase>` and phase hooks use Bevy `OnEnter`/`OnExit`; no production phase mirror remains.                                                                                                          |
 | 8   | Move UI off snapshots and into ECS systems                    | **done** | App Update runs egui/tessellation/texture upload and writes typed messages directly through `WorldUiCommandSink`; every panel receives direct App-resource values at the UI boundary, and no UI snapshot/read-model aggregate remains.                                                                                                                                         |
 | 9   | Absorb `FramePipeline` into App schedule                      | **done** | `FramePipeline` and Runtime's manual schedule call are deleted; UI runs in App Update and state/gameplay/render extraction runs in App PostUpdate plus render-present systems.                                                                                                                                                                                                 |
@@ -245,11 +251,11 @@ gameplay/navigation messages no longer depend on Runtime request consumers.
 - [x] **Phase 4b-3** — mirror Playing + GameOver + editor-playtest paths (4 new tests pinning `playing_camera_view` + `editor_preview_camera_view` + line uniform per player direction).
 - [x] **Phase 4b-4** — mirror `ColorSpaceUniform.time_seconds` from `frame_runtime.global_time_seconds` + the gamma-toggle bit; 2 new tests covering the bit-as-float conversion.
 - [x] **Phase 4c** — insert `RenderMeshesRes` + `RenderSurfaceHostRes` resources; `MeshSlot` + `SceneMeshes` now derive `Default` for schedule/test construction.
-- [x] **Phase 4d-scaffold** — `RebuildMeshSet` system set + `RebuildMeshEvent` / `RebuildMeshKind` event types.
+- [x] **Phase 4d-scaffold (superseded)** — the provisional rebuild-message bridge was introduced for an early extraction spike and has since been deleted because it had no consumer.
 - [x] **Phase 4e-scaffold** — `present_render_frame_placeholder_system` reads the POD resources; the actual wgpu present call from the inline `eg-app/src/platform/runtime.rs` presentation path stays in place.
 - [x] **Phase 4b-final** — move `State::render.gpu` ownership into `RenderGpuRes`; direct call sites now route through `State::render_gpu()` / `render_gpu_mut()` backed by the world.
 - [x] **Phase 4c-final** — `RenderMeshesRes` / `RenderSurfaceHostRes` now own the actual `SceneMeshes` / `SurfaceHost`; legacy mesh/surface call sites route through `State` accessors backed by the world.
-- [x] **Phase 4d-final** — `ObjectBundle` mirror components + `Changed<>` detection now drive `mark_mesh_dirty_system`; `EditorDirtyFlags` remains as the legacy consumer until editor mutation moves into the shared World.
+- [x] **Phase 4d-final (superseded)** — authored object mirrors were retained, but the provisional changed-query/message bridge was removed once it was confirmed to have no render consumer. `EditorDirtyFlags` remains in the transitional CPU extractors.
 - [x] **Phase 4e-final** — `present_render_frame_system` is registered in `RenderSet::Present` and reads authoritative render resources; the production `render_egui` compatibility call remains until Phase 7 gives the Bevy app ownership of the frame.
 - [x] **Phase 5** — UI as Bevy systems.
 - [x] **Phase 6a** — async bridging scaffold (5 channel wrapper resources + `PollChannelsSet` + 5 result events).
@@ -260,7 +266,15 @@ gameplay/navigation messages no longer depend on Runtime request consumers.
 - [x] **Phase 6f** — phase transition scheduling: `phase_transition_schedule_system` now runs inside `StateSchedule`, so Runtime and `TestApp` no longer call phase transition detection as a separate prelude.
 - [x] **Phase 6g** — scheduled render extraction: `RenderFrameInputRes` and `RenderUniformsRes` are rebuilt from App-world phase, editor, gameplay, camera, menu, and frame-time resources in the post-gameplay `RenderExtractSchedule`; camera and line buffers are uploaded there, and the compatibility update skips duplicate uniform uploads when the scheduled phase matches.
 - [x] **Phase 7** — `Runtime` owns only a `bevy_app::App`; `Runtime::run_app_frame(raw_input)` drives App Update, Bevy `FixedUpdate`, `StateSchedule`, `RenderExtractSchedule`, and `RenderSet::Present`. Native and WASM startup install resources through `AppBootstrap`; no production `State`, `FramePipeline`, legacy update callback, or State render callback remains.
-- [x] **Phase 8** — `TestApp` harness: `TestApp::minimal()` in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph + `StateSchedule`; `tick_state()` runs the schedule; `run_state_schedule()` runs the schedule only; `assert_resource_exists::<T>()` checks App resources. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay()`. Eg-game gameplay coverage now uses direct ECS fixtures; remaining eg-state tests move with their domains.
+- [x] **Phase 7.1 / Standard schedule cutover** — production input now drains in `PreUpdate`, command/async/editor systems run in `Update`, and extraction/presentation runs in `PostUpdate`; `Runtime` and `TestApp` no longer register or invoke the custom schedule driver. Puffin frames begin in `First`, and UI is ordered before `CommandHandlerSet` so same-frame semantic messages remain intact. The explicitly labelled `StateSchedule` survives only as a direct bare-world event-test label; the production implementation, `RenderExtractSchedule`, and their runner are deleted. `cargo test -p eg-state --lib` (374 tests) and `cargo test -p eg-app --lib` (141 tests) are green.
+- [x] **Phase 7.2 / Gameplay messages and fixed time** — collectibles and deaths now emit `ConsumedObjectEvent` and `PlayerDiedEvent` Bevy messages; the legacy consumed-events buffer and death-SFX flag are deleted. Gameplay and timeline preview advance `Time<Fixed>` directly, so `FrameDelta` is deleted. Headless state fixtures use `TimeUpdateStrategy::FixedTimesteps(1)`, driving Bevy's ordinary fixed main loop exactly once per test frame; `ManualGameplayDriverRes` and direct `FixedUpdate` calls are deleted.
+- [x] **Phase 7.3 / Audio boundary isolation** — `AudioPlugin` owns `AudioBackendRes`, import/cache/preload resources, and the playback stop/pause systems. The custom rodio/cpal implementation remains the sole audio service boundary, while editor and session plugins no longer initialize or implicitly own native-only audio state.
+- [x] **Phase 7.4 / Bevy mesh conversion spike** — `eg_mesh::mesh_geometry_to_bevy_mesh` now converts generated geometry into a `Mesh` with retained main/render-world data and preserves every block-shader attribute (texture layer, outline, render profile, and idle-animation data) plus indices. This provides the mesh asset boundary required for the Bevy material and presentation-entity cutover without coupling geometry generation to a renderer.
+- [x] **Phase 7.5 / Bevy texture-array material spike** — `BlockMaterial` is a `Material` with a `2d_array` image binding and a custom vertex layout matching the converted block geometry. Its embedded WGSL uses Bevy view/mesh bindings, the global clock, and texture-array sampling. `BlockMaterialAssetsPlugin` builds the embedded `BlockTextureAtlas` into a padded, nearest/repeat Bevy `Image` array and retains the shared material handle for presentation entities; the root composition installs both after `DefaultPlugins` creates the asset and render sub-apps.
+- [x] **Phase 7.6 / Retained block-chunk presentation** — `BlockPresentationPlugin` turns changed editor chunk extraction into retained `Mesh3d` + `MeshMaterial3d<BlockMaterial>` entities, keeps one entity per stable chunk key, and despawns obsolete chunks. Greedy, fallback, and compact instance-batch geometry all reach the retained chunk mesh (with transform/tint/noise/animation-anchor parity). The system is dormant until the root loader supplies the texture-array material, so it never creates idle fallback meshes; `BevyBlockRenderPlugin` composes the material, generated asset, and entity layers for the forthcoming root app. Focused coverage verifies entity and asset creation.
+- [x] **Phase 7.7 / Dead rebuild bridge deletion** — the unused rebuild-message writer and set are deleted. They had no consumer and could not influence rendering; retained presentation now observes the extraction resources that genuinely change. `EditorDirtyFlags` remains only for the still-transitional CPU extractors and is the next focused change-detection boundary.
+- [x] **Phase 7.8 / Bevy root composition** — `eg-app::build_bevy_app` now configures one `DefaultPlugins` root (including a web `#gameCanvas` primary window), `EguiPlugin`, `StateDomainPlugins`, and `BevyBlockRenderPlugin`. `StatePlugins` remains the headless composition and no longer registers Bevy's unique time/state plugins twice; `MenuPlugin` owns a default `MenuStateRes`, so a normal Bevy update is safe without the old GPU bootstrap. The custom runner is still active until the UI and all presentation surfaces finish their atomic cutover.
+- [x] **Phase 8** — `TestApp` harness: `TestApp::minimal()` in `eg-state::state::test_support` builds a `bevy_app::App` with the eg-state plugin graph; `tick_state()` calls `App::update()`; `assert_resource_exists::<T>()` checks App resources. `eg-game::TestApp` builds a headless gameplay app with `GamePlugin` + `tick_gameplay_for()`. Eg-game gameplay coverage now uses direct ECS fixtures; remaining eg-state tests move with their domains.
 - [x] **Phase 9** — documentation pass: refactor-point registry, event taxonomy, system-set graph, plugin replacement table, and AGENTS architecture notes are current.
 - [x] **Phase 3.5 / Snap carve-out** — `events::snap` handlers (4 messages) migrated to write `EditorConfigRes.0.snap_*` directly; the original `Runtime::sync_app_editor_config_state` mirror was deleted in Phase 3.153 after normalization, persistence, history, and selected-object resnapping moved into App handlers. 4 schedule-level tests in `events::tests` + 5 end-to-end tests in `runtime::tests` exercise the full pipeline. The input_state + pointer carve-out pattern is now extended to a stateful-resource domain (the snap config), proving the migration works for resources with setter side effects.
 - [x] **Phase 3.6 / Block-id carve-out + `EditorConfigRes` seeding** — `events::editor_mode::handle_set_block_id` migrated to write `EditorConfigRes.0.selected_block_id` directly; The original config mirror used `set_editor_block_id` for recent-block side effects; Phase 3.153 moved MRU ownership into App handlers and deleted the mirror. `Runtime::new` now seeds `EditorConfigRes` from the legacy `State` via `State::editor_config_resource()`, fixing a latent first-frame clobber where the Default-initialized resource would overwrite user-loaded `app_settings` snap/block config on the first frame. 1 schedule-level test in `events::tests` + 3 end-to-end tests in `runtime::tests` (block-id propagation, no-op resync guard, first-frame no-clobber regression).
@@ -442,7 +456,7 @@ gameplay/navigation messages no longer depend on Runtime request consumers.
 - [x] **Phase 3.108 / App-owned TurnRight empty-practice restart** — practice-mode game-over TurnRight without a checkpoint now reuses the atomic App reset from current `LevelMeta`, preserves practice mode, clears the empty checkpoint list, and stops shared audio. Focused schedule and Runtime tests cover the no-checkpoint restart.
 - [x] **Phase 3.109 / TurnRight request bridge deletion** — all TurnRight phase and gameplay branches now resolve in App-world handlers; level-complete input is a direct no-op and active gameplay queues `PendingTurnInputs` without requiring a legacy player query. `TurnRightRequest`, its resource registration, Runtime consumer, and stale request assertions are deleted. Focused schedule and Runtime tests cover the complete direct path.
 - [x] **Phase 3.110 / App-owned gameplay completion transition** — after `GameplaySchedule` consumes the completion hold timer, `apply_completed_gameplay_transition_system` records real-level progress into App-owned settings, persists changed settings, transitions real gameplay to App-owned menu state or editor playtests back to App-owned editor state, marks shared audio stop, clears preview/playback session data, and resets the App gameplay world before Runtime mirrors compatibility state. The completion branch is removed from production `State::update`; focused Runtime coverage pins the real-gameplay menu transition.
-- [x] **Phase 3.111 / App-owned non-practice GameOver side effects** — `apply_game_over_transition_system` now consumes and clears `DeathSfxFlag`, plays the death SFX through `AudioBackendRes`, persists non-practice progress, stops shared audio, and clears queued turns directly from the App world. `State::update` retains only the temporary practice-mode checkpoint respawn compatibility path; the deleted legacy death-audio test is replaced by focused Runtime coverage.
+- [x] **Phase 3.111 / App-owned non-practice GameOver side effects** — `apply_game_over_transition_system` persists non-practice progress, stops shared audio, and clears queued turns directly from the App world. The separate `PlayerDiedEvent` handler plays the death SFX through `AudioBackendRes`, replacing the deleted `DeathSfxFlag`; `State::update` retains only the temporary practice-mode checkpoint respawn compatibility path.
 - [x] **Phase 3.112 / App-owned practice GameOver respawn** — automatic practice-mode GameOver now reuses the App-owned atomic reset for checkpoint restore and empty-practice restart, including checkpoint progress, trigger-base objects, audio warmup, and pending-turn cleanup. The final GameOver mutation branch is removed from `State::update`; Runtime coverage continues to pin the reset behavior.
 - [x] **Phase 3.113 / App-owned editor timeline playback** — editor playback clock advancement, timeline simulation, seek debounce/resync, metronome SFX, audio start/stop, completion, and consumed-block effect production now run in `StateSchedule` from App-owned resources. Runtime mirrors the App preview/runtime state and forwards dirty flags/effects to the compatibility presenter; the per-frame playback mutation block is removed from `State::update`. Focused runtime and schedule tests cover playback propagation and handler ownership.
 - [x] **Phase 3.114 / App-owned menu preview selection** — `MenuPreviewObjectsRes` and `refresh_menu_preview_system` now make the selected menu level, preview camera, sky color, and preview object list an App-world result of the scheduled menu state. The per-frame `refresh_menu_level_preview_if_needed` call is removed from `State::update`; Runtime performs one guarded compatibility mirror and rebuilds the legacy menu mesh only when the scheduled preview changes. The legacy refresh helper is test-only, and menu transition code now invalidates the preview for the App schedule to repopulate.
@@ -542,8 +556,8 @@ gameplay/navigation messages no longer depend on Runtime request consumers.
 `eg-game` now has:
 
 - `components.rs` — `PlayerBundle`, `ObjectBundle`, `PlayState`, `Selected`, `Hovered` markers, plus standalone player components (`PlayerPosition`, `PlayerDirection`, `PlayerSpeed`, `VerticalVelocity`, `Grounded`, `Trail`, `SpawnPosition`, `SpawnDirection`) and object components (`Object`, `ObjectId`, `ObjectData`).
-- `resources.rs` — `GameClock`, `PlayerProgress`, `SpatialIndex`, `PendingTurnInputs`, `FrameDelta`, `DeathSfxFlag`, `GameRuntimeTuning`, `LevelMeta`.
-- `events.rs` — `ConsumedObjectEvent` + `ConsumedEventsBuffer` resource.
+- `resources.rs` — `GameClock`, `PlayerProgress`, `SpatialIndex`, `PendingTurnInputs`, `GameRuntimeTuning`, `LevelMeta`.
+- `events.rs` — `ConsumedObjectEvent` and `PlayerDiedEvent` Bevy messages.
 - `systems.rs` — 8 query-based systems organized in `GameplaySet` (`TurnInput`, `AdvancePlayer`, `Collision`, `ConsumeObjects`, `GroundGravity`, `Trail`, `Completion`, `Progress`).
 - `plugin.rs` — `GamePlugin` (registers all resources + the schedule).
 - `checkpoint.rs::GameCheckpointState` — plain practice checkpoint value captured from App-owned gameplay resources.
@@ -980,9 +994,7 @@ The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhas
 
 - **Phase 4c-final** — complete. Production `Runtime::new` moves the actual `SceneMeshes` / `SurfaceHost` and `GpuContext` into `RenderMeshesRes` / `RenderSurfaceHostRes` / `RenderGpuRes`. The compatibility `State` slot is empty after transfer; only test-only legacy callers use its accessors.
 
-- **Phase 4d-scaffold** — added the `RebuildMeshSet` system set + the `RebuildMeshEvent` / `RebuildMeshKind` types in `crates/eg-state/src/events/mesh_rebuild.rs`. The 9 `RebuildMeshKind` variants correspond 1:1 to the 9 bits on the legacy `EditorDirtyFlags` bitfield.
-
-- **Phase 4d-final** — complete. `eg-game::ObjectBundle` now includes authored mirror components (`Position`, `Rotation`, `Size`, `BlockId`, `ColorTint`) alongside `ObjectData`. `mark_mesh_dirty_system` uses Bevy `Changed<>` filters over those components and emits `SyncGameObjects` + `RebuildBlockMesh` events. `EditorDirtyFlags` remains as the legacy editor-side consumer until editor mutations move into the shared World.
+- **Phase 4d (superseded)** — an early changed-query/message scaffold was removed in Phase 7.7 after inspection proved that nothing consumed it. `eg-game::ObjectBundle` still keeps authored mirror components (`Position`, `Rotation`, `Size`, `BlockId`, `ColorTint`) alongside `ObjectData`; the retained Bevy presentation observes extraction-resource changes directly. `EditorDirtyFlags` remains as the transitional CPU-extraction consumer.
 
 - **Phase 4e-scaffold** — replaced by Phase 4e-final. The old placeholder is gone.
 
@@ -993,7 +1005,6 @@ The 4b-3 + 4b-4 commits covered the mirror-driven approach for all four `AppPhas
 `Per-frame schedule order:
   transitions::phase_transition_system        // AppPhase change detection
   mirror::install_mirror                      // tick_state installs the closure
-  render::mark_mesh_dirty_system              // Changed<> authored object detection -> RebuildMeshEvent
   events::handle_* (per-message)              // MessageReader<T> -> PendingCommands
   async_bridge::poll_channels_system          // drain 5 shared receivers -> 5 result events
   async_bridge::add_apply_async_results_systems // consume events -> install closures
@@ -1244,7 +1255,7 @@ Phase 7 makes the winit redraw path drive the Bevy `App` every frame. UI writes 
     Both helpers are already public from Phases 2 and 3. The App's `World` now has:
     - Every `StatePlugins` resource (`State<AppPhase>`, `NextState<AppPhase>`, `SessionStateRes`, the 9 `Editor*Res`, `PerfRes`).
     - The platform input queue (`PlatformInputQueue`) registered by `EditorPlugin`.
-    - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`) + the `Messages<RebuildMeshEvent>` buffer.
+    - Every `RenderPlugin` POD resource (`RenderUniformsRes`, `RenderFrameInputRes`, `RenderResizeRequest`).
     - The App-owned non-send `EguiFrameResources` used by Runtime UI preparation.
     - The `StateSchedule` registered by `register_state_schedule`.
     - An App `PostUpdate` system (`run_state_schedule_system`) runs `StateSchedule`, gameplay, and render extraction after UI preparation.
@@ -1255,9 +1266,7 @@ Phase 7 makes the winit redraw path drive the Bevy `App` every frame. UI writes 
 
 - **`ApplicationHandler::RedrawRequested` calls `runtime.run_app_frame(raw_input)`** on native and wasm. This makes the production redraw path exercise the Bevy `App` before rendering.
 
-- **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` adds `eg_game::GamePlugin`, so the App world owns `GameClock` and phase-gated `GameplaySet` systems on Bevy `FixedUpdate`; timeline preview builds an isolated standard `FixedUpdate` schedule. The bare-`World` `register_state_resources` helper remains only for focused fixtures.
-
-- **Re-export** of `register_state_schedule` and `run_state_schedule_system` from `eg_state::state` (the `plugins` module stays private; only the helpers are re-exported for `eg-app` to call).
+- **`StatePlugins` now own App-world defaults** — `MenuPlugin`, `SessionPlugin`, `EditorPlugin`, `GameplayPlugin`, and `RenderPlugin` install their default resources directly. `GameplayPlugin` adds `eg_game::GamePlugin`, so the App world owns `GameClock`, `Time<Fixed>`, typed gameplay messages, and phase-gated `GameplaySet` systems on Bevy `FixedUpdate`; timeline preview builds an isolated standard `FixedUpdate` schedule. The bare-`World` `register_state_resources` helper remains only for focused fixtures.
 
 - **`bevy_ecs` added to `eg-app/Cargo.toml`** — the runtime tests inspect the App's `World` via `World::contains_resource`, `World::resource`, and `World::try_run_schedule`. Those methods need the `World` type in scope.
 
@@ -1508,4 +1517,378 @@ The remaining gap is architectural, not just cleanup. The code still has a custo
 - the inline runtime UI reads those values from the App world before constructing its production command sink; its live egui context, renderer, menu textures, and block-icon cache are all built from or stored in the App world during the frame.
 - application.rs still translates winit input to `InputEvent`, but those events now enter App-world `PlatformInputQueue` and are drained by scheduled App-world input handling.
 
+### Phase 7.9 — retained Bevy camera presentation
+
+`update_render_uniforms_system` now also extracts its authoritative
+world-space eye and target into `RenderCameraPoseRes`. The full-Bevy block
+presentation composes a single retained `Camera3d` entity marked by
+`BlockPresentationCamera`; its transform updates after that extraction and
+does not reconstruct a camera transform from a GPU uniform. The custom
+presenter remains the production path until the renderer/window/egui cutover,
+but camera authority is already shared by both paths.
+
+The same retained presentation reads `RenderFrameInputRes.sky_color` into
+Bevy's scene-wide `ClearColor`, keeping the menu/editor/play environment
+background sourced from the App-world phase input rather than a Bevy default.
+
+Editor, menu-preview, and static gameplay `ChunkedBlockMesh` resources now
+each synchronize into phase-scoped retained `Mesh3d` entities using the shared
+`BlockMaterial`. Synchronization releases an entity's unshared mesh asset when
+that chunk is replaced or removed, so scene transitions do not grow retained
+mesh assets. Animated and trigger-driven gameplay batches synchronize into a
+separate retained mesh entity preserving the custom material's animation
+attributes; a dedicated Bevy instancing representation remains a performance
+follow-up. Editor overlays remain separate presentation slices.
+
+### Phase 7.10 — egui version alignment for runner cutover
+
+The workspace now uses egui, egui-wgpu, and egui-winit 0.35 together with
+egui-phosphor 0.13. Puffin and puffin_egui are pinned to commit
+`d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b`, which brings their profiler UI
+onto the same egui version as `bevy_egui`. The editor renderer accepts the
+frame's root `Ui` for panel layout while retaining the `Context` for floating
+areas and windows; this removes the incompatible 0.34/0.35 context split that
+would otherwise block the atomic runner cutover.
+
+The root composition also runs the Puffin overlay in
+`EguiPrimaryContextPass`. Its close and copy actions write
+`TogglePerfOverlay` and `CopyLatestPerfFrame` messages directly instead of
+passing through `AppCommand`; the remaining editor and menu surfaces are
+still awaiting the same migration.
+
+Tests cover both the extracted playing-camera pose and retained-camera
+transform synchronization through ordinary `App::update()` calls.
+
+### Phase 7.11 — direct Bevy keyboard and focus ingress
+
+`BevyInputBridgeEnabled` is installed only by the new root composition. When
+present, `PreUpdate` reads `ButtonInput<KeyCode>` after Bevy's input systems
+and writes the established semantic command messages without first creating an
+`InputEvent`. The root samples `bevy_egui` input ownership immediately after
+its `ProcessInput` set, so captured keyboard input does not leak into editor
+shortcuts. The compatibility queue no longer clears Bevy's keyboard or mouse
+edge state in that root. `WindowFocused` loss clears held editor
+modifiers and mouse state through the same App-world policy as the old runner.
+
+The root also sends changed primary-window physical cursor positions and mouse
+button edges directly to editor messages. Pointer capture suppresses new scene
+presses, while releases are always delivered to avoid stuck drags. It reads
+Bevy's accumulated mouse motion and scroll resources for camera drag and zoom,
+preserving the existing line-wheel and pixel-wheel ×0.02 conversion. Bevy
+`TouchInput` now supplies single-touch pointer/drag/cancel semantics and
+two-touch distance-based pinch zoom, including primary-touch cancellation when
+a second finger starts.
+
+The custom runner deliberately does not install the root input marker. It
+retains its existing event route until the atomic runner cutover, while the
+Bevy root now covers keyboard, pointer, mouse motion/wheel, focus, touch, and
+pinch input through standard resources/messages.
+
+The native executable no longer starts an otherwise-unused Tokio runtime:
+`run_native_app` is synchronous and is invoked directly. Tokio remains only
+for the legacy detached background executor; App-world file storage tasks use
+the cross-platform storage adapter directly and require no Tokio reactor.
+
+### Phase 7.12 — root gameplay seeding and affected-chunk retention
+
+`GameplayPlugin` now seeds the deterministic empty player world during Bevy
+`Startup` when no bootstrap has already supplied a player. This makes the
+ordinary root composition capable of running its menu and empty-gameplay
+transitions without depending on the custom GPU bootstrap, while preserving a
+loaded bootstrap world unchanged.
+
+Retained editor, menu, and static gameplay chunk entities now carry a geometry
+fingerprint. When extraction changes, only a chunk whose generated vertex or
+index data changed receives a new `Mesh` asset; unchanged chunk entities retain
+their existing mesh handles. Replaced and removed chunks still release their
+unshared assets, so an editor mutation no longer reallocates every visible
+chunk. Focused App-world coverage verifies the root player seed and that an
+editor edit rebuilds only its affected chunk.
+
+### Phase 7.13 — task-owned runtime audio preloads
+
+Runtime built-in audio preloads no longer travel through an `mpsc` sender,
+receiver wrapper, `AudioPreloadResultEvent`, or bootstrap-installed channel.
+`RuntimeAudioPreloadTask` is a Bevy component containing the owned
+`Task<Option<Vec<u8>>>` and source-key identity. The existing preloading-key
+set deduplicates requests before task creation; the polling system uses
+`check_ready` and applies completed bytes directly to `RuntimeAudioPreloadRes`
+before despawning the task entity. This preserves non-blocking frame behavior,
+task-owned cancellation, and the cache's stale/duplicate policy without
+holding a world borrow across an await. Headless App fixtures lazily initialize
+the same compute pool only when no `DefaultPlugins` task pool has already done
+so; production retains Bevy's configured pool.
+
+### Phase 7.14 — task-owned file-picker imports
+
+Audio and level picker APIs now return their selected owned payloads directly
+instead of accepting `mpsc::Sender`s or spawning detached service work.
+`AudioImportTask` and `LevelImportTask` own the resulting `IoTaskPool` tasks;
+the request handlers admit at most one task of each type, and polling forwards
+only a completed selection to the existing typed import-result handlers before
+despawning its entity. A cancelled picker resolves to `None` and produces no
+result event. This removes the audio-import and level-import receiver wrappers
+from the App world.
+
+### Phase 7.15 — task-owned authentication
+
+Authentication service APIs now return `AuthServiceMessage` futures rather
+than accepting an `mpsc` sender. `AuthTask` owns each sign-in, refresh, or
+sign-out operation on Bevy's `IoTaskPool`; its poller forwards completion to
+the existing typed auth-result handler and then despawns the task entity. The
+App bootstrap no longer creates an auth channel or stores a service sender in
+`AuthStateRes`. Waveform loading is now the only remaining channel bridge.
+
+### Phase 7.16 — task-owned waveform loading
+
+Waveform decoding no longer uses a sender/receiver bridge. A
+`WaveformLoadTask` component owns the `AsyncComputeTaskPool` future returned
+by `eg_audio::service::load_waveform`; when decoding completes, its poller
+publishes at most eight ordered `WaveformResultEvent`s per frame before
+despawning the task entity. This keeps long waveform progress bounded while
+preserving the existing `Started`, `Chunk`, cached, failed, and completed
+handler semantics.
+
+Editor timing entry, level loading, and audio import all create the same
+task-owned request. The `WaveformLoadSenderRes`, receiver wrapper,
+`PollChannelsSet`, bootstrap channel wiring, detached sender-based service
+entry point, and channel-specific tests are deleted. Auth, file import,
+runtime preload, and waveform loading now all use App-owned tasks.
+
+### Phase 7.17 — Bevy-primary menu UI
+
+The root `EguiPrimaryContextPass` now renders the menu hero controls, top bar,
+auth actions, settings sidebar, pause menu, and practice checkpoint controls.
+It owns its egui menu textures through a retained App resource and writes
+semantic messages directly with `WorldUiCommandSink`; this path no longer
+requires custom raw-input/output resources or an `egui_wgpu` texture upload.
+
+`show_menu_topbar_ui` and `show_editor_ui` are context-based, allowing the
+same widgets to run in the custom compatibility frame and Bevy's multipass
+schedule. The root editor pass builds `EditorUiInputs` from App-world
+resources and returns its input-capture rectangles to `EditorInputRes`. It
+currently uses untextured block-icon fallbacks; production runner replacement
+remains gated on migrating the icon render targets and the custom presenter.
+
+### Phase 7.18 — cross-platform async storage adapter
+
+The storage API no longer depends on the former filesystem crate. Native builds use
+`async-fs` rooted at the platform-local data directory, while WASM builds use
+the pinned `web-fs` implementation under the `egakareta` browser storage
+directory. The shared adapter preserves the audio, waveform, settings, and
+auth-session API, including directory listing, overwrite behavior, missing
+file handling, and the test-only storage-root override. This removes the
+native filesystem reactor requirement from App-owned storage futures.
+
+### Phase 7.19 — task-owned persistence writes
+
+Settings changes, gameplay-progress saves, waveform-cache writes, and level
+exports now create `PersistenceTask` entities on `IoTaskPool`. Completed tasks
+are polled with `check_ready`, log their typed failure context, and despawn in
+the App world. The export service now queues owned data for this system rather
+than creating detached work. Consequently the last detached background helper
+and global native Tokio executor are deleted.
+
+### Phase 7.20 — Bevy production runner cutover
+
+The native binary entry point and the exported web launcher now construct the
+configured Bevy root and call `App::run()`. `bevy_winit` owns the native event
+loop and the `#gameCanvas` web target; `EguiPrimaryContextPass` owns UI
+presentation. The former custom `ApplicationHandler` and `Runtime` remain
+compiled only for compatibility-focused tests while their coverage is migrated,
+but neither production launch path instantiates them.
+
 So the status is: the branch is App-driven for frame/update, fixed-time gameplay execution, Bevy phase transitions, App-world egui context sync, queued UI command ingress, App-world platform input ingress, editor interaction, and render extraction. The custom scene/egui presenter plus external audio/auth/import adapters remain; the next real milestone is moving presentation onto Bevy render/window resources.
+
+### Phase 7.21 — Bevy-root asynchronous startup
+
+The production root now starts a single `IoTaskPool` task that loads persisted
+application settings, the stored auth session, and local editor audio files.
+When ready, it applies the result directly to `SessionStateRes`, `AuthStateRes`,
+`EditorAudioCacheRes`, and the App-owned audio backend; settings migrations are
+persisted by the same task. This replaces the custom GPU/bootstrap path as the
+owner of startup storage work. The old `AppBootstrap` remains compatibility-test
+only while its fixture coverage is migrated.
+
+### Phase 7.22 — audio carrier deletion
+
+`AudioState`, `EditorAudioState`, and `RuntimeAudioPreloadState` have been
+deleted. Both the production audio plugin and the compatibility bootstrap now
+install `AudioBackendRes`, `EditorAudioCacheRes`, and `RuntimeAudioPreloadRes`
+independently, so the rodio/cpal boundary has no transient aggregate owner.
+
+### Phase 7.23 — direct Bevy pointer ingress
+
+The production Bevy pointer, mouse-motion, and wheel systems now write their
+typed `PointerMoved`, `MouseButton`, `CameraDrag`, and `AdjustZoom` messages
+directly. This removes their `EditorCommand` round trip while preserving egui
+capture and release-routing behavior; the remaining command adapter work is
+limited to keyboard shortcuts, UI controls, and compatibility tests.
+
+The keybind-capture and settings-dismissal branches of Bevy keyboard ingress
+also now emit `SetKeybind`, `SetKeybindCapture`, and `SetShowSettings`
+messages directly. Remaining keyboard work is limited to configured shortcut
+actions that still flow through the compatibility command enums.
+
+### Phase 7.24 — direct shortcut ingress and Bevy block-icon targets
+
+Configured keyboard shortcuts now write their semantic Bevy messages directly,
+including navigation, editor modes, timeline, selection, spawn, snapping,
+camera, and practice actions. The retired `AppCommand`/`EditorCommand`
+shortcut mapper and the compatibility input-event writer's command round trip
+are deleted; test ingress writes the same typed messages as the production
+bridge.
+
+The root now creates one retained render-to-image `Image` for each placeable
+block. Each preview is a `Mesh3d` using the shared block material and texture
+array, isolated on a dedicated render layer and rendered by its own Bevy
+camera. The image handles are registered as strong `EguiUserTextures`, and
+the editor receives their actual texture ids instead of its former untextured
+fallback map. This removes block icons as a gate on the Bevy-root renderer;
+the old custom block-icon cache remains only in the test-only runtime fixture.
+
+### Phase 7.25 — direct editor-widget message ingress
+
+The compose, mode-selector, snap, tapping, timing, timeline, and waveform
+widgets now call semantic sink methods whose production implementation writes
+the relevant typed messages straight into the App world. The migrated widgets
+no longer import `AppCommand` or `EditorCommand`; their existing focused tests
+retain a command-recording sink temporarily while the remaining menu and
+settings controls are migrated. This narrows the command-enum adapter to
+unmigrated UI surfaces and compatibility tests rather than using it for the
+normal editor workflow.
+
+The menu, pause, practice-checkpoint, settings-toggle, and authentication
+controls now use that same direct sink. Production menu UI writes navigation,
+practice, session, and auth messages without constructing a command enum.
+
+The editor context menu now takes typed action closures instead of command
+values, and the settings sidebar writes its session and backend messages
+directly. This includes graphics/audio backend changes, UI scale, sidebar
+visibility and section selection, and reset-to-default keybind requests.
+
+Editor top-bar, level metadata, audio-import, block-catalog, and profiler
+controls now also write directly to their session/auth/misc messages. The
+generic click-to-command helper was deleted with its command-recording test;
+only keybind-capture controls and view-cube camera orientation remain on the
+production UI adapter path.
+
+Keybind reset/capture/slot edits and view-cube drag/click orientation now emit
+their typed session and camera messages as well. There are no production UI
+call sites that construct or push an `AppCommand`/`EditorCommand`; the enums
+remain only as the temporary focused-test recorder and compatibility-plugin
+adapter while those fixtures are rebuilt around App-world messages.
+
+Compatibility-runtime tests now write navigation messages directly, rather
+than calling the UI command-writer helper. `eg-ui` exposes the old command
+writer and bare-world registration helpers only to its own unit tests; normal
+application builds no longer export that UI-adapter API.
+
+### Phase 7.26 — production command-adapter isolation
+
+The remaining `AppCommand` / `EditorCommand`-to-message translator is now
+compiled only for `eg-state` unit tests and the explicit `test-support`
+feature. `WorldUiCommandSink` rejects legacy enum values in every normal
+build; its semantic methods are the only production ingress and write typed
+messages directly. This makes the compatibility command recorder incapable
+of silently becoming a second production input path while test fixtures are
+rebuilt around ordinary App-world message assertions.
+
+### Phase 7.27 — custom presentation scheduling isolation
+
+Normal native and WASM builds no longer compile or schedule the transitional
+`egui_wgpu` draw module, custom mesh uploads, uniform-buffer writes, or custom
+surface presentation. The retained extraction systems remain in `PostUpdate`
+because they feed the Bevy mesh/material presentation entities; the one shared
+resize resource now updates only App render configuration in production, while
+the old wgpu surface mutation is retained exclusively for compatibility tests.
+This makes Bevy's render world the sole production presenter even before the
+test-only renderer sources and dependencies are physically deleted.
+
+### Phase 7.28 — production renderer dependency boundary
+
+`eg-state` now owns its production frame-input and selection-outline data
+types instead of importing them from `eg-render`. Its former direct
+`eg-render`, `egui-wgpu`, and `wgpu` dependencies are optional and enabled
+only by the compatibility `test-support` feature (or eg-state's own tests).
+This makes the normal application dependency graph prove that the old renderer
+cannot be pulled in through the state layer; the remaining compatibility
+sources can be deleted after their fixture coverage is migrated.
+
+### Phase 7.29 — command enums removed from normal builds
+
+`UiCommandSink` is now a purely semantic production trait: every method is
+required and `WorldUiCommandSink` implements it by writing the corresponding
+typed Bevy message. Its `Vec<AppCommand>` recorder defaults exist only in
+eg-ui unit-test builds. The `AppCommand` and `EditorCommand` modules,
+including their large translation adapter, are likewise exposed only to
+eg-state tests or the explicit `test-support` feature. Consequently neither
+enum is present in the normal native or WASM application build.
+
+### Phase 7.30 — app-shell dependency isolation
+
+The custom eg-app `platform` module is already test-only; its former
+`eg-render`, `egui-wgpu`, `egui-winit`, `winit`, `pollster`, icon, and icon-font
+dependencies now match that boundary in Cargo. The native and WASM production
+builds no longer pull those direct dependencies through eg-app, while the
+compatibility runtime tests retain them as dev dependencies until their
+fixtures are deleted.
+
+### Phase 7.31 — editor-fixture migration begins
+
+The editor snap override is now a pure `effective_snap_enabled` rule shared by
+the production editor interaction context and its focused tests. Trigger
+ordering, camera-track detection, and transform-trigger detection likewise now
+use ordinary production helpers over authored object slices. Transform-trigger
+creation coverage now drives `AddTransformTrigger` through the ordinary
+headless App schedule and asserts authored ECS objects plus editor resources.
+Spawn rotation,
+spawn placement, and snap-step coverage now run through typed messages in
+`TestApp`. `SetEditorMode` now also owns the transition cleanup formerly held
+by the fixture (drag state, marquee state, and non-selectable-mode selection),
+and its domain coverage runs through the typed message handler. Selected-block
+snap coverage now drives `SnapSelectionToGrid` against authored ECS objects,
+including deferred replacement and no-op paths. Undo/redo normalization plus
+clipboard copy, paste, and duplicate behavior now run through their ordinary
+message handlers over authored ECS entities. Bounded history recording is a
+shared production helper, so its limit and redo invalidation are pure tests.
+Nudging is likewise an `eg-editor-domain` object-slice helper that normalizes
+raw selection indices and returns the new primary cursor position. These
+changes remove all one hundred sixty-one `EditorSubsystem` references
+(161 → 0), delete the fixture and its macro-generated test implementation, and
+leave coverage at the owning layer: typed message behavior in `TestApp` and
+pure geometry/timeline calculations as ordinary functions.
+
+### Phase 7.32 — command-enum and test-recorder deletion
+
+The temporary `Vec` command recorder in `eg-ui` has been replaced by a minimal
+registered Bevy `World` and `WorldUiCommandSink`, the same sink used by
+production. UI interaction tests assert concrete typed messages (`SetTimelineTime`,
+`SetSelectedTap`, and `SetWaveformScroll`) while rendering-only tests execute
+against that sink without recreating a parallel intent model. The test-only
+command enums, the central translator, and their module exports are deleted.
+`eg-ui` no longer enables `eg-state`'s `test-support` feature; that feature now
+exists solely for the remaining old renderer fixture boundary.
+
+### Phase 7.33 — standard-App command fixture cutover
+
+The named `StateSchedule` and every direct `World::run_schedule` use are
+deleted. The typed-message unit fixture now owns a minimal `bevy_app::App` and
+advances handlers with ordinary `App::update()` calls. Its deliberately narrow
+`Update` schedule contains the command handler set and local phase-transition
+application only, so message-writer tests do not accidentally exercise later
+native/service request consumers. `TestApp` exposes the same `tick()`
+`app.update()` boundary; its obsolete `tick_state` and `run_state_schedule`
+helpers are removed. This leaves the regular Bevy schedule as the only frame
+driver in production and state tests.
+
+### Phase 7.34 — custom renderer and surface-fixture deletion
+
+The obsolete `eg-render` crate, the direct `wgpu`/`winit` surface host, and
+their test-only `AppBootstrap` path are deleted. `eg-state` no longer exposes
+a renderer test-support feature or GPU non-send wrapper resources. The Bevy
+render sub-app now owns those details in every build, while unit tests stay at
+the smallest valid layer: domain extraction data, retained `Mesh3d`/
+`MeshMaterial3d` entities, and ordinary `App::update()` behavior. The old GPU
+fixture's 15 tests were removed; its domain and presentation behavior remains
+covered by the retained Bevy material/presentation tests.

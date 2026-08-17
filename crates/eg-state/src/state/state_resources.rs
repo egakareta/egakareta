@@ -20,10 +20,9 @@
 //! that wrap non-`Default` channel pairs (audio, auth) are added in
 //! Phase 2b alongside their resource registration helpers.
 
-use std::{collections::HashMap, sync::mpsc};
+use std::collections::HashMap;
 
 use bevy::ecs::prelude::*;
-use eg_platform::services::AuthServiceMessage;
 use eg_types::{
     AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
     LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress, SpawnMetadata,
@@ -235,17 +234,27 @@ impl GameplayResetRes {
     }
 }
 
-/// `MenuState` mirrored as a resource so UI systems (Phase 5) can read
-/// the menu without going through `State::ui_state_snapshot`. `MenuState`
-/// itself doesn't derive `Default` (its fields like `preview_sky_color`
-/// aren't all `Default`), so this resource is constructed explicitly
-/// via [`MenuStateRes::new`].
+/// `MenuState` mirrored as a resource so UI systems can read the menu without
+/// going through a presentation snapshot.
 #[derive(Resource)]
 pub struct MenuStateRes(pub MenuState);
 
 impl MenuStateRes {
     pub fn new(menu: MenuState) -> Self {
         Self(menu)
+    }
+}
+
+impl Default for MenuStateRes {
+    fn default() -> Self {
+        Self::new(eg_types::MenuState {
+            selected_level: 0,
+            levels: eg_level::builtin_level_names(),
+            preview_level_index: None,
+            preview_sky_color: eg_types::LevelMetadata::default().sky_color,
+            preview_camera_position: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_POSITION,
+            preview_camera_target: eg_types::DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
+        })
     }
 }
 
@@ -321,7 +330,7 @@ pub struct PerfRes(pub PerfState);
 /// App-world request to copy the latest profiler frame.
 ///
 /// `state::perf::process_perf_frame_copy_request_system` consumes this in
-/// `StateSchedule` and writes the formatted latest profiler frame to the
+/// the standard `Update` schedule and writes the formatted latest profiler frame to the
 /// system clipboard when frame data is available.
 #[derive(Resource, Default)]
 pub struct PerfFrameCopyRequest {
@@ -340,37 +349,21 @@ impl PerfFrameCopyRequest {
     }
 }
 
-/// App-world auth state and service sender. Auth request consumption, async
-/// result application, and UI reads all use this resource directly.
-#[derive(Resource, Clone)]
+/// App-world auth state. Auth request consumption, async result application,
+/// and UI reads all use this resource directly.
+#[derive(Resource, Clone, Default)]
 pub struct AuthStateRes {
     pub session: Option<AuthSession>,
     pub pending: bool,
     pub message: Option<String>,
     pub refresh_started: bool,
     pub external_navigation_enabled: bool,
-    pub sender: mpsc::Sender<AuthServiceMessage>,
-}
-
-impl Default for AuthStateRes {
-    fn default() -> Self {
-        let (sender, _receiver) = mpsc::channel();
-        Self {
-            session: None,
-            pending: false,
-            message: None,
-            refresh_started: false,
-            external_navigation_enabled: false,
-            sender,
-        }
-    }
 }
 
 /// App-world request to start the browser sign-in flow.
 ///
-/// The sign-in side effect touches network IO (it calls
-/// `trigger_auth_sign_in` which sends a message on the auth channel).
-/// Phase 6e consumes this request in `StateSchedule` via `AuthStateRes`.
+/// The sign-in side effect is owned by an App-world `Task` component. Phase
+/// 6e consumes this request in `Update` via `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSubmitSignInRequest {
     pub pending: bool,
@@ -390,10 +383,8 @@ impl AuthSubmitSignInRequest {
 
 /// App-world request to sign out the current account.
 ///
-/// The sign-out side effect touches network IO (it calls
-/// `trigger_auth_sign_out` which sends a message on the auth
-/// channel). Phase 6e consumes this request in `StateSchedule` via
-/// `AuthStateRes`.
+/// The sign-out side effect is owned by an App-world `Task` component. Phase
+/// 6e consumes this request in `Update` via `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSignOutRequest {
     pub pending: bool,
@@ -415,7 +406,7 @@ impl AuthSignOutRequest {
 ///
 /// The signup-page open side effect touches platform code
 /// (`eg_platform::auth::open_signup_page`). Phase 6e consumes this request in
-/// `StateSchedule` via `AuthStateRes`.
+/// `Update` via `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthOpenSignupRequest {
     pub pending: bool,
@@ -436,6 +427,8 @@ impl AuthOpenSignupRequest {
 /// App-owned platform service for saving encoded editor levels.
 #[derive(Resource, Default)]
 pub struct LevelExportServiceRes {
+    #[cfg(not(test))]
+    pending_exports: Vec<(String, Vec<u8>)>,
     #[cfg(test)]
     last_request: Option<(String, Vec<u8>)>,
 }
@@ -446,13 +439,8 @@ impl LevelExportServiceRes {
         {
             self.last_request = Some((filename, data));
         }
-
         #[cfg(not(test))]
-        eg_platform::task::spawn_background(async move {
-            if let Err(error) = eg_platform::io::save_level_export(&filename, &data).await {
-                log::error!("Export failed: {error}");
-            }
-        });
+        self.pending_exports.push((filename, data));
     }
 
     #[cfg(test)]
@@ -461,86 +449,9 @@ impl LevelExportServiceRes {
             .as_ref()
             .map(|(filename, data)| (filename.as_str(), data.as_slice()))
     }
-}
 
-/// App-owned sender used to launch the platform level picker directly from
-/// `StateSchedule`. The matching receiver is drained by `LevelImportChannelRes`.
-#[derive(Resource)]
-pub struct LevelImportSenderRes {
-    sender: mpsc::Sender<Vec<u8>>,
-    #[cfg(test)]
-    trigger_count: usize,
-}
-
-impl LevelImportSenderRes {
-    pub fn new(sender: mpsc::Sender<Vec<u8>>) -> Self {
-        Self {
-            sender,
-            #[cfg(test)]
-            trigger_count: 0,
-        }
-    }
-
-    pub fn trigger_picker(&mut self) {
-        #[cfg(not(test))]
-        eg_platform::services::trigger_level_import(self.sender.clone());
-        #[cfg(test)]
-        {
-            let _sender = self.sender.clone();
-            self.trigger_count += 1;
-        }
-    }
-
-    #[cfg(test)]
-    pub fn trigger_count(&self) -> usize {
-        self.trigger_count
-    }
-}
-
-impl Default for LevelImportSenderRes {
-    fn default() -> Self {
-        let (sender, _receiver) = mpsc::channel();
-        Self::new(sender)
-    }
-}
-
-/// App-owned sender used to launch the platform audio picker directly from
-/// `StateSchedule`. The matching receiver is drained by `AudioImportChannelRes`.
-#[derive(Resource)]
-pub struct AudioImportSenderRes {
-    sender: mpsc::Sender<(String, Vec<u8>)>,
-    #[cfg(test)]
-    trigger_count: usize,
-}
-
-impl AudioImportSenderRes {
-    pub fn new(sender: mpsc::Sender<(String, Vec<u8>)>) -> Self {
-        Self {
-            sender,
-            #[cfg(test)]
-            trigger_count: 0,
-        }
-    }
-
-    pub fn trigger_picker(&mut self) {
-        #[cfg(not(test))]
-        eg_platform::services::trigger_audio_import(self.sender.clone());
-        #[cfg(test)]
-        {
-            let _sender = self.sender.clone();
-            self.trigger_count += 1;
-        }
-    }
-
-    #[cfg(test)]
-    pub fn trigger_count(&self) -> usize {
-        self.trigger_count
-    }
-}
-
-impl Default for AudioImportSenderRes {
-    fn default() -> Self {
-        let (sender, _receiver) = mpsc::channel();
-        Self::new(sender)
+    #[cfg(not(test))]
+    pub(crate) fn take_pending_exports(&mut self) -> Vec<(String, Vec<u8>)> {
+        std::mem::take(&mut self.pending_exports)
     }
 }

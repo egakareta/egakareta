@@ -2,9 +2,8 @@
 
 ## 1. Project Overview
 
-**egakareta** is a high-performance 3D rhythm game written in Rust. It utilizes:
+**egakareta** is a high-performance 3D rhythm game written in Rust 2024. It utilizes:
 
-- **Rust (2024 Edition)** as the core programming language.
 - **wgpu** for cross-platform, hardware-accelerated 3D rendering.
 - **egui** (with `egui-phosphor` icons) for the user interface.
 - **wasm-pack** to target `wasm32-unknown-unknown` for the web version.
@@ -75,16 +74,20 @@ All primary scripts are managed via `bun` in the `package.json` file. Use these 
 
 ## 4. Code Style & Conventions
 
+You have access to skills in `.agents/skills/**/SKILL.md` that teach how to use this project's external libraries in an idiomatic way. Use them to produce high-quality code.
+
 ### Platform Duality (WASM vs Native)
 
 - Use conditional compilation `#[cfg(target_arch = "wasm32")]` and `#[cfg(not(target_arch = "wasm32"))]` for platform-specific logic. Keep unified code paths where possible.
 - Use `web_time::Instant` instead of `std::time::Instant`.
 - The `crate-type` in `Cargo.toml` is `["cdylib", "rlib"]` — `cdylib` for WASM, `rlib` for native testing.
 - For any `cfg`-gated struct fields, declare them in **all** branches (use empty tuples or `Option` on the non-applicable target) so the struct layout is consistent.
-- Use `opfs` for both WASM and native file I/O.
+- Use `web-fs` on WASM and `async-fs` on native for asynchronous file I/O.
 - WASM file export triggers a browser download via an anchor element click. Native writes to disk with `std::fs`.
 - WASM logging uses `gloo_console`. Native uses the `log` crate + `env_logger`.
 - WASM panics are routed through `console_error_panic_hook`.
+
+The long-term goal is to have as little conditional compilation gates as possible. If a problem exists and a cross-platform external crate exists, flag it to the user. We want to avoid a future where the codebase is littered with `#[cfg]` gates.
 
 ### Imports & Module Organization
 

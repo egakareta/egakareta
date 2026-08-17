@@ -12,12 +12,19 @@ use bevy::{
 
 use crate::state::{FrameTimeRes, PerfRes};
 
+/// Begin Puffin's frame before any application work runs.
+///
+/// Keeping this in Bevy's [`First`] schedule makes captures align with the
+/// engine frame rather than with the former compatibility schedule.
+pub fn begin_puffin_frame_system() {
+    puffin::GlobalProfiler::lock().new_frame();
+}
+
 pub fn advance_frame_time_system(
     mut frame_time: ResMut<FrameTimeRes>,
     mut perf: ResMut<PerfRes>,
     virtual_time: Option<Res<Time<Virtual>>>,
 ) {
-    puffin::GlobalProfiler::lock().new_frame();
     if let Some(virtual_time) = virtual_time.filter(|time| time.delta_secs() > 0.0) {
         frame_time.advance_from_bevy_time(virtual_time.delta_secs(), virtual_time.elapsed_secs());
     } else {

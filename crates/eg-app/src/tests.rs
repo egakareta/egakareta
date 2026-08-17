@@ -497,23 +497,23 @@ mod tests {
         let expected = [
             (
                 "pick_selected_block",
-                eg_types::KeyChord::new("b", false, false, false),
+                eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyB, false, false, false),
             ),
             (
                 "focus_camera_target",
-                eg_types::KeyChord::new("f", false, false, false),
+                eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyF, false, false, false),
             ),
             (
                 "tab_compose",
-                eg_types::KeyChord::new("1", true, false, false),
+                eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Digit1, true, false, false),
             ),
             (
                 "tab_timing",
-                eg_types::KeyChord::new("2", true, false, false),
+                eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Digit2, true, false, false),
             ),
             (
                 "tab_tapping",
-                eg_types::KeyChord::new("3", true, false, false),
+                eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Digit3, true, false, false),
             ),
         ];
 
@@ -531,9 +531,12 @@ mod tests {
     fn test_app_settings_keybind_management() {
         let mut settings = eg_types::AppSettings::default();
         let action = "zoom_in"; // capacity 2
-        let chord1 = eg_types::KeyChord::new("=", false, false, false);
-        let chord2 = eg_types::KeyChord::new("+", false, false, false);
-        let chord3 = eg_types::KeyChord::new("k", true, false, false);
+        let chord1 =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Equal, false, false, false);
+        let chord2 =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Equal, false, true, false);
+        let chord3 =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false);
 
         // Clear defaults first to be sure
         settings.keybinds.retain(|b| b.action != action);
@@ -561,7 +564,8 @@ mod tests {
 
         // Test single-slot replacement
         let single_action = "undo";
-        let u_chord = eg_types::KeyChord::new("u", false, false, false);
+        let u_chord =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyU, false, false, false);
         settings.set_keybind_at_slot(single_action, 0, u_chord.clone());
         assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
         assert_eq!(
@@ -569,7 +573,8 @@ mod tests {
             Some(&u_chord)
         );
 
-        let u_chord2 = eg_types::KeyChord::new("z", true, false, false);
+        let u_chord2 =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyZ, true, false, false);
         settings.set_keybind_at_slot(single_action, 0, u_chord2.clone());
         assert_eq!(settings.keybinds_for_action(single_action).len(), 1);
         assert_eq!(
@@ -591,7 +596,8 @@ mod tests {
     fn test_reset_essential_keybinds_with_groups() {
         let mut settings = eg_types::AppSettings::default();
         let action = "toggle_settings";
-        let custom_chord = eg_types::KeyChord::new("k", true, false, false);
+        let custom_chord =
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::KeyK, true, false, false);
 
         // Change a default keybind
         settings.set_keybind_at_slot(action, 0, custom_chord.clone());
@@ -621,8 +627,16 @@ mod tests {
         let action = "zoom_in"; // Capacity 2, defaults are = and +
 
         // Custom bindings
-        settings.set_keybind_at_slot(action, 0, eg_types::KeyChord::new("1", false, false, false));
-        settings.set_keybind_at_slot(action, 1, eg_types::KeyChord::new("2", false, false, false));
+        settings.set_keybind_at_slot(
+            action,
+            0,
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Digit1, false, false, false),
+        );
+        settings.set_keybind_at_slot(
+            action,
+            1,
+            eg_types::KeyChord::new(bevy::input::keyboard::KeyCode::Digit2, false, false, false),
+        );
         assert_eq!(settings.keybinds_for_action(action).len(), 2);
 
         // Reset

@@ -16,16 +16,15 @@ log = { workspace = true }
 pollster = { workspace = true }
 rayon = { workspace = true }
 rfd = { workspace = true }
-opfs = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
 web-time = { workspace = true }
-wgpu = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+async-fs = { workspace = true }
+dirs = { workspace = true }
 reqwest = { workspace = true }
-tokio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gloo-console = { workspace = true }
@@ -36,9 +35,7 @@ js-sys = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies.winit]
-workspace = true
+web-fs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -5,10 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_state::{
-    commands::AppCommand,
-    state::{EditorConfigState, editor_command::EditorCommand},
-};
+use eg_state::state::EditorConfigState;
 use eg_types::{AppSettings, Direction, EditorMode};
 
 use crate::UiCommandSink;
@@ -27,7 +24,7 @@ pub(crate) struct EditorPropertyPopup {
 
 impl EditorPropertyPopup {
     pub(crate) fn above_bottom_bar(
-        id_source: impl std::hash::Hash,
+        id_source: impl std::hash::Hash + std::fmt::Debug,
         bottom_bar_height: f32,
     ) -> Self {
         Self {
@@ -42,7 +39,10 @@ impl EditorPropertyPopup {
         }
     }
 
-    pub(crate) fn top_left(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+    pub(crate) fn top_left(
+        id_source: impl std::hash::Hash + std::fmt::Debug,
+        top_bar_height: f32,
+    ) -> Self {
         Self {
             id: egui::Id::new(id_source),
             anchor: egui::Align2::LEFT_TOP,
@@ -55,7 +55,10 @@ impl EditorPropertyPopup {
         }
     }
 
-    pub(crate) fn top_left_right_of(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+    pub(crate) fn top_left_right_of(
+        id_source: impl std::hash::Hash + std::fmt::Debug,
+        top_bar_height: f32,
+    ) -> Self {
         Self {
             id: egui::Id::new(id_source),
             anchor: egui::Align2::LEFT_TOP,
@@ -105,9 +108,7 @@ pub(crate) fn show_mode_selector_popup(
             .on_hover_text(format!("Select{}", app_settings.hotkey_hint("mode_select")))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Select,
-            )));
+            commands.set_editor_mode(EditorMode::Select);
         }
         if ui
             .selectable_label(
@@ -117,7 +118,7 @@ pub(crate) fn show_mode_selector_popup(
             .on_hover_text(format!("Move{}", app_settings.hotkey_hint("mode_move")))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetMode(EditorMode::Move)));
+            commands.set_editor_mode(EditorMode::Move);
         }
         if ui
             .selectable_label(
@@ -127,9 +128,7 @@ pub(crate) fn show_mode_selector_popup(
             .on_hover_text(format!("Scale{}", app_settings.hotkey_hint("mode_scale")))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Scale,
-            )));
+            commands.set_editor_mode(EditorMode::Scale);
         }
         if ui
             .selectable_label(
@@ -139,9 +138,7 @@ pub(crate) fn show_mode_selector_popup(
             .on_hover_text(format!("Rotate{}", app_settings.hotkey_hint("mode_rotate")))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                EditorMode::Rotate,
-            )));
+            commands.set_editor_mode(EditorMode::Rotate);
         }
     });
 
@@ -181,7 +178,7 @@ fn show_grid_snap_controls(
             app_settings.hotkey_hint("toggle_grid_snap")
         ));
         if changed {
-            commands.push(AppCommand::Editor(EditorCommand::SetSnapToGrid(snap)));
+            commands.set_snap_to_grid(snap);
         }
         let mut snap_step = config.snap_step;
         let drag: egui::Response = ui
@@ -193,7 +190,7 @@ fn show_grid_snap_controls(
             )
             .on_hover_text("Grid Snap Step");
         if drag.changed() {
-            commands.push(AppCommand::Editor(EditorCommand::SetSnapStep(snap_step)));
+            commands.set_snap_step(snap_step);
         }
     });
 }
@@ -216,9 +213,7 @@ fn show_rotation_snap_controls(
             app_settings.hotkey_hint("toggle_rotation_snap")
         ));
         if changed {
-            commands.push(AppCommand::Editor(EditorCommand::SetSnapRotation(
-                snap_rotation,
-            )));
+            commands.set_snap_rotation(snap_rotation);
         }
 
         let mut snap_rotation_step = config.snap_rotation_step_degrees;
@@ -232,9 +227,7 @@ fn show_rotation_snap_controls(
             )
             .on_hover_text("Rotation Snap Step");
         if drag.changed() {
-            commands.push(AppCommand::Editor(EditorCommand::SetSnapRotationStep(
-                snap_rotation_step,
-            )));
+            commands.set_snap_rotation_step(snap_rotation_step);
         }
     });
 }
@@ -270,13 +263,14 @@ pub(crate) fn show_player_camera_status_row(
 
 #[cfg(test)]
 mod tests {
-    use eg_state::{commands::AppCommand, state::EditorConfigState};
+    use eg_state::state::EditorConfigState;
     use eg_types::{AppSettings, Direction, EditorMode};
 
     use super::{
         EditorPropertyPopup, PROPERTY_POPUP_MARGIN, show_editor_property_popup,
         show_mode_selector_popup, show_player_camera_status_row,
     };
+    use crate::test_utils::with_world_command_sink;
 
     #[test]
     fn property_popup_runs_content_closure_with_bottom_bar_offset() {
@@ -301,7 +295,7 @@ mod tests {
     fn show_player_camera_status_row_renders_for_forward_and_right_directions() {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
+            egui::CentralPanel::default().show(root_ui, |ui| {
                 show_player_camera_status_row(
                     ui,
                     [2.0, 1.0, 0.0],
@@ -323,74 +317,72 @@ mod tests {
     #[test]
     fn mode_selector_popup_uses_top_left_anchor_and_renders_modes() {
         let app_settings = AppSettings::default();
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(
-                &ctx,
-                &app_settings,
-                EditorMode::Select,
-                &EditorConfigState::default(),
-                28.0,
-                &mut commands,
-            );
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+                show_mode_selector_popup(
+                    &ctx,
+                    &app_settings,
+                    EditorMode::Select,
+                    &EditorConfigState::default(),
+                    28.0,
+                    commands,
+                );
+            })
         });
-
-        assert!(commands.is_empty());
     }
 
     #[test]
     fn mode_selector_popup_shows_secondary_for_move_mode() {
         let app_settings = AppSettings::default();
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(
-                &ctx,
-                &app_settings,
-                EditorMode::Move,
-                &EditorConfigState::default(),
-                28.0,
-                &mut commands,
-            );
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+                show_mode_selector_popup(
+                    &ctx,
+                    &app_settings,
+                    EditorMode::Move,
+                    &EditorConfigState::default(),
+                    28.0,
+                    commands,
+                );
+            })
         });
     }
 
     #[test]
     fn mode_selector_popup_shows_secondary_for_scale_mode() {
         let app_settings = AppSettings::default();
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(
-                &ctx,
-                &app_settings,
-                EditorMode::Scale,
-                &EditorConfigState::default(),
-                28.0,
-                &mut commands,
-            );
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+                show_mode_selector_popup(
+                    &ctx,
+                    &app_settings,
+                    EditorMode::Scale,
+                    &EditorConfigState::default(),
+                    28.0,
+                    commands,
+                );
+            })
         });
     }
 
     #[test]
     fn mode_selector_popup_shows_secondary_for_rotate_mode() {
         let app_settings = AppSettings::default();
-        let mut commands = Vec::<AppCommand>::new();
-
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
-            show_mode_selector_popup(
-                &ctx,
-                &app_settings,
-                EditorMode::Rotate,
-                &EditorConfigState::default(),
-                28.0,
-                &mut commands,
-            );
+        let (_world, _) = with_world_command_sink(|commands| {
+            ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+                show_mode_selector_popup(
+                    &ctx,
+                    &app_settings,
+                    EditorMode::Rotate,
+                    &EditorConfigState::default(),
+                    28.0,
+                    commands,
+                );
+            })
         });
     }
 

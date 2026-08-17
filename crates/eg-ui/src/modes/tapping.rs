@@ -5,8 +5,6 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
-
 use crate::{
     UiCommandSink,
     modes::shared::{
@@ -30,13 +28,13 @@ pub(crate) fn show_tapping_mode_bottom_panel(
             ))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::AddTap));
+            commands.add_tap();
         }
         if ui
             .button(format!("{} Clear all taps", egui_phosphor::regular::BROOM))
             .clicked()
         {
-            commands.push(AppCommand::Editor(EditorCommand::ClearTaps));
+            commands.clear_taps();
         }
 
         ui.separator();
@@ -74,7 +72,7 @@ pub(crate) fn show_selected_tap_properties_window(
                         .button(format!("{} Delete", egui_phosphor::regular::TRASH))
                         .clicked()
                     {
-                        commands.push(AppCommand::Editor(EditorCommand::RemoveTap));
+                        commands.remove_tap();
                     }
                 });
 
@@ -89,9 +87,7 @@ pub(crate) fn show_selected_tap_properties_window(
                         )
                         .changed()
                     {
-                        commands.push(AppCommand::Editor(EditorCommand::SetSelectedTapTime(
-                            time_seconds,
-                        )));
+                        commands.set_selected_tap_time(time_seconds);
                     }
                 });
 

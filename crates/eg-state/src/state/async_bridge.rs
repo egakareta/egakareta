@@ -5,328 +5,37 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Async platform-result ingestion (Phase 6a).
+//! Async platform-result ingestion.
 //!
-//! Platform services and background tasks produce five `mpsc::Receiver`
-//! streams (auth service, audio service, level importer). The App-owned
-//! `StateSchedule` drains those streams once per frame.
+//! Platform APIs return futures owned by Bevy task components. Their pollers
+//! publish typed result messages which the App-owned `Update` schedule applies
+//! directly to authoritative resources.
 //!
-//! Phase 6a introduced **Bevy resources** that wrap each receiver
-//! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
-//! `AudioPreloadChannelRes`, `LevelImportChannelRes`) plus a
-//! `PollChannelsSet` system set with a `poll_channels_system` that
-//! drains every receiver once per frame and emits the corresponding
-//! result event into the World (Phase 6a's five new
-//! [`async_results`](crate::events::async_results) message types).
-//!
-//! `StateSchedule` is the sole owner for these drains and the result
-//! handlers mutate App-world resources directly.
-//!
-//! ## Why a `Mutex<Receiver<T>>` wrapper?
-//!
-//! `mpsc::Receiver<T>` is `Send` but not `Sync` (its API requires
-//! `&mut self`). Bevy `Resource` requires `Send + Sync + 'static`.
-//! The wrapper wraps the receiver in a `Mutex` (which is `Sync`)
-//! so the receiver can sit in the World and be accessed via
-//! `ResMut<T>` from a single system. The `Mutex` is uncontended in
-//! practice — only the `poll_channels_system` ever locks it, and
-//! it runs at the top of the frame before any handler system.
-//!
-//! ## Phase 6b: result handler systems
-//!
-//! Phase 6a established the `poll_channels_system` that drains the
-//! 5 receivers into 5 distinct result events. Phase 6b added one
-//! handler system per channel. All five handlers mutate App-world
-//! resources directly. Shared editor and runtime audio-cache resources
-//! let platform-facing audio code read the same authoritative cache without
-//! introducing a second state owner.
-//!
-//! ## Schedule graph (post Phase 6b)
+//! ## Schedule graph
 //!
 //! ```text
-//!   PollChannelsSet
-//!     poll_channels_system             // drain receivers → emit result events
 //!   CommandHandlerSet
 //!     events::handle_* (per-message)   // Phase 3 message drain
 //!   ApplyAsyncResultsSet
 //!     auth_handler_system              // AuthServiceResultEvent
-//!     audio_import_handler_system      // AudioImportResultEvent
 //!     waveform_handler_system          // WaveformResultEvent → timing + audio caches
-//!     audio_preload_handler_system     // AudioPreloadResultEvent
 //!     level_import_handler_system      // LevelImportResultEvent → editor/session resources
 //! ```
 //!
-//! REFACTOR POINT(full-bevy): the `mpsc` channels disappear in the
-//! full-Bevy migration; background tasks write directly into
-//! `Messages<T>` or `AssetEvent<T>`. The `poll_channels_system` is
-//! replaced by `bevy::tasks` async event streams. Handler systems already
-//! mutate Bevy resources directly.
-
-use std::sync::{
-    Mutex,
-    mpsc::{Receiver, TryRecvError},
-};
-
-use bevy::ecs::{prelude::*, schedule::SystemSet};
-use eg_audio::service::{AudioPreloadResult, WaveformLoadMessage, WaveformResult};
+use bevy::{app::App, ecs::prelude::*};
+use eg_audio::service::WaveformLoadMessage;
 use eg_platform::services::AuthServiceMessage;
 
 use crate::{
     events::async_results::{
-        AudioImportResultEvent, AudioPreloadResultEvent, AuthServiceResultEvent,
-        LevelImportResultEvent, WaveformResultEvent,
+        AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent, WaveformResultEvent,
     },
     state::{
         AuthStateRes, EditorAudioCacheRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
         EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState, EditorTriggerRes,
-        RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, replace_editor_objects,
+        RuntimeAudioPreloadRes, SessionStateRes, queue_waveform_load_task, replace_editor_objects,
     },
 };
-
-// ---------------------------------------------------------------------------
-// Type aliases for the shared `Arc<Mutex<Receiver<T>>>` channels
-// ---------------------------------------------------------------------------
-
-/// Shared auth receiver retained by the bootstrap channel owner and the
-/// App-world `AuthChannelRes` resource during installation.
-pub type SharedAuthReceiver = std::sync::Arc<Mutex<Receiver<AuthServiceMessage>>>;
-
-/// Shared `Arc<Mutex<Receiver<(String, Vec<u8>)>>>`.
-pub type SharedAudioImportReceiver = std::sync::Arc<Mutex<Receiver<(String, Vec<u8>)>>>;
-
-/// Shared `Arc<Mutex<Receiver<WaveformResult>>>`.
-pub type SharedWaveformReceiver = std::sync::Arc<Mutex<Receiver<WaveformResult>>>;
-
-/// Shared `Arc<Mutex<Receiver<AudioPreloadResult>>>`.
-pub type SharedAudioPreloadReceiver = std::sync::Arc<Mutex<Receiver<AudioPreloadResult>>>;
-
-/// Shared `Arc<Mutex<Receiver<Vec<u8>>>>`.
-pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
-
-// ---------------------------------------------------------------------------
-// Channel wrapper resources
-// ---------------------------------------------------------------------------
-
-/// Bevy `Resource` wrapper around the auth-service `mpsc::Receiver`.
-///
-/// Holds the shared receiver drained by the App-world
-/// `poll_channels_system`. The `Arc<Mutex<>>` is created by App bootstrap;
-/// direct World fixtures can install an equivalent receiver for focused
-/// tests.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct AuthChannelRes(pub SharedAuthReceiver);
-
-/// Bevy `Resource` wrapper around the audio-import `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>` (see
-/// [`AuthChannelRes`] for the rationale).
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct AudioImportChannelRes(pub SharedAudioImportReceiver);
-
-/// Bevy `Resource` wrapper around the waveform-load `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct WaveformLoadChannelRes(pub SharedWaveformReceiver);
-
-/// Bevy `Resource` wrapper around the audio-preload `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct AudioPreloadChannelRes(pub SharedAudioPreloadReceiver);
-
-/// Bevy `Resource` wrapper around the level-import `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct LevelImportChannelRes(pub SharedLevelImportReceiver);
-
-// ---------------------------------------------------------------------------
-// System set
-// ---------------------------------------------------------------------------
-
-/// System set that contains the per-frame channel poll systems.
-///
-/// Runs at the top of the frame so the result events are available
-/// to all handler systems that follow. The same set runs at the
-/// bottom of the frame too (in `apply_async_results_system`,
-/// Phase 6b) so the events have a chance to be consumed by the
-/// `CommandHandlerSet` / `EditorLogicSet` systems before the frame
-/// ends.
-///
-/// In a future full-Bevy frame the order is:
-/// `PollChannelsSet → ModeChangeSet → PreCommandHistorySet →
-/// CommandHandlerSet → SimulationSet → ApplyAsyncResultsSet →
-/// RebuildMeshSet → ExtractSet → RenderSet` (see the per-frame
-/// schedule graph in `state/sets.rs`).
-#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct PollChannelsSet;
-
-// ---------------------------------------------------------------------------
-// Poll system
-// ---------------------------------------------------------------------------
-
-/// Poll every `mpsc::Receiver` once and emit the corresponding
-/// result event into the World.
-///
-/// Drains each channel in a `while let Ok(...) = try_recv()` loop so
-/// a single frame consumes every message that's currently buffered.
-/// Production frames drain channels here. Phase 6a emitted the events;
-/// Phase 6b added handler systems, which now apply every result directly
-/// to App-world resources.
-#[allow(clippy::too_many_arguments)]
-pub fn poll_channels_system(
-    auth: Option<Res<AuthChannelRes>>,
-    audio_import: Option<Res<AudioImportChannelRes>>,
-    waveform: Option<Res<WaveformLoadChannelRes>>,
-    audio_preload: Option<Res<AudioPreloadChannelRes>>,
-    level_import: Option<Res<LevelImportChannelRes>>,
-    mut auth_writer: MessageWriter<AuthServiceResultEvent>,
-    mut audio_import_writer: MessageWriter<AudioImportResultEvent>,
-    mut waveform_writer: MessageWriter<WaveformResultEvent>,
-    mut audio_preload_writer: MessageWriter<AudioPreloadResultEvent>,
-    mut level_import_writer: MessageWriter<LevelImportResultEvent>,
-) {
-    if let Some(res) = auth {
-        drain_mutex(&res.0, |msg| {
-            auth_writer.write(AuthServiceResultEvent::new(msg));
-        });
-    }
-    if let Some(res) = audio_import {
-        drain_mutex(&res.0, |msg| {
-            let (filename, bytes) = msg;
-            audio_import_writer.write(AudioImportResultEvent::new(filename, Some(bytes)));
-        });
-    }
-    if let Some(res) = waveform {
-        drain_mutex(&res.0, |msg| {
-            waveform_writer.write(WaveformResultEvent::from_result(msg));
-        });
-    }
-    if let Some(res) = audio_preload {
-        drain_mutex(&res.0, |msg| {
-            audio_preload_writer.write(AudioPreloadResultEvent::from_result(&msg));
-        });
-    }
-    if let Some(res) = level_import {
-        drain_mutex(&res.0, |msg| {
-            level_import_writer.write(LevelImportResultEvent::new(msg));
-        });
-    }
-}
-
-/// Drain a `Receiver<T>` and forward each message through `emit`.
-///
-/// Stops on the first `Empty` error (no more messages buffered) and
-/// ignores `Disconnected` (the sender was dropped — typical at
-/// shutdown).
-fn drain_one<T, F>(receiver: &mut Receiver<T>, mut emit: F)
-where
-    F: FnMut(T),
-{
-    loop {
-        match receiver.try_recv() {
-            Ok(message) => emit(message),
-            Err(TryRecvError::Empty) => break,
-            Err(TryRecvError::Disconnected) => break,
-        }
-    }
-}
-
-/// Drain a `Mutex<Receiver<T>>` (the wrapper we put in the World)
-/// and forward each message through `emit`. The `MutexGuard` is
-/// `DerefMut`-derefable to `Receiver<T>`, but `drain_one` takes
-/// `&mut Receiver<T>` explicitly so the call site stays
-/// type-checked.
-fn drain_mutex<T, F>(mutex: &std::sync::Mutex<Receiver<T>>, mut emit: F)
-where
-    F: FnMut(T),
-{
-    let mut guard = mutex.lock().expect("async channel mutex poisoned");
-    drain_one(&mut guard, &mut emit);
-}
-
-// ---------------------------------------------------------------------------
-// Helpers used by App bootstrap and direct World fixtures to install the
-// external platform channels into App resources.
-// ---------------------------------------------------------------------------
-
-/// Install every async channel wrapper resource on a `World`.
-///
-/// Used by direct World fixtures to populate the resources from channel
-/// receivers. Production frames drain these resources through the schedule.
-///
-/// This function is a no-op when a resource is already installed
-/// (e.g. by `register_async_channel_resources` during world construction).
-#[allow(dead_code)]
-pub fn install_async_channel_resources(
-    world: &mut World,
-    auth_receiver: Receiver<AuthServiceMessage>,
-    audio_import_receiver: Receiver<(String, Vec<u8>)>,
-    waveform_receiver: Receiver<WaveformResult>,
-    audio_preload_receiver: Receiver<AudioPreloadResult>,
-    level_import_receiver: Receiver<Vec<u8>>,
-) {
-    use std::sync::Arc;
-    if !world.contains_resource::<AuthChannelRes>() {
-        world.insert_resource(AuthChannelRes(Arc::new(Mutex::new(auth_receiver))));
-    }
-    if !world.contains_resource::<AudioImportChannelRes>() {
-        world.insert_resource(AudioImportChannelRes(Arc::new(Mutex::new(
-            audio_import_receiver,
-        ))));
-    }
-    if !world.contains_resource::<WaveformLoadChannelRes>() {
-        world.insert_resource(WaveformLoadChannelRes(Arc::new(Mutex::new(
-            waveform_receiver,
-        ))));
-    }
-    if !world.contains_resource::<AudioPreloadChannelRes>() {
-        world.insert_resource(AudioPreloadChannelRes(Arc::new(Mutex::new(
-            audio_preload_receiver,
-        ))));
-    }
-    if !world.contains_resource::<LevelImportChannelRes>() {
-        world.insert_resource(LevelImportChannelRes(Arc::new(Mutex::new(
-            level_import_receiver,
-        ))));
-    }
-}
-
-/// Same as [`install_async_channel_resources`] but the receivers are
-/// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage used
-/// by the platform bootstrap channel owners. The resource stores the same
-/// receiver so the App schedule drains the actual platform stream.
-#[allow(dead_code)]
-pub fn install_async_channel_resources_arc(
-    world: &mut World,
-    auth_receiver: SharedAuthReceiver,
-    audio_import_receiver: SharedAudioImportReceiver,
-    waveform_receiver: SharedWaveformReceiver,
-    audio_preload_receiver: SharedAudioPreloadReceiver,
-    level_import_receiver: SharedLevelImportReceiver,
-) {
-    if !world.contains_resource::<AuthChannelRes>() {
-        world.insert_resource(AuthChannelRes(auth_receiver));
-    }
-    if !world.contains_resource::<AudioImportChannelRes>() {
-        world.insert_resource(AudioImportChannelRes(audio_import_receiver));
-    }
-    if !world.contains_resource::<WaveformLoadChannelRes>() {
-        world.insert_resource(WaveformLoadChannelRes(waveform_receiver));
-    }
-    if !world.contains_resource::<AudioPreloadChannelRes>() {
-        world.insert_resource(AudioPreloadChannelRes(audio_preload_receiver));
-    }
-    if !world.contains_resource::<LevelImportChannelRes>() {
-        world.insert_resource(LevelImportChannelRes(level_import_receiver));
-    }
-}
 
 /// World-flavoured registration for callers that build a `World`
 /// directly. The App-owned schedule uses this registration path for both
@@ -338,29 +47,28 @@ pub fn register_async_channel_resources_world(world: &mut World) {
     world.init_resource::<Messages<AuthServiceResultEvent>>();
     world.init_resource::<Messages<AudioImportResultEvent>>();
     world.init_resource::<Messages<WaveformResultEvent>>();
-    world.init_resource::<Messages<AudioPreloadResultEvent>>();
     world.init_resource::<Messages<LevelImportResultEvent>>();
 }
 
-/// Add the `poll_channels_system` to a `Schedule`.
+/// Register async-result messages with an [`App`].
 ///
-/// Callers (today: the `register_state_schedule` helper) add
-/// the system in a `.add_systems((...))` tuple inside the schedule.
-/// The system is assigned to the [`PollChannelsSet`] so cross-set
-/// ordering can be expressed via `.in_set(PollChannelsSet)`.
-#[allow(dead_code)]
-pub fn add_poll_channels_systems(schedule: &mut bevy::ecs::schedule::Schedule) {
-    schedule.add_systems(poll_channels_system.in_set(PollChannelsSet));
+/// Unlike the world-only helper above, this also installs Bevy's message
+/// maintenance systems. Production uses this path so completed task results
+/// have the normal frame-bounded lifetime of every other Bevy message.
+pub fn register_async_result_messages(app: &mut App) {
+    app.add_message::<AuthServiceResultEvent>()
+        .add_message::<AudioImportResultEvent>()
+        .add_message::<WaveformResultEvent>()
+        .add_message::<LevelImportResultEvent>();
 }
 
 // ---------------------------------------------------------------------------
 // Phase 6b: result handler systems
 // ---------------------------------------------------------------------------
 
-/// System set for the result handler systems. Runs after
-/// `PollChannelsSet` (the events must be emitted first) and after
-/// `CommandHandlerSet` (the per-message drain systems must finish
-/// first, so any per-frame command ordering is preserved).
+/// System set for result-handler systems. It runs after
+/// `CommandHandlerSet` so task result application observes any request made
+/// in the same frame.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ApplyAsyncResultsSet;
 
@@ -382,13 +90,14 @@ pub fn auth_handler_system(
 }
 
 /// Consume `AudioImportResultEvent`s, update the App-owned editor audio cache,
-/// reset waveform presentation, and start decoding through the App-owned sender.
+/// reset waveform presentation, and spawn a task owned by the App world.
 #[allow(dead_code)]
 pub fn audio_import_handler_system(
+    mut commands: Commands,
     mut events: MessageReader<AudioImportResultEvent>,
     session: Res<SessionStateRes>,
     cache: Res<EditorAudioCacheRes>,
-    waveform_sender: Res<WaveformLoadSenderRes>,
+    preload: Res<RuntimeAudioPreloadRes>,
     mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
@@ -401,17 +110,8 @@ pub fn audio_import_handler_system(
             .unwrap_or_else(|| "Untitled".to_string());
         let source_key = cache.insert_level_audio(&level_name, bytes.clone());
         cache.remove_waveform(&source_key);
-        cache.set_loading_source(Some(source_key));
-        timing.0.waveform_samples.clear();
-        timing.0.waveform_sample_rate = 0;
-        timing.0.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
-        timing.0.waveform_loading = true;
-        timing.0.waveform_complete = false;
-        eg_audio::service::start_waveform_loading(
-            level_name,
-            Some(bytes),
-            waveform_sender.0.clone(),
-        );
+        cache.clear_loading_source_if(&source_key);
+        queue_waveform_load_task(&mut commands, level_name, &cache, &preload, &mut timing.0);
     }
 }
 
@@ -448,7 +148,14 @@ pub fn waveform_handler_system(world: &mut World) {
         if source_key == current_source_key {
             apply_waveform_timing_message(&mut world.resource_mut::<EditorTimingRes>().0, &message);
         }
-        apply_waveform_cache_message(&editor_cache, &runtime_preload, source, level_name, message);
+        apply_waveform_cache_message(
+            world,
+            &editor_cache,
+            &runtime_preload,
+            source,
+            level_name,
+            message,
+        );
     }
 }
 
@@ -518,6 +225,7 @@ fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &Wavef
 }
 
 fn apply_waveform_cache_message(
+    world: &mut World,
     editor_cache: &EditorAudioCacheRes,
     runtime_preload: &RuntimeAudioPreloadRes,
     source: String,
@@ -585,8 +293,8 @@ fn apply_waveform_cache_message(
                 entry.clone()
             });
             if let Some(cache_key) = cache_key {
-                use crate::state::audio_state::persist_waveform_cache_entry;
-                persist_waveform_cache_entry(cache_key, &entry);
+                let cached = crate::state::audio_state::persistent_waveform_cache_entry(&entry);
+                crate::state::queue_waveform_persist_world(world, cache_key, cached);
             }
             if let Some(bytes) = bytes {
                 runtime_preload.insert_preloaded(source_key.clone(), bytes);
@@ -600,17 +308,6 @@ fn apply_waveform_cache_message(
             }
             editor_cache.clear_loading_source_if(&source_key);
         }
-    }
-}
-
-/// Consume `AudioPreloadResultEvent`s into the shared App-owned preload cache.
-#[allow(dead_code)]
-pub fn audio_preload_handler_system(
-    mut events: MessageReader<AudioPreloadResultEvent>,
-    preload: Res<RuntimeAudioPreloadRes>,
-) {
-    for event in events.read() {
-        preload.apply_result(event.source_key.clone(), event.bytes.clone());
     }
 }
 
@@ -709,7 +406,7 @@ pub(crate) fn apply_imported_level_to_world(
     level_name
 }
 
-/// Add the 5 result handler systems to a `Schedule`. Each system
+/// Add the channel-backed result handler systems to a `Schedule`. Each system
 /// is assigned to [`ApplyAsyncResultsSet`] so cross-set ordering
 /// can be expressed via `.in_set(ApplyAsyncResultsSet)` / `.before()`.
 #[allow(dead_code)]
@@ -719,7 +416,6 @@ pub fn add_apply_async_results_systems(schedule: &mut bevy::ecs::schedule::Sched
             auth_handler_system,
             audio_import_handler_system,
             waveform_handler_system,
-            audio_preload_handler_system,
             level_import_handler_system,
         )
             .in_set(ApplyAsyncResultsSet),
@@ -732,8 +428,6 @@ pub fn add_apply_async_results_systems(schedule: &mut bevy::ecs::schedule::Sched
 
 #[cfg(test)]
 mod tests {
-    use std::sync::mpsc;
-
     use super::*;
 
     fn build_world() -> World {
@@ -744,175 +438,12 @@ mod tests {
     }
 
     #[test]
-    fn drain_one_stops_on_empty() {
-        let (tx, rx) = mpsc::channel::<u32>();
-        tx.send(1).unwrap();
-        tx.send(2).unwrap();
-        let mut collected: Vec<u32> = Vec::new();
-        let mut rx = rx;
-        drain_one(&mut rx, |v| collected.push(v));
-        assert_eq!(collected, vec![1, 2]);
-        // The receiver is now empty; draining again is a no-op.
-        let mut second: Vec<u32> = Vec::new();
-        drain_one(&mut rx, |v| second.push(v));
-        assert!(second.is_empty());
-    }
-
-    #[test]
-    fn drain_one_handles_disconnected_sender() {
-        let (tx, rx) = mpsc::channel::<u32>();
-        drop(tx);
-        let mut collected: Vec<u32> = Vec::new();
-        let mut rx = rx;
-        // Disconnected with no messages yields no items.
-        drain_one(&mut rx, |v| collected.push(v));
-        assert!(collected.is_empty());
-    }
-
-    #[test]
     fn register_async_bridge_world_initializes_message_resources() {
         let world = build_world();
         assert!(world.contains_resource::<Messages<AuthServiceResultEvent>>());
         assert!(world.contains_resource::<Messages<AudioImportResultEvent>>());
         assert!(world.contains_resource::<Messages<WaveformResultEvent>>());
-        assert!(world.contains_resource::<Messages<AudioPreloadResultEvent>>());
         assert!(world.contains_resource::<Messages<LevelImportResultEvent>>());
-    }
-
-    #[test]
-    fn install_async_channel_resources_inserts_wrappers() {
-        let mut world = build_world();
-        let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
-
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
-
-        assert!(world.contains_resource::<AuthChannelRes>());
-        assert!(world.contains_resource::<AudioImportChannelRes>());
-        assert!(world.contains_resource::<WaveformLoadChannelRes>());
-        assert!(world.contains_resource::<AudioPreloadChannelRes>());
-        assert!(world.contains_resource::<LevelImportChannelRes>());
-    }
-
-    #[test]
-    fn install_async_channel_resources_is_idempotent() {
-        // Calling install_async_channel_resources twice must not
-        // overwrite an existing wrapper (the external receiver would
-        // be lost otherwise). The second call is a no-op for
-        // already-installed resources.
-        let mut world = build_world();
-        let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
-
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
-
-        // A second call with fresh receivers must not replace the
-        // installed ones.
-        let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
-
-        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, wf_rx2, ap_rx2, li_rx2);
-
-        // The original receivers are still installed (we can verify
-        // by checking the wrappers exist).
-        assert!(world.contains_resource::<AuthChannelRes>());
-    }
-
-    // -----------------------------------------------------------------------
-    // Result handler system tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn install_async_channel_resources_arc_shares_receivers() {
-        // The new Arc-based installer stores `Arc<Mutex<Receiver<T>>>`
-        // in the resources. We verify the resources are inserted
-        // and that the Arc has a single reference (shared between
-        // the install call's argument and the resource).
-        let mut world = build_world();
-        let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
-
-        let auth_arc = std::sync::Arc::new(std::sync::Mutex::new(auth_rx));
-        let ai_arc = std::sync::Arc::new(std::sync::Mutex::new(ai_rx));
-        let wf_arc = std::sync::Arc::new(std::sync::Mutex::new(wf_rx));
-        let ap_arc = std::sync::Arc::new(std::sync::Mutex::new(ap_rx));
-        let li_arc = std::sync::Arc::new(std::sync::Mutex::new(li_rx));
-
-        install_async_channel_resources_arc(
-            &mut world,
-            std::sync::Arc::clone(&auth_arc),
-            std::sync::Arc::clone(&ai_arc),
-            std::sync::Arc::clone(&wf_arc),
-            std::sync::Arc::clone(&ap_arc),
-            std::sync::Arc::clone(&li_arc),
-        );
-
-        assert!(world.contains_resource::<AuthChannelRes>());
-        assert!(world.contains_resource::<AudioImportChannelRes>());
-        assert!(world.contains_resource::<WaveformLoadChannelRes>());
-        assert!(world.contains_resource::<AudioPreloadChannelRes>());
-        assert!(world.contains_resource::<LevelImportChannelRes>());
-
-        // The Arc we passed in is the same one stored in the
-        // resource (we can verify by `Arc::ptr_eq` after
-        // extracting the inner Arc from the resource).
-        let stored_arc = &world.resource::<AuthChannelRes>().0;
-        assert!(std::sync::Arc::ptr_eq(stored_arc, &auth_arc));
-    }
-
-    #[test]
-    fn install_async_channel_resources_arc_is_idempotent() {
-        // Calling the Arc-based installer twice must not
-        // overwrite an existing wrapper.
-        let mut world = build_world();
-        let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
-
-        install_async_channel_resources_arc(
-            &mut world,
-            std::sync::Arc::new(std::sync::Mutex::new(auth_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(ai_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(wf_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(ap_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(li_rx)),
-        );
-
-        // Second call: fresh receivers. The install must be a
-        // no-op for already-installed resources.
-        let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
-        let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
-        let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
-
-        install_async_channel_resources_arc(
-            &mut world,
-            std::sync::Arc::new(std::sync::Mutex::new(auth_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(ai_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(wf_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(ap_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(li_rx2)),
-        );
-
-        // Both resources are still present (the second install
-        // didn't drop them).
-        assert!(world.contains_resource::<AuthChannelRes>());
-        assert!(world.contains_resource::<LevelImportChannelRes>());
     }
 
     #[test]
@@ -939,54 +470,6 @@ mod tests {
         let auth = world.resource::<AuthStateRes>();
         assert!(!auth.pending);
         assert!(auth.session.is_none());
-    }
-
-    #[test]
-    fn audio_preload_handler_system_inserts_bytes() {
-        // Write an `AudioPreloadResultEvent` into the buffer, run
-        // the handler, drain the slot, and verify the State's
-        // `preloaded_audio` map contains the entry.
-        use crate::events::async_results::AudioPreloadResultEvent;
-        let mut world = build_world();
-        world.write_message(AudioPreloadResultEvent::from_result(&(
-            "Level1:audio.mp3".to_string(),
-            Some(vec![1, 2, 3, 4]),
-        )));
-
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
-        schedule.add_systems(audio_preload_handler_system);
-        schedule.run(&mut world);
-
-        let source_key = "Level1:audio.mp3".to_string();
-        assert!(
-            world
-                .resource::<RuntimeAudioPreloadRes>()
-                .contains_preloaded(&source_key)
-        );
-    }
-
-    #[test]
-    fn audio_preload_handler_system_handles_failure() {
-        // Same as above but the result is `None` (failure). The
-        // handler should not panic and should not insert
-        // anything.
-        use crate::events::async_results::AudioPreloadResultEvent;
-        let mut world = build_world();
-        world.write_message(AudioPreloadResultEvent::from_result(&(
-            "Level1:audio.mp3".to_string(),
-            None,
-        )));
-
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
-        schedule.add_systems(audio_preload_handler_system);
-        schedule.run(&mut world);
-
-        let source_key = "Level1:audio.mp3".to_string();
-        assert!(
-            !world
-                .resource::<RuntimeAudioPreloadRes>()
-                .contains_preloaded(&source_key)
-        );
     }
 
     #[test]
@@ -1107,39 +590,6 @@ mod tests {
                 .waveform(&source_key)
                 .is_some_and(|entry| entry.complete)
         );
-    }
-
-    #[test]
-    fn waveform_channel_results_reach_timing_state_in_the_same_schedule() {
-        let mut world = build_world();
-        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Level1".to_string());
-
-        let (sender, receiver) = mpsc::channel::<WaveformResult>();
-        world.insert_resource(WaveformLoadChannelRes(std::sync::Arc::new(Mutex::new(
-            receiver,
-        ))));
-        sender
-            .send((
-                "audio.mp3".to_string(),
-                "Level1".to_string(),
-                WaveformLoadMessage::Cached {
-                    samples: vec![0.2, 0.8],
-                    sample_rate: 44_100,
-                    window_size: 256,
-                    bytes: None,
-                },
-            ))
-            .expect("waveform channel remains connected");
-
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
-        schedule.add_systems((poll_channels_system, waveform_handler_system).chain());
-        schedule.run(&mut world);
-
-        let timing = &world.resource::<EditorTimingRes>().0;
-        assert_eq!(timing.waveform_samples, vec![0.2, 0.8]);
-        assert_eq!(timing.waveform_sample_rate, 44_100);
-        assert!(timing.waveform_complete);
-        assert!(!timing.waveform_loading);
     }
 
     #[test]

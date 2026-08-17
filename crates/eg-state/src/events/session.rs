@@ -29,8 +29,8 @@
 //!   `session.editor_menu_preview_camera`
 //!
 //! Session side-effect events write typed request resources while their legacy
-//! setters still own level load, export IO, and audio backend changes. Level
-//! picker launch is App-owned and uses sender resources directly.
+//! setters still own level load, export IO, and audio backend changes. File
+//! picker launch is App-owned through task components.
 //!
 //! Settings handlers persist App-owned changes directly. Runtime still mirrors
 //! the remaining compatibility fields until their legacy readers move.
@@ -42,10 +42,11 @@ use eg_types::{
 };
 
 use crate::state::{
-    AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes, EditorAudioCacheRes,
+    AudioBackendSystemParam, AudioImportTask, BuiltinLevelCatalogRes, EditorAudioCacheRes,
     EditorCameraRes, EditorInputRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    LevelExportServiceRes, LevelImportSenderRes, RuntimeAudioPreloadRes, SessionStateRes,
-    WaveformLoadSenderRes, apply_imported_level_to_world, load_waveform_for_level_resources,
+    LevelExportServiceRes, LevelImportTask, SessionStateRes, apply_imported_level_to_world,
+    queue_app_settings_persist, queue_waveform_load_task_world, spawn_audio_import_task,
+    spawn_level_import_task,
 };
 
 /// Load a level from a builtin resource name.
@@ -199,17 +200,7 @@ pub fn handle_load_level(world: &mut World) {
 }
 
 fn load_waveform_for_level(world: &mut World, level_name: String) {
-    let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
-    let runtime_preload = world.resource::<RuntimeAudioPreloadRes>().clone();
-    let sender = world.resource::<WaveformLoadSenderRes>().0.clone();
-    let mut timing = world.resource_mut::<EditorTimingRes>();
-    load_waveform_for_level_resources(
-        level_name,
-        &editor_cache,
-        &runtime_preload,
-        &mut timing.0,
-        sender,
-    );
+    queue_waveform_load_task_world(world, level_name);
 }
 
 pub fn handle_rename_level(
@@ -304,6 +295,7 @@ pub fn handle_set_settings_section(
 
 pub fn handle_set_graphics_backend(
     mut events: MessageReader<SetGraphicsBackend>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -316,12 +308,13 @@ pub fn handle_set_graphics_backend(
         changed = true;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
 pub fn handle_set_audio_backend(
     mut events: MessageReader<SetAudioBackend>,
+    mut commands: Commands,
     backend: AudioBackendSystemParam<'_>,
     mut session: ResMut<SessionStateRes>,
 ) {
@@ -337,12 +330,13 @@ pub fn handle_set_audio_backend(
         changed = true;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
 pub fn handle_set_ui_scale_multiplier(
     mut events: MessageReader<SetUiScaleMultiplier>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -355,7 +349,7 @@ pub fn handle_set_ui_scale_multiplier(
         changed = true;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
@@ -370,6 +364,7 @@ pub fn handle_set_keybind_capture(
 
 pub fn handle_set_keybind(
     mut events: MessageReader<SetKeybind>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -381,12 +376,13 @@ pub fn handle_set_keybind(
         changed |= session.app_settings.keybinds != previous;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
 pub fn handle_clear_keybind_slot(
     mut events: MessageReader<ClearKeybindSlot>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -398,12 +394,13 @@ pub fn handle_clear_keybind_slot(
         changed |= session.app_settings.keybinds != previous;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
 pub fn handle_reset_keybind(
     mut events: MessageReader<ResetKeybind>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -413,12 +410,13 @@ pub fn handle_reset_keybind(
         changed |= session.app_settings.keybinds != previous;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
 pub fn handle_reset_keybinds(
     mut events: MessageReader<ResetKeybinds>,
+    mut commands: Commands,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
@@ -428,25 +426,25 @@ pub fn handle_reset_keybinds(
         changed |= session.app_settings.keybinds != previous;
     }
     if changed {
-        persist_app_settings(&session.app_settings);
+        persist_app_settings(&mut commands, &session.app_settings);
     }
 }
 
-pub(crate) fn persist_app_settings(settings: &AppSettings) {
-    let settings = settings.clone();
-    eg_platform::task::spawn_background(async move {
-        if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
-            log::error!("Failed to persist app settings: {error}");
-        }
-    });
+pub(crate) fn persist_app_settings(commands: &mut Commands, settings: &AppSettings) {
+    queue_app_settings_persist(commands, settings.clone());
 }
 
-pub fn handle_complete_import(
+pub(crate) fn handle_complete_import(
     mut events: MessageReader<CompleteImport>,
-    mut sender: ResMut<LevelImportSenderRes>,
+    mut commands: Commands,
+    tasks: Query<(), With<LevelImportTask>>,
 ) {
+    let mut spawned = false;
     for _ in events.read() {
-        sender.trigger_picker();
+        if !spawned && tasks.is_empty() {
+            spawn_level_import_task(&mut commands);
+            spawned = true;
+        }
     }
 }
 
@@ -477,12 +475,17 @@ pub fn handle_update_sky_color(
     }
 }
 
-pub fn handle_trigger_audio_import(
+pub(crate) fn handle_trigger_audio_import(
     mut events: MessageReader<TriggerAudioImport>,
-    mut sender: ResMut<AudioImportSenderRes>,
+    mut commands: Commands,
+    tasks: Query<(), With<AudioImportTask>>,
 ) {
+    let mut spawned = false;
     for _ in events.read() {
-        sender.trigger_picker();
+        if !spawned && tasks.is_empty() {
+            spawn_audio_import_task(&mut commands);
+            spawned = true;
+        }
     }
 }
 

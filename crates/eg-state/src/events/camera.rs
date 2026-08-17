@@ -10,8 +10,7 @@
 //! All 5 messages in this module are **carve-outs** (same
 //! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
 //! `events::session`, and `events::spawn`): the per-message handlers in
-//! this file mutate App-world resources directly instead of staging a
-//! legacy `EditorCommand`.
+//! this file mutate App-world resources directly.
 //!
 //! - `AdjustZoom` / `SetCameraOrientation` mutate the authoritative
 //!   `EditorCameraRes.0` camera and transition state directly.
@@ -34,18 +33,16 @@ use bevy::{
 use eg_blocks::BlockId;
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{
-    AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, EasingDirection, LevelObject,
-    TimedTrigger, TriggerTarget,
+    AppPhase, CAMERA_TRIGGER_BLOCK_ID, CameraMode, CameraTrigger, LevelObject, TimedTrigger,
+    TriggerTarget,
 };
 
 use crate::state::{
     EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
     EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose, collect_editor_object_data,
+    EditorTimingRes, EditorTriggerRes, capture_current_camera_trigger, collect_editor_object_data,
     spawn_editor_object_commands, sync_camera_follow_trigger_object_pose,
 };
-
-const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 
 /// Adjust zoom by moving the camera along its look vector.
 #[derive(Message, Debug, Clone, Copy)]
@@ -83,12 +80,9 @@ pub fn register_events(app: &mut App) {
 // Carve-out dispatch systems
 // -----------------------------------------------------------------------
 
-/// Mirror of `EditorSubsystem::adjust_zoom`: move the editor camera
-/// along its current look vector by `delta * 2` units. The legacy
-/// setter is gated on `AppPhase::Editor`; the carve-out mirrors the
-/// math exactly (no phase check at this layer — the dispatch path
-/// is the one that should gate, and the resource is the source of
-/// truth at the sync point).
+/// Move the editor camera along its current look vector by `delta * 2`
+/// units. Phase gating belongs to the dispatch path; this handler updates the
+/// authoritative resource directly.
 pub fn handle_adjust_zoom(
     mut events: MessageReader<AdjustZoom>,
     mut camera: ResMut<EditorCameraRes>,
@@ -104,8 +98,7 @@ pub fn handle_adjust_zoom(
     }
 }
 
-/// Mirror of `EditorSubsystem::set_editor_camera_orientation` (in
-/// `state/editor_interaction/camera.rs`):
+/// Set the editor camera orientation:
 /// - if `transition_seconds > 0`, install a `CameraTransition` that
 ///   interpolates from the current yaw/pitch to the target over
 ///   the requested duration (with shortest-path yaw unwrap);
@@ -266,37 +259,6 @@ fn add_camera_follow_trigger(
     true
 }
 
-fn capture_current_camera_trigger(
-    camera_state: &crate::state::EditorCameraState,
-    time_seconds: f32,
-) -> LevelObject {
-    let camera = CameraTrigger {
-        mode: CameraMode::Static,
-        transition_interval_seconds: DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS,
-        use_full_segment_transition: false,
-        target_position: camera_state.editor_camera_target().to_array(),
-        yaw: camera_state.editor_yaw,
-        pitch: camera_state.editor_pitch,
-        ..CameraTrigger::default()
-    };
-    let (position, rotation) = camera_trigger_object_pose(&camera);
-    LevelObject {
-        position,
-        rotation,
-        size: [1.0, 1.0, 1.0],
-        block_id: BlockId::new(CAMERA_TRIGGER_BLOCK_ID),
-        trigger: Some(TimedTrigger {
-            time_seconds,
-            duration_seconds: 0.0,
-            easing: EasingDirection::Linear,
-            target: TriggerTarget::Camera,
-            camera: Some(camera),
-            ..TimedTrigger::default()
-        }),
-        ..LevelObject::default()
-    }
-}
-
 fn timeline_position_at_seconds(
     timeline: &crate::state::EditorTimelineState,
     time_seconds: f32,
@@ -375,8 +337,7 @@ fn history_snapshot_from_resources(
 /// Compute the camera offset vector for a given yaw + pitch (in
 /// radians), at the editor distance constant. Mirrors the math
 /// in `state/editor_camera.rs::offset_from_rotation_pitch` so
-/// the Bevy handler can compute the look vector without
-/// depending on the legacy `EditorSubsystem`.
+/// the Bevy handler can compute the look vector directly.
 fn editor_camera_offset_for_resource(yaw: f32, pitch: f32) -> glam::Vec3 {
     use eg_types::DEFAULT_CAMERA_DISTANCE;
     let pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());
