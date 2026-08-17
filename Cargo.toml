@@ -44,8 +44,8 @@ bevy_egui = "0.41"
 bytemuck = { version = "1.25", features = ["derive"] }
 console_error_panic_hook = "0.1"
 console_log = "1.0.0"
-cpal = { version = "0.17", features = ["wasm-bindgen", "audioworklet"] }
-criterion = "0.7"
+cpal = { version = "0.18", features = ["wasm-bindgen", "audioworklet"] }
+criterion = "0.8"
 eg-audio = { path = "crates/eg-audio" }
 eg-block-geometry = { path = "crates/eg-block-geometry" }
 eg-blocks = { path = "crates/eg-blocks" }
@@ -59,10 +59,10 @@ eg-render = { path = "crates/eg-render" }
 eg-state = { path = "crates/eg-state" }
 eg-types = { path = "crates/eg-types" }
 eg-ui = { path = "crates/eg-ui" }
-egui = "0.34.3"
-egui-phosphor = "0.12.0"
-egui-wgpu = "0.34.3"
-egui-winit = { version = "0.34.3", default-features = false }
+egui = "0.35.0"
+egui-phosphor = "0.13.0"
+egui-wgpu = "0.35.0"
+egui-winit = { version = "0.35.0", default-features = false }
 env_logger = "0.11"
 glam = { version = "0.33", features = ["bytemuck"] }
 gloo-console = "0.4"
@@ -74,11 +74,11 @@ image = { version = "0.25", default-features = false }
 include_dir = "0.7"
 js-sys = "0.3"
 log = "0.4"
-naga = { version = "29", features = ["wgsl-in"] }
+naga = { version = "30", features = ["wgsl-in"] }
 opfs = "0.2"
 parking_lot_core = { version = "0.9.12", features = ["nightly"] }
 paste = "1.0.15"
-pollster = "0.4"
+pollster = "1.0"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
 rayon = "1"
@@ -124,7 +124,7 @@ web-sys = { version = "0.3", features = [
     "Window",
 ] }
 web-time = "1.1"
-wgpu = { version = "29.0.3", features = ["webgpu", "webgl"] }
+wgpu = { version = "30.0.0", features = ["webgpu", "webgl"] }
 winit = "0.30"
 winres = "0.1"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
