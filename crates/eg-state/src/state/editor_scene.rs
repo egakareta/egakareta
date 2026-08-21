@@ -20,13 +20,12 @@ use eg_mesh::{
     TransformTriggerMarker, Vertex, build_block_geometry_for_object,
     build_editor_selection_outline_vertices,
 };
+use eg_types::EditorPlaceMode;
 #[cfg(test)]
 use eg_types::LevelObject;
 #[cfg(test)]
 use eg_types::TriggerTarget;
-use eg_types::{EditorPlaceMode, TRANSFORM_TRIGGER_BLOCK_ID};
 
-use super::EditorDirtyFlags;
 #[cfg(test)]
 use super::EditorSubsystem;
 
@@ -179,10 +178,6 @@ fn transform_trigger_marker_source_objects<'a>(
 }
 
 super::editor_context_methods! {
-    pub fn mark_dirty(&mut self, dirty: EditorDirtyFlags) {
-        self.runtime.dirty.merge(dirty);
-    }
-
     pub fn sync_objects(&mut self) {
         self.normalize_block_selection();
         self.sync_trigger_selection_from_objects();
@@ -191,21 +186,17 @@ super::editor_context_methods! {
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
         self.block_static_vertex_cache_complete_len = None;
-        self.runtime.pending_block_mesh_appends.clear();
-        self.mark_dirty(EditorDirtyFlags::from_object_sync());
     }
 
     pub fn sync_objects_for_drag(&mut self) {
         self.normalize_block_selection();
         self.pick_spatial_index.invalidate();
-        self.mark_dirty(EditorDirtyFlags::drag_object_sync());
     }
 
     pub fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
         self.invalidate_samples();
         self.pick_spatial_index.invalidate();
-        self.mark_dirty(EditorDirtyFlags::drag_release_sync());
     }
 
     pub fn selected_block_default_size(&self) -> [f32; 3] {
@@ -221,9 +212,7 @@ super::editor_context_methods! {
             self.selected_block_default_size(),
             self.config.selected_block_rotation_degrees,
         )
-        .with_generated_id(&self.objects);
-        let placed_transform_trigger = new_block.block_id == TRANSFORM_TRIGGER_BLOCK_ID;
-        let can_append_mesh = self.can_append_block_mesh_after_placement();
+            .with_generated_id(&self.objects);
 
         self.record_history_state();
         let placed_index = self.objects.len();
@@ -235,27 +224,8 @@ super::editor_context_methods! {
         } else {
             self.clear_block_selection();
         }
-        if can_append_mesh {
-            self.invalidate_samples();
-            self.runtime.pending_block_mesh_appends.push(placed_index);
-            self.mark_dirty(EditorDirtyFlags::appended_block(
-                place_mode == EditorPlaceMode::SelectPlaced,
-                placed_transform_trigger,
-            ));
-        } else {
-            self.sync_objects();
-            if placed_transform_trigger {
-                self.mark_dirty(EditorDirtyFlags::trigger_markers_changed());
-            }
-        }
+        self.sync_objects();
         placed_index
-    }
-
-    fn can_append_block_mesh_after_placement(&self) -> bool {
-        self.input.selected_block_index.is_none()
-            && self.input.selected_block_indices.is_empty()
-            && self.block_static_vertex_cache_complete_len == Some(self.objects.len())
-            && !(self.timeline.playback.playing && self.has_object_transform_triggers())
     }
 
     pub fn timeline_elapsed_seconds(&self, time_seconds: f32) -> f32 {

@@ -159,11 +159,9 @@ pub struct LevelImportChannelRes(pub SharedLevelImportReceiver);
 /// `CommandHandlerSet` / `EditorLogicSet` systems before the frame
 /// ends.
 ///
-/// In a future full-Bevy frame the order is:
-/// `PollChannelsSet → ModeChangeSet → PreCommandHistorySet →
-/// CommandHandlerSet → SimulationSet → ApplyAsyncResultsSet →
-/// RebuildMeshSet → ExtractSet → RenderSet` (see the per-frame
-/// schedule graph in `state/sets.rs`).
+/// The production order is `PollChannelsSet → CommandHandlerSet →
+/// ApplyAsyncResultsSet → Extract → Present`; render extraction reads the
+/// current ECS resources and authored-object entities directly.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PollChannelsSet;
 

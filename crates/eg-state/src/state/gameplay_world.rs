@@ -262,7 +262,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
                 let level_meta = world.resource::<LevelMeta>();
                 (
                     GameplayResetSeed {
-                        objects: level_meta.objects.clone(),
+                        objects: level_meta.initial_objects.clone(),
                         position: level_meta.spawn_position,
                         direction: level_meta.spawn_direction,
                         speed: BASE_PLAYER_SPEED,
@@ -396,7 +396,7 @@ pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
     } else {
         let meta = world.resource::<LevelMeta>();
         (
-            meta.objects.clone(),
+            meta.initial_objects.clone(),
             meta.spawn_position,
             meta.spawn_direction,
             BASE_PLAYER_SPEED,
@@ -538,14 +538,6 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
         player_progress.gems_collected = progress.gems_collected;
         player_progress.gems_max = progress.gems_max.max(gems_max);
     }
-    let normalized_duration = world.resource::<GameClock>().level_duration_seconds;
-    {
-        let mut level_meta = world.resource_mut::<LevelMeta>();
-        level_meta.objects = objects;
-        level_meta.spawn_position = position;
-        level_meta.spawn_direction = direction;
-        level_meta.level_duration_seconds = normalized_duration;
-    }
     world.resource_mut::<PendingTurnInputs>().taps = pending_turns.into();
     world.resource_mut::<FrameDelta>().0 = 0.0;
 
@@ -565,5 +557,52 @@ fn rebuild_spatial_index(world: &mut World) {
     spatial.grid.clear();
     for (entity, object) in entries {
         spatial.grid.insert_object(entity, &object);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::test_support::TestApp;
+
+    #[test]
+    fn gameplay_entity_replacement_keeps_initial_level_seed_immutable() {
+        let mut app = TestApp::minimal();
+        let initial_object = LevelObject::new("core/stone");
+        let live_object = LevelObject::new("core/gem");
+        app.world_mut().resource_mut::<LevelMeta>().initial_objects = vec![initial_object.clone()];
+
+        replace_app_gameplay_world(
+            app.world_mut(),
+            GameplayWorldSeed {
+                objects: vec![live_object.clone()],
+                position: [1.0, 0.0, 2.0],
+                direction: Direction::Right,
+                speed: BASE_PLAYER_SPEED,
+                vertical_velocity: 0.0,
+                is_grounded: true,
+                trail_segments: vec![vec![[1.0, 0.0, 2.0]]],
+                elapsed_seconds: 0.0,
+                level_duration_seconds: 16.0,
+                started: true,
+                game_over: false,
+                level_complete: false,
+                completion_hold_seconds: 0.0,
+                progress: PlayerLevelProgress::default(),
+                pending_turns: Vec::new(),
+                death_sfx_played: false,
+            },
+        );
+
+        assert_eq!(
+            app.world().resource::<LevelMeta>().initial_objects,
+            vec![initial_object]
+        );
+        let mut query = app.world_mut().query::<&ObjectData>();
+        let objects = query
+            .iter(app.world())
+            .map(|data| data.0.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(objects, vec![live_object]);
     }
 }

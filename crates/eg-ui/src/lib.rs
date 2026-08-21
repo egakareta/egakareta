@@ -1122,107 +1122,114 @@ pub fn show_editor_ui(
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
-    let top_bar_response = egui::Panel::top("editor_top_bar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            // Top-level tabs: Compose / Tapping / Timing
-            if ui
-                .selectable_label(is_compose, "Compose")
-                .on_hover_text(format!(
-                    "Compose Tab{}",
-                    app_settings.hotkey_hint("tab_compose")
-                ))
-                .clicked()
-                && !is_compose
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Place,
-                )));
-            }
-            if ui
-                .selectable_label(is_timing, "Timing")
-                .on_hover_text(format!(
-                    "Timing Tab{}",
-                    app_settings.hotkey_hint("tab_timing")
-                ))
-                .clicked()
-                && !is_timing
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Timing,
-                )));
-            }
-            if ui
-                .selectable_label(is_tapping, "Tapping")
-                .on_hover_text(format!(
-                    "Tapping Tab{}",
-                    app_settings.hotkey_hint("tab_tapping")
-                ))
-                .clicked()
-                && !is_tapping
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetMode(
-                    EditorMode::Tapping,
-                )));
-            }
-
-            ui.separator();
-
-            ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
-
-            let selected = level_name.unwrap_or("Untitled");
-
-            egui::ComboBox::from_id_salt("level_select")
-                .selected_text(selected)
-                .show_ui(ui, |ui| {
-                    for level in available_levels {
-                        if ui.selectable_label(selected == level, level).clicked() {
-                            commands
-                                .push(AppCommand::Editor(EditorCommand::LoadLevel(level.clone())));
-                        }
+    let top_bar_response = egui::Area::new("editor_top_bar".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .show(ctx, |ui| {
+            ui.set_min_width(ctx.content_rect().width());
+            egui::Frame::side_top_panel(&ctx.global_style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // Top-level tabs: Compose / Tapping / Timing
+                    if ui
+                        .selectable_label(is_compose, "Compose")
+                        .on_hover_text(format!(
+                            "Compose Tab{}",
+                            app_settings.hotkey_hint("tab_compose")
+                        ))
+                        .clicked()
+                        && !is_compose
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                            EditorMode::Place,
+                        )));
                     }
+                    if ui
+                        .selectable_label(is_timing, "Timing")
+                        .on_hover_text(format!(
+                            "Timing Tab{}",
+                            app_settings.hotkey_hint("tab_timing")
+                        ))
+                        .clicked()
+                        && !is_timing
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                            EditorMode::Timing,
+                        )));
+                    }
+                    if ui
+                        .selectable_label(is_tapping, "Tapping")
+                        .on_hover_text(format!(
+                            "Tapping Tab{}",
+                            app_settings.hotkey_hint("tab_tapping")
+                        ))
+                        .clicked()
+                        && !is_tapping
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::SetMode(
+                            EditorMode::Tapping,
+                        )));
+                    }
+
+                    ui.separator();
+
+                    ui.label(format!("{} Level:", egui_phosphor::regular::MAP_TRIFOLD));
+
+                    let selected = level_name.unwrap_or("Untitled");
+
+                    egui::ComboBox::from_id_salt("level_select")
+                        .selected_text(selected)
+                        .show_ui(ui, |ui| {
+                            for level in available_levels {
+                                if ui.selectable_label(selected == level, level).clicked() {
+                                    commands.push(AppCommand::Editor(EditorCommand::LoadLevel(
+                                        level.clone(),
+                                    )));
+                                }
+                            }
+                        });
+
+                    ui.separator();
+
+                    if ui
+                        .button(format!("{} Export", egui_phosphor::regular::DOWNLOAD))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::ExportLevel));
+                    }
+
+                    if ui
+                        .button(format!("{} Import", egui_phosphor::regular::UPLOAD))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::CompleteImport));
+                    }
+
+                    if ui
+                        .button(format!("{} Metadata", egui_phosphor::regular::INFO))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::SetShowMetadata(
+                            !show_metadata,
+                        )));
+                    }
+
+                    if ui
+                        .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                        .on_hover_text(format!(
+                            "Settings{}",
+                            app_settings.hotkey_hint("toggle_settings")
+                        ))
+                        .clicked()
+                    {
+                        commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(format!("{editor_fps:.0}fps"));
+                    });
                 });
-
-            ui.separator();
-
-            if ui
-                .button(format!("{} Export", egui_phosphor::regular::DOWNLOAD))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::ExportLevel));
-            }
-
-            if ui
-                .button(format!("{} Import", egui_phosphor::regular::UPLOAD))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::CompleteImport));
-            }
-
-            if ui
-                .button(format!("{} Metadata", egui_phosphor::regular::INFO))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::SetShowMetadata(
-                    !show_metadata,
-                )));
-            }
-
-            if ui
-                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
-                .on_hover_text(format!(
-                    "Settings{}",
-                    app_settings.hotkey_hint("toggle_settings")
-                ))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(format!("{editor_fps:.0}fps"));
             });
         });
-    });
     ui_input_blocking_rects.push(rect_to_input_bounds(top_bar_response.response.rect));
 
     if show_metadata {
@@ -1472,54 +1479,58 @@ pub fn show_editor_ui(
         }
     }
 
-    let bottom_bar_response = egui::Panel::bottom("block_selection_bar")
-        .resizable(false)
+    let bottom_bar_response = egui::Area::new("block_selection_bar".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::ZERO)
         .show(ctx, |ui| {
-            ui.vertical(|ui| {
-                let duration_seconds = timeline_metrics(timeline_duration_seconds);
+            ui.set_width(ctx.content_rect().width());
+            egui::Frame::side_top_panel(&ctx.global_style()).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    let duration_seconds = timeline_metrics(timeline_duration_seconds);
 
-                if is_timing {
-                    show_timing_mode_bottom_panel(
+                    if is_timing {
+                        show_timing_mode_bottom_panel(
+                            ui,
+                            &TimingModePanelInputs {
+                                timeline_time_seconds,
+                                timeline_duration_seconds,
+                                timing_points,
+                                playback_speed,
+                                timing_selected_index,
+                                bpm_tap_result,
+                            },
+                            commands,
+                        );
+                    } else if is_tapping {
+                        show_tapping_mode_bottom_panel(
+                            ui,
+                            timeline_preview_position,
+                            timeline_preview_direction,
+                            editor_camera_preview_position,
+                            editor_camera_preview_target,
+                            commands,
+                        );
+                    }
+
+                    show_timeline_bar(
                         ui,
-                        &TimingModePanelInputs {
+                        &TimelineBarInputs {
+                            app_settings,
+                            mode: editor_mode,
+                            last_mode: editor_last_mode,
+                            playing: timeline_playing,
                             timeline_time_seconds,
-                            timeline_duration_seconds,
+                            tap_times: timeline_tap_times,
                             timing_points,
-                            playback_speed,
-                            timing_selected_index,
-                            bpm_tap_result,
+                            waveform_zoom,
+                            waveform_scroll,
+                            trigger_objects,
+                            trigger_selected_index,
+                            duration_seconds,
                         },
                         commands,
                     );
-                } else if is_tapping {
-                    show_tapping_mode_bottom_panel(
-                        ui,
-                        timeline_preview_position,
-                        timeline_preview_direction,
-                        editor_camera_preview_position,
-                        editor_camera_preview_target,
-                        commands,
-                    );
-                }
-
-                show_timeline_bar(
-                    ui,
-                    &TimelineBarInputs {
-                        app_settings,
-                        mode: editor_mode,
-                        last_mode: editor_last_mode,
-                        playing: timeline_playing,
-                        timeline_time_seconds,
-                        tap_times: timeline_tap_times,
-                        timing_points,
-                        waveform_zoom,
-                        waveform_scroll,
-                        trigger_objects,
-                        trigger_selected_index,
-                        duration_seconds,
-                    },
-                    commands,
-                );
+                });
             });
         });
     ui_input_blocking_rects.push(rect_to_input_bounds(bottom_bar_response.response.rect));
@@ -1599,27 +1610,31 @@ pub fn show_editor_ui(
 
     // Waveform visualization central panel (Timing mode only)
     if is_timing {
-        egui::CentralPanel::default()
-            .frame(
-                egui::Frame::central_panel(&ctx.global_style())
-                    .fill(egui::Color32::from_rgb(15, 20, 28)),
-            )
+        let viewport = ctx.content_rect();
+        egui::Area::new("timing_waveform_panel".into())
+            .order(egui::Order::Background)
+            .fixed_pos(viewport.min)
             .show(ctx, |ui| {
-                show_waveform_panel(
-                    ui,
-                    &WaveformPanelInputs {
-                        timeline_time_seconds,
-                        timeline_duration_seconds,
-                        timing_points,
-                        waveform_zoom,
-                        waveform_samples,
-                        waveform_sample_rate,
-                        waveform_window_size,
-                        waveform_loading,
-                        waveform_complete,
-                    },
-                    commands,
-                );
+                ui.set_min_size(viewport.size());
+                egui::Frame::central_panel(&ctx.global_style())
+                    .fill(egui::Color32::from_rgb(15, 20, 28))
+                    .show(ui, |ui| {
+                        show_waveform_panel(
+                            ui,
+                            &WaveformPanelInputs {
+                                timeline_time_seconds,
+                                timeline_duration_seconds,
+                                timing_points,
+                                waveform_zoom,
+                                waveform_samples,
+                                waveform_sample_rate,
+                                waveform_window_size,
+                                waveform_loading,
+                                waveform_complete,
+                            },
+                            commands,
+                        );
+                    });
             });
     }
 

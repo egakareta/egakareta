@@ -64,7 +64,6 @@ mod perf;
 mod plugins;
 mod render;
 mod runtime;
-mod sets;
 mod state_helpers;
 mod state_resources;
 mod transitions;
@@ -137,8 +136,7 @@ pub use render::resources::{
     RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
     RenderUniformsRes,
 };
-pub use runtime::{BlockVisualEffect, EditorDirtyFlags, EditorRuntimeState, FrameRuntimeState};
-pub use sets::StateSet;
+pub use runtime::{BlockVisualEffect, EditorRuntimeState};
 pub use state_resources::{
     AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
@@ -181,6 +179,7 @@ pub(crate) struct EditorInteractionContext<'a> {
     pub timeline: &'a mut EditorTimelineState,
     pub runtime: &'a mut EditorRuntimeState,
     pub timing: &'a mut EditorTimingState,
+    pub history: &'a mut EditorHistoryState,
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
     pub block_static_vertex_cache_complete_len: Option<usize>,
@@ -201,6 +200,7 @@ pub struct EditorSubsystem {
     pub timeline: EditorTimelineState,
     pub runtime: EditorRuntimeState,
     pub timing: EditorTimingState,
+    pub history: EditorHistoryState,
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
     pub block_static_vertex_cache_complete_len: Option<usize>,

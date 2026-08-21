@@ -26,9 +26,8 @@ use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use super::{
-    AudioState, AuthStateRes, EditorConfigState,
-    editor_objects::replace_editor_objects,
-    runtime::{EditorDirtyFlags, EditorFrameState, EditorRuntimeState, FrameRuntimeState},
+    AudioState, AuthStateRes, EditorConfigState, editor_objects::replace_editor_objects,
+    runtime::EditorRuntimeState,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -240,12 +239,11 @@ struct AppInitialization {
     ),
     menu: MenuState,
     phase: AppPhase,
-    frame_runtime: FrameRuntimeState,
     render_resources: super::RenderBootstrapResources,
 }
 
 /// One-time production bootstrap that installs authoritative resources directly
-/// into the Bevy App world without constructing the legacy `State` shell.
+/// into the Bevy App world.
 ///
 /// REFACTOR POINT(full-bevy): replace this custom wgpu/platform bootstrap with
 /// Bevy renderer, window, asset, task, and audio plugins.
@@ -322,7 +320,6 @@ impl AppBootstrap {
             level_import_channel,
             menu,
             phase,
-            frame_runtime,
             render_resources,
         } = self.0;
 
@@ -387,9 +384,9 @@ impl AppBootstrap {
         session.audio_stop_pending = false;
         world.insert_resource(session);
         world.insert_resource(super::FrameTimeRes {
-            last_frame: frame_runtime.editor.last_frame,
-            delta_seconds: frame_runtime.editor.delta_seconds,
-            global_time_seconds: frame_runtime.global_time_seconds,
+            last_frame: web_time::Instant::now(),
+            delta_seconds: 0.0,
+            global_time_seconds: 0.0,
             fps_smoothed: 0.0,
         });
     }
@@ -1165,8 +1162,6 @@ impl AppInitialization {
         let block_geometry = build_block_geometry(&[]);
         let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
 
-        let now = web_time::Instant::now();
-
         let (auth_sender, auth_receiver) = std::sync::mpsc::channel();
         let auth_receiver = std::sync::Arc::new(std::sync::Mutex::new(auth_receiver));
         let (level_import_sender, level_import_receiver) = std::sync::mpsc::channel();
@@ -1255,13 +1250,6 @@ impl AppInitialization {
 
             phase: AppPhase::Menu,
             menu,
-            frame_runtime: FrameRuntimeState {
-                editor: EditorFrameState {
-                    last_frame: now,
-                    delta_seconds: 0.0,
-                },
-                global_time_seconds: 0.0,
-            },
             audio: audio_state,
             session: super::SessionStateRes {
                 editor_level_name: None,
@@ -1308,10 +1296,7 @@ impl AppInitialization {
             editor_camera: super::EditorCameraState::default(),
             editor_triggers: super::EditorTriggerState::default(),
             editor_timeline: super::EditorTimelineState::default(),
-            editor_runtime: EditorRuntimeState {
-                dirty: EditorDirtyFlags::from_object_sync(),
-                ..EditorRuntimeState::default()
-            },
+            editor_runtime: EditorRuntimeState::default(),
             editor_timing: super::EditorTimingState::default(),
             editor_history: super::EditorHistoryState::default(),
         })

@@ -27,7 +27,7 @@ pub(crate) struct EditorPropertyPopup {
 
 impl EditorPropertyPopup {
     pub(crate) fn above_bottom_bar(
-        id_source: impl std::hash::Hash,
+        id_source: impl std::hash::Hash + std::fmt::Debug,
         bottom_bar_height: f32,
     ) -> Self {
         Self {
@@ -42,7 +42,10 @@ impl EditorPropertyPopup {
         }
     }
 
-    pub(crate) fn top_left(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+    pub(crate) fn top_left(
+        id_source: impl std::hash::Hash + std::fmt::Debug,
+        top_bar_height: f32,
+    ) -> Self {
         Self {
             id: egui::Id::new(id_source),
             anchor: egui::Align2::LEFT_TOP,
@@ -55,7 +58,10 @@ impl EditorPropertyPopup {
         }
     }
 
-    pub(crate) fn top_left_right_of(id_source: impl std::hash::Hash, top_bar_height: f32) -> Self {
+    pub(crate) fn top_left_right_of(
+        id_source: impl std::hash::Hash + std::fmt::Debug,
+        top_bar_height: f32,
+    ) -> Self {
         Self {
             id: egui::Id::new(id_source),
             anchor: egui::Align2::LEFT_TOP,
@@ -301,7 +307,7 @@ mod tests {
     fn show_player_camera_status_row_renders_for_forward_and_right_directions() {
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
+            egui::CentralPanel::default().show(root_ui, |ui| {
                 show_player_camera_status_row(
                     ui,
                     [2.0, 1.0, 0.0],

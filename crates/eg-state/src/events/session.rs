@@ -28,12 +28,11 @@
 //! - `CaptureMenuPreviewCamera` / `UseAutoMenuPreviewCamera` ->
 //!   `session.editor_menu_preview_camera`
 //!
-//! Session side-effect events write typed request resources while their legacy
-//! setters still own level load, export IO, and audio backend changes. Level
-//! picker launch is App-owned and uses sender resources directly.
+//! Session side-effect events write typed request resources for level loading,
+//! export IO, and audio backend changes. Level picker launch is App-owned and
+//! uses sender resources directly.
 //!
-//! Settings handlers persist App-owned changes directly. Runtime still mirrors
-//! the remaining compatibility fields until their legacy readers move.
+//! Settings handlers persist App-owned changes directly.
 
 use bevy::{app::App, ecs::prelude::*, state::prelude::State};
 use eg_types::{

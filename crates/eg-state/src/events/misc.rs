@@ -48,8 +48,8 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 // `ToggleHitboxVisualization` writes the authoritative App-world input state.
-// Render extraction reads this resource directly, so no legacy dirty-bit or
-// Runtime synchronization is required.
+// Render extraction reads this resource directly, so no renderer invalidation
+// bit or Runtime synchronization is required.
 
 pub fn handle_toggle_hitbox_visualization(
     mut events: MessageReader<ToggleHitboxVisualization>,

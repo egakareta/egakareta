@@ -21,8 +21,6 @@ use eg_types::{Direction, LevelObject, TimingPoint};
 use eg_types::{EasingDirection, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget};
 
 #[cfg(test)]
-use super::EditorDirtyFlags;
-#[cfg(test)]
 use super::EditorSubsystem;
 
 #[cfg(test)]
@@ -734,9 +732,7 @@ super::editor_context_methods! {
         self.replace_block_selection(created_trigger_indices);
         self.input.hovered_block_index = self.input.selected_block_index;
         self.sync_primary_selection_from_indices();
-        let mut dirty = EditorDirtyFlags::trigger_object_added();
-        dirty.rebuild_selection_overlays = true;
-        self.mark_dirty(dirty);
+        self.sync_objects();
         true
     }
 }

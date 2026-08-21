@@ -7,22 +7,19 @@
 */
 //! Bevy `Message` taxonomy for the eg-state `App`.
 //!
-//! Phase 3 fragments the monolithic `AppCommand` / `EditorCommand` enums
-//! into a per-semantic Bevy `Message` type. During the Phase 7
-//! compatibility window, messages mutate App-world resources directly or
-//! write typed request resources that `Runtime` consumes through legacy
-//! compatibility methods.
+//! The message taxonomy replaces the monolithic `AppCommand` /
+//! `EditorCommand` dispatch path with one semantic Bevy `Message` type per
+//! domain. Handlers mutate App-world resources directly or write typed request
+//! resources for external services.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
 //! here because we want pull-based consumption by the per-message
 //! handler systems in the [`CommandHandlerSet`] system set.
 //!
-//! The per-message systems are wired into the `StateSchedule` so each
-//! message type has one explicit handler. Runtime runs the schedule on
-//! the App world, then consumes request resources for side effects that
-//! still live on legacy `State`. Input-state and direct command messages
-//! update App-world resources directly.
+//! The per-message systems are wired into the `StateSchedule` so each message
+//! type has one explicit handler. Runtime drives the schedule on the App world;
+//! input-state and direct command messages update App-world resources directly.
 //!
 //! ## Why messages?
 //!
@@ -30,10 +27,8 @@
 //!   each handler its own `MessageReader<T>`, so multiple readers of
 //!   the same message can be added in any order without cross-reader
 //!   nondeterminism.
-//! - **`Changed<T>` change detection** — distinct messages unlock
-//!   component-level change detection (e.g. a "rebuild mesh" system
-//!   can `Query<Changed<Position>, Changed<Rotation>, ...>`) and let
-//!   us eventually delete `EditorDirtyFlags` entirely.
+//! - **ECS change detection** — authored object components are the source of
+//!   truth for render extraction; no manual renderer dirty bitfield is needed.
 //! - **UI / winit decoupling** — UI / winit code can write
 //!   `Messages<T>::write(event)` from anywhere; no need to thread a
 //!   `&mut State` through every UI closure.
@@ -70,7 +65,6 @@ pub mod camera;
 pub mod editor_mode;
 pub mod history;
 pub mod input_state;
-pub mod mesh_rebuild;
 pub mod misc;
 pub mod navigation;
 pub mod pointer;
@@ -1417,7 +1411,7 @@ mod tests {
         world.init_resource::<eg_game::LevelMeta>();
         {
             let mut meta = world.resource_mut::<eg_game::LevelMeta>();
-            meta.objects = vec![LevelObject::new("core/stone")];
+            meta.initial_objects = vec![LevelObject::new("core/stone")];
             meta.spawn_position = [2.0, 0.0, 3.0];
             meta.spawn_direction = eg_types::Direction::Right;
             meta.level_duration_seconds = 9.0;
@@ -1501,7 +1495,7 @@ mod tests {
     }
 
     /// `GameRemovePracticeCheckpoint` directly removes the newest App-world
-    /// checkpoint and marks the temporary presentation sync dirty.
+    /// checkpoint; extraction reads the updated session resource.
     #[test]
     fn carve_out_game_remove_practice_checkpoint_mutates_session_resource() {
         let mut world = build_event_world();

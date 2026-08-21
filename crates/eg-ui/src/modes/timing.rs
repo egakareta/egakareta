@@ -273,7 +273,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
+            egui::CentralPanel::default().show(root_ui, |ui| {
                 show_timing_mode_bottom_panel(
                     ui,
                     &TimingModePanelInputs {
@@ -301,7 +301,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
-            egui::CentralPanel::default().show_inside(root_ui, |ui| {
+            egui::CentralPanel::default().show(root_ui, |ui| {
                 show_timing_mode_bottom_panel(
                     ui,
                     &TimingModePanelInputs {

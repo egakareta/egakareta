@@ -9,17 +9,9 @@ use bevy::{ecs::prelude::With, state::prelude::State};
 use eg_editor_domain::derive_timeline_position;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
-use super::EditorDirtyFlags;
 use crate::state::{
     EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
 };
-// ── EditorDirtyFlags contract tests ─────────────────────────────
-#[test]
-fn dirty_flags_default_is_clean() {
-    let flags = EditorDirtyFlags::default();
-    assert!(!flags.any());
-}
-
 #[test]
 fn app_world_is_seeded_with_default_resources() {
     let app = crate::state::test_support::TestApp::minimal();
@@ -609,34 +601,6 @@ fn test_app_render_extract_uses_app_time_viewport_and_gamma() {
     assert_abs_diff_eq!(color_space.time_seconds, frame_time, epsilon = 1e-6);
     assert_eq!(color_space.apply_gamma_correction, 1.0);
     assert_eq!(color_space.viewport_size, [640.0, 360.0]);
-}
-
-#[test]
-fn dirty_flags_from_object_sync_sets_all() {
-    let flags = EditorDirtyFlags::from_object_sync();
-    assert!(flags.sync_game_objects);
-    assert!(flags.rebuild_block_mesh);
-    assert!(flags.rebuild_selection_overlays);
-    assert!(flags.rebuild_tap_indicators);
-    assert!(flags.rebuild_preview_player);
-    assert!(flags.any());
-}
-
-#[test]
-fn dirty_flags_merge_is_union() {
-    let mut a = EditorDirtyFlags {
-        rebuild_block_mesh: true,
-        ..EditorDirtyFlags::default()
-    };
-    let b = EditorDirtyFlags {
-        rebuild_tap_indicators: true,
-        ..EditorDirtyFlags::default()
-    };
-    a.merge(b);
-    assert!(a.rebuild_block_mesh);
-    assert!(a.rebuild_tap_indicators);
-    assert!(!a.sync_game_objects);
-    assert!(a.any());
 }
 
 // ── Timeline position tests (pre-existing) ─────────────────────

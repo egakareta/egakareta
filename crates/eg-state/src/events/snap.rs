@@ -200,11 +200,6 @@ fn resnap_selected_object(resources: &mut SnapResources<'_, '_>, selected_snap: 
     rotation.0 = selected.rotation;
     size.0 = selected.size;
     resources.input.0.cursor = selected.position;
-    resources
-        .runtime
-        .0
-        .dirty
-        .merge(crate::state::EditorDirtyFlags::drag_object_sync());
 }
 
 fn record_history_state(resources: &mut SnapResources<'_, '_>, objects: &[eg_types::LevelObject]) {

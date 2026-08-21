@@ -53,8 +53,7 @@ pub fn register_events(app: &mut App) {
 
 // `AuthSubmitSignIn` writes a typed request resource. The
 // `state::auth_state::process_auth_requests_system` consumes the request in
-// `StateSchedule` and mutates `AuthStateRes`; Runtime only mirrors that
-// resource back to legacy `State` during the compatibility window.
+// `StateSchedule` and mutates `AuthStateRes`.
 pub fn handle_auth_submit_sign_in(
     mut events: MessageReader<AuthSubmitSignIn>,
     mut sign_in_request: ResMut<AuthSubmitSignInRequest>,

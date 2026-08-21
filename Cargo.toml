@@ -59,10 +59,10 @@ eg-render = { path = "crates/eg-render" }
 eg-state = { path = "crates/eg-state" }
 eg-types = { path = "crates/eg-types" }
 eg-ui = { path = "crates/eg-ui" }
-egui = "0.34.3"
-egui-phosphor = "0.12.0"
-egui-wgpu = "0.34.3"
-egui-winit = { version = "0.34.3", default-features = false }
+egui = "0.35.0"
+egui-phosphor = "0.13.0"
+egui-wgpu = "0.35.0"
+egui-winit = { version = "0.35.0", default-features = false }
 env_logger = "0.11"
 glam = { version = "0.33", features = ["bytemuck"] }
 gloo-console = "0.4"
@@ -79,8 +79,8 @@ opfs = "0.2"
 parking_lot_core = { version = "0.9.12", features = ["nightly"] }
 paste = "1.0.15"
 pollster = "0.4"
-puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
-puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "7e08a533f9debfb7d051547263d2ab84c666314f" }
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
 rayon = "1"
 reqwest = { version = "0.12", default-features = false, features = [
     "blocking",

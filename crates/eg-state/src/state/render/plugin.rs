@@ -68,61 +68,46 @@ use super::{
         RenderUniformsRes,
     },
 };
-use crate::{
-    events::mesh_rebuild::{RebuildMeshEvent, RebuildMeshKind},
-    state::{
-        BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
-        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-        MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
-        editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
-        evaluate_camera_track_for_objects,
-    },
+use crate::state::{
+    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+    MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+    editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
+    evaluate_camera_track_for_objects,
 };
 
 /// System sets for the rendering extraction plugin.
 ///
-/// These sets mirror the legacy `render_to_view` /
-/// `render_with_overlay` call order so we can slot Bevy systems in
-/// without changing the visible behavior.
+/// These sets define the extraction and presentation order for the custom
+/// renderer.
 ///
-/// Ordering contract (see `docs/bevy-migration.md` Phase 4):
+/// Ordering contract:
 /// ```text
-///   RebuildMeshSet      // Changed<> detection -> RebuildMeshEvent
-///   RenderExtractSet    // build SceneMeshes + uniform values
+///   RenderExtractSet    // build SceneMeshes + uniform values from ECS
 ///   RenderPresentSet    // read authoritative render resources
 /// ```
 ///
-/// In a future full-Bevy frame the order is:
-///   `Simulation → RebuildMesh → Extract → Present` (see the
-///   per-frame schedule graph in `state/sets.rs`).
+/// The custom renderer remains the presentation backend; Bevy owns the
+/// scheduling and authoritative world data.
 #[allow(dead_code)]
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RenderSet {
-    /// Detect `Changed<>` on authored object components and emit a
-    /// [`RebuildMeshEvent`].
-    RebuildMesh,
     /// Snapshot the world into render resources.
     ///
-    /// Today this mirrors POD uniform values from the legacy frame
-    /// update into [`RenderUniformsRes`] and [`RenderFrameInputRes`].
-    /// Future phases add a `rebuild_mesh_batches_system` that walks object
-    /// entities (`Query<(&Position, &Rotation, &Size, &BlockId,
-    /// &ColorTint, Option<&PlayState>)>` + player + camera + effects)
-    /// and fills [`RenderMeshesRes`] via `eg_mesh` builders.
+    /// Extraction walks authored and gameplay entities plus App resources and
+    /// fills the custom renderer's mesh/POD resources via `eg_mesh` builders.
     Extract,
     /// Issue the wgpu present.
     ///
-    /// Reads the authoritative render resources. The compatibility
-    /// frame pipeline still performs the actual egui present until
-    /// Phase 7 moves frame ownership into Bevy.
+    /// Reads the authoritative render resources and performs the custom egui
+    /// and wgpu present.
     Present,
 }
 
 /// The rendering extraction plugin.
 ///
-/// Registers the POD resources + render messages for an `App`.
-/// `State` construction inserts real heavy resources after wgpu
-/// initialization.
+/// Registers the POD resources for an `App`. `AppBootstrap` inserts real heavy
+/// resources after wgpu initialization.
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
@@ -147,13 +132,12 @@ impl Plugin for RenderPlugin {
             .init_resource::<RenderConfigRes>()
             .init_resource::<RenderResizeRequest>()
             .init_non_send::<RenderMeshesRes>()
-            .init_non_send::<RenderSurfaceHostRes>()
-            .add_message::<RebuildMeshEvent>();
+            .init_non_send::<RenderSurfaceHostRes>();
     }
 }
 
-/// `World`-flavoured registration for callers that build a `World`
-/// directly (the `State` constructor). Mirrors
+/// `World`-flavoured registration for callers that build a `World` directly.
+/// Mirrors
 /// [`RenderPlugin::build`] without going through an `App`.
 #[allow(dead_code)]
 pub fn register_render_pod_resources(world: &mut World) {
@@ -176,20 +160,17 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderEditorGizmoVerticesRes>();
     world.init_resource::<RenderConfigRes>();
     world.init_resource::<RenderResizeRequest>();
-    // Phase 4c: insert default heavy resources so standalone worlds
-    // can query them. `State` construction overwrites these defaults
-    // with the authoritative `SceneMeshes` / `SurfaceHost` values.
+    // Insert default heavy resources so standalone worlds can query them.
+    // `AppBootstrap` replaces these defaults with the authoritative
+    // `SceneMeshes` / `SurfaceHost` values.
     world.init_non_send::<RenderMeshesRes>();
     world.init_non_send::<RenderSurfaceHostRes>();
-    // Phase 4d: register the RebuildMeshEvent message buffer.
-    world.init_resource::<Messages<RebuildMeshEvent>>();
 }
 
 /// Resource-backed `RenderSet::Present` boundary.
 ///
 /// Production consumes App-owned GPU, mesh, surface, uniform, frame-input,
-/// and egui resources directly. The legacy State render wrappers remain only
-/// for focused compatibility tests.
+/// and egui resources directly.
 pub fn present_render_frame_system(
     mut gpu: Option<NonSendMut<RenderGpuRes>>,
     mut meshes: Option<NonSendMut<RenderMeshesRes>>,
@@ -242,9 +223,7 @@ pub fn present_render_frame_system(
 
 /// Build the per-frame render input directly from App-world resources.
 ///
-/// This replaces the legacy `State::render_to_view` frame-input snapshot.
-/// The compatibility renderer consumes the resulting POD value until its
-/// draw passes are also scheduled in the App world.
+/// This builds the POD frame-input value consumed by the custom presenter.
 #[derive(SystemParam)]
 pub(crate) struct RenderFrameInputParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
@@ -301,8 +280,8 @@ pub(crate) fn update_render_frame_input_system(mut params: RenderFrameInputParam
 
 /// Extract the gameplay ghost trail from App-owned gameplay components.
 ///
-/// The compatibility renderer still owns the GPU mesh slot, so Runtime
-/// uploads this extracted vertex list after the schedule completes.
+/// The scheduled upload system writes this extracted vertex list to the
+/// App-owned GPU mesh storage.
 pub(crate) fn extract_trail_vertices_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
@@ -404,7 +383,7 @@ pub(crate) fn extract_trail_vertices_system(
 }
 
 /// Extract active block-effect vertices from the App-owned effect lifecycle.
-/// Runtime uploads the derived vertices into the compatibility mesh slot.
+/// The scheduled upload system writes the derived vertices to the GPU mesh.
 pub(crate) fn extract_block_effect_vertices_system(
     effects: Res<BlockEffectsRes>,
     mut effect_vertices: ResMut<RenderBlockEffectVerticesRes>,
@@ -429,8 +408,8 @@ pub(crate) fn extract_block_effect_vertices_system(
 }
 
 /// Extract practice-checkpoint flags from the App-owned session resource.
-/// The compatibility renderer receives the resulting vertices through the
-/// normal scheduled mesh upload path.
+/// The custom renderer receives the resulting vertices through the scheduled
+/// mesh upload path.
 pub(crate) fn extract_practice_checkpoint_vertices_system(
     phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
@@ -549,8 +528,7 @@ fn editor_objects_for_render(
 }
 
 /// Extract time-dependent gameplay block batches from App-owned gameplay
-/// entities. This is the scheduled replacement for the animated-block branch
-/// in the former legacy frame callback.
+/// entities.
 #[derive(PartialEq)]
 pub(crate) struct PlayingStaticBlockMeshCache {
     objects: Vec<LevelObject>,
@@ -661,8 +639,7 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
 }
 
 /// Extract the editor static and selected block meshes from App-owned editor
-/// resources. This is the scheduled replacement for the editor block rebuild
-/// branches in the former legacy frame callback.
+/// resources.
 #[derive(PartialEq)]
 pub(crate) struct EditorBlockMeshCache {
     objects: Vec<LevelObject>,
@@ -944,16 +921,8 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
     });
 }
 
-/// Dirty flags are retained for compatibility tests and legacy editor
-/// callers, but App-owned extraction no longer needs them to decide which
-/// presentation buffers to rebuild. Consume them after the scheduled
-/// extraction so the legacy State update cannot become a second renderer.
-pub(crate) fn clear_editor_dirty_flags_system(mut runtime: ResMut<EditorRuntimeRes>) {
-    runtime.0.dirty = Default::default();
-}
-
 /// Extract the editor camera arrow from App-owned camera/timeline resources.
-/// Runtime uploads the derived vertices into the compatibility mesh slot.
+/// The scheduled upload system writes the derived vertices to the GPU mesh.
 pub(crate) fn extract_editor_camera_arrow_vertices_system(
     phase: Res<State<AppPhase>>,
     authored_objects: Query<
@@ -997,7 +966,7 @@ pub(crate) fn extract_editor_camera_arrow_vertices_system(
 }
 
 /// Extract the editor cursor from App-owned input/config/timeline resources.
-/// Runtime uploads the derived vertices into the compatibility mesh slot.
+/// The scheduled upload system writes the derived vertices to the GPU mesh.
 pub(crate) fn extract_editor_cursor_vertices_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
@@ -1051,7 +1020,7 @@ pub(crate) fn extract_editor_cursor_vertices_system(
 }
 
 /// Extract editor hitbox visualization from App-owned editor resources.
-/// Runtime uploads the derived vertices into the compatibility mesh slot.
+/// The scheduled upload system writes the derived vertices to the GPU mesh.
 pub(crate) fn extract_editor_hitbox_vertices_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
@@ -1105,8 +1074,8 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
 }
 
 /// Extract editor tap indicators from App-owned timeline and interaction
-/// resources. Runtime uploads the derived vertices into the compatibility
-/// mesh slot.
+/// resources. The scheduled upload system writes the derived vertices to the
+/// GPU mesh.
 #[derive(SystemParam)]
 pub(crate) struct EditorTapIndicatorExtractionParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
@@ -1442,7 +1411,7 @@ fn selected_editor_group_bounds(
 }
 
 /// Extract editor selection and hover outlines from App-owned objects/input.
-/// Runtime uploads the derived mesh data into the compatibility slots.
+/// The scheduled upload system writes the derived mesh data to GPU slots.
 pub(crate) fn extract_editor_selection_overlays_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
@@ -1623,8 +1592,8 @@ fn transform_trigger_markers_for_triggers(
 }
 
 /// Extract editor transform-trigger markers from App-owned objects and
-/// timeline state. Runtime uploads the derived vertices into the
-/// compatibility mesh slot.
+/// timeline state. The scheduled upload system writes the derived vertices to
+/// the GPU mesh.
 pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
     phase: Res<State<AppPhase>>,
     authored_objects: Query<
@@ -1700,9 +1669,7 @@ pub(crate) struct RenderUniformsParams<'w, 's> {
 
 /// Build camera, line, and color-space POD uniforms from App-world state.
 ///
-/// The compatibility `State` receives a copy after extraction so legacy
-/// update code can continue to observe the scheduled line uniform while the
-/// GPU upload itself is owned by this system.
+/// The GPU upload is owned by this scheduled system.
 pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
     let (width, height, apply_gamma_correction) = (
         params.config.width.max(1),
@@ -1792,8 +1759,8 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
     };
 }
 
-/// Upload the extracted camera and line POD values before the compatibility
-/// renderer runs. Color-space upload remains in its dedicated system.
+/// Upload the extracted camera and line POD values before presentation.
+/// Color-space upload remains in its dedicated system.
 pub(crate) fn upload_render_uniforms_system(
     upload: Option<NonSend<RenderUniformUploadRes>>,
     uniforms: Res<RenderUniformsRes>,
@@ -1824,10 +1791,7 @@ pub fn update_color_space_uniform_system(
     uniforms.color_space.time_seconds = frame_time.global_time_seconds;
 }
 
-/// Upload the scheduled color-space POD value before presentation. This is
-/// the first GPU side effect moved into the App schedule; the custom
-/// shell only records that the scheduled upload already happened so direct
-/// legacy callers still retain their fallback behavior.
+/// Upload the scheduled color-space POD value before presentation.
 pub fn upload_color_space_uniform_system(
     upload: Option<NonSend<RenderUniformUploadRes>>,
     uniforms: Res<RenderUniformsRes>,
@@ -1868,8 +1832,7 @@ pub fn apply_resize_surface_system(
 }
 
 /// Upload the CPU meshes extracted by the App world into the App-owned GPU
-/// mesh storage. This is the final compatibility upload boundary before the
-/// custom renderer is replaced by the full Bevy render world.
+/// mesh storage.
 #[derive(SystemParam)]
 pub(crate) struct RenderMeshUploadParams<'w> {
     gpu: Option<NonSend<'w, RenderGpuRes>>,
@@ -2083,43 +2046,6 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
         );
 }
 
-/// Bevy [`QueryFilter`] for the authored object fields that trigger
-/// a mesh rebuild on change.
-///
-/// Factored into a type alias to keep the
-/// [`mark_mesh_dirty_system`] signature readable and to stay under
-/// the `clippy::type_complexity` threshold without `#[allow]`s.
-type AuthoredObjectChangedFilter = (
-    With<eg_game::Object>,
-    Or<(
-        Changed<eg_game::ObjectData>,
-        Changed<eg_game::Position>,
-        Changed<eg_game::Rotation>,
-        Changed<eg_game::Size>,
-        Changed<eg_game::BlockId>,
-        Changed<eg_game::ColorTint>,
-    )>,
-);
-
-/// Detect authored object changes and emit mesh rebuild events.
-///
-/// This bridges ECS change detection to the current coarse rebuild
-/// contract. Any authored object field change requests a gameplay
-/// object sync and a block mesh rebuild. Later phases move the rebuild
-/// consumer itself into a Bevy system that writes [`RenderMeshesRes`]
-/// directly.
-pub fn mark_mesh_dirty_system(
-    changed_objects: Query<(), AuthoredObjectChangedFilter>,
-    mut writer: MessageWriter<RebuildMeshEvent>,
-) {
-    if changed_objects.iter().next().is_none() {
-        return;
-    }
-
-    writer.write(RebuildMeshEvent::new(RebuildMeshKind::SyncGameObjects));
-    writer.write(RebuildMeshEvent::new(RebuildMeshKind::RebuildBlockMesh));
-}
-
 /// Add the App-world render bookkeeping systems to a [`Schedule`].
 ///
 /// The schedule itself is added by the
@@ -2132,7 +2058,6 @@ pub fn mark_mesh_dirty_system(
 /// the present boundary).
 pub fn add_state_render_systems(schedule: &mut Schedule) {
     schedule.add_systems((
-        mark_mesh_dirty_system.in_set(RenderSet::RebuildMesh),
         update_render_frame_input_system.after(crate::state::async_bridge::ApplyAsyncResultsSet),
         update_color_space_uniform_system
             .after(crate::state::frame_time::advance_frame_time_system),
@@ -2202,7 +2127,7 @@ mod tests {
 
     /// `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted (with
     /// default values) by `register_render_pod_resources`. `RenderGpuRes`
-    /// is inserted by `State` construction because it has no cheap default.
+    /// is inserted by `AppBootstrap` because it has no cheap default.
     #[test]
     fn register_inserts_phase4c_heavy_resources() {
         let mut world = World::new();
@@ -2212,47 +2137,9 @@ mod tests {
         assert!(!world.contains_non_send::<RenderGpuRes>());
     }
 
-    /// Phase 4d: changed authored object components emit rebuild events.
-    #[test]
-    fn mark_mesh_dirty_system_emits_rebuild_events_for_changed_object() {
-        let mut world = World::new();
-        register_render_pod_resources(&mut world);
-
-        let object = eg_types::LevelObject::new("core/stone");
-        world.spawn(eg_game::ObjectBundle {
-            object: eg_game::Object,
-            id: eg_game::ObjectId("test-object".to_string()),
-            data: eg_game::ObjectData(object.clone()),
-            position: eg_game::Position(object.position),
-            rotation: eg_game::Rotation(object.rotation),
-            size: eg_game::Size(object.size),
-            block_id: eg_game::BlockId(object.block_id.clone()),
-            color_tint: eg_game::ColorTint(object.color_tint),
-            cached_behavior: eg_game::CachedBlockBehavior::from_block_id(&object.block_id),
-        });
-
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
-        schedule.add_systems(mark_mesh_dirty_system);
-        schedule.run(&mut world);
-
-        let kinds = world
-            .resource_mut::<Messages<RebuildMeshEvent>>()
-            .drain()
-            .map(|event| event.kind)
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            kinds,
-            vec![
-                RebuildMeshKind::SyncGameObjects,
-                RebuildMeshKind::RebuildBlockMesh,
-            ]
-        );
-    }
-
     /// Phase 4e: the present system reads the authoritative render
     /// resources. Bare test worlds do not have a real GPU, so the GPU
-    /// resource is optional until constructed by `State`.
+    /// resource is optional until constructed by `AppBootstrap`.
     #[test]
     fn present_render_frame_system_runs_with_render_resources() {
         let mut world = World::new();

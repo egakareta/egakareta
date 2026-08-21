@@ -11,7 +11,7 @@
 //! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
 //! `events::session`, and `events::spawn`): the per-message handlers in
 //! this file mutate App-world resources directly instead of staging a
-//! legacy `EditorCommand`.
+//! the editor command bridge.
 //!
 //! - `AdjustZoom` / `SetCameraOrientation` mutate the authoritative
 //!   `EditorCameraRes.0` camera and transition state directly.
@@ -21,9 +21,8 @@
 //!
 //! - `AddCameraTrigger` / `AddCameraFollowTrigger` spawn generated
 //!   camera trigger entities, record
-//!   App-world editor history, sync trigger selection against the
-//!   App-world object list, and set `object_mutation_pending` so the
-//!   runtime compatibility sync rebuilds legacy presentation once.
+//!   App-world editor history, and sync trigger selection against the
+//!   App-world object list. Render extraction observes the resulting entities.
 //!
 
 use bevy::{
@@ -83,7 +82,7 @@ pub fn register_events(app: &mut App) {
 // Carve-out dispatch systems
 // -----------------------------------------------------------------------
 
-/// Mirror of `EditorSubsystem::adjust_zoom`: move the editor camera
+/// Move the editor camera
 /// along its current look vector by `delta * 2` units. The legacy
 /// setter is gated on `AppPhase::Editor`; the carve-out mirrors the
 /// math exactly (no phase check at this layer — the dispatch path
@@ -104,8 +103,8 @@ pub fn handle_adjust_zoom(
     }
 }
 
-/// Mirror of `EditorSubsystem::set_editor_camera_orientation` (in
-/// `state/editor_interaction/camera.rs`):
+/// Set the editor camera orientation (the same operation exposed by the
+/// editor interaction helper):
 /// - if `transition_seconds > 0`, install a `CameraTransition` that
 ///   interpolates from the current yaw/pitch to the target over
 ///   the requested duration (with shortest-path yaw unwrap);
@@ -376,7 +375,7 @@ fn history_snapshot_from_resources(
 /// radians), at the editor distance constant. Mirrors the math
 /// in `state/editor_camera.rs::offset_from_rotation_pitch` so
 /// the Bevy handler can compute the look vector without
-/// depending on the legacy `EditorSubsystem`.
+/// depending on the test-only `EditorSubsystem` fixture.
 fn editor_camera_offset_for_resource(yaw: f32, pitch: f32) -> glam::Vec3 {
     use eg_types::DEFAULT_CAMERA_DISTANCE;
     let pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());

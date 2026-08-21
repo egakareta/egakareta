@@ -14,12 +14,12 @@ use bevy::{
 use eg_blocks::BlockEffectColorMode;
 use eg_editor_domain::derive_timeline_elapsed_seconds;
 use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};
-use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TriggerTarget};
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
 use super::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorDirtyFlags,
-    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    FrameTimeRes, RuntimeAudioPreloadRes, SessionStateRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorInputRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, FrameTimeRes,
+    RuntimeAudioPreloadRes, SessionStateRes,
     audio_state::start_audio_source_at_seconds_for_resources, editor_timeline::EditorTimelineState,
     runtime::BlockVisualEffect,
 };
@@ -33,8 +33,8 @@ const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
     "/assets/metronome_minor.mp3"
 ));
 
-/// Advance editor playback from App-owned clock/audio state and publish only
-/// presentation invalidations for the compatibility renderer.
+/// Advance editor playback from App-owned clock/audio state. Render extraction
+/// observes the resulting timeline, authored entities, and effect resources.
 #[derive(SystemParam)]
 pub(crate) struct EditorTimelinePlaybackParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
@@ -101,14 +101,6 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
     if (clamped_time - old_time).abs() > 1e-4 {
         params.timeline.0.clock.time_seconds = clamped_time;
 
-        if simulate_preview && has_timeline_preview_triggers(&objects) {
-            params
-                .runtime_state
-                .0
-                .dirty
-                .merge(EditorDirtyFlags::timeline_trigger_preview_changed());
-        }
-
         if simulate_preview {
             let (position, direction, events) = advance_simulation_preview(
                 clamped_time,
@@ -116,15 +108,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
                 &params.spawn.0,
                 &mut params.timeline,
             );
-            let consumed_objects = !events.is_empty();
             queue_block_effects(events, &mut params.runtime_state);
-            if consumed_objects {
-                params
-                    .runtime_state
-                    .0
-                    .dirty
-                    .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
-            }
             params.timeline.0.preview.position = position;
             params.timeline.0.preview.direction = direction;
         } else {
@@ -144,7 +128,6 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
             &mut params.runtime_state,
             &mut params.timeline,
             &params.audio,
-            simulate_preview,
         );
     }
 }
@@ -178,16 +161,6 @@ fn effective_playback_mode(
     } else {
         input.0.mode
     }
-}
-
-fn has_timeline_preview_triggers(objects: &[LevelObject]) -> bool {
-    objects.iter().any(|object| {
-        let Some(trigger) = object.trigger.as_ref() else {
-            return false;
-        };
-        (!matches!(trigger.target, TriggerTarget::Camera) && trigger.transform)
-            || (matches!(trigger.target, TriggerTarget::Camera) && trigger.camera.is_some())
-    })
 }
 
 fn rebuild_playback_runtime(
@@ -333,7 +306,6 @@ fn stop_editor_playback(
     runtime: &mut EditorRuntimeRes,
     timeline: &mut EditorTimelineRes,
     audio: &AudioBackendRes,
-    simulate_preview: bool,
 ) {
     timeline.0.playback.playing = false;
     timeline.0.playback.runtime = None;
@@ -345,16 +317,6 @@ fn stop_editor_playback(
         .last_mode
         .take()
         .unwrap_or(EditorMode::Place);
-    runtime
-        .0
-        .dirty
-        .merge(EditorDirtyFlags::playback_mode_changed());
-    if simulate_preview {
-        runtime
-            .0
-            .dirty
-            .merge(EditorDirtyFlags::block_mesh_and_hitboxes_changed());
-    }
     audio.stop();
 }
 #[cfg(test)]

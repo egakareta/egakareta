@@ -7,15 +7,9 @@
 */
 //! ECS resources for the rendering extraction plugin (Phase 4a).
 //!
-//! The full plan calls for `GpuContextRes`, `SceneMeshesRes`,
-//! `SurfaceHostRes`, `CameraUniform`, `LineUniform`, and
-//! `ColorSpaceUniform` to be lifted out of the legacy `State` struct
-//! and become `bevy::ecs::Resource`s. This file defines the resource
-//! types. The POD resources ([`RenderUniformsRes`],
-//! [`RenderFrameInputRes`]) are still mirrored while the legacy frame
-//! update computes uniforms, and the heavy resources
-//! ([`RenderGpuRes`], [`RenderMeshesRes`], [`RenderSurfaceHostRes`])
-//! own the authoritative values transferred during `Runtime` construction.
+//! This file defines the App-world resource boundary for GPU handles, scene
+//! meshes, surface ownership, and the POD values consumed by extraction and
+//! presentation.
 //!
 //! ## Why split POD vs heavy?
 //!
@@ -24,10 +18,9 @@
 //!   Some of their web backends contain non-`Send` DOM values, so Phase
 //!   4 stores these heavy values as Bevy non-send resources behind
 //!   App-owned non-send resources.
-//! - Mirroring just the POD types first establishes the resource
-//!   boundary, the system-set graph, and the extraction system
-//!   contract. Subsequent phases replace the POD mirror with direct
-//!   resource writes owned by Bevy systems.
+//! - POD values are derived during extraction while heavy GPU handles remain
+//!   in App-owned non-send resources. This keeps simulation data independent
+//!   of platform-specific renderer handles.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
 //! entire module with `bevy::render` render-world resources
@@ -103,8 +96,8 @@ impl Default for RenderConfigRes {
 
 /// Queue and uniform-buffer handles used by scheduled App-world uploads.
 ///
-/// These handles are cheap clones of the compatibility GPU context and point
-/// at the same underlying wgpu objects. Keeping only the upload surface here
+/// These handles are cheap clones of the App-owned GPU context and point at
+/// the same underlying wgpu objects. Keeping only the upload surface here
 /// avoids duplicating ownership of the platform surface.
 pub struct RenderUniformUploadRes {
     pub queue: wgpu::Queue,
@@ -126,18 +119,14 @@ impl RenderUniformUploadRes {
 
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
 ///
-/// Production moves the former `State::render.meshes` field into this
-/// resource so scene mesh storage is held by the Bevy world. Test-only
-/// compatibility callers may still use `State::render_meshes()`.
+/// App-owned scene mesh storage held by the Bevy world.
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderMeshesRes(pub SceneMeshes);
 
 /// Wrapper resource for the optional platform [`SurfaceHost`].
 ///
-/// Production moves the former `State::render.surface_host` field into
-/// this resource so surface ownership is held by the Bevy world. Test-only
-/// compatibility callers may still use `State::surface_host()`.
+/// App-owned platform surface ownership held by the Bevy world.
 #[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
@@ -146,13 +135,12 @@ pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 /// shader constants (`CameraUniform`, `LineUniform`,
 /// `ColorSpaceUniform`).
 ///
-/// Mirrored from the legacy frame-update uniform computation during
-/// the [`RenderExtractSet`](super::plugin) phase. The mirror
-/// is a free operation: the uniform values are tiny POD types
+/// Computed during the [`RenderExtractSet`](super::plugin) phase. The values
+/// are tiny POD types
 /// (a `Mat4` and a handful of `f32`s), and the actual GPU buffers
 /// stay in `RenderGpuRes`. Bevy systems can use this
-/// resource to read the per-frame uniform values without touching
-/// the legacy state.
+/// resource to read the per-frame uniform values without reaching into
+/// platform or renderer internals.
 #[allow(dead_code)]
 #[derive(Resource, Clone, Copy)]
 pub struct RenderUniformsRes {
@@ -187,13 +175,13 @@ impl Default for RenderUniformsRes {
 
 /// Mirrored [`RenderFrameInput`] for the current frame.
 ///
-/// The frame input is computed at the top of `State::render_to_view`
-/// (phase, editor mode, sky color, grid center, gamma toggle). It
+/// The frame input contains phase, editor mode, sky color, grid center, and
+/// gamma toggle. It
 /// drives the clear color, the grid uniform, and several `should_*`
 /// predicates that gate editor-only draw calls. Mirroring it into a
 /// resource lets Bevy systems (e.g. a future `RenderExtractSet`
 /// system that builds mesh batches for editor overlays) read these
-/// values without reaching into `State::render`.
+/// values without reaching into the custom presenter.
 #[allow(dead_code)]
 #[derive(Resource, Clone, Copy)]
 pub struct RenderFrameInputRes(pub RenderFrameInput);
@@ -212,35 +200,32 @@ impl Default for RenderFrameInputRes {
     }
 }
 
-/// Extracted gameplay trail vertices consumed by the compatibility renderer.
+/// Extracted gameplay trail vertices consumed by the custom renderer.
 ///
 /// The vertex list is built from App-owned gameplay components in
-/// `RenderExtractSchedule`; Runtime only uploads the result while the legacy
-/// `SceneMeshes` storage remains in `State`.
+/// `RenderExtractSchedule`; the scheduled upload system writes them to the
+/// App-owned scene mesh storage.
 #[derive(Resource, Default, Clone)]
 pub struct RenderTrailVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor camera-arrow vertices consumed by the compatibility
-/// renderer until editor overlay mesh storage is App-owned.
+/// Extracted editor camera-arrow vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorCameraArrowVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor cursor vertices consumed by the compatibility renderer.
+/// Extracted editor cursor vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorCursorVerticesRes(pub Vec<eg_mesh::Vertex>);
 
 /// Extracted editor hitbox visualization vertices consumed by the
-/// compatibility renderer.
+/// custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorHitboxVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor tap-indicator vertices consumed by the compatibility
-/// renderer until editor overlay mesh storage is App-owned.
+/// Extracted editor tap-indicator vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorTapIndicatorVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor selection overlay data consumed by the compatibility
-/// renderer until editor overlay mesh storage is App-owned.
+/// Extracted editor selection overlay data consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorSelectionOverlayRes {
     pub stencil_vertices: Vec<eg_mesh::Vertex>,
@@ -248,32 +233,28 @@ pub struct RenderEditorSelectionOverlayRes {
     pub instances: Vec<EditorOutlineInstance>,
 }
 
-/// Extracted editor hover overlay data consumed by the compatibility renderer
-/// until editor overlay mesh storage is App-owned.
+/// Extracted editor hover overlay data consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorHoverOverlayRes {
     pub stencil_vertices: Vec<eg_mesh::Vertex>,
     pub outline_vertices: Vec<eg_mesh::Vertex>,
 }
 
-/// Extracted editor transform-trigger marker vertices consumed by the
-/// compatibility renderer until editor overlay mesh storage is App-owned.
+/// Extracted editor transform-trigger marker vertices consumed by the custom
+/// renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorTransformTriggerMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted block-effect vertices consumed by the compatibility renderer
-/// until effect mesh storage is App-owned.
+/// Extracted block-effect vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderBlockEffectVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted practice-checkpoint flag vertices consumed by the compatibility
-/// renderer until the custom scene mesh storage is fully Bevy-owned.
+/// Extracted practice-checkpoint flag vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderPracticeCheckpointVerticesRes(pub Vec<eg_mesh::Vertex>);
 
 /// CPU block batches extracted for a gameplay frame that needs time-dependent
-/// rendering. Runtime uploads the result into the compatibility mesh slots
-/// until GPU mesh storage is App-owned.
+/// rendering.
 #[derive(Resource, Default, Clone)]
 pub struct RenderPlayingBlockMeshesRes {
     pub result: Option<eg_mesh::BlockInstanceBuildResult>,
@@ -281,30 +262,24 @@ pub struct RenderPlayingBlockMeshesRes {
 }
 
 /// Static menu-preview blocks extracted from the App-owned preview objects.
-/// Runtime uploads the cached chunk mesh into the compatibility presenter
-/// until the custom wgpu scene storage is App-owned.
 #[derive(Resource, Default, Clone)]
 pub struct RenderMenuPreviewBlockMeshesRes {
     pub preview_level_index: Option<usize>,
     pub chunked: Option<eg_mesh::ChunkedBlockMesh>,
 }
 
-/// CPU editor block meshes extracted from App-owned editor resources. Runtime
-/// uploads the static chunk mesh and selected geometry into compatibility GPU
-/// slots until render mesh storage is App-owned.
+/// CPU editor block meshes extracted from App-owned editor resources.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorBlockMeshesRes {
     pub static_mesh: eg_mesh::ChunkedBlockMesh,
     pub selected_geometry: eg_mesh::MeshGeometry,
 }
 
-/// Extracted editor spawn-marker vertices consumed by the compatibility
-/// renderer.
+/// Extracted editor spawn-marker vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorSpawnMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
 
-/// Extracted editor transform-gizmo vertices consumed by the compatibility
-/// renderer.
+/// Extracted editor transform-gizmo vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorGizmoVerticesRes(pub Vec<eg_mesh::Vertex>);
 

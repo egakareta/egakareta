@@ -41,13 +41,13 @@ use eg_editor_domain::{
     EditorPlaytestTransitionParams, add_tap_with_indicator, build_editor_playtest_transition,
     derive_timeline_elapsed_seconds, remove_tap_with_indicator,
 };
-use eg_game::TimelineSimulationRuntime;
+use eg_game::{LevelMeta, TimelineSimulationRuntime};
 use eg_types::{AppPhase, EditorMode};
 
 use crate::state::{
-    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorDirtyFlags,
-    EditorInputRes, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorInputRes,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes,
+    GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
     start_audio_source_at_seconds_for_resources,
 };
 
@@ -184,19 +184,9 @@ pub fn handle_toggle_timeline_playback(
                 &mut resources.timeline,
             ) {
                 resources.audio.stop();
-                resources
-                    .runtime
-                    .0
-                    .dirty
-                    .merge(EditorDirtyFlags::playback_mode_changed());
             }
         } else {
             start_editor_timeline_playback(&mut resources);
-            resources
-                .runtime
-                .0
-                .dirty
-                .merge(EditorDirtyFlags::playback_mode_changed());
         }
     }
 }
@@ -511,6 +501,7 @@ pub struct PlaytestResources<'w, 's> {
     camera: ResMut<'w, EditorCameraRes>,
     input: ResMut<'w, EditorInputRes>,
     gameplay_reset: ResMut<'w, GameplayResetRes>,
+    level_meta: ResMut<'w, LevelMeta>,
 }
 
 pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: PlaytestResources) {
@@ -549,6 +540,10 @@ pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: Playt
         resources.session.practice_mode_enabled = false;
         resources.session.practice_checkpoints.clear();
         resources.session.audio_stop_pending = true;
+        resources.level_meta.initial_objects = transition.objects.clone();
+        resources.level_meta.spawn_position = transition.spawn_position;
+        resources.level_meta.spawn_direction = transition.spawn_direction;
+        resources.level_meta.level_duration_seconds = transition.level_duration_seconds;
         resources.camera.0.playing_rotation = transition.camera_rotation;
         resources.camera.0.playing_pitch = transition.camera_pitch;
         resources.input.0.right_dragging = false;

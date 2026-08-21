@@ -167,6 +167,7 @@ super::editor_context_methods! {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn has_object_transform_triggers(&self) -> bool {
         self.trigger_objects().iter().any(|object| {
             let Some(trigger) = object.trigger.as_ref() else {
@@ -182,31 +183,6 @@ super::editor_context_methods! {
             .iter()
             .filter_map(|object| object.trigger.as_ref())
             .any(Self::is_camera_track_trigger)
-    }
-
-    /// Returns `true` when any of the given block indices are referenced as
-    /// source objects by at least one transform trigger. Used to decide when
-    /// the transform trigger marker overlay must be rebuilt after a block
-    /// move/resize/rotate.
-    pub fn any_block_is_transform_trigger_source(&self, indices: &[usize]) -> bool {
-        if indices.is_empty() {
-            return false;
-        }
-        self.trigger_objects().iter().any(|object| {
-            let Some(trigger) = object.trigger.as_ref() else {
-                return false;
-            };
-            if !trigger.transform {
-                return false;
-            }
-            let TriggerTarget::Objects { object_ids } = &trigger.target else {
-                return false;
-            };
-            indices
-                .iter()
-                .filter_map(|index| self.objects.get(*index))
-                .any(|object| object_ids.contains(&object.id))
-        })
     }
 
     #[cfg(test)]

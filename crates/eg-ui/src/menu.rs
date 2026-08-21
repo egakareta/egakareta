@@ -669,65 +669,69 @@ pub fn show_menu_topbar_ui(
 
     let ctx = root_ui.ctx().clone();
 
-    egui::Panel::top("menu_top_bar").show_inside(root_ui, |ui| {
-        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(4.0);
-            ui.label(egui_phosphor::regular::CLOCK);
-            ui.label(egui::RichText::new(get_current_time_str()).monospace());
+    egui::Area::new("menu_top_bar".into())
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+        .show(&ctx, |ui| {
+            ui.set_min_width(ctx.content_rect().width());
+            ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
+            ui.horizontal_wrapped(|ui| {
+                ui.add_space(4.0);
+                ui.label(egui_phosphor::regular::CLOCK);
+                ui.label(egui::RichText::new(get_current_time_str()).monospace());
 
-            if ui
-                .button(format!("{} Settings", egui_phosphor::regular::GEAR))
-                .on_hover_text(format!(
-                    "Settings{}",
-                    app_settings.hotkey_hint("toggle_settings")
-                ))
-                .clicked()
-            {
-                commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
-            }
+                if ui
+                    .button(format!("{} Settings", egui_phosphor::regular::GEAR))
+                    .on_hover_text(format!(
+                        "Settings{}",
+                        app_settings.hotkey_hint("toggle_settings")
+                    ))
+                    .clicked()
+                {
+                    commands.push(AppCommand::Editor(EditorCommand::ToggleSettings));
+                }
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.horizontal(|ui| {
-                    if let Some(name) = auth_display_name {
-                        ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
-                        if ui
-                            .add_enabled(!auth_pending, egui::Button::new("Sign out"))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            commands.push(AppCommand::AuthSignOut);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.horizontal(|ui| {
+                        if let Some(name) = auth_display_name {
+                            ui.label(format!("{} {}", egui_phosphor::regular::USER, name));
+                            if ui
+                                .add_enabled(!auth_pending, egui::Button::new("Sign out"))
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                commands.push(AppCommand::AuthSignOut);
+                            }
+                        } else {
+                            if ui
+                                .add_enabled(
+                                    !auth_pending,
+                                    egui::Button::new(format!(
+                                        "{} Sign in",
+                                        egui_phosphor::regular::SIGN_IN
+                                    )),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                commands.push(AppCommand::AuthSubmitSignIn);
+                            }
+                            if ui
+                                .add_enabled(!auth_pending, egui::Button::new("Create account"))
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
+                                commands.push(AppCommand::AuthOpenSignup);
+                            }
+                            if auth_pending {
+                                ui.spinner();
+                            }
                         }
-                    } else {
-                        if ui
-                            .add_enabled(
-                                !auth_pending,
-                                egui::Button::new(format!(
-                                    "{} Sign in",
-                                    egui_phosphor::regular::SIGN_IN
-                                )),
-                            )
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            commands.push(AppCommand::AuthSubmitSignIn);
-                        }
-                        if ui
-                            .add_enabled(!auth_pending, egui::Button::new("Create account"))
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            commands.push(AppCommand::AuthOpenSignup);
-                        }
-                        if auth_pending {
-                            ui.spinner();
-                        }
-                    }
+                    });
                 });
             });
+            ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
         });
-        ui.add_space(MENU_TOPBAR_VERTICAL_PADDING);
-    });
 
     if let Some(message) = auth_message {
         egui::Area::new("menu_auth_message_area".into())

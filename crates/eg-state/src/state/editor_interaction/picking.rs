@@ -30,7 +30,7 @@ pub(crate) struct EditorPickSpatialIndex {
     object_count: usize,
     world_min: Vec3,
     world_max: Vec3,
-    dirty: bool,
+    index_valid: bool,
 }
 
 impl Default for EditorPickSpatialIndex {
@@ -43,18 +43,20 @@ impl Default for EditorPickSpatialIndex {
             object_count: 0,
             world_min: Vec3::ZERO,
             world_max: Vec3::ZERO,
-            dirty: true,
+            index_valid: false,
         }
     }
 }
 
 impl EditorPickSpatialIndex {
     pub(crate) fn invalidate(&mut self) {
-        self.dirty = true;
+        self.index_valid = false;
     }
 
     fn ensure_current(&mut self, objects: &[LevelObject]) {
-        if !self.dirty && self.object_count == objects.len() && self.visited.len() == objects.len()
+        if self.index_valid
+            && self.object_count == objects.len()
+            && self.visited.len() == objects.len()
         {
             return;
         }
@@ -104,7 +106,7 @@ impl EditorPickSpatialIndex {
             self.world_min = Vec3::ZERO;
             self.world_max = Vec3::ZERO;
         }
-        self.dirty = false;
+        self.index_valid = true;
     }
 
     fn query_ray(&mut self, ray_origin: Vec3, ray_dir: Vec3, max_t: f32) -> Vec<usize> {

@@ -130,7 +130,7 @@ impl TimelineSimulationRuntime {
             world.resource_mut::<GameClock>().started = true;
             {
                 let mut level = world.resource_mut::<LevelMeta>();
-                level.objects = authored_objects.clone();
+                level.initial_objects = authored_objects.clone();
                 level.spawn_position = spawn_position;
                 level.spawn_direction = spawn_direction;
             }

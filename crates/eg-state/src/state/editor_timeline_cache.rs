@@ -38,8 +38,8 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
 }
 
 /// Rebuild the timeline snapshot/trail cache when the authored simulation
-/// revision changes. Both the App schedule and legacy compatibility callers
-/// use this helper so the render extraction path sees current editor data.
+/// revision changes. The App schedule and test helpers use this function so
+/// the render extraction path sees current editor data.
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_if_needed(
     timeline: &mut EditorTimelineState,
     objects: &[LevelObject],

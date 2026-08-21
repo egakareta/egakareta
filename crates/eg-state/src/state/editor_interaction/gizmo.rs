@@ -9,7 +9,7 @@ use eg_mesh::{GizmoAxis, GizmoDragKind};
 use eg_types::{AppPhase, TransformVisibility};
 use glam::{Vec2, Vec3};
 
-use super::super::{EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag};
+use super::super::{EditorDragBlockStart, EditorGizmoDrag};
 
 const GIZMO_MOVE_PICK_RADIUS_PIXELS: f32 = 40.0;
 const GIZMO_RESIZE_PICK_RADIUS_PIXELS: f32 = 32.0;
@@ -691,52 +691,6 @@ super::super::editor_context_methods! {
 
         if self.drag_gizmo(x, y, viewport) {
             self.sync_objects_for_drag();
-            let is_move = self.runtime.interaction.gizmo_drag.as_ref().map(|d| d.kind)
-                == Some(GizmoDragKind::Move);
-            let trigger_drag = self
-                .runtime
-                .interaction
-                .gizmo_drag
-                .as_ref()
-                .is_some_and(|drag| self.gizmo_drag_trigger_start(drag).is_some());
-            // The dragged block(s) may be a transform trigger block on the
-            // grid (not the virtual trigger target). When the user moves,
-            // resizes, or rotates the trigger block itself, the source ring
-            // and connector line should follow the block pose live.
-            let dragging_transform_trigger_block = self
-                .runtime
-                .interaction
-                .gizmo_drag
-                .as_ref()
-                .is_some_and(|drag| {
-                    drag.start_blocks.iter().any(|b| {
-                        self.objects
-                            .get(b.index)
-                            .is_some_and(|o| o.is_transform_trigger())
-                    })
-                });
-            // Check if any dragged blocks are sources of transform triggers
-            let dragged_indices: Vec<usize> = self
-                .runtime
-                .interaction
-                .gizmo_drag
-                .as_ref()
-                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
-                .unwrap_or_default();
-            let dragging_transform_trigger_source =
-                self.any_block_is_transform_trigger_source(&dragged_indices);
-            if is_move || trigger_drag {
-                self.mark_dirty(EditorDirtyFlags {
-                    rebuild_cursor: is_move,
-                    rebuild_block_mesh: trigger_drag,
-                    rebuild_hitbox_visualization: trigger_drag,
-                    rebuild_transform_trigger_markers: trigger_drag
-                        || dragging_transform_trigger_block
-                        || dragging_transform_trigger_source,
-                    rebuild_preview_player: trigger_drag,
-                    ..EditorDirtyFlags::default()
-                });
-            }
             true
         } else {
             false
@@ -772,9 +726,7 @@ mod tests {
     };
     use glam::{Vec2, Vec3};
 
-    use super::super::super::{
-        EditorDirtyFlags, EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem,
-    };
+    use super::super::super::{EditorDragBlockStart, EditorGizmoDrag, EditorSubsystem};
 
     fn start_block_for_index(index: usize, block: &LevelObject) -> EditorDragBlockStart {
         EditorDragBlockStart {
@@ -1285,7 +1237,7 @@ mod tests {
     }
 
     #[test]
-    fn drag_gizmo_from_screen_respects_phase_and_move_dirty_flag() {
+    fn drag_gizmo_from_screen_respects_phase_and_updates_geometry() {
         let mut editor = EditorSubsystem::default();
 
         editor.config.snap_to_grid = false;
@@ -1312,7 +1264,6 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        editor.runtime.dirty = EditorDirtyFlags::default();
         assert!(!editor.drag_gizmo_from_screen(
             target.x as f64,
             target.y as f64,
@@ -1326,9 +1277,7 @@ mod tests {
             viewport,
             AppPhase::Editor,
         ));
-        assert!(editor.runtime.dirty.rebuild_cursor);
 
-        editor.runtime.dirty = EditorDirtyFlags::default();
         let block = editor.objects[0].clone();
         editor.runtime.interaction.gizmo_drag = Some(EditorGizmoDrag {
             axis: GizmoAxis::X,
@@ -1344,7 +1293,6 @@ mod tests {
             viewport,
             AppPhase::Editor,
         ));
-        assert!(!editor.runtime.dirty.rebuild_cursor);
     }
 
     #[test]
@@ -1369,14 +1317,14 @@ mod tests {
             AppPhase::Menu,
         ));
 
-        let history_before = editor.runtime.history.undo.len();
+        let history_before = editor.history.undo.len();
         assert!(editor.begin_gizmo_drag_ext(
             center_screen.x as f64,
             center_screen.y as f64,
             viewport,
             AppPhase::Editor,
         ));
-        assert_eq!(editor.runtime.history.undo.len(), history_before + 1);
+        assert_eq!(editor.history.undo.len(), history_before + 1);
 
         let lengths = editor.gizmo_axis_lengths_world(center, 100.0, viewport);
         assert!(lengths[0] > 0.0 && lengths[1] > 0.0 && lengths[2] > 0.0);
@@ -1797,7 +1745,7 @@ mod tests {
     }
 
     #[test]
-    fn drag_gizmo_move_transform_trigger_source_sets_dirty_flag() {
+    fn drag_gizmo_move_transform_trigger_source_updates_geometry() {
         let mut editor = EditorSubsystem::default();
 
         editor.config.snap_to_grid = false;
@@ -1846,16 +1794,11 @@ mod tests {
             start_blocks: vec![start_block_for_index(0, &block)],
         });
 
-        editor.runtime.dirty = EditorDirtyFlags::default();
         assert!(editor.drag_gizmo_from_screen(
             target.x as f64,
             target.y as f64,
             viewport,
             AppPhase::Editor,
         ));
-        assert!(
-            editor.runtime.dirty.rebuild_transform_trigger_markers,
-            "Moving a transform trigger source block should mark transform trigger markers dirty"
-        );
     }
 }

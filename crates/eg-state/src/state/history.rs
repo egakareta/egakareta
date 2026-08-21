@@ -49,12 +49,12 @@ super::editor_context_methods! {
 
     pub(super) fn record_history_state_force(&mut self) {
         const MAX_HISTORY: usize = 256;
-        if self.runtime.history.undo.len() >= MAX_HISTORY {
-            self.runtime.history.undo.remove(0);
+        if self.history.undo.len() >= MAX_HISTORY {
+            self.history.undo.remove(0);
         }
         let snapshot = self.history_snapshot();
-        self.runtime.history.undo.push(snapshot);
-        self.runtime.history.redo.clear();
+        self.history.undo.push(snapshot);
+        self.history.redo.clear();
     }
 
     #[cfg(test)]
@@ -124,9 +124,9 @@ super::editor_context_methods! {
 
     #[cfg(test)]
     pub(super) fn undo(&mut self) -> bool {
-        if let Some(snapshot) = self.runtime.history.undo.pop() {
+        if let Some(snapshot) = self.history.undo.pop() {
             let current = self.history_snapshot();
-            self.runtime.history.redo.push(current);
+            self.history.redo.push(current);
             self.apply_history_snapshot(snapshot);
             true
         } else {
@@ -136,9 +136,9 @@ super::editor_context_methods! {
 
     #[cfg(test)]
     pub(super) fn redo(&mut self) -> bool {
-        if let Some(snapshot) = self.runtime.history.redo.pop() {
+        if let Some(snapshot) = self.history.redo.pop() {
             let current = self.history_snapshot();
-            self.runtime.history.undo.push(current);
+            self.history.undo.push(current);
             self.apply_history_snapshot(snapshot);
             true
         } else {
@@ -316,9 +316,9 @@ mod tests {
             editor.record_history_state();
         }
 
-        assert_eq!(editor.runtime.history.undo.len(), 256);
+        assert_eq!(editor.history.undo.len(), 256);
         // The first one should be i=44 (300 - 256)
-        assert_eq!(editor.runtime.history.undo[0].cursor[0], 44.0);
+        assert_eq!(editor.history.undo[0].cursor[0], 44.0);
     }
 
     #[test]
@@ -327,10 +327,10 @@ mod tests {
 
         editor.record_history_state();
         assert!(editor.undo());
-        assert_eq!(editor.runtime.history.redo.len(), 1);
+        assert_eq!(editor.history.redo.len(), 1);
 
         editor.record_history_state();
-        assert_eq!(editor.runtime.history.redo.len(), 0);
+        assert_eq!(editor.history.redo.len(), 0);
     }
 
     #[test]
@@ -428,8 +428,8 @@ mod tests {
     #[test]
     fn test_undo_redo_empty_stacks() {
         let mut editor = EditorSubsystem::default();
-        editor.runtime.history.undo.clear();
-        editor.runtime.history.redo.clear();
+        editor.history.undo.clear();
+        editor.history.redo.clear();
 
         assert!(!editor.undo());
         assert!(!editor.redo());

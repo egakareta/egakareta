@@ -5,8 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Navigation / phase events. One per `AppCommand` variant under
-//! `AppCommand::Navigation / Phase` in the legacy enum.
+//! Navigation / phase messages corresponding to the navigation and phase
+//! intents formerly grouped under `AppCommand`.
 //!
 //! `NextLevel`/`PrevLevel` in the menu, `GameResume`, and
 //! `GameSetPracticeMode` write App-world resources or typed requests directly
@@ -14,13 +14,11 @@
 //! The next/previous level handlers mutate `MenuStateRes` directly when
 //! the App phase is `Menu` and `EditorInputRes.cursor` directly when the
 //! App phase is `Editor`. The game pause/practice handlers mutate
-//! `SessionStateRes` directly, and the legacy `State.session` fields are
-//! synced from the resource in the runtime bridge.
+//! `SessionStateRes` directly.
 //!
 //! Navigation messages mutate App-world phase/session/gameplay resources
 //! directly. Atomic gameplay resets and the shared audio backend remain
-//! App-owned resources while the compatibility `State` is still refreshed
-//! for presentation.
+//! App-owned resources.
 
 use bevy::{
     app::App,
@@ -185,7 +183,7 @@ pub struct TurnRightResources<'w, 's> {
     runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
     runtime_preload_sender: Res<'w, RuntimeAudioPreloadSenderRes>,
     clock: ResMut<'w, GameClock>,
-    level_meta: Res<'w, LevelMeta>,
+    level_meta: ResMut<'w, LevelMeta>,
     pending_turns: ResMut<'w, PendingTurnInputs>,
     authored_objects: Query<
         'w,
@@ -283,7 +281,7 @@ fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_, '_>) 
     resources
         .gameplay_reset
         .request_with_seed(GameplayResetSeed {
-            objects: resources.level_meta.objects.clone(),
+            objects: resources.level_meta.initial_objects.clone(),
             position: resources.level_meta.spawn_position,
             direction: resources.level_meta.spawn_direction,
             speed: eg_game::BASE_PLAYER_SPEED,
@@ -309,6 +307,11 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
         metadata
     });
     let objects = metadata.objects.clone();
+
+    resources.level_meta.initial_objects = objects.clone();
+    resources.level_meta.spawn_position = metadata.spawn.position;
+    resources.level_meta.spawn_direction = metadata.spawn.direction;
+    resources.level_meta.level_duration_seconds = metadata.timeline_duration_seconds;
 
     resources.next_phase.set(AppPhase::Playing);
     resources.session.playtesting_editor = false;
@@ -726,8 +729,7 @@ pub fn handle_game_set_practice_checkpoint(
 }
 
 /// Removes the latest practice checkpoint directly from `SessionStateRes`.
-/// The compatibility sync rebuilds the legacy mesh once while rendering still
-/// reads the old presentation path.
+/// Render extraction observes the updated session resource on the same frame.
 pub fn handle_game_remove_practice_checkpoint(
     mut events: MessageReader<GameRemovePracticeCheckpoint>,
     phase: Res<State<AppPhase>>,

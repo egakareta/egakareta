@@ -22,10 +22,10 @@ use glam::Vec2;
 use crate::{
     events::navigation::TurnRight,
     state::{
-        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorDirtyFlags, EditorHistoryRes,
-        EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
-        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        RenderConfigRes, collect_editor_object_data, replace_editor_objects_commands,
+        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+        EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
+        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
+        collect_editor_object_data, replace_editor_objects_commands,
     },
 };
 
@@ -116,18 +116,6 @@ fn commit_objects(resources: &mut PointerResources<'_, '_>, before: Vec<LevelObj
     }
 }
 
-/// The interaction helpers retain a small compatibility-facing history field
-/// on `EditorRuntimeState` while unit fixtures are being retired. Keep it in
-/// lockstep with the authoritative history resource at the direct-handler
-/// boundary so pointer edits, undo, and redo observe one stack.
-fn load_history(resources: &mut PointerResources<'_, '_>) {
-    resources.runtime.0.history = resources.history.0.clone();
-}
-
-fn store_history(resources: &mut PointerResources<'_, '_>) {
-    resources.history.0 = resources.runtime.0.history.clone();
-}
-
 fn viewport(resources: &PointerResources<'_, '_>) -> Vec2 {
     Vec2::new(
         resources.render.width.max(1) as f32,
@@ -148,6 +136,7 @@ fn interaction_context<'a, 'w, 's>(
         timeline: &mut resources.timeline.0,
         runtime: &mut resources.runtime.0,
         timing: &mut resources.timing.0,
+        history: &mut resources.history.0,
         selected_mask_cache: None,
         block_static_vertex_cache: Default::default(),
         block_static_vertex_cache_complete_len: None,
@@ -175,7 +164,6 @@ fn handle_tapping_click(
         editor.runtime.interaction.hovered_tap_index = Some(tap_index);
         editor.set_timeline_time_seconds(time_seconds);
         editor.input.cursor = pick.cursor;
-        editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
         return true;
     }
 
@@ -192,7 +180,6 @@ fn handle_tapping_click(
             editor.set_timeline_time_seconds(pending_click.pick.time_seconds);
             editor.add_tap(pending_click.pick.indicator_position);
             editor.input.cursor = pending_click.pick.indicator_position;
-            editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
             return true;
         }
     }
@@ -215,7 +202,6 @@ fn handle_tapping_click(
         });
         editor.set_timeline_time_seconds(target_pick.time_seconds);
         editor.input.cursor = target_pick.indicator_position;
-        editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
         return true;
     }
 
@@ -223,7 +209,6 @@ fn handle_tapping_click(
     editor.record_history_state();
     editor.add_tap(target_pick.indicator_position);
     editor.input.cursor = target_pick.indicator_position;
-    editor.mark_dirty(EditorDirtyFlags::tap_preview_changed(true));
     true
 }
 
@@ -234,7 +219,6 @@ pub fn handle_mouse_button(
     mut primary_click: MessageWriter<PrimaryClick>,
 ) {
     let before = load_objects(&mut resources);
-    load_history(&mut resources);
     for event in events.read() {
         match event.button {
             0 => {
@@ -280,7 +264,6 @@ pub fn handle_mouse_button(
             _ => {}
         }
     }
-    store_history(&mut resources);
     commit_objects(&mut resources, before);
 }
 
@@ -290,7 +273,6 @@ pub fn handle_primary_click(
     mut turn_right: MessageWriter<TurnRight>,
 ) {
     let before = load_objects(&mut resources);
-    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         resources.input.0.left_mouse_down = true;
@@ -362,7 +344,6 @@ pub fn handle_primary_click(
             }
         }
     }
-    store_history(&mut resources);
     commit_objects(&mut resources, before);
 }
 
@@ -371,7 +352,6 @@ pub fn handle_pointer_moved(
     mut resources: PointerResources,
 ) {
     let before = load_objects(&mut resources);
-    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor {
@@ -406,7 +386,6 @@ pub fn handle_pointer_moved(
             }
         }
     }
-    store_history(&mut resources);
     commit_objects(&mut resources, before);
 }
 
@@ -415,7 +394,6 @@ pub fn handle_update_cursor_from_screen(
     mut resources: PointerResources,
 ) {
     let before = load_objects(&mut resources);
-    load_history(&mut resources);
     for event in events.read() {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor
@@ -429,7 +407,6 @@ pub fn handle_update_cursor_from_screen(
         let mut editor = interaction_context(&mut resources);
         editor.update_cursor_from_screen_ext(event.x, event.y, viewport, phase);
     }
-    store_history(&mut resources);
     commit_objects(&mut resources, before);
 }
 

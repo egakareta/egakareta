@@ -46,8 +46,7 @@ use crate::state::{
 // Frame timing
 // ---------------------------------------------------------------------------
 
-/// App-owned frame timing resource used by scheduled systems after the legacy callback was
-/// decomposed into scheduled systems.
+/// App-owned frame timing resource used by scheduled systems.
 ///
 /// `Time<Virtual>` is authoritative for production App frames; `FrameTimeRes` retains derived FPS and presentation metrics. Bare-world direct schedules use its bounded `Instant` fallback.
 #[derive(Resource, Clone, Copy)]
@@ -235,8 +234,8 @@ impl GameplayResetRes {
     }
 }
 
-/// `MenuState` mirrored as a resource so UI systems (Phase 5) can read
-/// the menu without going through `State::ui_state_snapshot`. `MenuState`
+/// `MenuState` resource so UI systems can read the menu directly from the App
+/// world. `MenuState`
 /// itself doesn't derive `Default` (its fields like `preview_sky_color`
 /// aren't all `Default`), so this resource is constructed explicitly
 /// via [`MenuStateRes::new`].
@@ -263,9 +262,7 @@ pub struct MenuPreviewObjectsRes {
 /// App-owned active block visual effects.
 ///
 /// Playback systems enqueue new effects through `EditorRuntimeRes`; the
-/// scheduled effect system consumes, ages, and expires them here. Runtime
-/// mirrors the active list into the compatibility renderer until mesh storage
-/// is fully App-owned.
+/// scheduled effect system consumes, ages, and expires them here for extraction.
 #[derive(Resource, Default, Clone)]
 pub struct BlockEffectsRes {
     pub effects: Vec<BlockVisualEffect>,
@@ -298,18 +295,16 @@ pub struct EditorTimingRes(pub EditorTimingState);
 
 /// Authoritative App-world editor spawn metadata.
 ///
-/// Compatibility test construction seeds this resource once from the legacy
-/// editor fixture. `SetSpawnHere` and `RotateSpawnDirection` then mutate it
-/// directly without copying values back into `State`.
+/// App bootstrap seeds this resource once from level/editor data.
+/// `SetSpawnHere` and `RotateSpawnDirection` mutate it directly.
 #[derive(Resource, Default)]
 pub struct EditorSpawnRes(pub SpawnMetadata);
 
-/// Authoritative App-world editor dirty flags and interaction runtime.
+/// Authoritative App-world editor interaction runtime and transient effects.
 #[derive(Resource, Default)]
 pub struct EditorRuntimeRes(pub EditorRuntimeState);
 
-/// `EditorHistoryState` separated out so it can be cloned independently
-/// (and the history snapshot system in Phase 3c can lock it for the frame).
+/// App-owned undo/redo history separated from transient interaction runtime.
 #[derive(Resource, Default)]
 pub struct EditorHistoryRes(pub EditorHistoryState);
 

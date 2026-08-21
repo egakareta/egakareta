@@ -22,8 +22,9 @@ use crate::spatial::SpatialGrid;
 /// levels); `started` gates whether the simulation is running; `game_over`
 /// and `level_complete` are terminal states.
 ///
-/// The gameplay clock remains domain state; its per-frame advance is supplied by the App gameplay schedule.
-/// are replaced by `bevy_time` `Time<Fixed>` in the full-Bevy migration.
+/// The gameplay clock remains domain state; its per-frame advance is supplied
+/// by the App gameplay schedule. The custom renderer does not participate in
+/// gameplay ownership.
 #[derive(Resource)]
 pub struct GameClock {
     pub elapsed_seconds: f32,
@@ -165,12 +166,14 @@ impl Default for GameRuntimeTuning {
     }
 }
 
-/// Cached authored level metadata. Populated by `eg-state` on level load.
-/// The level objects live in the world as `ObjectData` entities; this is the
-/// read-only summary used by undo/redo and the timeline.
+/// Initial level seed populated by `eg-state` on level load.
+///
+/// Live level objects live in the world as `ObjectData` entities. This seed is
+/// retained only for atomic restart/reset transitions and is never updated by
+/// gameplay consumption or entity replacement.
 #[derive(Resource, Default, Clone)]
 pub struct LevelMeta {
-    pub objects: Vec<LevelObject>,
+    pub initial_objects: Vec<LevelObject>,
     pub spawn_position: [f32; 3],
     pub spawn_direction: Direction,
     pub level_duration_seconds: f32,

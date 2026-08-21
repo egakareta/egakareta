@@ -174,8 +174,8 @@ impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MenuPreviewObjectsRes>()
             .init_resource::<BlockEffectsRes>();
-        // `MenuStateRes` is added by the `State` constructor because it
-        // needs level names from `eg-level`.
+        // `MenuStateRes` is added by App bootstrap because it needs level
+        // names from `eg-level`.
     }
 }
 
@@ -213,9 +213,7 @@ impl Plugin for StatePlugins {
 /// (full-ECS harness) or for tests.
 ///
 /// In Bevy 0.19, per-schedule `configure_sets(...)` must be called on the
-/// `Schedule` itself, not on `App`. The set ordering is therefore
-/// configured per-schedule by callers (see [`super::sets::StateSet`] for
-/// the per-set semantics). This entry point exists as the canonical
+/// `Schedule` itself, not on `App`. This entry point exists as the canonical
 /// "give me a fully wired eg-state `App`" helper and is where
 /// `app.add_schedule(StateUpdate::default())` + the schedule's
 /// `configure_sets` will be wired in Phase 2c.
@@ -418,13 +416,11 @@ pub fn register_state_schedule(world: &mut World) {
                 .after(crate::state::render::plugin::update_render_uniforms_system),
             crate::state::render::plugin::upload_render_uniforms_system
                 .after(crate::state::render::plugin::update_render_uniforms_system),
-            crate::state::render::plugin::clear_editor_dirty_flags_system,
         )
             .chain(),
     );
     render_extract_schedule.add_systems(
         crate::state::render::plugin::upload_extracted_render_meshes_system
-            .after(crate::state::render::plugin::clear_editor_dirty_flags_system)
             .in_set(crate::state::render::plugin::RenderSet::Present),
     );
     render_extract_schedule.add_systems(

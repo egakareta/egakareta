@@ -17,11 +17,11 @@ use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
 use crate::state::{
-    EditorAudioCacheRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
-    EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderUniformsRes,
-    RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, collect_editor_object_data,
-    load_waveform_for_level_resources,
+    EditorAudioCacheRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+    EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
+    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+    RenderUniformsRes, RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes,
+    collect_editor_object_data, load_waveform_for_level_resources,
 };
 
 /// Switch the editor mode.
@@ -60,8 +60,7 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 // `SetEditorMode` writes the authoritative editor mode directly. App-world
-// interaction, UI, and render extraction consume `EditorInputRes`; legacy
-// `State::set_editor_mode` remains only for isolated State compatibility paths.
+// interaction, UI, and render extraction consume `EditorInputRes`.
 
 pub fn handle_set_editor_mode(
     mut events: MessageReader<SetEditorMode>,
@@ -179,6 +178,7 @@ pub struct PickBlockAtResources<'w, 's> {
     config: ResMut<'w, EditorConfigRes>,
     input: ResMut<'w, EditorInputRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
+    history: ResMut<'w, EditorHistoryRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     spawn: ResMut<'w, EditorSpawnRes>,
 }
@@ -201,6 +201,7 @@ fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<
             timeline: &mut resources.timeline.0,
             runtime: &mut resources.runtime.0,
             timing: &mut resources.timing.0,
+            history: &mut resources.history.0,
             selected_mask_cache: None,
             block_static_vertex_cache: Default::default(),
             block_static_vertex_cache_complete_len: None,

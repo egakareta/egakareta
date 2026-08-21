@@ -8,7 +8,7 @@
 use eg_types::{AppPhase, EditorInteractionChange};
 use glam::{EulerRot, Mat3, Vec2, Vec3};
 
-use super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart};
+use super::super::{EditorBlockDrag, EditorDragBlockStart};
 
 const MARQUEE_DRAG_THRESHOLD_PX: f64 = 4.0;
 const CAMERA_TRIGGER_MARQUEE_RADIUS_PX: f32 = 16.0;
@@ -246,9 +246,6 @@ super::super::editor_context_methods! {
             self.input.cursor = [obj.position[0], obj.position[1], obj.position[2]];
         }
 
-        self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(
-            self.input.selected_block_index.is_some(),
-        ));
     }
 
     pub fn finish_marquee_selection(
@@ -289,7 +286,6 @@ super::super::editor_context_methods! {
             self.input.hovered_block_index = None;
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
-            self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(false));
             return true;
         }
         false
@@ -519,37 +515,6 @@ super::super::editor_context_methods! {
 
         if self.drag_selection(x, y, viewport) {
             self.sync_objects_for_drag();
-            // When a transform trigger block is being moved on the grid via
-            // click-and-drag, the source ring + connector line must follow
-            // the block pose live.
-            let dragging_transform_trigger_block = self
-                .runtime
-                .interaction
-                .block_drag
-                .as_ref()
-                .is_some_and(|drag| {
-                    drag.start_blocks.iter().any(|b| {
-                        self.objects
-                            .get(b.index)
-                            .is_some_and(|o| o.is_transform_trigger())
-                    })
-                });
-            // Check if any dragged blocks are sources of transform triggers
-            let dragged_indices: Vec<usize> = self
-                .runtime
-                .interaction
-                .block_drag
-                .as_ref()
-                .map(|drag| drag.start_blocks.iter().map(|b| b.index).collect())
-                .unwrap_or_default();
-            let dragging_transform_trigger_source =
-                self.any_block_is_transform_trigger_source(&dragged_indices);
-            self.mark_dirty(EditorDirtyFlags {
-                rebuild_cursor: true,
-                rebuild_transform_trigger_markers: dragging_transform_trigger_block
-                    || dragging_transform_trigger_source,
-                ..EditorDirtyFlags::default()
-            });
             true
         } else {
             false
@@ -604,10 +569,6 @@ super::super::editor_context_methods! {
                 self.runtime.interaction.block_drag = None;
             }
 
-            {
-                puffin::profile_scope!("SelectMarkDirty");
-                self.mark_dirty(EditorDirtyFlags::selection_overlay_changed());
-            }
             return EditorInteractionChange::None;
         };
 
@@ -650,14 +611,6 @@ super::super::editor_context_methods! {
                 self.input.cursor = pick.cursor;
                 changed = EditorInteractionChange::Cursor;
             }
-        }
-
-        {
-            puffin::profile_scope!("SelectMarkDirty");
-            self.mark_dirty(EditorDirtyFlags::selection_cursor_changed(matches!(
-                changed,
-                EditorInteractionChange::Cursor
-            )));
         }
 
         changed
@@ -823,7 +776,7 @@ mod tests {
     use glam::{Vec2, Vec3};
 
     use super::{
-        super::super::{EditorBlockDrag, EditorDirtyFlags, EditorDragBlockStart, EditorSubsystem},
+        super::super::{EditorBlockDrag, EditorDragBlockStart, EditorSubsystem},
         projected_block_overlaps_rect, screen_bounds_overlap_rect,
     };
 
@@ -999,12 +952,10 @@ mod tests {
         assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
         assert!(editor.marquee_has_dragged_far_enough());
         editor.apply_marquee_selection(viewport, false);
-        editor.mark_dirty(EditorDirtyFlags::selection_overlay_changed());
 
         assert_eq!(editor.input.selected_block_indices, vec![0]);
         assert_eq!(editor.input.selected_block_index, Some(0));
         assert_eq!(editor.input.hovered_block_index, Some(0));
-        assert!(editor.runtime.dirty.rebuild_selection_overlays);
     }
 
     #[test]
@@ -1093,7 +1044,7 @@ mod tests {
         assert_eq!(drag.start_blocks.len(), 1);
         assert_eq!(drag.start_blocks[0].index, 0);
 
-        let history_before = editor.runtime.history.undo.len();
+        let history_before = editor.history.undo.len();
         editor.runtime.interaction.block_drag = None;
         assert!(editor.begin_selected_block_drag_ext(
             click.x as f64,
@@ -1102,7 +1053,7 @@ mod tests {
             AppPhase::Editor,
         ));
         assert_eq!(
-            editor.runtime.history.undo.len(),
+            editor.history.undo.len(),
             history_before + 1,
             "begin_selected_block_drag_ext should capture undo history"
         );
@@ -1141,7 +1092,7 @@ mod tests {
     }
 
     #[test]
-    fn drag_selection_from_screen_updates_objects_and_marks_cursor_dirty() {
+    fn drag_selection_from_screen_updates_objects_and_render_inputs() {
         let mut editor = EditorSubsystem::default();
         let viewport = default_viewport();
 
@@ -1167,7 +1118,6 @@ mod tests {
             }],
         });
 
-        editor.runtime.dirty = EditorDirtyFlags::default();
         let before = editor.objects[0].position;
 
         assert!(editor.drag_selection_from_screen(
@@ -1177,7 +1127,6 @@ mod tests {
             AppPhase::Editor,
         ));
         assert_ne!(before, editor.objects[0].position);
-        assert!(editor.runtime.dirty.rebuild_cursor);
 
         assert!(!editor.drag_selection_from_screen(
             origin_screen.x as f64,
@@ -1377,7 +1326,6 @@ mod tests {
 
         editor.input.mode = EditorMode::Select;
         editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        editor.runtime.dirty = EditorDirtyFlags::default();
 
         let click = editor
             .world_to_screen_v(block_center, viewport)
@@ -1391,9 +1339,6 @@ mod tests {
         );
         assert_eq!(select_result, EditorInteractionChange::Cursor);
         assert_eq!(editor.input.selected_block_index, Some(0));
-        assert!(!editor.runtime.dirty.rebuild_block_mesh);
-        assert!(editor.runtime.dirty.rebuild_selection_overlays);
-        assert!(editor.runtime.dirty.rebuild_cursor);
 
         editor.input.shift_held = true;
         let toggle_result = editor.select_block_from_screen(
@@ -1474,7 +1419,7 @@ mod tests {
     }
 
     #[test]
-    fn drag_selection_transform_trigger_source_sets_dirty_flag() {
+    fn drag_selection_transform_trigger_source_updates_geometry() {
         let mut editor = EditorSubsystem::default();
         let viewport = default_viewport();
 
@@ -1518,17 +1463,11 @@ mod tests {
             }],
         });
 
-        editor.runtime.dirty = EditorDirtyFlags::default();
-
         assert!(editor.drag_selection_from_screen(
             origin_screen.x as f64 + 40.0,
             origin_screen.y as f64,
             viewport,
             AppPhase::Editor,
         ));
-        assert!(
-            editor.runtime.dirty.rebuild_transform_trigger_markers,
-            "Moving a transform trigger source block should mark transform trigger markers dirty"
-        );
     }
 }
