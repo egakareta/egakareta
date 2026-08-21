@@ -1,5 +1,5 @@
 {
-    "$schema": "../../node_modules/license-check-and-add/config-schema.json",
+    "$schema": "https://raw.githubusercontent.com/awjh/license-check-and-add/refs/heads/master/config-schema.json",
     "ignoreFile": ".gitignore",
     "ignore": [
         ".agents/**",
@@ -8,6 +8,7 @@
         "supabase/**",
         "**/lcov.info",
         "**/*.md",
+        "**/*.json",
         "**/*.lock",
         "**/*-env.d.ts",
         "**/*_types.ts",

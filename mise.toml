@@ -4,6 +4,8 @@
 [tools]
 bun = "latest"
 "cargo:cargo-llvm-cov" = "latest"
+"cargo:license-check-and-add" = "0.4.0"
+"github:oxc-project/oxc" = { version = "latest", matching = "oxfmt" }
 lefthook = "latest"
 node = "latest"
 rust = { version = "nightly-2026-03-12", components = [
@@ -26,16 +28,16 @@ run = "cargo bench -p eg-app --features benchmarks --bench perf_hot_paths"
 
 # Check
 [tasks.check]
-run = "mise lint && mise format:cargo --check && mise format:prettier --check"
+run = "mise lint && mise format:cargo --check && mise format:oxfmt --check"
 
 [tasks.format]
-depends = ["format:cargo", "format:prettier"]
+depends = ["format:cargo", "format:oxfmt"]
 
 [tasks."format:cargo"]
 run = "cargo fmt --all -- --config-path .config/rustfmt.toml"
 
-[tasks."format:prettier"]
-run = "bunx prettier --config .config/.prettierrc --ignore-path .gitignore --ignore-path .config/.prettierignore --write ."
+[tasks."format:oxfmt"]
+run = "oxfmt --write ."
 
 [tasks.lint]
 run = "cargo clippy --all-targets --all-features --workspace -- -D warnings"
@@ -69,10 +71,10 @@ run = "supabase test db"
 
 # License
 [tasks."license:add"]
-run = "bunx license-check-and-add add -f .config/license/config.json"
+run = "license-check-and-add add -f .config/license/config.json"
 
 [tasks."license:check"]
-run = "bunx license-check-and-add check -f .config/license/config.json"
+run = "license-check-and-add check -f .config/license/config.json"
 
 # Development
 [tasks.dev]

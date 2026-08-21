@@ -30,7 +30,7 @@ All primary scripts are managed via `mise` in the `mise.toml` file. Use these st
 ### Linting & Formatting
 
 - **Lint:** `mise lint` — executes Clippy. **Never bypass these warnings!** Clippy denials are treated as hard errors in CI.
-- **Format Code:** `mise format` — runs `cargo fmt` then prettier.
+- **Format Code:** `mise format` — runs `cargo fmt` then oxfmt.
 - **License Headers:** `mise license:add` / `mise license:check` — ensures every source file has the AGPLv3/commercial copyright header. The lefthook pre-commit hook runs `license:check` and `format` in parallel.
 
 ### Testing

@@ -1,4 +1,0 @@
-*.lock
-**/assets/levels
-functions/cloudflare-env.d.ts
-supabase/.temp

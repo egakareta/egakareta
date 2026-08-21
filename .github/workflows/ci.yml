@@ -34,7 +34,7 @@ jobs:
       - uses: jdx/mise-action@v4
       - uses: Swatinem/rust-cache@v2
       - run: mise format:cargo -- --check
-      - run: mise format:prettier -- --check
+      - run: mise format:oxfmt -- --check
       - run: mise lint
 
   test-rust:
