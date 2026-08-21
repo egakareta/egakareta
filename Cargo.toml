@@ -37,8 +37,6 @@ bevy = { version = "0.19", default-features = false, features = [
     "bevy_state",
     "bevy_material",
     "bevy_log",
-    "bevy_pbr",
-    "bevy_render",
 ] }
 bevy_egui = "0.41"
 bytemuck = { version = "1.25", features = ["derive"] }
