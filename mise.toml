@@ -2,10 +2,11 @@
 # Licensed under the GNU AGPLv3 or a proprietary Commercial License.
 # See LICENSE and COMMERCIAL.md for details.
 [tools]
-bun = "latest"
 "github:taiki-e/cargo-llvm-cov" = "latest"
 "github:Unreal-Works/license-check-and-add" = "0.4.0"
 "github:oxc-project/oxc" = { version = "latest", matching = "oxfmt" }
+bun = "latest"
+clang = "latest"
 lefthook = "latest"
 node = "latest"
 rust = { version = "nightly-2026-03-12", components = [
