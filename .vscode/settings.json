@@ -14,5 +14,8 @@
         "**/.editorconfig": true,
         "**/dist": true,
         "lcov.info": true
+    },
+    "[toml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
     }
 }
