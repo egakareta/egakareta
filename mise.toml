@@ -1,0 +1,54 @@
+# Copyright (c) egakareta <team@egakareta.com>.
+# Licensed under the GNU AGPLv3 or a proprietary Commercial License.
+# See LICENSE and COMMERCIAL.md for details.
+[bootstrap.packages]
+"apt:build-essential" = "latest"
+"apt:curl" = "latest"
+"apt:ca-certificates" = "latest"
+"apt:git" = "latest"
+"apt:git-lfs" = "latest"
+"apt:pkg-config" = "latest"
+"apt:libssl-dev" = "latest"
+"apt:clang" = "latest"
+"apt:cmake" = "latest"
+"apt:gnupg" = "latest"
+"apt:wget" = "latest"
+"apt:unzip" = "latest"
+"apt:libclang-dev" = "latest"
+"apt:libasound2-dev" = "latest"
+"apt:libasound2-plugins" = "latest"
+"apt:libmariadb-dev" = "latest"
+"apt:libudev-dev" = "latest"
+"apt:libxkbcommon-dev" = "latest"
+"apt:libxkbcommon-x11-dev" = "latest"
+"apt:libwayland-dev" = "latest"
+"apt:libx11-dev" = "latest"
+"apt:libxcursor-dev" = "latest"
+"apt:libxi-dev" = "latest"
+"apt:libxrandr-dev" = "latest"
+"apt:libvulkan-dev" = "latest"
+"apt:libfontconfig1-dev" = "latest"
+"apt:mesa-vulkan-drivers" = "latest"
+"apt:libgl1-mesa-dri" = "latest"
+"apt:libgl1" = "latest"
+"apt:xvfb" = "latest"
+"apt:alsa-utils" = "latest"
+"apt:x11-utils" = "latest"
+"apt:gcc" = "latest"
+"apt:swig" = "latest"
+"apt:pipewire-alsa" = "latest"
+"apt:pipewire" = "latest"
+
+[tools]
+bun = "latest"
+"cargo:cargo-llvm-cov" = "latest"
+node = "latest"
+rust = { version = "nightly-2026-03-12", components = [
+    "clippy",
+    "rustfmt",
+    "rust-src",
+] }
+
+[settings]
+cargo.binstall = true
+cargo.binstall_quickinstall = true
