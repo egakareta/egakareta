@@ -64,7 +64,7 @@ cargo llvm-cov report
 """
 
 [tasks."test:functions"]
-run = "vitest run --config .config/vitest.config.mts"
+run = "bunx vitest run --config .config/vitest.config.mts"
 
 [tasks."test:db"]
 run = "supabase test db"
