@@ -60,9 +60,8 @@ pub fn handle_set_spawn_here(
     }
 }
 
-/// Cycle the spawn direction Forward → Right → Forward. Mirrors
-/// `EditorSubsystem::rotate_spawn_direction` /
-/// `toggle_spawn_direction` (in `eg_editor_domain::tap_management`).
+/// Cycle the spawn direction Forward → Right → Forward using the shared
+/// `toggle_spawn_direction` domain operation.
 pub fn handle_rotate_spawn_direction(
     mut events: MessageReader<RotateSpawnDirection>,
     mut spawn: ResMut<EditorSpawnRes>,
@@ -73,8 +72,7 @@ pub fn handle_rotate_spawn_direction(
 }
 
 /// Increment the block-placement preview yaw (`[1]` index) by 90
-/// degrees, wrapping into `0..360`. Mirrors
-/// `EditorSubsystem::rotate_selected_block_preview`.
+/// degrees, wrapping into `0..360`.
 pub fn handle_rotate_placement_preview(
     mut events: MessageReader<RotatePlacementPreview>,
     mut config: ResMut<EditorConfigRes>,

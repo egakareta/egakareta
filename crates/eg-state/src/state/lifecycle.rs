@@ -6,6 +6,7 @@
 
 */
 use bevy::ecs::world::World;
+use eg_audio::service::{AudioPreloadResult, WaveformResult};
 use eg_blocks::BlockTextureAtlas;
 use eg_level::builtin_level_names;
 use eg_mesh::{
@@ -26,11 +27,18 @@ use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use super::{
-    AudioState, AuthStateRes, EditorConfigState, editor_objects::replace_editor_objects,
-    runtime::EditorRuntimeState,
+    AudioBackendRes, AudioImportChannel, AudioPreloadChannel, AuthStateRes, EditorAudioCacheRes,
+    EditorConfigState, RuntimeAudioPreloadRes, WaveformLoadChannel,
+    editor_objects::replace_editor_objects, runtime::EditorRuntimeState,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
+
+fn shared_receiver<T>(
+    receiver: std::sync::mpsc::Receiver<T>,
+) -> std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<T>>> {
+    std::sync::Arc::new(std::sync::Mutex::new(receiver))
+}
 
 fn block_texture_array_layer_count(source_layers: usize) -> u32 {
     let mut layer_count = source_layers.max(2) as u32;
@@ -231,7 +239,12 @@ struct AppInitialization {
     editor_runtime: EditorRuntimeState,
     editor_timing: super::EditorTimingState,
     editor_history: super::EditorHistoryState,
-    audio: AudioState,
+    audio_runtime: AudioBackendRes,
+    runtime_preload: RuntimeAudioPreloadRes,
+    runtime_preload_channel: AudioPreloadChannel,
+    editor_audio_cache: EditorAudioCacheRes,
+    audio_import_channel: AudioImportChannel,
+    waveform_load_channel: WaveformLoadChannel,
     session: super::SessionStateRes,
     level_import_channel: (
         std::sync::mpsc::Sender<Vec<u8>>,
@@ -315,7 +328,12 @@ impl AppBootstrap {
             editor_runtime,
             editor_timing,
             editor_history,
-            audio,
+            audio_runtime,
+            runtime_preload,
+            runtime_preload_channel,
+            editor_audio_cache,
+            audio_import_channel,
+            waveform_load_channel,
             session,
             level_import_channel,
             menu,
@@ -326,28 +344,28 @@ impl AppBootstrap {
         super::async_bridge::install_async_channel_resources_arc(
             world,
             std::sync::Arc::clone(&auth_receiver),
-            std::sync::Arc::clone(&audio.editor.audio_import_channel.1),
-            std::sync::Arc::clone(&audio.editor.waveform_load_channel.1),
-            std::sync::Arc::clone(&audio.runtime_preload.preload_channel.1),
+            std::sync::Arc::clone(&audio_import_channel.1),
+            std::sync::Arc::clone(&waveform_load_channel.1),
+            std::sync::Arc::clone(&runtime_preload_channel.1),
             std::sync::Arc::clone(&level_import_channel.1),
         );
         world.insert_resource(super::LevelImportSenderRes::new(
             level_import_channel.0.clone(),
         ));
         world.insert_resource(super::AudioImportSenderRes::new(
-            audio.editor.audio_import_channel.0.clone(),
+            audio_import_channel.0.clone(),
         ));
-        world.insert_resource(audio.editor.cache.clone());
-        world.insert_resource(audio.runtime_preload.cache.clone());
+        world.insert_resource(editor_audio_cache);
+        world.insert_resource(runtime_preload);
         world.insert_resource(super::RuntimeAudioPreloadSenderRes(
-            audio.runtime_preload.preload_channel.0.clone(),
+            runtime_preload_channel.0.clone(),
         ));
         #[cfg(not(target_arch = "wasm32"))]
-        world.insert_resource(audio.runtime.clone());
+        world.insert_resource(audio_runtime);
         #[cfg(target_arch = "wasm32")]
-        world.insert_non_send(audio.runtime.clone());
+        world.insert_non_send(audio_runtime);
         world.insert_resource(super::WaveformLoadSenderRes(
-            audio.editor.waveform_load_channel.0.clone(),
+            waveform_load_channel.0.clone(),
         ));
 
         let (render_gpu, render_meshes, render_surface_host) = render_resources.into_parts();
@@ -1154,10 +1172,17 @@ impl AppInitialization {
         };
         let available_graphics_backends = discover_graphics_backends();
         let available_audio_backends = eg_audio::audio::available_host_labels();
-        let audio_state = AudioState::new(local_audio_cache);
-        let _ = audio_state
-            .runtime
-            .set_preferred_backend_name(&app_settings.audio_backend);
+        let audio_runtime = AudioBackendRes::default();
+        let _ = audio_runtime.set_preferred_backend_name(&app_settings.audio_backend);
+        let runtime_preload = RuntimeAudioPreloadRes::default();
+        let (preload_sender, preload_receiver) = std::sync::mpsc::channel::<AudioPreloadResult>();
+        let runtime_preload_channel = (preload_sender, shared_receiver(preload_receiver));
+        let editor_audio_cache = EditorAudioCacheRes::from_local_files(local_audio_cache);
+        let (audio_import_sender, audio_import_receiver) =
+            std::sync::mpsc::channel::<(String, Vec<u8>)>();
+        let audio_import_channel = (audio_import_sender, shared_receiver(audio_import_receiver));
+        let (waveform_sender, waveform_receiver) = std::sync::mpsc::channel::<WaveformResult>();
+        let waveform_load_channel = (waveform_sender, shared_receiver(waveform_receiver));
 
         let block_geometry = build_block_geometry(&[]);
         let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
@@ -1250,7 +1275,12 @@ impl AppInitialization {
 
             phase: AppPhase::Menu,
             menu,
-            audio: audio_state,
+            audio_runtime,
+            runtime_preload,
+            runtime_preload_channel,
+            editor_audio_cache,
+            audio_import_channel,
+            waveform_load_channel,
             session: super::SessionStateRes {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {

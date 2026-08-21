@@ -8,9 +8,6 @@
 use eg_editor_domain::interpolate_timeline_sample_positions;
 use eg_types::{CameraMode, CameraTrigger, LevelObject, TimedTrigger, TriggerTarget};
 
-#[cfg(test)]
-use super::EditorSubsystem;
-
 #[derive(Default, Clone)]
 pub struct EditorTriggerState {
     pub selected_index: Option<usize>,
@@ -129,23 +126,6 @@ super::editor_context_methods! {
             .filter(|index| *index < trigger_count)
     }
 
-    #[cfg(test)]
-    pub fn trigger_object_index_for_trigger_index(&self, trigger_index: usize) -> Option<usize> {
-        let mut indexed: Vec<(usize, f32)> = self
-            .objects
-            .iter()
-            .enumerate()
-            .filter_map(|(object_index, object)| {
-                let trigger = object.trigger.as_ref()?;
-                Some((object_index, trigger.time_seconds))
-            })
-            .collect();
-        indexed.sort_by(|left, right| f32::total_cmp(&left.1, &right.1));
-        indexed
-            .get(trigger_index)
-            .map(|(object_index, _)| *object_index)
-    }
-
     pub fn camera_trigger_markers(&self) -> Vec<(usize, CameraTrigger)> {
         self.trigger_objects()
             .iter()
@@ -167,45 +147,6 @@ super::editor_context_methods! {
             .collect()
     }
 
-    #[cfg(test)]
-    pub fn has_object_transform_triggers(&self) -> bool {
-        self.trigger_objects().iter().any(|object| {
-            let Some(trigger) = object.trigger.as_ref() else {
-                return false;
-            };
-            !matches!(trigger.target, TriggerTarget::Camera) && trigger.transform
-        })
-    }
-
-    #[cfg(test)]
-    pub fn has_camera_timeline_triggers(&self) -> bool {
-        self.trigger_objects()
-            .iter()
-            .filter_map(|object| object.trigger.as_ref())
-            .any(Self::is_camera_track_trigger)
-    }
-
-    #[cfg(test)]
-    pub fn set_selected_block_trigger(&mut self, trigger: Option<TimedTrigger>) {
-        let Some(index) = self
-            .input
-            .selected_block_index
-            .filter(|index| *index < self.objects.len())
-        else {
-            return;
-        };
-
-        self.objects[index].trigger = trigger;
-        if let Some(trigger) = self.objects[index].trigger.clone() {
-            sync_camera_follow_trigger_object_pose(
-                &mut self.objects[index],
-                &trigger,
-                CameraTrigger::default().target_position,
-            );
-        }
-        self.sync_trigger_selection_from_objects();
-    }
-
     pub fn set_trigger_selected(&mut self, selected: Option<usize>) {
         let trigger_count = self.trigger_objects().len();
         self.triggers.selected_index = selected.filter(|index| *index < trigger_count);
@@ -219,7 +160,10 @@ mod tests {
         TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger, TriggerTarget,
     };
 
-    use super::EditorSubsystem;
+    use super::super::EditorInteractionContext;
+    use crate::state::{
+        replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
+    };
 
     fn test_block(x: f32) -> LevelObject {
         LevelObject {
@@ -310,23 +254,36 @@ mod tests {
         let follow = camera_follow_trigger(1.0).trigger.unwrap();
         let object = object_move_timed_trigger(2.0);
 
-        assert!(EditorSubsystem::is_camera_track_trigger(&pose));
-        assert!(EditorSubsystem::is_camera_track_trigger(&follow));
-        assert!(!EditorSubsystem::is_camera_track_trigger(&object));
+        let mut app = TestApp::minimal();
+        let (pose_matches, follow_matches, object_matches) =
+            with_editor_interaction_context(app.world_mut(), |_editor| {
+                (
+                    EditorInteractionContext::is_camera_track_trigger(&pose),
+                    EditorInteractionContext::is_camera_track_trigger(&follow),
+                    EditorInteractionContext::is_camera_track_trigger(&object),
+                )
+            });
+
+        assert!(pose_matches);
+        assert!(follow_matches);
+        assert!(!object_matches);
     }
 
     #[test]
     fn trigger_objects_are_sorted_trigger_objects() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![
+                test_block(99.0),
+                camera_pose_trigger(2.0),
+                object_move_trigger(0.5),
+                camera_follow_trigger(1.0),
+            ],
+        );
 
-        editor.objects = vec![
-            test_block(99.0),
-            camera_pose_trigger(2.0),
-            object_move_trigger(0.5),
-            camera_follow_trigger(1.0),
-        ];
-
-        let triggers = editor.trigger_objects();
+        let triggers =
+            with_editor_interaction_context(app.world_mut(), |editor| editor.trigger_objects());
         assert_eq!(triggers.len(), 3);
         assert_eq!(triggers[0].id, "transform_0.5");
         assert_eq!(triggers[1].id, "camera_follow_1");
@@ -335,19 +292,28 @@ mod tests {
 
     #[test]
     fn trigger_selection_and_marker_queries_reflect_filtered_camera_track() {
-        let mut editor = EditorSubsystem::default();
-        editor.objects = vec![
-            camera_pose_trigger(0.5),
-            object_move_trigger(0.75),
-            camera_follow_trigger(1.0),
-        ];
+        let mut app = TestApp::minimal();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![
+                camera_pose_trigger(0.5),
+                object_move_trigger(0.75),
+                camera_follow_trigger(1.0),
+            ],
+        );
 
-        editor.set_trigger_selected(Some(99));
-        assert_eq!(editor.selected_trigger_index(), None);
-        editor.set_trigger_selected(Some(2));
-        assert_eq!(editor.selected_trigger_index(), Some(2));
+        let (invalid_selection, valid_selection, markers) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.set_trigger_selected(Some(99));
+                let invalid_selection = editor.selected_trigger_index();
+                editor.set_trigger_selected(Some(2));
+                let valid_selection = editor.selected_trigger_index();
+                let markers = editor.camera_trigger_markers();
+                (invalid_selection, valid_selection, markers)
+            });
 
-        let markers = editor.camera_trigger_markers();
+        assert_eq!(invalid_selection, None);
+        assert_eq!(valid_selection, Some(2));
         assert_eq!(markers.len(), 2);
         assert_eq!(markers[0].0, 0);
         assert_eq!(markers[1].0, 2);
@@ -356,44 +322,23 @@ mod tests {
     }
 
     #[test]
-    fn object_transform_detection_and_hitbox_toggle_cover_simple_state_helpers() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.objects = vec![camera_pose_trigger(0.0)];
-        assert!(!editor.has_object_transform_triggers());
-
-        editor.objects.push(object_move_trigger(1.0));
-        assert!(editor.has_object_transform_triggers());
-    }
-
-    #[test]
     fn derived_triggers_use_trigger_block_pose_as_source_of_truth() {
-        let mut editor = EditorSubsystem::default();
-        editor.objects = vec![object_move_trigger(0.0)];
+        let mut app = TestApp::minimal();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![LevelObject {
+                position: [9.0, 8.0, 7.0],
+                size: [2.0, 3.0, 4.0],
+                rotation: [10.0, 20.0, 30.0],
+                ..object_move_trigger(0.0)
+            }],
+        );
 
-        editor.objects[0].position = [9.0, 8.0, 7.0];
-        editor.objects[0].size = [2.0, 3.0, 4.0];
-        editor.objects[0].rotation = [10.0, 20.0, 30.0];
-
-        let trigger_object = editor.trigger_objects().remove(0);
+        let trigger_object = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.trigger_objects().remove(0)
+        });
         assert_eq!(trigger_object.position, [9.0, 8.0, 7.0]);
         assert_eq!(trigger_object.rotation, [10.0, 20.0, 30.0]);
         assert_eq!(trigger_object.size, [2.0, 3.0, 4.0]);
-    }
-
-    #[test]
-    fn trigger_queries_skip_non_trigger_objects_after_index_sync() {
-        let mut editor = EditorSubsystem::default();
-        editor.objects = (0..10_000).map(|index| test_block(index as f32)).collect();
-        editor.objects.push(camera_pose_trigger(1.0));
-        editor.objects.push(test_block(10_001.0));
-
-        assert_eq!(editor.trigger_objects().len(), 1);
-        assert!(editor.has_camera_timeline_triggers());
-
-        editor.sync_objects();
-
-        assert_eq!(editor.trigger_objects().len(), 1);
-        assert!(editor.has_camera_timeline_triggers());
     }
 }

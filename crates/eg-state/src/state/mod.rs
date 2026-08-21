@@ -6,27 +6,19 @@
 
 */
 macro_rules! editor_context_methods {
-    (@collect [$($context:item)*] [$($tests:item)*]) => {
+    (@collect [$($context:item)*]) => {
         impl $crate::state::EditorInteractionContext<'_> {
             $($context)*
         }
-
-        #[cfg(test)]
-        impl $crate::state::EditorSubsystem {
-            $($context)*
-            $($tests)*
-        }
     };
-    (@collect [$($context:item)*] [$($tests:item)*] #[cfg(test)] $test:item $($rest:tt)*) => {
-        editor_context_methods!(
-            @collect [$($context)*] [$($tests)* #[cfg(test)] $test] $($rest)*
-        );
+    (@collect [$($context:item)*] #[cfg(test)] $test:item $($rest:tt)*) => {
+        editor_context_methods!(@collect [$($context)*] $($rest)*);
     };
-    (@collect [$($context:item)*] [$($tests:item)*] $item:item $($rest:tt)*) => {
-        editor_context_methods!(@collect [$($context)* $item] [$($tests)*] $($rest)*);
+    (@collect [$($context:item)*] $item:item $($rest:tt)*) => {
+        editor_context_methods!(@collect [$($context)* $item] $($rest)*);
     };
     ($($tokens:tt)*) => {
-        editor_context_methods!(@collect [] [] $($tokens)*);
+        editor_context_methods!(@collect [] $($tokens)*);
     };
 }
 pub(crate) use editor_context_methods;
@@ -89,13 +81,18 @@ use std::ops::{Deref, DerefMut};
 
 pub(crate) use async_bridge::apply_imported_level_to_world;
 pub use audio_state::{
-    AudioBackendRes, AudioBackendSystemParam, AudioState, EditorAudioCacheRes,
-    RuntimeAudioPreloadRes, RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
+    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
+    RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
 };
 pub(crate) use audio_state::{
+    AudioImportChannel, AudioPreloadChannel, WaveformLoadChannel,
     load_waveform_for_level_resources, start_audio_source_at_seconds_for_resources,
     with_audio_backend,
 };
+#[cfg(test)]
+use bevy::ecs::prelude::ResMut;
+#[cfg(test)]
+use bevy::ecs::system::SystemState;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
 pub use editor_camera::{EditorCameraState, editor_camera_preview_for_objects};
 pub use editor_config_state::EditorConfigState;
@@ -186,25 +183,58 @@ pub(crate) struct EditorInteractionContext<'a> {
     pub(crate) pick_spatial_index: EditorPickSpatialIndex,
 }
 
-/// Owned editor fixture retained while unit tests are migrated to `TestApp`.
-/// Production systems use [`EditorInteractionContext`] instead.
 #[cfg(test)]
-#[derive(Default)]
-pub struct EditorSubsystem {
-    pub input: EditorInputState,
-    pub config: EditorConfigState,
-    pub objects: Vec<LevelObject>,
-    pub spawn: SpawnMetadata,
-    pub camera: EditorCameraState,
-    pub triggers: EditorTriggerState,
-    pub timeline: EditorTimelineState,
-    pub runtime: EditorRuntimeState,
-    pub timing: EditorTimingState,
-    pub history: EditorHistoryState,
-    pub selected_mask_cache: Option<Vec<bool>>,
-    pub block_static_vertex_cache: MeshGeometry,
-    pub block_static_vertex_cache_complete_len: Option<usize>,
-    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
+pub(crate) fn with_editor_interaction_context<R>(
+    world: &mut bevy::ecs::world::World,
+    f: impl FnOnce(&mut EditorInteractionContext<'_>) -> R,
+) -> R {
+    let mut objects = editor_objects::collect_editor_objects(world);
+    let mut system_state: SystemState<(
+        ResMut<'_, EditorInputRes>,
+        ResMut<'_, EditorConfigRes>,
+        ResMut<'_, EditorCameraRes>,
+        ResMut<'_, EditorTriggerRes>,
+        ResMut<'_, EditorTimelineRes>,
+        ResMut<'_, EditorRuntimeRes>,
+        ResMut<'_, EditorTimingRes>,
+        ResMut<'_, EditorSpawnRes>,
+        ResMut<'_, EditorHistoryRes>,
+    )> = SystemState::new(world);
+    let (
+        mut input,
+        mut config,
+        mut camera,
+        mut triggers,
+        mut timeline,
+        mut runtime,
+        mut timing,
+        mut spawn,
+        mut history,
+    ) = system_state
+        .get_mut(world)
+        .expect("editor test context resources must be registered");
+    let result = f(&mut EditorInteractionContext {
+        input: &mut input.0,
+        config: &mut config.0,
+        objects: EditorObjectsBorrow(&mut objects),
+        spawn: &mut spawn.0,
+        camera: &mut camera.0,
+        triggers: &mut triggers.0,
+        timeline: &mut timeline.0,
+        runtime: &mut runtime.0,
+        timing: &mut timing.0,
+        history: &mut history.0,
+        selected_mask_cache: None,
+        block_static_vertex_cache: Default::default(),
+        block_static_vertex_cache_complete_len: None,
+        pick_spatial_index: EditorPickSpatialIndex::default(),
+    });
+    drop((
+        input, config, camera, triggers, timeline, runtime, timing, spawn, history,
+    ));
+    system_state.apply(world);
+    replace_editor_objects(world, objects);
+    result
 }
 
 /// Schedule label for the per-frame state update. Runtime runs this

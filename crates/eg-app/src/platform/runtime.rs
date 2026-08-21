@@ -1026,7 +1026,7 @@ mod tests {
         assert_eq!(
             runtime.app.world().resource::<FrameTimeRes>().delta_seconds,
             app_frame_time.delta_seconds,
-            "Runtime must sync scheduled frame delta into legacy State before compatibility update"
+            "Runtime must advance App-world frame timing"
         );
     }
 
@@ -1401,8 +1401,7 @@ mod tests {
     }
 
     /// `GameRemovePracticeCheckpoint` mutates the App-world checkpoint list
-    /// directly, then uses the one-shot compatibility sync only to rebuild
-    /// the legacy presentation mesh.
+    /// directly, then render extraction clears the derived presentation data.
     #[test]
     fn runtime_carve_out_game_remove_practice_checkpoint_syncs_direct_resource() {
         let mut runtime = runtime_in_playing(false, false);
@@ -1443,8 +1442,8 @@ mod tests {
         );
     }
 
-    /// `Runtime` keeps App-world setup from mutating legacy State before
-    /// the frame driver explicitly applies queued commands.
+    /// `Runtime` keeps App-world setup in the initial menu phase before the
+    /// frame driver explicitly applies queued commands.
     #[test]
     fn runtime_app_world_setup_does_not_mutate_state() {
         let runtime = Runtime::new_test();
@@ -1756,7 +1755,7 @@ mod tests {
         assert_eq!(config.snap_step, 0.25);
     }
     #[test]
-    fn runtime_carve_out_block_copy_and_remove_propagate_to_legacy_state() {
+    fn runtime_carve_out_block_copy_and_remove_mutate_app_resources() {
         use eg_state::events::block::{CopyBlock, RemoveBlock};
 
         let mut runtime = runtime_in_editor("BlockRuntimeCarveOut");
@@ -1868,7 +1867,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_carve_out_add_camera_trigger_propagates_to_legacy_state() {
+    fn runtime_carve_out_add_camera_trigger_mutates_app_resources() {
         use eg_state::events::camera::AddCameraTrigger;
 
         let mut runtime = runtime_in_editor("CameraTriggerRuntimeCarveOut");
@@ -2001,7 +2000,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_carve_out_focus_camera_target_propagates_to_legacy_state() {
+    fn runtime_carve_out_focus_camera_target_mutates_app_resources() {
         use eg_state::events::selection::FocusCameraTarget;
 
         let mut runtime = runtime_in_editor("SelectionFocusCamera");
@@ -2039,7 +2038,7 @@ mod tests {
     /// propagates the value to the legacy `State.editor.timing`
     /// fields.
     #[test]
-    fn runtime_carve_out_bpm_tap_propagates_to_legacy_state() {
+    fn runtime_carve_out_bpm_tap_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         // Reset to a known empty state for the assertion.
@@ -2090,10 +2089,9 @@ mod tests {
     }
 
     /// `BpmTapReset` is a carve-out: writing the message clears the
-    /// resource's tap history and the sync propagates the cleared
-    /// list to the legacy state.
+    /// App-owned resource's tap history.
     #[test]
-    fn runtime_carve_out_bpm_tap_reset_propagates_to_legacy_state() {
+    fn runtime_carve_out_bpm_tap_reset_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         // Pre-populate both sides with a fake tap history.
@@ -2148,14 +2146,13 @@ mod tests {
         );
     }
 
-    /// No-op frame: when no `BpmTap`/`BpmTapReset` message is
-    /// written and the resource matches the legacy state, the
-    /// sync must not re-invoke the legacy setter.
+    /// No-op frame: when no `BpmTap`/`BpmTapReset` message is written, the
+    /// App-owned timing resource must retain its values.
     #[test]
     fn runtime_carve_out_no_op_frame_does_not_resync_bpm_tap() {
         let mut runtime = Runtime::new_test();
 
-        // Seed both sides with a known tap history.
+        // Seed the App-owned timing resource with a known tap history.
         let times = vec![1.0_f64, 2.0, 3.0];
         let result = Some(60.0_f32);
         runtime
@@ -2171,12 +2168,10 @@ mod tests {
             .0
             .bpm_tap_result = result;
 
-        // Run a frame with no message: handler doesn't run, sync
-        // sees no diff, setter not invoked.
+        // Run a frame with no message: the handler does not run.
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
-        // The resource and legacy state should still hold the seeded
-        // values (the sync guard ensures no spurious write occurs).
+        // The App resource should still hold the seeded values.
         assert_eq!(
             runtime
                 .app
@@ -2207,19 +2202,15 @@ mod tests {
         );
     }
 
-    /// Regression: `EditorTimingRes` must be seeded from the legacy
-    /// `State` at `Runtime::new` so the change-guarded bpm-tap sync
-    /// does not clobber an in-flight tap history on the first
-    /// frame. Same pattern as the snap / block-id first-frame
-    /// clobber regressions.
+    /// Regression: an App-owned timing resource must not be clobbered by a
+    /// no-op frame after user data has been written.
     #[test]
-    fn runtime_seeds_editor_timing_res_from_legacy_state_no_first_frame_clobber() {
+    fn runtime_editor_timing_res_survives_no_op_frame() {
         let mut runtime = Runtime::new_test();
         // User-driven tap history + computed result. The default
         // resource is empty (`bpm_tap_times = []`,
         // `bpm_tap_result = None`); without seeding, the change-
-        // guarded sync would see a diff and clobber the user value
-        // back to defaults on the first frame.
+        // stale synchronization would clobber the user value back to defaults.
         let times = vec![10.0_f64, 11.0, 12.0];
         let result = Some(60.0_f32);
         {
@@ -2228,8 +2219,7 @@ mod tests {
             timing.0.bpm_tap_result = result;
         }
 
-        // Seeding: the resource must reflect the legacy user value,
-        // not the `EditorTimingState` default.
+        // The resource must retain the user value rather than its default.
         assert_eq!(
             runtime
                 .app
@@ -2238,7 +2228,7 @@ mod tests {
                 .0
                 .bpm_tap_times,
             times,
-            "EditorTimingRes must be seeded from legacy State at Runtime::new"
+            "EditorTimingRes must retain the user value"
         );
         assert_eq!(
             runtime
@@ -2248,12 +2238,10 @@ mod tests {
                 .0
                 .bpm_tap_result,
             result,
-            "EditorTimingRes.bpm_tap_result must be seeded from legacy State"
+            "EditorTimingRes.bpm_tap_result must retain the user value"
         );
 
-        // Run a frame with no bpm message. The change-guarded sync
-        // must see no diff and must NOT invoke the legacy setter, so
-        // the user value survives the first frame.
+        // Run a frame with no bpm message; the user value must survive.
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
@@ -2339,18 +2327,17 @@ mod tests {
     // All 6 `events::timing::*` messages are carve-outs that mutate
     // `EditorTimingRes.0.{timing_points, timing_selected_index}`
     // directly. The runtime tests below pin the end-to-end path:
-    // message → App-world resource → legacy State field.
+    // message → App-world resource.
 
     use eg_state::events::timing::{
         AddTimingPoint, RemoveTimingPoint, SetTimingPointBpm, SetTimingPointTime,
         SetTimingPointTimeSignature, SetTimingSelected,
     };
 
-    /// `AddTimingPoint` end-to-end: the message reaches the App world,
-    /// mutates `EditorTimingRes.0.timing_points`, and the per-frame
-    /// sync propagates the new list to the legacy `State.editor.timing`.
+    /// `AddTimingPoint` reaches the App world and mutates
+    /// `EditorTimingRes.0.timing_points`.
     #[test]
-    fn runtime_carve_out_add_timing_point_propagates_to_legacy_state() {
+    fn runtime_carve_out_add_timing_point_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         // Precondition: empty list on both sides (the seed is empty for
@@ -2385,7 +2372,7 @@ mod tests {
         let timing = &runtime.app.world().resource::<EditorTimingRes>().0;
         assert_eq!(timing.timing_points.len(), 1);
         assert_eq!(timing.timing_points[0].time_seconds, 1.0);
-        // Legacy state matches the resource after the sync.
+        // The App resource contains the new point.
         assert_eq!(
             runtime
                 .app
@@ -2423,10 +2410,9 @@ mod tests {
         );
     }
 
-    /// `RemoveTimingPoint` end-to-end: list shrinks via the resource,
-    /// the legacy state mirrors it after the sync.
+    /// `RemoveTimingPoint` end-to-end: the App-owned list shrinks.
     #[test]
-    fn runtime_carve_out_remove_timing_point_propagates_to_legacy_state() {
+    fn runtime_carve_out_remove_timing_point_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         // Pre-populate both sides with a single timing point so we can
@@ -2468,11 +2454,10 @@ mod tests {
         );
     }
 
-    /// `SetTimingPointTime` end-to-end: the timestamp update flows
-    /// through the resource and the legacy state picks it up via the
-    /// change-guarded sync.
+    /// `SetTimingPointTime` end-to-end: the timestamp update flows through
+    /// the App-owned resource.
     #[test]
-    fn runtime_carve_out_set_timing_point_time_propagates_to_legacy_state() {
+    fn runtime_carve_out_set_timing_point_time_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
@@ -2522,7 +2507,7 @@ mod tests {
     /// `SetTimingPointBpm` end-to-end: BPM update propagates with
     /// the >= 1.0 clamp.
     #[test]
-    fn runtime_carve_out_set_timing_point_bpm_propagates_to_legacy_state() {
+    fn runtime_carve_out_set_timing_point_bpm_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
@@ -2561,7 +2546,7 @@ mod tests {
     /// `SetTimingPointTimeSignature` end-to-end: the time-signature
     /// fields update on both sides.
     #[test]
-    fn runtime_carve_out_set_timing_point_time_signature_propagates_to_legacy_state() {
+    fn runtime_carve_out_set_timing_point_time_signature_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
 
         let initial = eg_types::TimingPoint {
@@ -2663,10 +2648,8 @@ mod tests {
         );
     }
 
-    /// No-op frame: when no timing message is written and the
-    /// resource matches the legacy state (the seeded invariant), the
-    /// sync must not re-invoke `set_editor_timing_state`. Pin the
-    /// list length stays the same.
+    /// No-op frame: when no timing message is written, the App-owned list
+    /// remains unchanged.
     #[test]
     fn runtime_carve_out_no_op_frame_preserves_app_timing() {
         let mut runtime = Runtime::new_test();
@@ -2683,7 +2666,7 @@ mod tests {
             res.0.timing_selected_index = Some(0);
         }
 
-        // Pre-condition: both sides match.
+        // Pre-condition: the App resource contains one point.
         assert_eq!(
             runtime
                 .app
@@ -2893,15 +2876,14 @@ mod tests {
     fn runtime_rotate_placement_preview_mutates_app_config() {
         let mut runtime = Runtime::new_test();
 
-        // Initial yaw 0.0 on both sides.
+        // Initial yaw is zero.
         runtime
             .app
             .world_mut()
             .resource_mut::<EditorConfigRes>()
             .0
             .selected_block_rotation_degrees = [0.0, 0.0, 0.0];
-        // The seeded resource matches the legacy state default
-        // (zeroed rotation), so the first frame is a no-op.
+        // The initial resource value is zero, so the first frame is a no-op.
         runtime
             .app
             .world_mut()

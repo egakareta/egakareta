@@ -7,20 +7,7 @@
 */
 use eg_types::LevelObject;
 
-#[cfg(test)]
-use super::EditorSubsystem;
-
 super::editor_context_methods! {
-    #[cfg(test)]
-    pub fn clear_pan_keys(&mut self) {
-        self.input.pan_up_held = false;
-        self.input.pan_down_held = false;
-        self.input.pan_left_held = false;
-        self.input.pan_right_held = false;
-        self.input.shift_held = false;
-        self.input.ctrl_held = false;
-    }
-
     fn normalized_block_selection_indices(&self) -> Vec<usize> {
         let object_count = self.objects.len();
         let mut indices: Vec<usize> = self
@@ -206,7 +193,10 @@ super::editor_context_methods! {
 mod tests {
     use eg_types::LevelObject;
 
-    use super::EditorSubsystem;
+    use crate::state::{
+        EditorInputRes, replace_editor_objects, test_support::TestApp,
+        with_editor_interaction_context,
+    };
 
     fn block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -219,24 +209,30 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
-        let mut editor = EditorSubsystem::default();
-        editor.objects = vec![
-            block([0.0, 0.0, 0.0]),
-            block([1.0, 0.0, 0.0]),
-            block([2.0, 0.0, 0.0]),
-        ];
-        editor.input.selected_block_index = Some(1);
-        editor.input.selected_block_indices = vec![2, 99, 2];
-        editor.input.hovered_block_index = Some(42);
-        editor.selected_mask_cache = Some(vec![false, true, true]);
+    #[test]
+    fn normalize_block_selection_filters_invalid_indices_and_preserves_valid_primary() {
+        let mut app = TestApp::minimal();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![
+                block([0.0, 0.0, 0.0]),
+                block([1.0, 0.0, 0.0]),
+                block([2.0, 0.0, 0.0]),
+            ],
+        );
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.selected_block_index = Some(1);
+            editor.input.selected_block_indices = vec![2, 99, 2];
+            editor.input.hovered_block_index = Some(42);
+            editor.selected_mask_cache = Some(vec![false, true, true]);
 
-        editor.normalize_block_selection();
+            editor.normalize_block_selection();
+            assert!(editor.selected_mask_cache.is_none());
+        });
 
-        assert_eq!(editor.input.selected_block_index, Some(1));
-        assert_eq!(editor.input.selected_block_indices, vec![1, 2]);
-        assert_eq!(editor.input.hovered_block_index, None);
-        assert!(editor.selected_mask_cache.is_none());
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, Some(1));
+        assert_eq!(input.selected_block_indices, vec![1, 2]);
+        assert_eq!(input.hovered_block_index, None);
     }
 }

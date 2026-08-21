@@ -375,7 +375,7 @@ fn history_snapshot_from_resources(
 /// radians), at the editor distance constant. Mirrors the math
 /// in `state/editor_camera.rs::offset_from_rotation_pitch` so
 /// the Bevy handler can compute the look vector without
-/// depending on the test-only `EditorSubsystem` fixture.
+/// depending on an owned editor fixture.
 fn editor_camera_offset_for_resource(yaw: f32, pitch: f32) -> glam::Vec3 {
     use eg_types::DEFAULT_CAMERA_DISTANCE;
     let pitch = pitch.clamp(-89.9f32.to_radians(), 89.9f32.to_radians());

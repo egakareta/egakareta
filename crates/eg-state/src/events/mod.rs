@@ -2879,7 +2879,7 @@ mod tests {
     };
 
     /// `AddTimingPoint` appends to the list and sorts ascending by
-    /// `time_seconds` (mirroring `EditorSubsystem::add_timing_point`).
+    /// `time_seconds`.
     /// Pin the list grows, the revision bumps, and no legacy command
     /// is staged.
     #[test]
@@ -3933,7 +3933,7 @@ mod tests {
     fn carve_out_pick_block_at_mutates_resources() {
         use glam::{Vec2, Vec3};
 
-        use crate::{events::editor_mode::PickBlockAt, state::EditorSubsystem};
+        use crate::events::editor_mode::PickBlockAt;
 
         let mut world = build_event_world();
         let picked = eg_blocks::BlockId::new("core/grass");
@@ -3955,9 +3955,10 @@ mod tests {
             .color_space
             .viewport_size = [1280.0, 720.0];
 
-        let screen = EditorSubsystem::default()
-            .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), Vec2::new(1280.0, 720.0))
-            .expect("block center should project to screen");
+        let screen = crate::state::with_editor_interaction_context(&mut world, |editor| {
+            editor.world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), Vec2::new(1280.0, 720.0))
+        })
+        .expect("block center should project to screen");
 
         world.write_message(PickBlockAt {
             x: screen.x as f64,

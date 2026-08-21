@@ -5,14 +5,15 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Pure domain tests for `EditorSubsystem`.
-//!
-//! These tests exercise editor logic **without GPU, audio, or rendering**.
-//! They use `EditorSubsystem::default()` which requires no wgpu adapter.
+//! Domain tests for the App-owned editor resources.
 
-use eg_types::{Direction, LevelObject};
+use bevy::state::prelude::State;
+use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
-use super::EditorSubsystem;
+use super::{
+    EditorConfigRes, EditorInputRes, EditorSpawnRes, collect_editor_objects_from_world,
+    replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
+};
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);
@@ -20,303 +21,357 @@ fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[2], expected[2], epsilon = eps);
 }
 
-// ── Nudge ──────────────────────────────────────────────────────────────
-
-#[test]
-fn nudge_moves_selected_blocks_by_world_delta() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [3.0, 0.0, 0.0],
-        ..LevelObject::default()
-    });
-    editor.input.selected_block_index = Some(0);
-    editor.input.selected_block_indices = vec![0];
-
-    assert!(editor.nudge_selected(2.0, -1.0));
-    assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, -1.0], 1e-6);
-    assert_vec3_approx_eq(editor.objects[1].position, [3.0, 0.0, 0.0], 1e-6);
-}
-
-#[test]
-fn nudge_returns_false_when_nothing_selected() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-
-    assert!(!editor.nudge_selected(1.0, 0.0));
-    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 0.0], 1e-6);
-}
-
-#[test]
-fn nudge_updates_cursor_to_selected_block_position() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject {
-        position: [1.0, 2.0, 3.0],
-        ..LevelObject::default()
-    });
-    editor.input.selected_block_index = Some(0);
-
-    editor.nudge_selected(5.0, -2.0);
-    assert_vec3_approx_eq(editor.input.cursor, [6.0, 2.0, 1.0], 1e-6);
-}
-
 // ── Snap to grid ───────────────────────────────────────────────────────
 
 #[test]
 fn snap_moves_blocks_to_nearest_grid_cell() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_step = 1.0;
-    editor.objects.push(LevelObject {
-        position: [0.3, 0.0, 0.7],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(
+        app.world_mut(),
+        vec![LevelObject {
+            position: [0.3, 0.0, 0.7],
+            ..LevelObject::default()
+        }],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_step = 1.0;
+        editor.input.selected_block_index = Some(0);
     });
-    editor.input.selected_block_index = Some(0);
 
-    assert!(editor.snap_selected_blocks_to_grid());
-    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 1.0], 1e-6);
+    app.world_mut()
+        .write_message(crate::events::selection::SnapSelectionToGrid);
+    app.tick_state();
+
+    let objects = collect_editor_objects_from_world(app.world_mut());
+    assert_vec3_approx_eq(objects[0].position, [0.0, 0.0, 1.0], 1e-6);
 }
 
 #[test]
 fn snap_respects_custom_step_size() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_step = 2.0;
-    editor.objects.push(LevelObject {
-        position: [1.3, 0.0, 3.8],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(
+        app.world_mut(),
+        vec![LevelObject {
+            position: [1.3, 0.0, 3.8],
+            ..LevelObject::default()
+        }],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_step = 2.0;
+        editor.input.selected_block_index = Some(0);
     });
-    editor.input.selected_block_index = Some(0);
 
-    assert!(editor.snap_selected_blocks_to_grid());
-    assert_vec3_approx_eq(editor.objects[0].position, [2.0, 0.0, 4.0], 1e-6);
+    app.world_mut()
+        .write_message(crate::events::selection::SnapSelectionToGrid);
+    app.tick_state();
+
+    let objects = collect_editor_objects_from_world(app.world_mut());
+    assert_vec3_approx_eq(objects[0].position, [2.0, 0.0, 4.0], 1e-6);
 }
 
 #[test]
 fn snap_returns_false_when_already_snapped() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_step = 1.0;
-    editor.objects.push(LevelObject {
-        position: [3.0, 0.0, 5.0],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(
+        app.world_mut(),
+        vec![LevelObject {
+            position: [3.0, 0.0, 5.0],
+            ..LevelObject::default()
+        }],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_step = 1.0;
+        editor.input.selected_block_index = Some(0);
     });
-    editor.input.selected_block_index = Some(0);
+    let before = collect_editor_objects_from_world(app.world_mut());
 
-    assert!(!editor.snap_selected_blocks_to_grid());
+    app.world_mut()
+        .write_message(crate::events::selection::SnapSelectionToGrid);
+    app.tick_state();
+
+    assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
 }
 
 // ── Remove selected ────────────────────────────────────────────────────
 
 #[test]
 fn remove_selected_deletes_marked_blocks() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [1.0, 0.0, 0.0],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(
+        app.world_mut(),
+        vec![
+            LevelObject::default(),
+            LevelObject {
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.selected_block_index = Some(1);
+        editor.input.selected_block_indices = vec![1];
     });
-    editor.objects.push(LevelObject {
-        position: [2.0, 0.0, 0.0],
-        ..LevelObject::default()
-    });
-    editor.input.selected_block_index = Some(1);
-    editor.input.selected_block_indices = vec![1];
 
-    assert!(editor.remove_selected());
-    assert_eq!(editor.objects.len(), 2);
-    assert_vec3_approx_eq(editor.objects[0].position, [0.0, 0.0, 0.0], 1e-6);
-    assert_vec3_approx_eq(editor.objects[1].position, [2.0, 0.0, 0.0], 1e-6);
+    app.world_mut()
+        .write_message(crate::events::block::RemoveBlock);
+    app.tick_state();
+
+    let objects = collect_editor_objects_from_world(app.world_mut());
+    assert_eq!(objects.len(), 2);
+    assert_vec3_approx_eq(objects[0].position, [0.0, 0.0, 0.0], 1e-6);
+    assert_vec3_approx_eq(objects[1].position, [2.0, 0.0, 0.0], 1e-6);
 }
 
 #[test]
 fn remove_selected_clears_selection() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.input.selected_block_index = Some(0);
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(app.world_mut(), vec![LevelObject::default()]);
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.selected_block_index = Some(0);
+    });
 
-    editor.remove_selected();
-    assert!(editor.input.selected_block_index.is_none());
-    assert!(editor.input.selected_block_indices.is_empty());
+    app.world_mut()
+        .write_message(crate::events::block::RemoveBlock);
+    app.tick_state();
+
+    let input = &app.world().resource::<EditorInputRes>().0;
+    assert!(input.selected_block_index.is_none());
+    assert!(input.selected_block_indices.is_empty());
 }
 
 // ── Spawn ──────────────────────────────────────────────────────────────
 
 #[test]
 fn set_spawn_here_copies_cursor_position() {
-    let mut editor = EditorSubsystem::default();
-    editor.input.cursor = [5.0, 3.0, 7.0];
+    let mut app = TestApp::minimal();
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.cursor = [5.0, 3.0, 7.0];
+    });
 
-    editor.set_spawn_here();
-    assert_vec3_approx_eq(editor.spawn.position, [5.0, 3.0, 7.0], 1e-6);
+    app.world_mut()
+        .write_message(crate::events::spawn::SetSpawnHere);
+    app.tick_state();
+
+    assert_vec3_approx_eq(
+        app.world().resource::<EditorSpawnRes>().0.position,
+        [5.0, 3.0, 7.0],
+        1e-6,
+    );
 }
 
 #[test]
 fn rotate_spawn_direction_toggles_between_forward_and_right() {
-    let mut editor = EditorSubsystem::default();
-    assert_eq!(editor.spawn.direction, Direction::Forward);
+    let mut app = TestApp::minimal();
+    assert_eq!(
+        app.world().resource::<EditorSpawnRes>().0.direction,
+        Direction::Forward
+    );
 
-    editor.rotate_spawn_direction();
-    assert_eq!(editor.spawn.direction, Direction::Right);
+    app.world_mut()
+        .write_message(crate::events::spawn::RotateSpawnDirection);
+    app.tick_state();
+    assert_eq!(
+        app.world().resource::<EditorSpawnRes>().0.direction,
+        Direction::Right
+    );
 
-    editor.rotate_spawn_direction();
-    assert_eq!(editor.spawn.direction, Direction::Forward);
+    app.world_mut()
+        .write_message(crate::events::spawn::RotateSpawnDirection);
+    app.tick_state();
+    assert_eq!(
+        app.world().resource::<EditorSpawnRes>().0.direction,
+        Direction::Forward
+    );
 }
 
 // ── Selection helpers ──────────────────────────────────────────────────
 
 #[test]
 fn clear_block_selection_resets_all_indices() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [1.0, 0.0, 0.0],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    replace_editor_objects(
+        app.world_mut(),
+        vec![
+            LevelObject::default(),
+            LevelObject {
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0, 1];
+        editor.clear_block_selection();
     });
-    editor.input.selected_block_index = Some(0);
-    editor.input.selected_block_indices = vec![0, 1];
 
-    editor.clear_block_selection();
-    assert!(editor.input.selected_block_index.is_none());
-    assert!(editor.input.selected_block_indices.is_empty());
+    let input = &app.world().resource::<EditorInputRes>().0;
+    assert!(input.selected_block_index.is_none());
+    assert!(input.selected_block_indices.is_empty());
 }
 
 #[test]
 fn selected_indices_normalized_deduplicates() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [1.0, 0.0, 0.0],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    replace_editor_objects(
+        app.world_mut(),
+        vec![
+            LevelObject::default(),
+            LevelObject {
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ],
+    );
+    let indices = with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.selected_block_index = Some(0);
+        editor.input.selected_block_indices = vec![0, 0, 1];
+        editor.selected_indices_normalized()
     });
-    editor.input.selected_block_index = Some(0);
-    editor.input.selected_block_indices = vec![0, 0, 1];
 
-    let indices = editor.selected_indices_normalized();
     assert_eq!(indices, vec![0, 1]);
-}
-
-// ── Mode ───────────────────────────────────────────────────────────────
-
-#[test]
-fn set_mode_clears_drags_and_marquee() {
-    let mut editor = EditorSubsystem::default();
-    editor.runtime.interaction.gizmo_drag = Some(super::EditorGizmoDrag {
-        axis: eg_mesh::GizmoAxis::X,
-        kind: eg_mesh::GizmoDragKind::Move,
-        start_mouse: [0.0, 0.0],
-        start_center_screen: [0.0, 0.0],
-        start_center_world: [0.0, 0.0, 0.0],
-        start_blocks: Vec::new(),
-    });
-    editor.input.marquee_start_screen = Some([10.0, 10.0]);
-
-    editor.set_mode(eg_types::EditorMode::Select);
-    assert!(editor.runtime.interaction.gizmo_drag.is_none());
-    assert!(editor.input.marquee_start_screen.is_none());
 }
 
 // ── Config ─────────────────────────────────────────────────────────────
 
 #[test]
 fn effective_snap_overridden_by_ctrl() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_to_grid = true;
-    editor.input.ctrl_held = false;
-    assert!(editor.effective_snap_to_grid());
+    let mut app = TestApp::minimal();
+    let initially_enabled = with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_to_grid = true;
+        editor.input.ctrl_held = false;
+        editor.effective_snap_to_grid()
+    });
+    assert!(initially_enabled);
+    assert!(app.world().resource::<EditorConfigRes>().0.snap_to_grid);
 
-    editor.input.ctrl_held = true;
-    assert!(!editor.effective_snap_to_grid());
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.ctrl_held = true;
+    });
+    assert!(!with_editor_interaction_context(
+        app.world_mut(),
+        |editor| { editor.effective_snap_to_grid() }
+    ));
 }
 
 #[test]
 fn set_snap_step_clamps_minimum() {
-    let mut editor = EditorSubsystem::default();
-    editor.set_snap_step(0.001);
-    assert!(
-        editor.snap_step() >= 0.05,
-        "Snap step should be clamped to at least 0.05"
-    );
-}
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .write_message(crate::events::snap::SetSnapStep(0.001));
+    app.tick_state();
 
-// ── Nudge edge cases ───────────────────────────────────────────────────
-
-#[test]
-fn nudge_moves_all_selected_blocks() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [1.0, 0.0, 0.0],
-        ..LevelObject::default()
-    });
-    editor.objects.push(LevelObject {
-        position: [2.0, 0.0, 0.0],
-        ..LevelObject::default()
-    });
-    editor.input.selected_block_index = Some(0);
-    editor.input.selected_block_indices = vec![0, 2];
-
-    assert!(editor.nudge_selected(3.0, -1.0));
-    assert_vec3_approx_eq(editor.objects[0].position, [3.0, 0.0, -1.0], 1e-6);
-    assert_vec3_approx_eq(editor.objects[1].position, [1.0, 0.0, 0.0], 1e-6);
-    assert_vec3_approx_eq(editor.objects[2].position, [5.0, 0.0, -1.0], 1e-6);
+    assert!(app.world().resource::<EditorConfigRes>().0.snap_step >= 0.05);
 }
 
 // ── Snap edge cases ────────────────────────────────────────────────────
 
 #[test]
 fn snap_returns_false_when_nothing_selected() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_step = 1.0;
-    editor.objects.push(LevelObject {
-        position: [0.3, 0.0, 0.7],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(
+        app.world_mut(),
+        vec![LevelObject {
+            position: [0.3, 0.0, 0.7],
+            ..LevelObject::default()
+        }],
+    );
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_step = 1.0;
     });
+    let before = collect_editor_objects_from_world(app.world_mut());
 
-    assert!(!editor.snap_selected_blocks_to_grid());
+    app.world_mut()
+        .write_message(crate::events::selection::SnapSelectionToGrid);
+    app.tick_state();
+
+    assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
 }
 
 // ── Remove edge cases ──────────────────────────────────────────────────
 
 #[test]
 fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    // Cursor far from any block so remove_topmost_block_at_cursor also fails
-    editor.input.cursor = [100.0, 100.0, 100.0];
+    let mut app = TestApp::minimal();
+    app.world_mut()
+        .insert_resource(State::new(AppPhase::Editor));
+    replace_editor_objects(app.world_mut(), vec![LevelObject::default()]);
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        // Cursor far from any block so remove_topmost_block_at_cursor also fails.
+        editor.input.cursor = [100.0, 100.0, 100.0];
+    });
+    let before = collect_editor_objects_from_world(app.world_mut());
 
-    assert!(!editor.remove_selected());
-    assert_eq!(editor.objects.len(), 1);
+    app.world_mut()
+        .write_message(crate::events::block::RemoveBlock);
+    app.tick_state();
+
+    assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
 }
 
 // ── Rotation snap ──────────────────────────────────────────────────────
 
 #[test]
 fn effective_snap_rotation_overridden_by_ctrl() {
-    let mut editor = EditorSubsystem::default();
-    editor.config.snap_rotation = true;
-    editor.input.ctrl_held = false;
-    assert!(editor.effective_snap_rotation());
+    let mut app = TestApp::minimal();
+    let initially_enabled = with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.config.snap_rotation = true;
+        editor.input.ctrl_held = false;
+        editor.effective_snap_rotation()
+    });
+    assert!(initially_enabled);
+    assert!(app.world().resource::<EditorConfigRes>().0.snap_rotation);
 
-    editor.input.ctrl_held = true;
-    assert!(!editor.effective_snap_rotation());
+    with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.ctrl_held = true;
+    });
+    assert!(!with_editor_interaction_context(
+        app.world_mut(),
+        |editor| { editor.effective_snap_rotation() }
+    ));
 }
 
 // ── Multi-select dedup ─────────────────────────────────────────────────
 
 #[test]
 fn selected_indices_normalized_sorted() {
-    let mut editor = EditorSubsystem::default();
-    editor.objects.push(LevelObject::default());
-    editor.objects.push(LevelObject {
-        position: [1.0, 0.0, 0.0],
-        ..LevelObject::default()
+    let mut app = TestApp::minimal();
+    replace_editor_objects(
+        app.world_mut(),
+        vec![
+            LevelObject::default(),
+            LevelObject {
+                position: [1.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+            LevelObject {
+                position: [2.0, 0.0, 0.0],
+                ..LevelObject::default()
+            },
+        ],
+    );
+    let indices = with_editor_interaction_context(app.world_mut(), |editor| {
+        editor.input.selected_block_index = Some(2);
+        editor.input.selected_block_indices = vec![2, 0, 1];
+        editor.selected_indices_normalized()
     });
-    editor.objects.push(LevelObject {
-        position: [2.0, 0.0, 0.0],
-        ..LevelObject::default()
-    });
-    editor.input.selected_block_index = Some(2);
-    editor.input.selected_block_indices = vec![2, 0, 1];
 
-    let indices = editor.selected_indices_normalized();
     assert_eq!(indices, vec![0, 1, 2]);
 }
 
@@ -324,28 +379,50 @@ fn selected_indices_normalized_sorted() {
 
 #[test]
 fn rotate_spawn_direction_full_cycle() {
-    let mut editor = EditorSubsystem::default();
-    let initial = editor.spawn.direction;
+    let mut app = TestApp::minimal();
+    let initial = app.world().resource::<EditorSpawnRes>().0.direction;
 
-    // Rotate through all directions and return to initial
     for _ in 0..4 {
-        editor.rotate_spawn_direction();
+        app.world_mut()
+            .write_message(crate::events::spawn::RotateSpawnDirection);
     }
-    assert_eq!(editor.spawn.direction, initial);
+    app.tick_state();
+
+    assert_eq!(
+        app.world().resource::<EditorSpawnRes>().0.direction,
+        initial
+    );
 }
 
 // ── Mode change ────────────────────────────────────────────────────────
 
 #[test]
 fn set_mode_updates_mode_field() {
-    let mut editor = EditorSubsystem::default();
+    let mut app = TestApp::minimal();
 
-    editor.set_mode(eg_types::EditorMode::Move);
-    assert_eq!(editor.input.mode, eg_types::EditorMode::Move);
+    app.world_mut()
+        .write_message(crate::events::editor_mode::SetEditorMode(EditorMode::Move));
+    app.tick_state();
+    assert_eq!(
+        app.world().resource::<EditorInputRes>().0.mode,
+        EditorMode::Move
+    );
 
-    editor.set_mode(eg_types::EditorMode::Scale);
-    assert_eq!(editor.input.mode, eg_types::EditorMode::Scale);
+    app.world_mut()
+        .write_message(crate::events::editor_mode::SetEditorMode(EditorMode::Scale));
+    app.tick_state();
+    assert_eq!(
+        app.world().resource::<EditorInputRes>().0.mode,
+        EditorMode::Scale
+    );
 
-    editor.set_mode(eg_types::EditorMode::Rotate);
-    assert_eq!(editor.input.mode, eg_types::EditorMode::Rotate);
+    app.world_mut()
+        .write_message(crate::events::editor_mode::SetEditorMode(
+            EditorMode::Rotate,
+        ));
+    app.tick_state();
+    assert_eq!(
+        app.world().resource::<EditorInputRes>().0.mode,
+        EditorMode::Rotate
+    );
 }

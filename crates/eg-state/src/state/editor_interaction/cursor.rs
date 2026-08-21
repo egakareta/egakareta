@@ -9,34 +9,6 @@ use eg_types::{AppPhase, EditorInteractionChange};
 use glam::Vec2;
 
 super::super::editor_context_methods! {
-    #[cfg(test)]
-    pub fn force_cursor_from_screen(
-        &mut self,
-        x: f64,
-        y: f64,
-        viewport_size: Vec2,
-    ) -> EditorInteractionChange {
-        let previous_pointer = self.input.pointer_screen;
-        self.input.pointer_screen = Some([x, y]);
-        if previous_pointer.is_none_or(|pointer| {
-            (pointer[0] - x).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
-                || (pointer[1] - y).abs() > crate::state::TAP_CLICK_SCREEN_EPSILON_PIXELS
-        }) {
-            self.runtime.interaction.pending_tap_click = None;
-        }
-
-        let Some(pick) = self.pick_from_screen(x, y, viewport_size) else {
-            return EditorInteractionChange::None;
-        };
-
-        if pick.cursor != self.input.cursor {
-            self.input.cursor = pick.cursor;
-            return EditorInteractionChange::Cursor;
-        }
-
-        EditorInteractionChange::None
-    }
-
     pub fn update_cursor_from_screen(
         &mut self,
         x: f64,

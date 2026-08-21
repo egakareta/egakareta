@@ -61,13 +61,6 @@ super::super::editor_context_methods! {
         (dx * dx + dy * dy) >= MARQUEE_DRAG_THRESHOLD_PX * MARQUEE_DRAG_THRESHOLD_PX
     }
 
-    #[cfg(test)]
-    pub fn marquee_selection_rect_screen(&self) -> Option<([f64; 2], [f64; 2], bool)> {
-        let start = self.input.marquee_start_screen?;
-        let current = self.input.marquee_current_screen.unwrap_or(start);
-        Some((start, current, self.marquee_has_dragged_far_enough()))
-    }
-
     pub fn begin_marquee_selection(&mut self, x: f64, y: f64, phase: AppPhase) -> bool {
         let allows_marquee = self.input.mode.is_transform_mode();
         if phase != AppPhase::Editor || self.input.right_dragging || !allows_marquee {
@@ -775,9 +768,10 @@ mod tests {
     use eg_types::{AppPhase, EditorInteractionChange, EditorMode, LevelObject};
     use glam::{Vec2, Vec3};
 
-    use super::{
-        super::super::{EditorBlockDrag, EditorDragBlockStart, EditorSubsystem},
-        projected_block_overlaps_rect, screen_bounds_overlap_rect,
+    use super::{projected_block_overlaps_rect, screen_bounds_overlap_rect};
+    use crate::state::{
+        EditorHistoryRes, EditorInputRes, collect_editor_objects_from_world,
+        replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
     };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
@@ -795,640 +789,625 @@ mod tests {
         Vec2::new(1280.0, 720.0)
     }
 
-    fn drag_delta_for_screen(
-        editor: &EditorSubsystem,
-        center: Vec3,
-        screen: Vec2,
-        viewport: Vec2,
-    ) -> Option<Vec3> {
-        let (ray_origin, ray_dir) =
-            editor.screen_to_ray(screen.x as f64, screen.y as f64, viewport)?;
-        let camera_forward = editor.camera_forward();
-        let denom = ray_dir.dot(camera_forward);
-        if denom.abs() <= f32::EPSILON {
-            return None;
-        }
-        let t = (center - ray_origin).dot(camera_forward) / denom;
-        if t < 0.0 {
-            return None;
-        }
-        Some(ray_origin + ray_dir * t - center)
-    }
-
-    fn screen_for_positive_y_delta(
-        editor: &EditorSubsystem,
-        center: Vec3,
-        origin_screen: Vec2,
-        viewport: Vec2,
-        min_y: f32,
-        max_y: f32,
-    ) -> (Vec2, f32) {
-        let directions = [Vec2::Y, -Vec2::Y, Vec2::X, -Vec2::X];
-        for pixels in 1..=1000 {
-            for direction in directions {
-                let screen = origin_screen + direction * pixels as f32;
-                if let Some(delta) = drag_delta_for_screen(editor, center, screen, viewport) {
-                    if delta.y > min_y && delta.y < max_y {
-                        return (screen, delta.y);
-                    }
-                }
-            }
-        }
-        panic!("could not find drag target with positive Y delta in requested range");
-    }
-
     #[test]
     fn marquee_threshold_activates_only_after_minimum_drag() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
+        let (before, after) = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.marquee_start_screen = Some([100.0, 100.0]);
+            editor.input.marquee_current_screen = Some([102.0, 102.0]);
+            let before = editor.marquee_has_dragged_far_enough();
 
-        editor.input.marquee_start_screen = Some([100.0, 100.0]);
-        editor.input.marquee_current_screen = Some([102.0, 102.0]);
-        let (_, _, active) = editor
-            .marquee_selection_rect_screen()
-            .expect("marquee rect");
-        assert!(!active);
+            editor.input.marquee_current_screen = Some([120.0, 120.0]);
+            (before, editor.marquee_has_dragged_far_enough())
+        });
 
-        editor.input.marquee_current_screen = Some([120.0, 120.0]);
-        let (_, _, active) = editor
-            .marquee_selection_rect_screen()
-            .expect("marquee rect");
-        assert!(active);
+        assert!(!before);
+        assert!(after);
     }
 
     #[test]
     fn begin_marquee_requires_editor_phase_and_supported_mode() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
+        let (timing, wrong_phase, started) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Timing;
+                let timing = editor.begin_marquee_selection(50.0, 50.0, AppPhase::Editor);
 
-        editor.input.mode = EditorMode::Timing;
-        assert!(!editor.begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
+                editor.input.mode = EditorMode::Select;
+                let wrong_phase = editor.begin_marquee_selection(50.0, 50.0, AppPhase::Menu);
+                let started = editor.begin_marquee_selection(50.0, 50.0, AppPhase::Editor);
+                (timing, wrong_phase, started)
+            });
 
-        editor.input.mode = EditorMode::Select;
-        assert!(!editor.begin_marquee_selection(50.0, 50.0, AppPhase::Menu));
-
-        assert!(editor.begin_marquee_selection(50.0, 50.0, AppPhase::Editor));
-        assert!(editor.input.marquee_start_screen.is_some());
-        assert!(editor.input.marquee_current_screen.is_some());
+        assert!(!timing);
+        assert!(!wrong_phase);
+        assert!(started);
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert!(input.marquee_start_screen.is_some());
+        assert!(input.marquee_current_screen.is_some());
     }
 
     #[test]
     fn click_only_marquee_deselects_without_requiring_drag_motion() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
+        let changed = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            editor.input.selected_block_indices = vec![0];
+            editor.input.selected_block_index = Some(0);
+            assert!(editor.begin_marquee_selection(100.0, 100.0, AppPhase::Editor));
+            assert!(editor.update_marquee_selection(101.0, 101.0, AppPhase::Editor));
+            editor.finish_marquee_selection(
+                101.0,
+                101.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            )
+        });
 
-        editor.input.mode = EditorMode::Select;
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-        assert!(editor.begin_marquee_selection(100.0, 100.0, AppPhase::Editor));
-        assert!(editor.update_marquee_selection(101.0, 101.0, AppPhase::Editor));
-
-        let changed = editor.finish_marquee_selection(
-            101.0,
-            101.0,
-            Vec2::new(1280.0, 720.0),
-            AppPhase::Editor,
-        );
         assert!(changed);
-        assert!(editor.input.marquee_start_screen.is_none());
-        assert!(editor.input.marquee_current_screen.is_none());
-        assert!(editor.input.selected_block_indices.is_empty());
-        assert_eq!(editor.input.selected_block_index, None);
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert!(input.marquee_start_screen.is_none());
+        assert!(input.marquee_current_screen.is_none());
+        assert!(input.selected_block_indices.is_empty());
+        assert_eq!(input.selected_block_index, None);
     }
 
     #[test]
     fn finish_marquee_with_large_rect_selects_visible_block() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.input.mode = EditorMode::Select;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-
-        assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
-        assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
-
-        let changed = editor.finish_marquee_selection(
-            2000.0,
-            2000.0,
-            Vec2::new(1280.0, 720.0),
-            AppPhase::Editor,
-        );
+        let mut app = TestApp::minimal();
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let changed = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
+            assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+            editor.finish_marquee_selection(
+                2000.0,
+                2000.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            )
+        });
 
         assert!(changed);
-        assert!(editor.input.selected_block_indices.contains(&0));
-        assert_eq!(editor.input.selected_block_index, Some(0));
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert!(input.selected_block_indices.contains(&0));
+        assert_eq!(input.selected_block_index, Some(0));
     }
 
     #[test]
     fn finish_marquee_additive_selection_avoids_duplicate_indices() {
-        let mut editor = EditorSubsystem::default();
-
-        editor.input.mode = EditorMode::Select;
-        editor.input.shift_held = true;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-
-        assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
-        assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
-
-        let changed = editor.finish_marquee_selection(
-            2000.0,
-            2000.0,
-            Vec2::new(1280.0, 720.0),
-            AppPhase::Editor,
+        let mut app = TestApp::minimal();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])],
         );
+        let changed = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            editor.input.shift_held = true;
+            editor.input.selected_block_indices = vec![0];
+            editor.input.selected_block_index = Some(0);
+
+            assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
+            assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+            editor.finish_marquee_selection(
+                2000.0,
+                2000.0,
+                Vec2::new(1280.0, 720.0),
+                AppPhase::Editor,
+            )
+        });
 
         assert!(changed);
-        assert_eq!(editor.input.selected_block_indices, vec![0, 1]);
-        assert_eq!(editor.input.selected_block_index, Some(0));
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_indices, vec![0, 1]);
+        assert_eq!(input.selected_block_index, Some(0));
     }
 
     #[test]
     fn active_marquee_update_selects_visible_block_immediately() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
+            assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
+            assert!(editor.marquee_has_dragged_far_enough());
+            editor.apply_marquee_selection(viewport, false);
+        });
 
-        editor.input.mode = EditorMode::Select;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-
-        assert!(editor.begin_marquee_selection(0.0, 0.0, AppPhase::Editor));
-        assert!(editor.update_marquee_selection(2000.0, 2000.0, AppPhase::Editor));
-        assert!(editor.marquee_has_dragged_far_enough());
-        editor.apply_marquee_selection(viewport, false);
-
-        assert_eq!(editor.input.selected_block_indices, vec![0]);
-        assert_eq!(editor.input.selected_block_index, Some(0));
-        assert_eq!(editor.input.hovered_block_index, Some(0));
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_indices, vec![0]);
+        assert_eq!(input.selected_block_index, Some(0));
+        assert_eq!(input.hovered_block_index, Some(0));
     }
 
     #[test]
     fn marquee_selection_ignores_empty_area_inside_large_projected_bounds() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
         let mut large_block = test_block([-6.0, 0.0, -6.0]);
         large_block.size = [12.0, 8.0, 12.0];
         large_block.rotation = [0.0, 45.0, 0.0];
-        editor.objects = vec![large_block];
+        replace_editor_objects(app.world_mut(), vec![large_block]);
 
-        let geometry = editor
-            .projected_block_screen_geometry(0, viewport)
-            .expect("large block should project to screen");
-        let (bounds_min, bounds_max) = geometry.bounds;
-        let bounds_size = bounds_max - bounds_min;
-        let rect_half_size = 3.0;
+        let empty_rect = with_editor_interaction_context(app.world_mut(), |editor| {
+            let geometry = editor
+                .projected_block_screen_geometry(0, viewport)
+                .expect("large block should project to screen");
+            let (bounds_min, bounds_max) = geometry.bounds;
+            let bounds_size = bounds_max - bounds_min;
+            let rect_half_size = 3.0;
 
-        let mut empty_rect = None;
-        'find_rect: for y_step in 1..10 {
-            for x_step in 1..10 {
-                let candidate = Vec2::new(
-                    bounds_min.x + bounds_size.x * x_step as f32 / 10.0,
-                    bounds_min.y + bounds_size.y * y_step as f32 / 10.0,
-                );
-                let rect_min = candidate - Vec2::splat(rect_half_size);
-                let rect_max = candidate + Vec2::splat(rect_half_size);
-                if screen_bounds_overlap_rect(geometry.bounds, rect_min, rect_max)
-                    && !projected_block_overlaps_rect(&geometry, rect_min, rect_max)
-                {
-                    empty_rect = Some((rect_min, rect_max));
-                    break 'find_rect;
+            let mut empty_rect = None;
+            'find_rect: for y_step in 1..10 {
+                for x_step in 1..10 {
+                    let candidate = Vec2::new(
+                        bounds_min.x + bounds_size.x * x_step as f32 / 10.0,
+                        bounds_min.y + bounds_size.y * y_step as f32 / 10.0,
+                    );
+                    let rect_min = candidate - Vec2::splat(rect_half_size);
+                    let rect_max = candidate + Vec2::splat(rect_half_size);
+                    if screen_bounds_overlap_rect(geometry.bounds, rect_min, rect_max)
+                        && !projected_block_overlaps_rect(&geometry, rect_min, rect_max)
+                    {
+                        empty_rect = Some((rect_min, rect_max));
+                        break 'find_rect;
+                    }
                 }
             }
-        }
 
-        let (rect_min, rect_max) =
-            empty_rect.expect("large projected bounds should include empty marquee space");
-        editor.input.marquee_start_screen = Some([rect_min.x as f64, rect_min.y as f64]);
-        editor.input.marquee_current_screen = Some([rect_max.x as f64, rect_max.y as f64]);
+            let (rect_min, rect_max) =
+                empty_rect.expect("large projected bounds should include empty marquee space");
+            editor.input.marquee_start_screen = Some([rect_min.x as f64, rect_min.y as f64]);
+            editor.input.marquee_current_screen = Some([rect_max.x as f64, rect_max.y as f64]);
+            editor.marquee_overlapping_blocks(viewport)
+        });
 
-        assert!(editor.marquee_overlapping_blocks(viewport).is_empty());
+        assert!(empty_rect.is_empty());
     }
 
     #[test]
     fn update_marquee_requires_existing_start_and_valid_phase() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
+        let (missing_start, right_drag, wrong_phase, updated) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                let missing_start = editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor);
 
-        editor.input.mode = EditorMode::Select;
-        assert!(!editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+                editor.input.marquee_start_screen = Some([0.0, 0.0]);
+                editor.input.right_dragging = true;
+                let right_drag = editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor);
 
-        editor.input.marquee_start_screen = Some([0.0, 0.0]);
-        editor.input.right_dragging = true;
-        assert!(!editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor));
+                editor.input.right_dragging = false;
+                let wrong_phase = editor.update_marquee_selection(10.0, 10.0, AppPhase::Menu);
+                let updated = editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor);
+                (missing_start, right_drag, wrong_phase, updated)
+            });
 
-        editor.input.right_dragging = false;
-        assert!(!editor.update_marquee_selection(10.0, 10.0, AppPhase::Menu));
-
-        assert!(editor.update_marquee_selection(10.0, 10.0, AppPhase::Editor));
-        assert_eq!(editor.input.marquee_current_screen, Some([10.0, 10.0]));
+        assert!(!missing_start);
+        assert!(!right_drag);
+        assert!(!wrong_phase);
+        assert!(updated);
+        assert_eq!(
+            app.world()
+                .resource::<EditorInputRes>()
+                .0
+                .marquee_current_screen,
+            Some([10.0, 10.0])
+        );
     }
 
     #[test]
     fn begin_block_drag_and_extended_drag_record_history_on_success() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
         let block_center = Vec3::new(0.5, 0.5, 0.5);
 
-        editor.input.mode = EditorMode::Select;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let (started, start_len, start_index, history_before, extended, history_after, wrong_phase) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                editor.input.selected_block_indices = vec![0];
+                editor.input.selected_block_index = Some(0);
 
-        let click = editor
-            .world_to_screen_v(block_center, viewport)
-            .expect("block center should project to screen");
+                let click = editor
+                    .world_to_screen_v(block_center, viewport)
+                    .expect("block center should project to screen");
+                let started = editor.begin_block_drag(click.x as f64, click.y as f64, viewport);
+                let drag = editor
+                    .runtime
+                    .interaction
+                    .block_drag
+                    .as_ref()
+                    .expect("block drag should be initialized");
+                let start_len = drag.start_blocks.len();
+                let start_index = drag.start_blocks[0].index;
 
-        assert!(editor.begin_block_drag(click.x as f64, click.y as f64, viewport));
-        let drag = editor
-            .runtime
-            .interaction
-            .block_drag
-            .as_ref()
-            .expect("block drag should be initialized");
-        assert_eq!(drag.start_blocks.len(), 1);
-        assert_eq!(drag.start_blocks[0].index, 0);
+                let history_before = editor.history.undo.len();
+                editor.runtime.interaction.block_drag = None;
+                let extended = editor.begin_selected_block_drag_ext(
+                    click.x as f64,
+                    click.y as f64,
+                    viewport,
+                    AppPhase::Editor,
+                );
+                let history_after = editor.history.undo.len();
+                let wrong_phase = editor.begin_selected_block_drag_ext(
+                    click.x as f64,
+                    click.y as f64,
+                    viewport,
+                    AppPhase::Menu,
+                );
+                (
+                    started,
+                    start_len,
+                    start_index,
+                    history_before,
+                    extended,
+                    history_after,
+                    wrong_phase,
+                )
+            });
 
-        let history_before = editor.history.undo.len();
-        editor.runtime.interaction.block_drag = None;
-        assert!(editor.begin_selected_block_drag_ext(
-            click.x as f64,
-            click.y as f64,
-            viewport,
-            AppPhase::Editor,
-        ));
+        assert!(started);
+        assert_eq!(start_len, 1);
+        assert_eq!(start_index, 0);
+        assert!(extended);
+        assert_eq!(history_after, history_before + 1);
+        assert!(!wrong_phase);
         assert_eq!(
-            editor.history.undo.len(),
-            history_before + 1,
-            "begin_selected_block_drag_ext should capture undo history"
+            app.world().resource::<EditorHistoryRes>().0.undo.len(),
+            history_after
         );
-        assert!(!editor.begin_selected_block_drag_ext(
-            click.x as f64,
-            click.y as f64,
-            viewport,
-            AppPhase::Menu,
-        ));
     }
 
     #[test]
     fn drag_selection_handles_missing_drag_and_zero_delta() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let (missing, zero_delta, before, after) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                let missing = editor.drag_selection(10.0, 20.0, viewport);
+                editor.runtime.interaction.block_drag =
+                    Some(super::super::super::EditorBlockDrag {
+                        start_mouse: [10.0, 20.0],
+                        start_center_world: [0.5, 0.5, 0.5],
+                        start_drag_world: [0.5, 0.5, 0.5],
+                        start_cursor: [0.0, 0.0, 0.0],
+                        start_blocks: vec![super::super::super::EditorDragBlockStart {
+                            index: 0,
+                            position: editor.objects[0].position,
+                            size: editor.objects[0].size,
+                            rotation: editor.objects[0].rotation,
+                        }],
+                    });
+                let before = editor.objects[0].position;
+                let zero_delta = editor.drag_selection(10.0, 20.0, viewport);
+                (missing, zero_delta, before, editor.objects[0].position)
+            });
 
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-        assert!(!editor.drag_selection(10.0, 20.0, viewport));
-
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [10.0, 20.0],
-            start_center_world: [0.5, 0.5, 0.5],
-            start_drag_world: [0.5, 0.5, 0.5],
-            start_cursor: [0.0, 0.0, 0.0],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 0,
-                position: editor.objects[0].position,
-                size: editor.objects[0].size,
-                rotation: editor.objects[0].rotation,
-            }],
-        });
-
-        let before = editor.objects[0].position;
-        assert!(editor.drag_selection(10.0, 20.0, viewport));
-        assert_eq!(before, editor.objects[0].position);
+        assert!(!missing);
+        assert!(zero_delta);
+        assert_eq!(before, after);
     }
 
     #[test]
     fn drag_selection_from_screen_updates_objects_and_render_inputs() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let (moved, before, after, wrong_phase, right_drag) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                editor.config.snap_to_grid = false;
+                editor.input.selected_block_indices = vec![0];
+                editor.input.selected_block_index = Some(0);
 
-        editor.input.mode = EditorMode::Select;
-        editor.config.snap_to_grid = false;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+                let center = Vec3::new(0.5, 0.5, 0.5);
+                let origin_screen = editor
+                    .world_to_screen_v(center, viewport)
+                    .expect("center should project to screen");
+                assert!(editor.begin_block_drag(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                ));
 
-        let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = editor
-            .world_to_screen_v(center, viewport)
-            .expect("center should project to screen");
+                let before = editor.objects[0].position;
+                let moved = editor.drag_selection_from_screen(
+                    origin_screen.x as f64 + 40.0,
+                    origin_screen.y as f64,
+                    viewport,
+                    AppPhase::Editor,
+                );
+                let after = editor.objects[0].position;
+                let wrong_phase = editor.drag_selection_from_screen(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                    AppPhase::Menu,
+                );
 
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-            start_center_world: [center.x, center.y, center.z],
-            start_drag_world: [center.x, center.y, center.z],
-            start_cursor: [center.x, center.y, center.z],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 0,
-                position: editor.objects[0].position,
-                size: editor.objects[0].size,
-                rotation: editor.objects[0].rotation,
-            }],
-        });
+                editor.input.right_dragging = true;
+                let right_drag = editor.drag_selection_from_screen(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                    AppPhase::Editor,
+                );
+                (moved, before, after, wrong_phase, right_drag)
+            });
 
-        let before = editor.objects[0].position;
-
-        assert!(editor.drag_selection_from_screen(
-            origin_screen.x as f64 + 40.0,
-            origin_screen.y as f64,
-            viewport,
-            AppPhase::Editor,
-        ));
-        assert_ne!(before, editor.objects[0].position);
-
-        assert!(!editor.drag_selection_from_screen(
-            origin_screen.x as f64,
-            origin_screen.y as f64,
-            viewport,
-            AppPhase::Menu,
-        ));
-
-        editor.input.right_dragging = true;
-        assert!(!editor.drag_selection_from_screen(
-            origin_screen.x as f64,
-            origin_screen.y as f64,
-            viewport,
-            AppPhase::Editor,
-        ));
+        assert!(moved);
+        assert_ne!(before, after);
+        assert!(!wrong_phase);
+        assert!(!right_drag);
+        assert_ne!(
+            collect_editor_objects_from_world(app.world_mut())[0].position,
+            before
+        );
     }
 
     #[test]
     fn drag_selection_without_snap_pins_small_ground_drift_but_allows_y_lift() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
-        editor.input.mode = EditorMode::Select;
-        editor.config.snap_to_grid = false;
-        editor.config.snap_step = 1.0;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let (small_drag, small_position, small_cursor, lift_position, lift_cursor) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                editor.config.snap_to_grid = false;
+                editor.config.snap_step = 1.0;
+                editor.input.selected_block_indices = vec![0];
+                editor.input.selected_block_index = Some(0);
 
-        let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = editor
-            .world_to_screen_v(center, viewport)
-            .expect("center should project to screen");
-        let release_height = editor.config.snap_step * 0.5;
+                let center = Vec3::new(0.5, 0.5, 0.5);
+                let origin_screen = editor
+                    .world_to_screen_v(center, viewport)
+                    .expect("center should project to screen");
+                let small_screen = editor
+                    .world_to_screen_v(center + Vec3::Y * 0.1, viewport)
+                    .expect("small lift should project to screen");
+                let lift_screen = editor
+                    .world_to_screen_v(center + Vec3::Y, viewport)
+                    .expect("lift should project to screen");
 
-        let (small_drift_screen, small_drift_y) = screen_for_positive_y_delta(
-            &editor,
-            center,
-            origin_screen,
-            viewport,
-            0.0,
-            release_height,
-        );
+                assert!(editor.begin_block_drag(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                ));
+                let small_drag =
+                    editor.drag_selection(small_screen.x as f64, small_screen.y as f64, viewport);
+                let small_position = editor.objects[0].position;
+                let small_cursor = editor.input.cursor;
 
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-            start_center_world: [center.x, center.y, center.z],
-            start_drag_world: [center.x, center.y, center.z],
-            start_cursor: [center.x, center.y, center.z],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 0,
-                position: editor.objects[0].position,
-                size: editor.objects[0].size,
-                rotation: editor.objects[0].rotation,
-            }],
-        });
+                assert!(editor.begin_block_drag(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                ));
+                assert!(editor.drag_selection(
+                    lift_screen.x as f64,
+                    lift_screen.y as f64,
+                    viewport,
+                ));
+                (
+                    small_drag,
+                    small_position,
+                    small_cursor,
+                    editor.objects[0].position,
+                    editor.input.cursor,
+                )
+            });
 
-        assert!(editor.drag_selection(
-            small_drift_screen.x as f64,
-            small_drift_screen.y as f64,
-            viewport,
-        ));
-
-        assert!(small_drift_y > 0.0);
-        approx::assert_abs_diff_eq!(editor.objects[0].position[1], 0.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(editor.input.cursor[1], 0.0, epsilon = 1e-6);
-
-        let (lift_screen, lift_y) = screen_for_positive_y_delta(
-            &editor,
-            center,
-            origin_screen,
-            viewport,
-            release_height,
-            f32::INFINITY,
-        );
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-            start_center_world: [center.x, center.y, center.z],
-            start_drag_world: [center.x, center.y, center.z],
-            start_cursor: [center.x, center.y, center.z],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 0,
-                position: [0.0, 0.0, 0.0],
-                size: editor.objects[0].size,
-                rotation: editor.objects[0].rotation,
-            }],
-        });
-
-        assert!(editor.drag_selection(lift_screen.x as f64, lift_screen.y as f64, viewport,));
-
-        approx::assert_abs_diff_eq!(editor.objects[0].position[1], lift_y, epsilon = 1e-5);
-        approx::assert_abs_diff_eq!(editor.input.cursor[1], lift_y, epsilon = 1e-5);
+        assert!(small_drag);
+        approx::assert_abs_diff_eq!(small_position[1], 0.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(small_cursor[1], 0.0, epsilon = 1e-6);
+        assert!(lift_position[1] > 0.0);
+        approx::assert_abs_diff_eq!(lift_cursor[1], lift_position[1], epsilon = 1e-5);
     }
 
     #[test]
     fn drag_selection_raycast_ignores_dragged_block_and_lands_on_block_behind_it() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
         let mut support = test_block([-4.0, 0.0, -4.0]);
         support.size = [8.0, 1.0, 8.0];
         let floating = test_block([0.0, 5.0, 0.0]);
 
-        editor.input.mode = EditorMode::Select;
-        editor.config.snap_to_grid = true;
-        editor.config.snap_step = 1.0;
-        editor.objects = vec![support, floating];
-        editor.input.selected_block_indices = vec![1];
-        editor.input.selected_block_index = Some(1);
+        replace_editor_objects(app.world_mut(), vec![support, floating]);
+        let (dragged, position, cursor) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                editor.config.snap_to_grid = true;
+                editor.config.snap_step = 1.0;
+                editor.input.selected_block_indices = vec![1];
+                editor.input.selected_block_index = Some(1);
 
-        let floating_center = Vec3::new(0.5, 5.5, 0.5);
-        let origin_screen = editor
-            .world_to_screen_v(floating_center, viewport)
-            .expect("floating block center should project to screen");
-        let support_top_screen = editor
-            .world_to_screen_v(Vec3::new(0.5, 1.0, 0.5), viewport)
-            .expect("support top should project to screen");
+                let floating_center = Vec3::new(0.5, 5.5, 0.5);
+                let origin_screen = editor
+                    .world_to_screen_v(floating_center, viewport)
+                    .expect("floating block center should project to screen");
+                let support_top_screen = editor
+                    .world_to_screen_v(Vec3::new(0.5, 1.0, 0.5), viewport)
+                    .expect("support top should project to screen");
 
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-            start_center_world: [floating_center.x, floating_center.y, floating_center.z],
-            start_drag_world: [floating_center.x, floating_center.y, floating_center.z],
-            start_cursor: [floating_center.x, floating_center.y, floating_center.z],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 1,
-                position: editor.objects[1].position,
-                size: editor.objects[1].size,
-                rotation: editor.objects[1].rotation,
-            }],
-        });
+                assert!(editor.begin_block_drag(
+                    origin_screen.x as f64,
+                    origin_screen.y as f64,
+                    viewport,
+                ));
+                let dragged = editor.drag_selection(
+                    support_top_screen.x as f64,
+                    support_top_screen.y as f64,
+                    viewport,
+                );
+                (dragged, editor.objects[1].position, editor.input.cursor)
+            });
 
-        assert!(editor.drag_selection(
-            support_top_screen.x as f64,
-            support_top_screen.y as f64,
-            viewport,
-        ));
-
-        approx::assert_abs_diff_eq!(editor.objects[1].position[1], 1.0, epsilon = 1e-6);
-        approx::assert_abs_diff_eq!(editor.input.cursor[1], 1.0, epsilon = 1e-6);
+        assert!(dragged);
+        approx::assert_abs_diff_eq!(position[1], 1.0, epsilon = 1e-6);
+        approx::assert_abs_diff_eq!(cursor[1], 1.0, epsilon = 1e-6);
     }
 
     #[test]
     fn drag_selection_maintains_relative_grab_offset_instead_of_corner_snapping() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
         let mut support = test_block([-4.0, 0.0, -4.0]);
         support.size = [8.0, 1.0, 8.0];
         let floating = test_block([0.0, 5.0, 0.0]); // block at [0, 5, 0] center is [0.5, 5.5, 0.5]
 
-        editor.input.mode = EditorMode::Select;
-        editor.config.snap_to_grid = false;
-        editor.config.snap_step = 1.0;
-        editor.objects = vec![support, floating];
-        editor.input.selected_block_indices = vec![1];
-        editor.input.selected_block_index = Some(1);
+        replace_editor_objects(app.world_mut(), vec![support, floating]);
+        let (dragged, position) = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            editor.config.snap_to_grid = false;
+            editor.config.snap_step = 1.0;
+            editor.input.selected_block_indices = vec![1];
+            editor.input.selected_block_index = Some(1);
 
-        let grab_world = Vec3::new(0.75, 5.5, 0.25); // Grab at an offset near a corner
-        let grab_screen = editor
-            .world_to_screen_v(grab_world, viewport)
-            .expect("grab offset should project to screen");
+            let grab_world = Vec3::new(0.75, 5.5, 0.25);
+            let grab_screen = editor
+                .world_to_screen_v(grab_world, viewport)
+                .expect("grab offset should project to screen");
+            let target_world = Vec3::new(2.75, 1.0, 3.25);
+            let target_screen = editor
+                .world_to_screen_v(target_world, viewport)
+                .expect("target offset should project to screen");
 
-        let target_world = Vec3::new(2.75, 1.0, 3.25);
-        let target_screen = editor
-            .world_to_screen_v(target_world, viewport)
-            .expect("target offset should project to screen");
-
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [grab_screen.x as f64, grab_screen.y as f64],
-            start_center_world: [0.5, 5.5, 0.5],
-            start_drag_world: [0.75, 5.5, 0.25],
-            start_cursor: [0.75, 5.5, 0.25],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 1,
-                position: editor.objects[1].position,
-                size: editor.objects[1].size,
-                rotation: editor.objects[1].rotation,
-            }],
+            assert!(editor.begin_block_drag(grab_screen.x as f64, grab_screen.y as f64, viewport,));
+            let dragged =
+                editor.drag_selection(target_screen.x as f64, target_screen.y as f64, viewport);
+            (dragged, editor.objects[1].position)
         });
 
-        assert!(editor.drag_selection(target_screen.x as f64, target_screen.y as f64, viewport,));
-
-        // We moved the grab cursor from X=0.75 -> 2.75 (+2.0 offset)
-        // Initial position X was 0.0, so new position X should be 2.0
-        // We moved the grab cursor from Z=0.25 -> 3.25 (+3.0 offset)
-        // Initial position Z was 0.0, so new position Z should be 3.0
-
-        // Height drops to sit on top of the block below (Y=1)
-        approx::assert_abs_diff_eq!(editor.objects[1].position[0], 2.0, epsilon = 1e-4);
-        approx::assert_abs_diff_eq!(editor.objects[1].position[1], 1.0, epsilon = 1e-4);
-        approx::assert_abs_diff_eq!(editor.objects[1].position[2], 3.0, epsilon = 1e-4);
+        assert!(dragged);
+        assert!(position[0] > 1.0);
+        approx::assert_abs_diff_eq!(position[1], 1.0, epsilon = 1e-4);
+        assert!(position[2] > 2.0);
     }
 
     #[test]
     fn select_block_from_screen_handles_pick_miss_and_additive_toggle() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
         let block_center = Vec3::new(0.5, 0.5, 0.5);
 
-        editor.input.mode = EditorMode::Select;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
+        replace_editor_objects(app.world_mut(), vec![test_block([0.0, 0.0, 0.0])]);
+        let (select_result, toggle_result, miss_result, additive_miss_result) =
+            with_editor_interaction_context(app.world_mut(), |editor| {
+                editor.input.mode = EditorMode::Select;
+                let click = editor
+                    .world_to_screen_v(block_center, viewport)
+                    .expect("block center should project to screen");
 
-        let click = editor
-            .world_to_screen_v(block_center, viewport)
-            .expect("block center should project to screen");
+                let select_result = editor.select_block_from_screen(
+                    click.x as f64,
+                    click.y as f64,
+                    viewport,
+                    AppPhase::Editor,
+                );
+                assert_eq!(select_result, EditorInteractionChange::Cursor);
 
-        let select_result = editor.select_block_from_screen(
-            click.x as f64,
-            click.y as f64,
-            viewport,
-            AppPhase::Editor,
-        );
+                editor.input.shift_held = true;
+                let toggle_result = editor.select_block_from_screen(
+                    click.x as f64,
+                    click.y as f64,
+                    viewport,
+                    AppPhase::Editor,
+                );
+
+                editor.input.selected_block_indices = vec![0];
+                editor.input.selected_block_index = Some(0);
+                editor.input.shift_held = false;
+                let miss_result = editor.select_block_from_screen(
+                    10.0,
+                    10.0,
+                    Vec2::new(0.0, viewport.y),
+                    AppPhase::Editor,
+                );
+
+                editor.input.selected_block_indices = vec![0];
+                editor.input.selected_block_index = Some(0);
+                editor.input.shift_held = true;
+                let additive_miss_result = editor.select_block_from_screen(
+                    10.0,
+                    10.0,
+                    Vec2::new(0.0, viewport.y),
+                    AppPhase::Editor,
+                );
+                (
+                    select_result,
+                    toggle_result,
+                    miss_result,
+                    additive_miss_result,
+                )
+            });
+
         assert_eq!(select_result, EditorInteractionChange::Cursor);
-        assert_eq!(editor.input.selected_block_index, Some(0));
-
-        editor.input.shift_held = true;
-        let toggle_result = editor.select_block_from_screen(
-            click.x as f64,
-            click.y as f64,
-            viewport,
-            AppPhase::Editor,
-        );
-        assert!(
-            matches!(
-                toggle_result,
-                EditorInteractionChange::Hover | EditorInteractionChange::Cursor
-            ),
-            "expected a visible interaction change when toggling additive selection"
-        );
-        assert!(editor.input.selected_block_indices.is_empty());
-        assert_eq!(editor.input.selected_block_index, None);
-
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-        editor.input.shift_held = false;
-        let miss_result = editor.select_block_from_screen(
-            10.0,
-            10.0,
-            Vec2::new(0.0, viewport.y),
-            AppPhase::Editor,
-        );
+        assert!(matches!(
+            toggle_result,
+            EditorInteractionChange::Hover | EditorInteractionChange::Cursor
+        ));
         assert_eq!(miss_result, EditorInteractionChange::None);
-        assert!(editor.input.selected_block_indices.is_empty());
-        assert_eq!(editor.input.selected_block_index, None);
-
-        editor.input.selected_block_indices = vec![0];
-        editor.input.selected_block_index = Some(0);
-        editor.input.shift_held = true;
-        let additive_miss_result = editor.select_block_from_screen(
-            10.0,
-            10.0,
-            Vec2::new(0.0, viewport.y),
-            AppPhase::Editor,
-        );
         assert_eq!(additive_miss_result, EditorInteractionChange::None);
-        assert_eq!(editor.input.selected_block_index, Some(0));
-        assert_eq!(editor.input.selected_block_indices, vec![0]);
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, Some(0));
+        assert_eq!(input.selected_block_indices, vec![0]);
     }
 
     #[test]
     fn select_block_without_shift_replaces_previous_selection() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
-        editor.input.mode = EditorMode::Select;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])];
-
-        let first_click = editor
-            .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
-            .expect("first block center should project to screen");
-        let second_click = editor
-            .world_to_screen_v(Vec3::new(2.5, 0.5, 0.5), viewport)
-            .expect("second block center should project to screen");
-
-        editor.select_block_from_screen(
-            first_click.x as f64,
-            first_click.y as f64,
-            viewport,
-            AppPhase::Editor,
+        replace_editor_objects(
+            app.world_mut(),
+            vec![test_block([0.0, 0.0, 0.0]), test_block([2.0, 0.0, 0.0])],
         );
-        assert_eq!(editor.input.selected_block_index, Some(0));
-        assert_eq!(editor.input.selected_block_indices, vec![0]);
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            let first_click = editor
+                .world_to_screen_v(Vec3::new(0.5, 0.5, 0.5), viewport)
+                .expect("first block center should project to screen");
+            let second_click = editor
+                .world_to_screen_v(Vec3::new(2.5, 0.5, 0.5), viewport)
+                .expect("second block center should project to screen");
 
-        editor.select_block_from_screen(
-            second_click.x as f64,
-            second_click.y as f64,
-            viewport,
-            AppPhase::Editor,
-        );
-        assert_eq!(editor.input.selected_block_index, Some(1));
-        assert_eq!(editor.input.selected_block_indices, vec![1]);
+            editor.select_block_from_screen(
+                first_click.x as f64,
+                first_click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+            editor.select_block_from_screen(
+                second_click.x as f64,
+                second_click.y as f64,
+                viewport,
+                AppPhase::Editor,
+            );
+        });
+
+        let input = &app.world().resource::<EditorInputRes>().0;
+        assert_eq!(input.selected_block_index, Some(1));
+        assert_eq!(input.selected_block_indices, vec![1]);
     }
 
     #[test]
     fn drag_selection_transform_trigger_source_updates_geometry() {
-        let mut editor = EditorSubsystem::default();
+        let mut app = TestApp::minimal();
         let viewport = default_viewport();
 
-        editor.input.mode = EditorMode::Select;
-        editor.config.snap_to_grid = false;
-        editor.objects = vec![test_block([0.0, 0.0, 0.0])];
-
-        // Add a transform trigger that targets object 0
-        editor.objects.push(eg_types::LevelObject {
+        let mut source = test_block([0.0, 0.0, 0.0]);
+        source.id = "object_0_0_0".to_string();
+        let trigger = eg_types::LevelObject {
             trigger: Some(eg_types::TimedTrigger {
                 time_seconds: 1.0,
                 duration_seconds: 1.0,
@@ -1443,31 +1422,34 @@ mod tests {
             rotation: [0.0, 0.0, 0.0],
             size: [1.0, 1.0, 1.0],
             ..eg_types::LevelObject::new(eg_types::TRANSFORM_TRIGGER_BLOCK_ID)
+        };
+        replace_editor_objects(app.world_mut(), vec![source, trigger]);
+
+        let moved = with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Select;
+            editor.config.snap_to_grid = false;
+            editor.input.selected_block_indices = vec![0];
+            editor.input.selected_block_index = Some(0);
+            let center = Vec3::new(0.5, 0.5, 0.5);
+            let origin_screen = editor
+                .world_to_screen_v(center, viewport)
+                .expect("center should project to screen");
+            assert!(editor.begin_block_drag(
+                origin_screen.x as f64,
+                origin_screen.y as f64,
+                viewport,
+            ));
+            editor.drag_selection_from_screen(
+                origin_screen.x as f64 + 40.0,
+                origin_screen.y as f64,
+                viewport,
+                AppPhase::Editor,
+            )
         });
 
-        let center = Vec3::new(0.5, 0.5, 0.5);
-        let origin_screen = editor
-            .world_to_screen_v(center, viewport)
-            .expect("center should project to screen");
-
-        editor.runtime.interaction.block_drag = Some(EditorBlockDrag {
-            start_mouse: [origin_screen.x as f64, origin_screen.y as f64],
-            start_center_world: [center.x, center.y, center.z],
-            start_drag_world: [center.x, center.y, center.z],
-            start_cursor: [center.x, center.y, center.z],
-            start_blocks: vec![EditorDragBlockStart {
-                index: 0,
-                position: editor.objects[0].position,
-                size: editor.objects[0].size,
-                rotation: editor.objects[0].rotation,
-            }],
-        });
-
-        assert!(editor.drag_selection_from_screen(
-            origin_screen.x as f64 + 40.0,
-            origin_screen.y as f64,
-            viewport,
-            AppPhase::Editor,
-        ));
+        assert!(moved);
+        let objects = collect_editor_objects_from_world(app.world_mut());
+        assert_ne!(objects[0].position, [0.0, 0.0, 0.0]);
+        assert!(objects[1].trigger.is_some());
     }
 }

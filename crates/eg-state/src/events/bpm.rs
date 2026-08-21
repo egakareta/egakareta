@@ -42,7 +42,7 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 /// Maximum number of bpm tap times retained for the running average.
-/// Mirrors the cap in `EditorSubsystem::bpm_tap`.
+/// Applies the same cap as the editor BPM-tap domain operation.
 const BPM_TAP_HISTORY_LIMIT: usize = 16;
 
 fn wall_clock_now_seconds() -> f64 {
