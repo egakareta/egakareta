@@ -226,7 +226,7 @@ super::super::editor_context_methods! {
             self.set_trigger_selected(trigger_hit);
         }
 
-        self.sync_primary_selection_from_indices();
+        self.normalize_block_selection();
         self.selected_mask_cache = None;
         self.runtime.interaction.gizmo_drag = None;
         self.runtime.interaction.block_drag = None;
@@ -275,7 +275,7 @@ super::super::editor_context_methods! {
         if !additive {
             self.clear_block_selection();
             self.set_trigger_selected(None);
-            self.sync_primary_selection_from_indices();
+        self.normalize_block_selection();
             self.input.hovered_block_index = None;
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;
@@ -590,7 +590,7 @@ super::super::editor_context_methods! {
                 changed = EditorInteractionChange::Hover;
             }
 
-            self.sync_primary_selection_from_indices();
+        self.normalize_block_selection();
             self.selected_mask_cache = None;
             self.runtime.interaction.gizmo_drag = None;
             self.runtime.interaction.block_drag = None;

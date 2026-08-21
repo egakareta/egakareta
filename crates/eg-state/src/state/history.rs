@@ -35,10 +35,6 @@ super::editor_context_methods! {
     }
 
     pub(crate) fn record_history_state(&mut self) {
-        self.record_history_state_force();
-    }
-
-    pub(super) fn record_history_state_force(&mut self) {
         const MAX_HISTORY: usize = 256;
         if self.history.undo.len() >= MAX_HISTORY {
             self.history.undo.remove(0);

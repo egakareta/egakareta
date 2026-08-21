@@ -898,7 +898,8 @@ fn show_ui_scale_setting(
     commands: &mut impl UiCommandSink,
 ) {
     ui.label(format!("{} UI Scale", egui_phosphor::regular::GEAR));
-    let mut ui_scale_multiplier = app_settings.normalized_ui_scale_multiplier();
+    let mut ui_scale_multiplier =
+        AppSettings::clamp_ui_scale_multiplier(app_settings.ui_scale_multiplier);
     if ui
         .add(
             egui::DragValue::new(&mut ui_scale_multiplier)

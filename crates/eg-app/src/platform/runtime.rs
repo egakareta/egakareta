@@ -33,6 +33,8 @@ use eg_state::state::{
     AppBootstrap, AudioBackendRes, EditorInputRes, RenderConfigRes, SessionStateRes,
     enqueue_platform_input, register_state_schedule, setup_state_app,
 };
+#[cfg(not(test))]
+use eg_types::AppSettings;
 use eg_ui::register_ui_resources_world;
 #[cfg(not(test))]
 use eg_ui::{EditorUiInputs, SettingsSidebarInputs};
@@ -358,10 +360,7 @@ fn run_egui_ui_system(world: &mut World) {
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
         physical_size,
-        world
-            .resource::<SessionStateRes>()
-            .app_settings
-            .normalized_ui_scale_multiplier(),
+        AppSettings::clamp_ui_scale_multiplier(app_settings.ui_scale_multiplier),
     );
     frame.egui_ctx.set_zoom_factor(ui_scale_factor);
 

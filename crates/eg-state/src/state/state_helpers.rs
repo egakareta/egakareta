@@ -8,7 +8,7 @@
 use eg_types::LevelObject;
 
 super::editor_context_methods! {
-    fn normalized_block_selection_indices(&self) -> Vec<usize> {
+    pub fn selected_indices_normalized(&self) -> Vec<usize> {
         let object_count = self.objects.len();
         let mut indices: Vec<usize> = self
             .input
@@ -31,12 +31,8 @@ super::editor_context_methods! {
         indices
     }
 
-    pub fn selected_indices_normalized(&self) -> Vec<usize> {
-        self.normalized_block_selection_indices()
-    }
-
     pub fn normalize_block_selection(&mut self) {
-        let indices = self.normalized_block_selection_indices();
+        let indices = self.selected_indices_normalized();
         self.input.selected_block_index = self
             .input
             .selected_block_index
@@ -88,10 +84,6 @@ super::editor_context_methods! {
         if self.input.selected_block_indices.is_empty() {
             self.clear_block_selection();
         }
-    }
-
-    pub fn sync_primary_selection_from_indices(&mut self) {
-        self.normalize_block_selection();
     }
 
     pub fn selection_contains(&self, index: usize) -> bool {

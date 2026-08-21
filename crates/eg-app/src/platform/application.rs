@@ -148,10 +148,6 @@ impl App {
         !cursor.hides_system_cursor()
     }
 
-    fn system_cursor_visible_for_frame(runtime: &Runtime, _pointer_over_egui: bool) -> bool {
-        Self::system_cursor_visible(runtime.game_cursor())
-    }
-
     fn should_route_mouse_button_input(
         egui_consumed: bool,
         pointer_over_egui: bool,
@@ -534,8 +530,7 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window.as_ref());
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window.as_ref(), full_output.platform_output);
-                    let over_ui = runtime.egui_context().is_pointer_over_egui();
-                    let visible = Self::system_cursor_visible_for_frame(runtime, over_ui);
+                    let visible = Self::system_cursor_visible(runtime.game_cursor());
                     window.as_ref().set_cursor_visible(visible);
                 }
 
@@ -549,8 +544,7 @@ impl ApplicationHandler for App {
                     let raw_input = egui_state.take_egui_input(window);
                     let full_output = runtime.run_app_frame(raw_input);
                     egui_state.handle_platform_output(window, full_output.platform_output);
-                    let over_ui = runtime.egui_context().is_pointer_over_egui();
-                    let visible = Self::system_cursor_visible_for_frame(runtime, over_ui);
+                    let visible = Self::system_cursor_visible(runtime.game_cursor());
                     window.set_cursor_visible(visible);
                     window.request_redraw();
                 }
@@ -582,7 +576,6 @@ mod tests {
     use winit::{dpi::PhysicalPosition, event::TouchPhase};
 
     use super::{App, TouchPointEvent};
-    use crate::platform::runtime::Runtime;
 
     fn pos(x: f64, y: f64) -> PhysicalPosition<f64> {
         PhysicalPosition::new(x, y)
@@ -606,14 +599,6 @@ mod tests {
     #[test]
     fn native_window_icon_loads_favicon_asset() {
         assert!(App::native_window_icon().is_some());
-    }
-
-    #[test]
-    fn frame_system_cursor_visibility_follows_default_state_and_ui_hover() {
-        let runtime = Runtime::new_test();
-
-        assert!(App::system_cursor_visible_for_frame(&runtime, false));
-        assert!(App::system_cursor_visible_for_frame(&runtime, true));
     }
 
     #[test]

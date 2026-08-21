@@ -196,13 +196,6 @@ pub fn draw_instanced_blocks(render_pass: &mut wgpu::RenderPass<'_>, slot: &Inst
     }
 }
 
-pub fn draw_chunk_instanced_blocks(
-    render_pass: &mut wgpu::RenderPass<'_>,
-    chunk: &RenderedBlockChunk,
-) {
-    draw_instanced_blocks(render_pass, &chunk.instanced);
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditorOutlineInstance {
     pub mask_vertices: std::ops::Range<u32>,

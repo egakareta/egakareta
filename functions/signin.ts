@@ -463,10 +463,6 @@ async function completeNativeHandoff(
     return htmlResponse(nativeCompletionPage());
 }
 
-function completeBrowserSignIn(payload: AuthPayload) {
-    return htmlResponse(browserCompletionPage(payload));
-}
-
 function isResponse(value: unknown): value is Response {
     return value instanceof Response;
 }
@@ -525,5 +521,5 @@ export const onRequestPost: PagesFunction<Cloudflare.Env> = async ({
 
     return form.handoffId
         ? completeNativeHandoff(env, form.handoffId, payload)
-        : completeBrowserSignIn(payload);
+        : htmlResponse(browserCompletionPage(payload));
 };
