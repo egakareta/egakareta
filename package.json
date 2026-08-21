@@ -1,7 +1,7 @@
 {
     "name": "egakareta",
     "scripts": {
-        "cloudflare": "curl https://mise.run | sh && export PATH=\"$HOME/.local/bin:$PATH\" && mise bootstrap && mise build"
+        "cloudflare": "curl https://mise.run | sh && export PATH=\"$HOME/.local/bin:$PATH\" && mise install && mise build"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.112.3"
