@@ -35,8 +35,6 @@ approx = "0.5"
 bevy = { version = "0.19", default-features = false, features = [
     "bevy_clipboard",
     "bevy_state",
-    "bevy_material",
-    "bevy_log",
 ] }
 bevy_egui = "0.41"
 bytemuck = { version = "1.25", features = ["derive"] }
