@@ -256,20 +256,22 @@ mod tests {
 
     #[test]
     fn scrub_trail_uses_sparse_trail_cache() {
-        let mut timeline = EditorTimelineState::default();
-        timeline.snapshot_cache_step_seconds = 1.0 / 240.0;
-        timeline.trail_point_cache = vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]];
-        timeline.trail_segment_start_cache = vec![0];
-        timeline.snapshot_cache = (0..=2_000)
-            .map(|index| EditorTimelineSnapshot {
-                position: [index as f32 * 0.1, 0.0, 0.0],
-                direction: Direction::Forward,
-                is_grounded: true,
-                game_over: false,
-                trail_segment_count: 1,
-                trail_point_count: 2,
-            })
-            .collect();
+        let timeline = EditorTimelineState {
+            snapshot_cache_step_seconds: 1.0 / 240.0,
+            trail_point_cache: vec![[0.0, 0.0, 0.0], [24.0, 0.0, 0.0]],
+            trail_segment_start_cache: vec![0],
+            snapshot_cache: (0..=2_000)
+                .map(|index| EditorTimelineSnapshot {
+                    position: [index as f32 * 0.1, 0.0, 0.0],
+                    direction: Direction::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 1,
+                    trail_point_count: 2,
+                })
+                .collect(),
+            ..Default::default()
+        };
 
         let vertices = build_editor_scrub_trail_vertices(&timeline, 2_000.0 / 240.0);
         assert!(vertices.len() < 120);

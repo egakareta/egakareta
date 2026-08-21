@@ -543,9 +543,11 @@ mod tests {
 
     #[test]
     fn resolve_live_follow_sample_uses_default_angles_when_game_is_active() {
-        let mut camera = EditorCameraState::default();
-        camera.playing_rotation = 1.2;
-        camera.playing_pitch = -0.8;
+        let camera = EditorCameraState {
+            playing_rotation: 1.2,
+            playing_pitch: -0.8,
+            ..Default::default()
+        };
 
         let target = Vec3::new(2.0, 3.0, 4.0);
         let sample = live_follow_sample_for_camera(&camera, target, true);
@@ -558,9 +560,11 @@ mod tests {
 
     #[test]
     fn resolve_live_follow_sample_clamps_pitch_when_not_active() {
-        let mut camera = EditorCameraState::default();
-        camera.playing_rotation = 0.35;
-        camera.playing_pitch = -5.0;
+        let camera = EditorCameraState {
+            playing_rotation: 0.35,
+            playing_pitch: -5.0,
+            ..Default::default()
+        };
 
         let target = Vec3::new(1.0, 0.5, -2.0);
         let sample = live_follow_sample_for_camera(&camera, target, false);
@@ -578,9 +582,9 @@ mod tests {
         let (sample, expected) = with_editor_interaction_context(app.world_mut(), |editor| {
             editor.camera.playing_rotation = 0.6;
             editor.camera.playing_pitch = 0.4;
-            let expected = live_follow_sample_for_camera(&editor.camera, target, false);
+            let expected = live_follow_sample_for_camera(editor.camera, target, false);
             let sample = evaluate_camera_track_for_objects(
-                &editor.camera,
+                editor.camera,
                 &editor.objects,
                 3.0,
                 target,
@@ -612,14 +616,14 @@ mod tests {
         let live_target = Vec3::new(0.0, 0.0, 0.0);
         let trigger_target = Vec3::new(10.0, 1.0, -2.0);
         let (sample, expected) = with_editor_interaction_context(app.world_mut(), |editor| {
-            let live = live_follow_sample_for_camera(&editor.camera, live_target, false);
+            let live = live_follow_sample_for_camera(editor.camera, live_target, false);
             let end = CameraViewSample {
                 eye: trigger_target + editor_camera_offset_for_pose(0.8, 0.3),
                 target: trigger_target,
             };
             let expected = interpolate_camera_samples(live, end, 0.5);
             let sample = evaluate_camera_track_for_objects(
-                &editor.camera,
+                editor.camera,
                 &editor.objects,
                 4.0,
                 live_target,
@@ -653,7 +657,7 @@ mod tests {
             target,
         };
         let sample = with_editor_interaction_context(app.world_mut(), |editor| {
-            evaluate_camera_track_for_objects(&editor.camera, &editor.objects, 3.0, target, false)
+            evaluate_camera_track_for_objects(editor.camera, &editor.objects, 3.0, target, false)
         });
 
         assert_vec3_close(sample.eye, expected.eye);
@@ -670,7 +674,7 @@ mod tests {
 
         let target = Vec3::new(4.0, 1.0, -2.0);
         let sample = with_editor_interaction_context(app.world_mut(), |editor| {
-            evaluate_camera_track_for_objects(&editor.camera, &editor.objects, 1.0, target, false)
+            evaluate_camera_track_for_objects(editor.camera, &editor.objects, 1.0, target, false)
         });
         let expected_eye = target + offset_from_rotation_pitch(0.25, 0.35, 12.0);
 
@@ -716,14 +720,14 @@ mod tests {
         };
         let (pre_transition, active) = with_editor_interaction_context(app.world_mut(), |editor| {
             let pre_transition = evaluate_camera_track_for_objects(
-                &editor.camera,
+                editor.camera,
                 &editor.objects,
                 4.0,
                 live_target,
                 false,
             );
             let active = evaluate_camera_track_for_objects(
-                &editor.camera,
+                editor.camera,
                 &editor.objects,
                 5.5,
                 live_target,
@@ -761,7 +765,7 @@ mod tests {
 
         let sample = with_editor_interaction_context(app.world_mut(), |editor| {
             evaluate_camera_track_for_objects(
-                &editor.camera,
+                editor.camera,
                 &editor.objects,
                 50.0,
                 Vec3::ZERO,

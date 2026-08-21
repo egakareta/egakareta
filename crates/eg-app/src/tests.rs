@@ -7,7 +7,7 @@
 */
 
 #[cfg(test)]
-mod tests {
+mod app_tests {
     use eg_blocks::BlockId;
     use eg_mesh::Vertex;
     use eg_types::{

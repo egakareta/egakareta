@@ -14,8 +14,7 @@ use crate::storage;
 pub async fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(test)]
     {
-        return std::fs::write(filename, data)
-            .map_err(|error| format!("Failed to write file: {error}"));
+        std::fs::write(filename, data).map_err(|error| format!("Failed to write file: {error}"))
     }
 
     #[cfg(not(test))]
@@ -42,10 +41,7 @@ pub async fn save_level_export(filename: &str, data: &[u8]) -> Result<(), String
 pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
     #[cfg(test)]
     {
-        if let Some(result) = crate::test_hooks::pick_audio_result() {
-            return result;
-        }
-        return None;
+        crate::test_hooks::pick_audio_result().unwrap_or_default()
     }
 
     #[cfg(not(test))]
@@ -68,10 +64,7 @@ pub async fn pick_audio_file() -> Option<(String, Vec<u8>)> {
 pub async fn pick_level_file() -> Option<Vec<u8>> {
     #[cfg(test)]
     {
-        if let Some(result) = crate::test_hooks::pick_level_result() {
-            return result;
-        }
-        return None;
+        crate::test_hooks::pick_level_result().unwrap_or_default()
     }
 
     #[cfg(not(test))]
@@ -209,9 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_audio_to_storage_returns_ok_when_storage_layer_succeeds() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.save_audio_result = Some(Ok(()));
@@ -223,9 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_audio_to_storage_returns_error_when_storage_layer_fails() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.save_audio_result = Some(Err("disk full".to_string()));
@@ -237,9 +226,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_all_local_audio_returns_storage_layer_payload() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         let mut expected_audio = HashMap::new();
         expected_audio.insert("track.ogg".to_string(), vec![1, 2, 3, 4]);
@@ -253,9 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn waveform_storage_helpers_delegate_to_storage_layer() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         let entry = PersistentWaveformCacheEntry::new(vec![0.2, 0.4], 48_000, 256);
         test_hooks::with_hooks_mut(|hooks| {
@@ -272,9 +257,7 @@ mod tests {
 
     #[tokio::test]
     async fn save_and_load_app_settings_round_trip_through_delegate_layer() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         let mut settings = AppSettings::default();
         settings.editor_snap_to_grid = !settings.editor_snap_to_grid;
@@ -295,9 +278,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_app_settings_from_storage_returns_error_when_storage_layer_fails() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = shared_test_lock().lock().await;
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.load_settings_result =

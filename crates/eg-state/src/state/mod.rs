@@ -189,49 +189,49 @@ pub(crate) fn with_editor_interaction_context<R>(
     f: impl FnOnce(&mut EditorInteractionContext<'_>) -> R,
 ) -> R {
     let mut objects = editor_objects::collect_editor_objects(world);
-    let mut system_state: SystemState<(
-        ResMut<'_, EditorInputRes>,
-        ResMut<'_, EditorConfigRes>,
-        ResMut<'_, EditorCameraRes>,
-        ResMut<'_, EditorTriggerRes>,
-        ResMut<'_, EditorTimelineRes>,
-        ResMut<'_, EditorRuntimeRes>,
-        ResMut<'_, EditorTimingRes>,
-        ResMut<'_, EditorSpawnRes>,
-        ResMut<'_, EditorHistoryRes>,
-    )> = SystemState::new(world);
-    let (
-        mut input,
-        mut config,
-        mut camera,
-        mut triggers,
-        mut timeline,
-        mut runtime,
-        mut timing,
-        mut spawn,
-        mut history,
-    ) = system_state
-        .get_mut(world)
-        .expect("editor test context resources must be registered");
-    let result = f(&mut EditorInteractionContext {
-        input: &mut input.0,
-        config: &mut config.0,
-        objects: EditorObjectsBorrow(&mut objects),
-        spawn: &mut spawn.0,
-        camera: &mut camera.0,
-        triggers: &mut triggers.0,
-        timeline: &mut timeline.0,
-        runtime: &mut runtime.0,
-        timing: &mut timing.0,
-        history: &mut history.0,
-        selected_mask_cache: None,
-        block_static_vertex_cache: Default::default(),
-        block_static_vertex_cache_complete_len: None,
-        pick_spatial_index: EditorPickSpatialIndex::default(),
-    });
-    drop((
-        input, config, camera, triggers, timeline, runtime, timing, spawn, history,
-    ));
+    type EditorInteractionSystemState<'w> = SystemState<(
+        ResMut<'w, EditorInputRes>,
+        ResMut<'w, EditorConfigRes>,
+        ResMut<'w, EditorCameraRes>,
+        ResMut<'w, EditorTriggerRes>,
+        ResMut<'w, EditorTimelineRes>,
+        ResMut<'w, EditorRuntimeRes>,
+        ResMut<'w, EditorTimingRes>,
+        ResMut<'w, EditorSpawnRes>,
+        ResMut<'w, EditorHistoryRes>,
+    )>;
+    let mut system_state: EditorInteractionSystemState<'_> = SystemState::new(world);
+    let result = {
+        let (
+            mut input,
+            mut config,
+            mut camera,
+            mut triggers,
+            mut timeline,
+            mut runtime,
+            mut timing,
+            mut spawn,
+            mut history,
+        ) = system_state
+            .get_mut(world)
+            .expect("editor test context resources must be registered");
+        f(&mut EditorInteractionContext {
+            input: &mut input.0,
+            config: &mut config.0,
+            objects: EditorObjectsBorrow(&mut objects),
+            spawn: &mut spawn.0,
+            camera: &mut camera.0,
+            triggers: &mut triggers.0,
+            timeline: &mut timeline.0,
+            runtime: &mut runtime.0,
+            timing: &mut timing.0,
+            history: &mut history.0,
+            selected_mask_cache: None,
+            block_static_vertex_cache: Default::default(),
+            block_static_vertex_cache_complete_len: None,
+            pick_spatial_index: EditorPickSpatialIndex::default(),
+        })
+    };
     system_state.apply(world);
     replace_editor_objects(world, objects);
     result

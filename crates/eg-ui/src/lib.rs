@@ -2402,9 +2402,10 @@ mod tests {
         let mut app = bevy::app::App::new();
         app.add_plugins(crate::plugin::UiPlugin);
 
-        let mut sink = WorldUiCommandSink::new(app.world_mut());
-        sink.push(AppCommand::TurnRight);
-        drop(sink);
+        {
+            let mut sink = WorldUiCommandSink::new(app.world_mut());
+            sink.push(AppCommand::TurnRight);
+        }
 
         let messages = app
             .world()

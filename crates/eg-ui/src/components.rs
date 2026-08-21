@@ -759,6 +759,15 @@ mod tests {
     use super::*;
     use crate::test_utils::editor_ui_view;
 
+    struct TimelineViewOptions {
+        timeline_time_seconds: f32,
+        timeline_duration_seconds: f32,
+        waveform_zoom: f32,
+        waveform_scroll: f32,
+        playing: bool,
+        trigger_selected_index: Option<usize>,
+    }
+
     fn make_view<'a>(
         app_settings: &'a AppSettings,
         music_metadata: &'a MusicMetadata,
@@ -766,26 +775,21 @@ mod tests {
         trigger_objects: &'a [LevelObject],
         tap_times: &'a [f32],
         waveform_samples: &'a [f32],
-        timeline_time_seconds: f32,
-        timeline_duration_seconds: f32,
-        waveform_zoom: f32,
-        waveform_scroll: f32,
-        playing: bool,
-        trigger_selected_index: Option<usize>,
+        options: TimelineViewOptions,
     ) -> crate::test_utils::EditorUiTestInputs {
         let mut view = editor_ui_view(app_settings, music_metadata);
-        view.playing = playing;
-        view.timeline_time_seconds = timeline_time_seconds;
-        view.timeline_duration_seconds = timeline_duration_seconds;
+        view.playing = options.playing;
+        view.timeline_time_seconds = options.timeline_time_seconds;
+        view.timeline_duration_seconds = options.timeline_duration_seconds;
         view.tap_times = tap_times.to_vec();
         view.timing_points = timing_points.to_vec();
-        view.waveform_zoom = waveform_zoom;
-        view.waveform_scroll = waveform_scroll;
+        view.waveform_zoom = options.waveform_zoom;
+        view.waveform_scroll = options.waveform_scroll;
         view.waveform_samples = waveform_samples.to_vec();
         view.waveform_sample_rate = 44_100;
         view.waveform_complete = true;
         view.trigger_objects = trigger_objects.to_vec();
-        view.trigger_selected_index = trigger_selected_index;
+        view.trigger_selected_index = options.trigger_selected_index;
         view
     }
 
@@ -899,12 +903,14 @@ mod tests {
             &[],
             &tap_times,
             &[],
-            0.0,
-            20.0,
-            1.0,
-            0.0,
-            false,
-            None,
+            TimelineViewOptions {
+                timeline_time_seconds: 0.0,
+                timeline_duration_seconds: 20.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: 0.0,
+                playing: false,
+                trigger_selected_index: None,
+            },
         );
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
         let mut commands = Vec::new();
@@ -953,12 +959,14 @@ mod tests {
             &[],
             &tap_times,
             &[],
-            0.0,
-            20.0,
-            1.0,
-            0.0,
-            false,
-            None,
+            TimelineViewOptions {
+                timeline_time_seconds: 0.0,
+                timeline_duration_seconds: 20.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: 0.0,
+                playing: false,
+                trigger_selected_index: None,
+            },
         );
         let rect = egui::Rect::from_min_size(egui::pos2(100.0, 0.0), egui::vec2(200.0, 20.0));
         let mut commands = Vec::new();
@@ -1039,12 +1047,14 @@ mod tests {
             &[],
             &[],
             &[],
-            30.0,
-            60.0,
-            1.0,
-            0.0,
-            false,
-            None,
+            TimelineViewOptions {
+                timeline_time_seconds: 30.0,
+                timeline_duration_seconds: 60.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: 0.0,
+                playing: false,
+                trigger_selected_index: None,
+            },
         );
 
         let mut commands = Vec::<AppCommand>::new();
@@ -1142,12 +1152,14 @@ mod tests {
             &trigger_objects,
             &[0.5, 2.5, 4.5],
             &[],
-            5.0,
-            20.0,
-            1.0,
-            -5.0,
-            true,
-            Some(1),
+            TimelineViewOptions {
+                timeline_time_seconds: 5.0,
+                timeline_duration_seconds: 20.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: -5.0,
+                playing: true,
+                trigger_selected_index: Some(1),
+            },
         );
 
         let mut commands = Vec::<AppCommand>::new();
@@ -1195,12 +1207,14 @@ mod tests {
             &[],
             &[],
             &[],
-            10.0,
-            32.0,
-            1.0,
-            0.0,
-            false,
-            None,
+            TimelineViewOptions {
+                timeline_time_seconds: 10.0,
+                timeline_duration_seconds: 32.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: 0.0,
+                playing: false,
+                trigger_selected_index: None,
+            },
         );
 
         let mut commands = Vec::<AppCommand>::new();
@@ -1265,12 +1279,14 @@ mod tests {
             &[],
             &[],
             &waveform_samples,
-            10.0,
-            60.0,
-            1.0,
-            0.0,
-            false,
-            None,
+            TimelineViewOptions {
+                timeline_time_seconds: 10.0,
+                timeline_duration_seconds: 60.0,
+                waveform_zoom: 1.0,
+                waveform_scroll: 0.0,
+                playing: false,
+                trigger_selected_index: None,
+            },
         );
 
         let mut commands = Vec::<AppCommand>::new();

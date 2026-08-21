@@ -2409,10 +2409,11 @@ mod tests {
         let mut world = build_event_world();
         // Pre-populate the resource with fake tap history so we can
         // verify the reset actually clears it.
-        let mut res = world.resource_mut::<EditorTimingRes>();
-        res.0.bpm_tap_times = vec![1.0, 2.0, 3.0];
-        res.0.bpm_tap_result = Some(120.0);
-        drop(res);
+        {
+            let mut res = world.resource_mut::<EditorTimingRes>();
+            res.0.bpm_tap_times = vec![1.0, 2.0, 3.0];
+            res.0.bpm_tap_result = Some(120.0);
+        }
 
         world.write_message(BpmTapReset);
         world.run_schedule(crate::state::StateSchedule);

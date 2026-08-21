@@ -802,10 +802,11 @@ mod tests {
 
     fn runtime_in_playing(playtesting_editor: bool, game_paused: bool) -> Runtime {
         let mut runtime = runtime_in_phase(eg_types::AppPhase::Playing);
-        let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
-        session.playtesting_editor = playtesting_editor;
-        session.game_paused = game_paused;
-        drop(session);
+        {
+            let mut session = runtime.app.world_mut().resource_mut::<SessionStateRes>();
+            session.playtesting_editor = playtesting_editor;
+            session.game_paused = game_paused;
+        }
         runtime
     }
 
@@ -2094,10 +2095,11 @@ mod tests {
         let mut runtime = Runtime::new_test();
 
         // Pre-populate both sides with a fake tap history.
-        let mut res = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
-        res.0.bpm_tap_times = vec![1.0, 2.0, 3.0];
-        res.0.bpm_tap_result = Some(120.0);
-        drop(res);
+        {
+            let mut res = runtime.app.world_mut().resource_mut::<EditorTimingRes>();
+            res.0.bpm_tap_times = vec![1.0, 2.0, 3.0];
+            res.0.bpm_tap_result = Some(120.0);
+        }
 
         runtime.app.world_mut().write_message(BpmTapReset);
         let _ = runtime.run_app_frame(egui::RawInput::default());

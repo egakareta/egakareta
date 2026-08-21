@@ -135,9 +135,7 @@ mod tests {
 
     #[test]
     fn trigger_audio_import_forwards_selected_audio() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         let expected_filename = "song.ogg".to_string();
         let expected_bytes = vec![0x11, 0x22, 0x33];
@@ -159,9 +157,7 @@ mod tests {
 
     #[test]
     fn trigger_audio_import_sends_nothing_when_picker_returns_none() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.pick_audio_result = Some(None);
@@ -179,9 +175,7 @@ mod tests {
 
     #[test]
     fn trigger_level_import_forwards_selected_level_bytes() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         let expected_bytes = vec![0xEE, 0x47, 0x5A];
         test_hooks::with_hooks_mut(|hooks| {
@@ -199,9 +193,7 @@ mod tests {
 
     #[test]
     fn trigger_level_import_sends_nothing_when_picker_returns_none() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.pick_level_result = Some(None);
@@ -219,9 +211,7 @@ mod tests {
 
     #[test]
     fn trigger_auth_sign_in_forwards_hooked_session() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         let expected = test_auth_session("access", "refresh");
         test_hooks::with_hooks_mut(|hooks| {
@@ -239,9 +229,7 @@ mod tests {
 
     #[test]
     fn trigger_auth_refresh_forwards_hooked_error() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.auth_refresh_result = Some(Err("refresh failed".to_string()));
@@ -261,9 +249,7 @@ mod tests {
 
     #[test]
     fn trigger_auth_sign_out_forwards_hooked_result() {
-        let _lock = shared_test_lock()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let _lock = pollster::block_on(shared_test_lock().lock());
         let _reset_guard = HookResetGuard::new();
         test_hooks::with_hooks_mut(|hooks| {
             hooks.auth_sign_out_result = Some(Ok(()));

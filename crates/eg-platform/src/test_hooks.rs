@@ -18,6 +18,7 @@ use std::{
 };
 
 use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
+use futures::lock::Mutex as AsyncMutex;
 
 #[derive(Clone, Default)]
 pub struct PlatformHooks {
@@ -50,9 +51,9 @@ fn hooks_state() -> &'static Mutex<PlatformHooks> {
 /// `rfd` dialog and hang). Every hook-mutating test must hold this lock for
 /// its whole body.
 #[cfg(test)]
-pub fn shared_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+pub fn shared_test_lock() -> &'static AsyncMutex<()> {
+    static LOCK: OnceLock<AsyncMutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| AsyncMutex::new(()))
 }
 
 pub fn with_hooks_mut<T>(update: impl FnOnce(&mut PlatformHooks) -> T) -> T {

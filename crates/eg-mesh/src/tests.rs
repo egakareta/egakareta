@@ -6,7 +6,7 @@
 
 */
 #[cfg(test)]
-mod tests {
+mod mesh_tests {
     use eg_block_geometry::hitbox_cuboids;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
@@ -503,7 +503,7 @@ mod tests {
         let rotation = [30.0, 60.0, 0.0];
         let obj = LevelObject {
             position,
-            rotation: rotation,
+            rotation,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();
@@ -528,7 +528,7 @@ mod tests {
         let rotation = [-135.0, 0.0, 180.0];
         let obj = LevelObject {
             position: [0.0, 0.0, 0.0],
-            rotation: rotation,
+            rotation,
             ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
         };
         let vertices = build_block_geometry(std::slice::from_ref(&obj)).to_triangle_vertices();

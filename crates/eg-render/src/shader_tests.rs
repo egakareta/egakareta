@@ -75,15 +75,11 @@ fn block_contains_discard(block: &Block) -> bool {
     for stmt in block.iter() {
         match stmt {
             Statement::Kill => return true,
-            Statement::Block(inner) => {
-                if block_contains_discard(inner) {
-                    return true;
-                }
-            }
-            Statement::If { accept, reject, .. } => {
-                if block_contains_discard(accept) || block_contains_discard(reject) {
-                    return true;
-                }
+            Statement::Block(inner) if block_contains_discard(inner) => return true,
+            Statement::If { accept, reject, .. }
+                if block_contains_discard(accept) || block_contains_discard(reject) =>
+            {
+                return true;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases.iter() {
@@ -94,10 +90,8 @@ fn block_contains_discard(block: &Block) -> bool {
             }
             Statement::Loop {
                 body, continuing, ..
-            } => {
-                if block_contains_discard(body) || block_contains_discard(continuing) {
-                    return true;
-                }
+            } if block_contains_discard(body) || block_contains_discard(continuing) => {
+                return true;
             }
             _ => {}
         }

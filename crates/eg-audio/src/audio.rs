@@ -533,17 +533,14 @@ impl AudioBackend {
 
     /// Get the current playback time in seconds, accounting for the playback speed and any offset. Returns None if no playback is active.
     pub fn playback_time_seconds(&self) -> Option<f32> {
-        match self.current_player.as_ref() {
-            Some(player) => {
-                if player.empty() {
-                    return None;
-                }
+        if let Some(player) = self.current_player.as_ref() {
+            if player.empty() {
+                return None;
             }
-            None => {
-                #[cfg(not(test))]
-                {
-                    return None;
-                }
+        } else {
+            #[cfg(not(test))]
+            {
+                return None;
             }
         }
 
@@ -569,7 +566,7 @@ impl AudioBackend {
         }
         #[cfg(test)]
         {
-            return true;
+            true
         }
         #[cfg(not(test))]
         {

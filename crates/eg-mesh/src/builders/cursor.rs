@@ -120,7 +120,7 @@ mod tests {
         let block_vertices = build_block_geometry_for_object(&LevelObject {
             position,
             size,
-            rotation: rotation,
+            rotation,
             ..LevelObject::new("core/speedportal")
         })
         .to_triangle_vertices();

@@ -274,6 +274,37 @@ where
     parse_response(status, &text)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+async fn post_json_platform<T, R>(
+    path: &str,
+    access_token: Option<&str>,
+    body: &T,
+) -> Result<R, String>
+where
+    T: Serialize + ?Sized,
+    R: serde::de::DeserializeOwned,
+{
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|err| format!("Auth client init failed: {err}"))?;
+    let mut request = client.post(endpoint_url(path)).json(body);
+    if let Some(token) = access_token.filter(|token| !token.is_empty()) {
+        request = request.bearer_auth(token);
+    }
+
+    let response = request
+        .send()
+        .map_err(|err| format!("Auth request failed: {err}"))?;
+    let status = response.status().as_u16();
+    let text = response
+        .text()
+        .map_err(|err| format!("Auth response read failed: {err}"))?;
+
+    parse_response(status, &text)
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(not(target_arch = "wasm32"))]
@@ -480,7 +511,7 @@ mod tests {
 
         let expected_base = option_env!("AUTH_BASE_URL")
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| {
+            .unwrap_or({
                 #[cfg(debug_assertions)]
                 {
                     "http://127.0.0.1:8788"
@@ -700,35 +731,4 @@ mod tests {
         handle.join().expect("server thread should finish");
         assert_eq!(error, "Auth handoff failed with HTTP 500");
     }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn post_json_platform<T, R>(
-    path: &str,
-    access_token: Option<&str>,
-    body: &T,
-) -> Result<R, String>
-where
-    T: Serialize + ?Sized,
-    R: serde::de::DeserializeOwned,
-{
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|err| format!("Auth client init failed: {err}"))?;
-    let mut request = client.post(endpoint_url(path)).json(body);
-    if let Some(token) = access_token.filter(|token| !token.is_empty()) {
-        request = request.bearer_auth(token);
-    }
-
-    let response = request
-        .send()
-        .map_err(|err| format!("Auth request failed: {err}"))?;
-    let status = response.status().as_u16();
-    let text = response
-        .text()
-        .map_err(|err| format!("Auth response read failed: {err}"))?;
-
-    parse_response(status, &text)
 }

@@ -567,6 +567,113 @@ impl ApplicationHandler for App {
     }
 }
 
+fn log_envs() {
+    log::info!("API_URL: {}", env!("API_URL"));
+    log::info!("PUBLISHABLE_KEY: {}", env!("PUBLISHABLE_KEY"));
+}
+
+#[cfg(target_arch = "wasm32")]
+fn launch_backend_query_param(name: &str) -> Option<String> {
+    let window = web_sys::window()?;
+    let location = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("location")).ok()?;
+    let search = js_sys::Reflect::get(&location, &JsValue::from_str("search"))
+        .ok()?
+        .as_string()?;
+
+    for pair in search.trim_start_matches('?').split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let Some(key) = parts.next() else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case(name) {
+            return parts
+                .next()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+        }
+    }
+
+    None
+}
+
+/// Runs the native application for desktop platforms.
+/// Initializes the event loop, creates the window, and starts the game loop.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_native_app() {
+    env_logger::init();
+    log_envs();
+
+    let event_loop = EventLoop::builder().build().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+    let mut app = App::new_native();
+    event_loop.run_app(&mut app).unwrap();
+}
+
+/// Runs the application in the web environment using the winit web event loop.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub async fn run_game() -> Result<(), JsValue> {
+    // Set up logging to browser console
+    console_log::init_with_level(log::Level::Debug).expect("failed to init logger");
+    console_error_panic_hook::set_once();
+    log_envs();
+
+    let browser_window = web_sys::window().ok_or_else(|| JsValue::from_str("Missing window"))?;
+    let document = browser_window
+        .document()
+        .ok_or_else(|| JsValue::from_str("Missing document"))?;
+
+    let canvas = match document.get_element_by_id("gameCanvas") {
+        Some(existing) => existing.dyn_into::<web_sys::HtmlCanvasElement>()?,
+        None => {
+            let created = document
+                .create_element("canvas")?
+                .dyn_into::<web_sys::HtmlCanvasElement>()?;
+            created.set_id("gameCanvas");
+            let body = document
+                .body()
+                .ok_or_else(|| JsValue::from_str("Missing document body"))?;
+            body.append_child(&created)?;
+            created
+        }
+    };
+
+    let width = browser_window
+        .inner_width()?
+        .as_f64()
+        .unwrap_or(800.0)
+        .max(1.0) as u32;
+    let height = browser_window
+        .inner_height()?
+        .as_f64()
+        .unwrap_or(600.0)
+        .max(1.0) as u32;
+
+    canvas.set_width(width);
+    canvas.set_height(height);
+    canvas.set_attribute(
+        "style",
+        "display:block;width:100vw;height:100vh;touch-action:none;",
+    )?;
+
+    let runtime = Runtime::from_bootstrap(
+        AppBootstrap::new(
+            canvas.clone(),
+            launch_backend_query_param("graphics"),
+            launch_backend_query_param("audio"),
+        )
+        .await,
+    );
+
+    let event_loop = EventLoop::builder().build().unwrap();
+    event_loop.set_control_flow(ControlFlow::Wait);
+    let app = App::new_web(runtime, canvas);
+    event_loop.spawn_app(app);
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -1119,111 +1226,4 @@ mod tests {
         assert!(events.is_empty());
         assert_eq!(pinch_last_distance, None);
     }
-}
-
-fn log_envs() {
-    log::info!("API_URL: {}", env!("API_URL"));
-    log::info!("PUBLISHABLE_KEY: {}", env!("PUBLISHABLE_KEY"));
-}
-
-#[cfg(target_arch = "wasm32")]
-fn launch_backend_query_param(name: &str) -> Option<String> {
-    let window = web_sys::window()?;
-    let location = js_sys::Reflect::get(window.as_ref(), &JsValue::from_str("location")).ok()?;
-    let search = js_sys::Reflect::get(&location, &JsValue::from_str("search"))
-        .ok()?
-        .as_string()?;
-
-    for pair in search.trim_start_matches('?').split('&') {
-        let mut parts = pair.splitn(2, '=');
-        let Some(key) = parts.next() else {
-            continue;
-        };
-        if key.eq_ignore_ascii_case(name) {
-            return parts
-                .next()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(ToOwned::to_owned);
-        }
-    }
-
-    None
-}
-
-/// Runs the native application for desktop platforms.
-/// Initializes the event loop, creates the window, and starts the game loop.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn run_native_app() {
-    env_logger::init();
-    log_envs();
-
-    let event_loop = EventLoop::builder().build().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::new_native();
-    event_loop.run_app(&mut app).unwrap();
-}
-
-/// Runs the application in the web environment using the winit web event loop.
-#[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
-pub async fn run_game() -> Result<(), JsValue> {
-    // Set up logging to browser console
-    console_log::init_with_level(log::Level::Debug).expect("failed to init logger");
-    console_error_panic_hook::set_once();
-    log_envs();
-
-    let browser_window = web_sys::window().ok_or_else(|| JsValue::from_str("Missing window"))?;
-    let document = browser_window
-        .document()
-        .ok_or_else(|| JsValue::from_str("Missing document"))?;
-
-    let canvas = match document.get_element_by_id("gameCanvas") {
-        Some(existing) => existing.dyn_into::<web_sys::HtmlCanvasElement>()?,
-        None => {
-            let created = document
-                .create_element("canvas")?
-                .dyn_into::<web_sys::HtmlCanvasElement>()?;
-            created.set_id("gameCanvas");
-            let body = document
-                .body()
-                .ok_or_else(|| JsValue::from_str("Missing document body"))?;
-            body.append_child(&created)?;
-            created
-        }
-    };
-
-    let width = browser_window
-        .inner_width()?
-        .as_f64()
-        .unwrap_or(800.0)
-        .max(1.0) as u32;
-    let height = browser_window
-        .inner_height()?
-        .as_f64()
-        .unwrap_or(600.0)
-        .max(1.0) as u32;
-
-    canvas.set_width(width);
-    canvas.set_height(height);
-    canvas.set_attribute(
-        "style",
-        "display:block;width:100vw;height:100vh;touch-action:none;",
-    )?;
-
-    let runtime = Runtime::from_bootstrap(
-        AppBootstrap::new(
-            canvas.clone(),
-            launch_backend_query_param("graphics"),
-            launch_backend_query_param("audio"),
-        )
-        .await,
-    );
-
-    let event_loop = EventLoop::builder().build().unwrap();
-    event_loop.set_control_flow(ControlFlow::Wait);
-    let app = App::new_web(runtime, canvas);
-    event_loop.spawn_app(app);
-
-    Ok(())
 }
