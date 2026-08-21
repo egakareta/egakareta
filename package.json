@@ -1,7 +1,7 @@
 {
     "name": "egakareta",
     "scripts": {
-        "cloudflare": "curl https://mise.run | sh && export PATH=\"$HOME/.local/bin:$PATH\" && mise install && mise build"
+        "cloudflare": "curl -fsSL https://mise.run | sh && export PATH=\"$HOME/.local/bin:$PATH\" && mkdir -p /tmp/mise-system && : > /tmp/mise-global.toml && export MISE_GLOBAL_CONFIG_FILE=/tmp/mise-global.toml && export MISE_SYSTEM_CONFIG_DIR=/tmp/mise-system && export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none && export MISE_CEILING_PATHS=\"$HOME\" && unset MISE_DART_SASS_EMBEDDED_VERSION && mise config ls && mise install && mise run build"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.112.3"
