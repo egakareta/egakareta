@@ -8,7 +8,8 @@
 - **wgpu** for cross-platform, hardware-accelerated 3D rendering.
 - **egui** (with `egui-phosphor` icons) for the user interface.
 - **wasm-pack** to target `wasm32-unknown-unknown` for the web version.
-- **Bun** as the package manager and script runner for frontend/tooling.
+- **Bun** as the package manager for frontend.
+- **mise** for tooling and task orchestration.
 - **Cloudflare Pages (wrangler)** for the web deployment target and dev server.
 - **Supabase** for backend services (auth, database, storage).
 
@@ -16,32 +17,32 @@ The application compiles to both Native (desktop) and WebAssembly (browser). You
 
 ## 2. Tooling and Commands
 
-All primary scripts are managed via `bun` in the `package.json` file. Use these standardized commands rather than guessing or running underlying binaries directly.
+All primary scripts are managed via `mise` in the `mise.toml` file. Use these standardized commands rather than guessing or running underlying binaries directly.
 
 ### Build & Run
 
-- **Development Server:** `bun run dev` (`bun scripts/dev.ts`)
+- **Development Server:** `mise dev` (`bun scripts/dev.ts`)
     - `wrangler pages dev` serving from `./dist` on `http://127.0.0.1:8788`. If this is running, you have access to local Cloudflare services (KV, R2, D1, Durable Objects, and Workflows) for this app via the Explorer API.
     - Fetch the OpenAPI schema from http://127.0.0.1:8788/cdn-cgi/explorer/api to discover available operations. Use these endpoints to list, query, and manage local resources during development.
-- **Web Build:** `bun run build --dev` (`bun scripts/build.ts --dev`)
+- **Web Build:** `mise build --dev` (`bun scripts/build.ts --dev`)
 - **CLI Tool:** The `egb` binary (`crates/egb/src/main.rs`) is a standalone level metadata conversion helper (JSON ↔ binary `.egb`). Build it with `cargo build -p egb`.
 
 ### Linting & Formatting
 
-- **Lint (Clippy):** `bun run lint` — executes `cargo clippy -- -D warnings`. **Never bypass these warnings!** Clippy denials are treated as hard errors in CI.
-- **Format Code:** `bun run format` — runs `cargo fmt` then `prettier --write .`.
-- **License Headers:** `bun run license:add` / `bun run license:check` — ensures every source file has the AGPLv3/commercial copyright header. The lefthook pre-commit hook runs `license:check` and `format` in parallel.
+- **Lint:** `mise lint` — executes Clippy. **Never bypass these warnings!** Clippy denials are treated as hard errors in CI.
+- **Format Code:** `mise format` — runs `cargo fmt` then prettier.
+- **License Headers:** `mise license:add` / `mise license:check` — ensures every source file has the AGPLv3/commercial copyright header. The lefthook pre-commit hook runs `license:check` and `format` in parallel.
 
 ### Testing
 
-- **Run All Tests:** `bun run test`
+- **Run All Tests:** `mise test`
 - **Run Single Test:** `cargo test <test_name>`
-- **Run Coverage:** `bun run test:coverage`
-- **Database Tests:** `bun run test:db` → `supabase test db`
+- **Run Coverage:** `mise test:coverage`
+- **Database Tests:** `mise test:db` → `supabase test db`
 
 ### Type Generation
 
-- **Generate Types:** `bun run typegen` regenerates wrangler and supabase types.
+- **Generate Types:** `mise typegen` regenerates wrangler and supabase types.
 
 ## 3. Code Architecture & Layout
 
@@ -172,10 +173,10 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
 
 ## 6. Development Workflow Guidelines
 
-1. **Understand First:** Before modifying logic, always read `Cargo.toml` and `package.json` to understand the build chain. Check the relevant crate under `crates/` to see how the subsystem fits together.
-2. **Self-Verification:** Before finalizing a task, ensure the code builds (`bun run build --dev`) and passes all strict lints (`bun run lint`). Unverified code will fail the CI.
+1. **Understand First:** Before modifying logic, always read `Cargo.toml`, `mise.toml` and `package.json` to understand the build chain. Check the relevant crate under `crates/` to see how the subsystem fits together.
+2. **Self-Verification:** Before finalizing a task, ensure the code builds (`mise build --dev`) and passes all strict lints (`mise lint`). Unverified code will fail the CI.
 3. **Reference Existing Code:** If implementing UI, review existing `egui` implementations in `crates/eg-ui/src/`. For core mechanics, review `crates/eg-game/src/physics.rs`.
-4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `bun run format` handle consistency.
+4. **No Unrelated Formatting Changes:** Never format or refactor code outside the immediate scope of the feature or bug fix. Let `mise format` handle consistency.
 5. **Security & Integrity:** Never commit secrets, local debug paths, or bypassing comments like `#[allow(dead_code)]` unless absolutely unavoidable and well-justified. Use `TODO:` comments to mark temporary workarounds and non-future-proof code.
 6. **Overwrite Database:** This project has not been released. If you need to make breaking changes to the database schema, do not worry about migration scripts. You can simply update the schema and reset the database as needed during development. Same goes for `CURRENT_LEVEL_FORMAT_VERSION`, do not worry about backward compatibility for now.
 

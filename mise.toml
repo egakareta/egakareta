@@ -1,6 +1,95 @@
 # Copyright (c) egakareta <team@egakareta.com>.
 # Licensed under the GNU AGPLv3 or a proprietary Commercial License.
 # See LICENSE and COMMERCIAL.md for details.
+[tools]
+bun = "latest"
+"cargo:cargo-llvm-cov" = "latest"
+lefthook = "latest"
+node = "latest"
+rust = { version = "nightly-2026-03-12", components = [
+    "clippy",
+    "rustfmt",
+    "rust-src",
+] }
+supabase = "latest"
+
+[hooks]
+postinstall = ["bun install", "lefthook install"]
+
+# Build
+[tasks.build]
+run = "bun scripts/build.ts"
+
+# Benchmark
+[tasks."bench:hot-paths"]
+run = "cargo bench -p eg-app --features benchmarks --bench perf_hot_paths"
+
+# Check
+[tasks.check]
+run = "mise lint && mise format:cargo --check && mise format:prettier --check"
+
+[tasks.format]
+depends = ["format:cargo", "format:prettier"]
+
+[tasks."format:cargo"]
+run = "cargo fmt --all -- --config-path .config/rustfmt.toml"
+
+[tasks."format:prettier"]
+run = "bunx prettier --config .config/.prettierrc --ignore-path .gitignore --ignore-path .config/.prettierignore --write ."
+
+[tasks.lint]
+run = "cargo clippy --all-targets --all-features --workspace -- -D warnings"
+
+# Typegen
+[tasks."cf-typegen"]
+run = "bunx wrangler types --strict-vars=false --env-interface CloudflareEnv functions/cloudflare-env.d.ts"
+
+[tasks."sb-ts-typegen"]
+run = "supabase gen types typescript --local > functions/_supabase_types.ts"
+
+[tasks.typegen]
+depends = ["cf-typegen", "sb-ts-typegen"]
+
+# Test
+[tasks.test]
+run = "cargo test --workspace -- -Zunstable-options --format=terse"
+
+[tasks."test:coverage"]
+run = """
+cargo llvm-cov --workspace --no-report -- -Zunstable-options --report-time
+cargo llvm-cov report --lcov --output-path lcov.info
+cargo llvm-cov report
+"""
+
+[tasks."test:functions"]
+run = "vitest run --config .config/vitest.config.mts"
+
+[tasks."test:db"]
+run = "supabase test db"
+
+# License
+[tasks."license:add"]
+run = "bunx license-check-and-add add -f .config/license/config.json"
+
+[tasks."license:check"]
+run = "bunx license-check-and-add check -f .config/license/config.json"
+
+# Development
+[tasks.dev]
+run = "bun scripts/dev.ts"
+
+[tasks."dev:setup"]
+run = """
+supabase start
+until supabase status; do sleep 2; done
+supabase status -o env > .env.local
+mise run typegen
+"""
+
+[settings]
+cargo.binstall = true
+cargo.binstall_quickinstall = true
+
 [bootstrap.packages]
 "apt:build-essential" = "latest"
 "apt:curl" = "latest"
@@ -38,17 +127,3 @@
 "apt:swig" = "latest"
 "apt:pipewire-alsa" = "latest"
 "apt:pipewire" = "latest"
-
-[tools]
-bun = "latest"
-"cargo:cargo-llvm-cov" = "latest"
-node = "latest"
-rust = { version = "nightly-2026-03-12", components = [
-    "clippy",
-    "rustfmt",
-    "rust-src",
-] }
-
-[settings]
-cargo.binstall = true
-cargo.binstall_quickinstall = true

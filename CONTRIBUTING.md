@@ -16,18 +16,13 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 
 ## Development Environment Setup
 
-### Via Github Codespaces
+### Prerequisites
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/egakareta/egakareta)
+- [VS Code (recommended)](https://code.visualstudio.com/)
+- [mise](https://mise.jdx.dev/)
+- [rustup](https://rustup.rs)
 
-### Via Local Setup
-
-#### Prerequisites
-
-- [Bun](https://bun.sh)
-- [Rustup](https://rustup.rs)
-
-#### Initial Setup
+### Initial Setup
 
 ```bash
 # Clone the repository
@@ -35,20 +30,20 @@ git clone https://github.com/egakareta/egakareta.git
 cd egakareta
 
 # Install dependencies
-bun install
+mise install
 
 # Set up the local development environment
-bun run dev:setup
+mise dev:setup
 
 # Run the development server at http://localhost:8788
-bun run dev
+mise dev
 ```
 
 ## Pull Request Process
 
 1. Fork the repo and create your branch from `main`.
 2. Ensure the code builds and tests pass.
-3. Run `bun run lint` and `bun run format`.
+3. Run `mise check`.
 4. Submit a PR with a clear description of the changes.
 5. Once your PR is merged, we will update the version as needed.
 
