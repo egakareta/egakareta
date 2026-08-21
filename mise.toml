@@ -3,8 +3,8 @@
 # See LICENSE and COMMERCIAL.md for details.
 [tools]
 bun = "latest"
-"cargo:cargo-llvm-cov" = "latest"
-"cargo:license-check-and-add" = "0.4.0"
+"github:taiki-e/cargo-llvm-cov" = "latest"
+"github:Unreal-Works/license-check-and-add" = "0.4.0"
 "github:oxc-project/oxc" = { version = "latest", matching = "oxfmt" }
 lefthook = "latest"
 node = "latest"
