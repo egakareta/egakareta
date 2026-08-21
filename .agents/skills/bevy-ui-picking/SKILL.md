@@ -156,7 +156,7 @@ fn update_score_label(
 	mut label: Single<&mut Text, With<ScoreLabel>>,
 ) {
 	if score.is_changed() {
-		**label = format!("Score: {}", score.0);
+		**label = format!("Score: {}", score.0).into();
 	}
 }
 ```

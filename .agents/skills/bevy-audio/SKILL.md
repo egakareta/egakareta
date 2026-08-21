@@ -85,6 +85,7 @@ Load handles once in an audio asset resource. Clone handles when spawning playba
 6. **Spatial scale affects attenuation.** Match it intentionally to world units.
 7. **Duplicate listeners produce ambiguous output.** Spawn them deliberately.
 8. **Cosmetic audio timing is not gameplay timing.** Do not drive authoritative actions from playback.
+9. **WASM support must be checked separately.** Enabling the audio profile currently fails to compile for `wasm32-unknown-unknown` because the AudioWorklet stream is not `Send`/`Sync`.
 
 ## Validation Checklist
 

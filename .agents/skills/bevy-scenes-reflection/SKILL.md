@@ -1,6 +1,6 @@
 ---
 name: bevy-scenes-reflection
-description: "Use this skill when loading authored scenes, glTF models, reflected data, or serialized worlds in Bevy 0.19. Covers WorldAssetRoot, GltfAssetLabel, asynchronous scene instantiation, SceneInstanceReady, hierarchy post-processing, Reflect registration, DynamicScene, entity mapping, and stable IDs. Triggers on: scene, glTF, prefab, reflection, serialization, save game, WorldAssetRoot, DynamicScene."
+description: "Use this skill when loading authored scenes, glTF models, reflected data, or serialized worlds in Bevy 0.19. Covers WorldAssetRoot, GltfAssetLabel, asynchronous scene instantiation, WorldInstanceReady, hierarchy post-processing, Reflect registration, DynamicWorld, entity mapping, and stable IDs. Triggers on: scene, glTF, prefab, reflection, serialization, save game, WorldAssetRoot, DynamicWorld."
 argument-hint: "Describe the scene, serialization, or reflection workflow"
 ---
 
@@ -40,6 +40,16 @@ The root is inserted immediately, but scene descendants are instantiated asynchr
 
 Use scene-ready notifications or a focused post-processing system to attach colliders, gameplay identity, animation controllers, and navigation data.
 
+The readiness event is exported from `bevy::world_serialization`, rather than the general prelude:
+
+```rust
+use bevy::{prelude::*, world_serialization::WorldInstanceReady};
+
+fn on_scene_ready(event: On<WorldInstanceReady>) {
+    info!("scene root {:?} is ready", event.entity);
+}
+```
+
 ### Typed glTF Labels
 
 Select glTF sub-assets with `GltfAssetLabel`:
@@ -72,7 +82,7 @@ Keep ordinary gameplay systems statically typed. Reflection is not a replacement
 
 ### Dynamic Scenes and Entity Mapping
 
-`DynamicScene` stores reflected ECS data. Runtime `Entity` values are world-local, so serialized entity references require mapping when written and instantiated. Use stable authored IDs to reconnect domain references across sessions.
+`DynamicWorld` stores reflected ECS data. Runtime `Entity` values are world-local, so serialized entity references require mapping when written and instantiated. Use stable authored IDs to reconnect domain references across sessions.
 
 ---
 

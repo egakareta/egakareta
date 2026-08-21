@@ -64,7 +64,7 @@ There is exactly one schedule for the primary context, and one unique schedule p
 
 - `ctx_mut() -> Result<&mut egui::Context, QuerySingleError>` — entity that has `PrimaryEguiContext`.
 - `ctx_for_entity_mut(entity)` / `ctx_for_entities_mut([..])` — by camera entity; use these for non-primary contexts.
-- `add_image(handle) -> egui::TextureId`, `remove_image(id)`, `image_id(id) -> Option<egui::TextureId>` — proxies to `EguiUserTextures` (render feature only).
+- `add_image(EguiTextureHandle) -> egui::TextureId`, `remove_image(asset_id)`, `image_id(asset_id) -> Option<egui::TextureId>` — proxies to `EguiUserTextures` (render feature only). Use `EguiTextureHandle::Strong(handle)` or `EguiTextureHandle::Weak(asset_id)` when registering an image.
 
 A plain `Query<&mut EguiContext, With<PrimaryEguiContext>>` is the alternative when you want single-entity semantics or work in a generic const-generic schedule (see `split_screen.rs`).
 
@@ -73,6 +73,8 @@ A plain `Query<&mut EguiContext, With<PrimaryEguiContext>>` is the alternative w
 Set `EguiContextSettings::run_manually = true` to take ownership of `EguiInput → ctx.run_ui(..., |ctx| { ... }) → EguiFullOutput`. Useful when you need a custom pass loop, control discard, or call `ctx.run`/`begin_pass`/`end_pass` from inside an existing render step. The verified `run_manually.rs` does this:
 
 ```rust
+use std::num::NonZero;
+
 // PreStartup: configure_context_system flips run_manually to true.
 fn ui_example_system(
     mut contexts: Query<(&mut EguiContext, &mut EguiInput, &mut EguiFullOutput)>,
@@ -134,6 +136,8 @@ To make a 3D mesh pickable as an Egui surface: `entity.add_picking_observers_for
 From `two_windows.rs`. Spawn a primary camera with `PrimaryEguiContext`, a `Window` for the second screen, and a second camera tagged with `EguiMultipassSchedule::new(SecondWindowContextPass)`:
 
 ```rust
+use bevy::{camera::RenderTarget, ecs::schedule::ScheduleLabel, prelude::*, window::WindowRef};
+
 #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SecondWindowContextPass;
 
