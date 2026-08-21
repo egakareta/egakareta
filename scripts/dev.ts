@@ -11,11 +11,12 @@ const commands = [
     [
         "dev:build",
         [
+            "bunx",
             "nodemon",
             "--config",
             ".config/nodemon.json",
             "--exec",
-            "bun run build",
+            "mise build",
             "--dev",
         ],
     ],
