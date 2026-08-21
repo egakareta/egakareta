@@ -20,7 +20,16 @@ const commands = [
             "--dev",
         ],
     ],
-    ["dev:wrangler", ["bunx", "wrangler", "pages", "dev"]],
+    [
+        "dev:wrangler",
+        [
+            "bunx",
+            "wrangler",
+            "pages",
+            "dev",
+            ...(process.env.PORT ? ["--port", process.env.PORT] : []),
+        ],
+    ],
 ] as const;
 
 const processes = commands.map(([name, command]) => ({
