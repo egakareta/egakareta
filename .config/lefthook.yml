@@ -5,8 +5,12 @@ pre-commit:
   parallel: true
   commands:
     license:
-      run: bun run license:check
+      run: bunx license-check-and-add check -f .config/license/config.json {staged_files}
       stage_fixed: true
-    format:
-      run: bun run format
+    prettier:
+      run: bunx prettier --config .config/.prettierrc --ignore-path .gitignore --ignore-path .config/.prettierignore --write {staged_files}
+      stage_fixed: true
+    rustfmt:
+      glob: "*.rs"
+      run: cargo fmt --all
       stage_fixed: true
