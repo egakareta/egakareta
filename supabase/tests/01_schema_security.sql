@@ -55,19 +55,13 @@ select ok(
         'hardened profile update policy exists'
     );
 select ok(
-        position(
-            'is_admin' in coalesce(
-                (
-                    select with_check
-                    from pg_policies
-                    where schemaname = 'public'
-                        and tablename = 'profiles'
-                        and policyname = 'Users can update own profile, except for admin status.'
-                ),
-                ''
-            )
-        ) > 0,
-        'profile update policy prevents self-admin escalation with with check'
+        not has_column_privilege(
+            'authenticated',
+            'public.profiles',
+            'is_admin',
+            'UPDATE'
+        ),
+        'authenticated cannot update the profile admin flag'
     );
 select ok(
         exists (
@@ -105,9 +99,9 @@ select ok(
             from pg_policies
             where schemaname = 'public'
                 and tablename = 'user_webauthn_credentials'
-                and policyname = 'Users can manage their own WebAuthn credentials.'
+                and policyname = 'Service role can manage WebAuthn credentials.'
         ),
-        'WebAuthn manage policy exists'
+        'WebAuthn credentials are service-role managed'
     );
 select ok(
         position(
@@ -116,10 +110,10 @@ select ok(
                 from pg_proc p
                     join pg_namespace n on n.oid = p.pronamespace
                 where n.nspname = 'public'
-                    and p.proname = 'apply_profile_restriction'
+                    and p.proname = 'current_user_is_admin'
                 limit 1
             )
-        ) > 0, 'admin RPC authorization reads auth.jwt app_metadata'
+        ) > 0, 'admin authorization reads signed app_metadata claims'
     );
 select ok(
         has_function_privilege(
@@ -130,12 +124,12 @@ select ok(
         'authenticated can execute apply_profile_restriction'
     );
 select ok(
-        has_function_privilege(
+        not has_function_privilege(
             'service_role',
             'public.apply_profile_restriction(uuid, text, timestamp with time zone)',
             'EXECUTE'
         ),
-        'service_role can execute apply_profile_restriction'
+        'service_role cannot bypass user-authorized profile restrictions'
     );
 select ok(
         not exists (

@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(16);
+select plan(18);
 
 create or replace function pg_temp._test_capture_error(sql_to_run text)
 returns text
@@ -117,6 +117,15 @@ select is(
 
 select ok(
   pg_temp._test_capture_error($$
+    select is_admin, muted_until, banned_until
+    from public.profiles
+    where id = 'aaaaaaaa-1111-1111-1111-111111111111'
+  $$) like '42501:%',
+  'authenticated user cannot read profile administration fields'
+);
+
+select ok(
+  pg_temp._test_capture_error($$
     update public.profiles
     set is_admin = true
     where id = 'aaaaaaaa-1111-1111-1111-111111111111'
@@ -190,6 +199,14 @@ select ok(
   'authenticated user cannot insert another user 2FA row'
 );
 
+select ok(
+  not has_table_privilege('authenticated', 'public.user_webauthn_credentials', 'SELECT')
+    and not has_table_privilege('authenticated', 'public.user_webauthn_credentials', 'INSERT')
+    and not has_table_privilege('authenticated', 'public.user_webauthn_credentials', 'UPDATE')
+    and not has_table_privilege('authenticated', 'public.user_webauthn_credentials', 'DELETE'),
+  'authenticated cannot directly manage WebAuthn credentials'
+);
+
 reset role;
 set local role anon;
 select set_config('request.jwt.claim.role', 'anon', true);
@@ -201,10 +218,9 @@ select is(
   'anon cannot read user_2fa_config rows'
 );
 
-select is(
-  (select count(*)::int from public.user_webauthn_credentials),
-  0,
-  'anon cannot read user_webauthn_credentials rows'
+select ok(
+  not has_table_privilege('anon', 'public.user_webauthn_credentials', 'SELECT'),
+  'anon cannot read user_webauthn_credentials'
 );
 
 select * from finish();

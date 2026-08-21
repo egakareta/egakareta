@@ -1,7 +1,7 @@
 begin;
 set local search_path = public, extensions;
 
-select plan(11);
+select plan(13);
 
 create or replace function pg_temp._test_capture_error(sql_to_run text)
 returns text
@@ -73,6 +73,14 @@ insert into public.profile_stats (profile_id, total_pp)
 values ('dddddddd-4444-4444-4444-444444444444', 500)
 on conflict (profile_id) do nothing;
 
+insert into public.comments (resource_type, resource_id, profile_id, body)
+values (
+  'beatmap',
+  'admin-security-test',
+  'dddddddd-4444-4444-4444-444444444444',
+  'target comment'
+);
+
 update public.profiles
 set is_admin = true
 where id = 'cccccccc-3333-3333-3333-333333333333';
@@ -115,10 +123,12 @@ select lives_ok(
   'admin app_metadata claim can mute target user'
 );
 
+reset role;
 select ok(
   (select muted_until is not null from public.profiles where id = 'dddddddd-4444-4444-4444-444444444444'),
   'mute sets muted_until'
 );
+set local role authenticated;
 
 select lives_ok(
   $$
@@ -131,10 +141,12 @@ select lives_ok(
   'admin app_metadata claim can unmute target user'
 );
 
+reset role;
 select ok(
   (select muted_until is null from public.profiles where id = 'dddddddd-4444-4444-4444-444444444444'),
   'unmute clears muted_until'
 );
+set local role authenticated;
 
 select lives_ok(
   $$
@@ -147,10 +159,12 @@ select lives_ok(
   'admin app_metadata claim can ban target user'
 );
 
+reset role;
 select ok(
   (select banned_until is not null from public.profiles where id = 'dddddddd-4444-4444-4444-444444444444'),
   'ban sets banned_until'
 );
+set local role authenticated;
 
 select lives_ok(
   $$
@@ -163,10 +177,12 @@ select lives_ok(
   'admin app_metadata claim can unban target user'
 );
 
+reset role;
 select ok(
   (select banned_until is null from public.profiles where id = 'dddddddd-4444-4444-4444-444444444444'),
   'unban clears banned_until'
 );
+set local role authenticated;
 
 select is(
   pg_temp._test_capture_error($$
@@ -190,6 +206,38 @@ select is(
   $$),
   'P0001: Target user not found',
   'missing target user is rejected'
+);
+
+reset role;
+update public.profiles
+set is_admin = false
+where id = 'cccccccc-3333-3333-3333-333333333333';
+set local role authenticated;
+
+select is(
+  pg_temp._test_capture_error($$
+    select public.apply_profile_restriction(
+      'dddddddd-4444-4444-4444-444444444444',
+      'mute',
+      timezone('utc', now()) + interval '1 day'
+    )
+  $$),
+  'P0001: Only admins can restrict users',
+  'stale admin claim is rejected after database revocation'
+);
+
+delete from public.comments
+where profile_id = 'dddddddd-4444-4444-4444-444444444444';
+
+reset role;
+select is(
+  (
+    select count(*)::int
+    from public.comments
+    where profile_id = 'dddddddd-4444-4444-4444-444444444444'
+  ),
+  1,
+  'stale admin claim cannot delete another user comment'
 );
 
 select * from finish();
