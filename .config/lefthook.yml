@@ -8,6 +8,7 @@ pre-commit:
       run: bunx license-check-and-add check -f .config/license/config.json {staged_files}
       stage_fixed: true
     prettier:
+      glob: "*.{js,jsx,ts,tsx,json,css,scss,md,toml,yml,yaml}"
       run: bunx prettier --config .config/.prettierrc --ignore-path .gitignore --ignore-path .config/.prettierignore --write {staged_files}
       stage_fixed: true
     rustfmt:
