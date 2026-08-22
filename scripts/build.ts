@@ -73,7 +73,7 @@ process.on("SIGTERM", shutdown);
         console.error(`wasm-pack exited with code ${exitCode}`);
         process.exit(exitCode || 1);
     } else {
-        createDist();
+        await createDist();
     }
 })();
 
