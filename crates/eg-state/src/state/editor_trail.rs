@@ -119,7 +119,9 @@ pub(crate) fn build_editor_scrub_trail_vertices(
     const POSITION_EPSILON: f32 = 0.001;
     const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
 
-    if timeline.snapshot_cache.is_empty() {
+    if timeline.snapshot_cache.is_empty()
+        || timeline.snapshot_cache_revision != timeline.simulation_revision
+    {
         return Vec::new();
     }
 

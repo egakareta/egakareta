@@ -47,17 +47,12 @@ super::editor_context_methods! {
             indicator_position,
         );
         self.set_selected_tap_index(selected_index);
+        self.invalidate_samples();
         self.timeline.clock.time_seconds
     }
 
     pub fn invalidate_samples(&mut self) {
-        self.timeline.simulation_revision = self.timeline.simulation_revision.wrapping_add(1);
-        self.timeline.snapshot_cache_revision = 0;
-        self.timeline.snapshot_cache.clear();
-        self.timeline.trail_point_cache.clear();
-        self.timeline.trail_segment_start_cache.clear();
-        self.timeline.scrub_runtime = None;
-        self.timeline.scrub_runtime_revision = 0;
+        self.timeline.invalidate_samples();
     }
 
 }

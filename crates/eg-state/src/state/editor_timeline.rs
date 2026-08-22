@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_editor_domain::TapDivisionPreview;
+use eg_editor_domain::{TapDivisionPreview, interpolate_timeline_sample_positions};
 use eg_game::TimelineSimulationRuntime;
 use eg_types::Direction;
 use smart_default::SmartDefault;
@@ -62,6 +62,8 @@ pub struct EditorTimelineState {
     #[default(1.0 / 240.0)]
     pub snapshot_cache_step_seconds: f32,
     pub snapshot_cache: Vec<EditorTimelineSnapshot>,
+    pub(crate) snapshot_cache_runtime: Option<TimelineSimulationRuntime>,
+    pub(crate) snapshot_cache_next_index: usize,
     pub trail_point_cache: Vec<[f32; 3]>,
     pub trail_segment_start_cache: Vec<usize>,
     pub scrub_runtime_revision: u64,
@@ -74,6 +76,53 @@ pub struct EditorTimelineState {
 }
 
 impl EditorTimelineState {
+    pub(crate) fn invalidate_samples(&mut self) {
+        self.simulation_revision = self.simulation_revision.wrapping_add(1);
+        self.snapshot_cache_revision = 0;
+        self.snapshot_cache.clear();
+        self.snapshot_cache_runtime = None;
+        self.snapshot_cache_next_index = 0;
+        self.trail_point_cache.clear();
+        self.trail_segment_start_cache.clear();
+        self.scrub_runtime = None;
+        self.scrub_runtime_revision = 0;
+    }
+
+    pub(crate) fn cached_state_at_seconds(
+        &self,
+        time_seconds: f32,
+    ) -> Option<([f32; 3], Direction)> {
+        if self.snapshot_cache.is_empty()
+            || self.snapshot_cache_revision != self.simulation_revision
+        {
+            return None;
+        }
+
+        let step_seconds = self.snapshot_cache_step_seconds.max(1.0 / 480.0);
+        let target_time = time_seconds.clamp(0.0, self.clock.duration_seconds);
+        let max_index = self.snapshot_cache.len().saturating_sub(1);
+        let sample_position = (target_time / step_seconds).clamp(0.0, max_index as f32);
+        let lower_index = sample_position.floor() as usize;
+        let upper_index = (lower_index + 1).min(max_index);
+        let alpha = (sample_position - lower_index as f32).clamp(0.0, 1.0);
+        let lower = &self.snapshot_cache[lower_index];
+        let upper = &self.snapshot_cache[upper_index];
+        Some((
+            interpolate_timeline_sample_positions(
+                lower.position,
+                lower.direction,
+                upper.position,
+                upper.direction,
+                alpha,
+            ),
+            if alpha >= 1.0 - f32::EPSILON {
+                upper.direction
+            } else {
+                lower.direction
+            },
+        ))
+    }
+
     /// Copy timeline data needed by editor pointer picking without cloning the
     /// private simulation runtime owned by the active playback path.
     pub fn clone_for_interaction(&self) -> Self {
@@ -102,6 +151,8 @@ impl EditorTimelineState {
             snapshot_cache_revision: self.snapshot_cache_revision,
             snapshot_cache_step_seconds: self.snapshot_cache_step_seconds,
             snapshot_cache: self.snapshot_cache.clone(),
+            snapshot_cache_runtime: None,
+            snapshot_cache_next_index: 0,
             trail_point_cache: self.trail_point_cache.clone(),
             trail_segment_start_cache: self.trail_segment_start_cache.clone(),
             scrub_runtime_revision: self.scrub_runtime_revision,

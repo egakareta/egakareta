@@ -287,6 +287,19 @@ mod tests {
         app
     }
 
+    fn complete_snapshot_cache(app: &mut TestApp) {
+        for _ in 0..128 {
+            app.tick_state();
+            let timeline = &app.world().resource::<EditorTimelineRes>().0;
+            if timeline.snapshot_cache_revision == timeline.simulation_revision
+                && !timeline.snapshot_cache.is_empty()
+            {
+                return;
+            }
+        }
+        panic!("timeline snapshot cache did not finish");
+    }
+
     #[test]
     fn add_then_remove_tap_uses_timeline_messages() {
         let mut app = editor_app();
@@ -399,7 +412,7 @@ mod tests {
             editor.timeline.clock.duration_seconds = 4.0;
             editor.set_timeline_time_seconds(0.4);
         });
-        forward_app.tick_state();
+        complete_snapshot_cache(&mut forward_app);
         let forward_cursor = with_editor_interaction_context(forward_app.world_mut(), |editor| {
             editor.tap_path_cursor_near_world([4.5, 0.0, 3.4])
         });
@@ -416,7 +429,7 @@ mod tests {
             editor.timeline.clock.duration_seconds = 4.0;
             editor.set_timeline_time_seconds(0.4);
         });
-        right_app.tick_state();
+        complete_snapshot_cache(&mut right_app);
         let right_cursor = with_editor_interaction_context(right_app.world_mut(), |editor| {
             editor.tap_path_cursor_near_world([3.4, 0.0, 4.5])
         });
@@ -494,7 +507,7 @@ mod tests {
             editor.timeline.clock.duration_seconds = 8.0;
             editor.set_timeline_time_seconds(0.1);
         });
-        app.tick_state();
+        complete_snapshot_cache(&mut app);
 
         let added_time = with_editor_interaction_context(app.world_mut(), |editor| {
             editor.tap_time_for_indicator_cell([0.0, 0.0, 32.0])

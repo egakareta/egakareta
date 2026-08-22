@@ -1089,7 +1089,7 @@ pub(crate) struct EditorTapIndicatorExtractionParams<'w, 's> {
         With<super::super::editor_objects::EditorAuthoredObject>,
     >,
     spawn: Res<'w, EditorSpawnRes>,
-    timeline: Res<'w, EditorTimelineRes>,
+    timeline: ResMut<'w, EditorTimelineRes>,
     timing: Res<'w, EditorTimingRes>,
     tap_vertices: ResMut<'w, RenderEditorTapIndicatorVerticesRes>,
 }
@@ -1121,19 +1121,39 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     let authored_objects =
         super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
     let preview_indicators: Vec<([f32; 3], [f32; 4])> = if show_timing_division_previews {
-        let previews = derive_timing_division_tap_previews(
-            params.spawn.0.position,
-            params.spawn.0.direction,
-            &params.timeline.0.taps.tap_times,
-            &params.timing.0.timing_points,
-            duration_seconds,
-            TapDivisionPreviewRange {
-                start_seconds: 0.0,
-                end_seconds: duration_seconds,
-            },
-            &authored_objects,
-        );
-        let tap_positions = &params.timeline.0.taps.tap_indicator_positions;
+        let preview_window = (0.0, duration_seconds);
+        let timeline = &mut params.timeline.0;
+        let cache_is_current = timeline.tap_division_preview_cache_revision
+            == timeline.simulation_revision
+            && timeline.tap_division_preview_cache_timing_revision == params.timing.0.revision
+            && (timeline.tap_division_preview_cache_duration_seconds - duration_seconds).abs()
+                <= f32::EPSILON
+            && (timeline.tap_division_preview_cache_window.0 - preview_window.0).abs()
+                <= f32::EPSILON
+            && (timeline.tap_division_preview_cache_window.1 - preview_window.1).abs()
+                <= f32::EPSILON;
+
+        if !cache_is_current {
+            timeline.tap_division_preview_cache = derive_timing_division_tap_previews(
+                params.spawn.0.position,
+                params.spawn.0.direction,
+                &timeline.taps.tap_times,
+                &params.timing.0.timing_points,
+                duration_seconds,
+                TapDivisionPreviewRange {
+                    start_seconds: preview_window.0,
+                    end_seconds: preview_window.1,
+                },
+                &authored_objects,
+            );
+            timeline.tap_division_preview_cache_revision = timeline.simulation_revision;
+            timeline.tap_division_preview_cache_timing_revision = params.timing.0.revision;
+            timeline.tap_division_preview_cache_duration_seconds = duration_seconds;
+            timeline.tap_division_preview_cache_window = preview_window;
+        }
+
+        let previews = &timeline.tap_division_preview_cache;
+        let tap_positions = &timeline.taps.tap_indicator_positions;
         let mut indicators: Vec<([f32; 3], [f32; 4])> = previews
             .iter()
             .copied()

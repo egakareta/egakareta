@@ -17,6 +17,8 @@ use super::{
     editor_timeline::{EditorTimelineSnapshot, EditorTimelineState},
 };
 
+const MAX_SNAPSHOT_SAMPLES_PER_FRAME: usize = 32;
+
 /// Keep the App-owned timeline cache current before render extraction.
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
     phase: Res<State<AppPhase>>,
@@ -35,12 +37,79 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
     }
 
     let objects = super::editor_objects::collect_editor_object_data(&authored_objects);
-    rebuild_editor_timeline_snapshot_cache_if_needed(&mut timeline.0, &objects, &spawn.0);
+    rebuild_editor_timeline_snapshot_cache_chunk(&mut timeline.0, &objects, &spawn.0);
+}
+
+fn rebuild_editor_timeline_snapshot_cache_chunk(
+    timeline: &mut EditorTimelineState,
+    objects: &[LevelObject],
+    spawn: &SpawnMetadata,
+) {
+    if timeline.snapshot_cache_revision == timeline.simulation_revision
+        && !timeline.snapshot_cache.is_empty()
+    {
+        return;
+    }
+
+    let duration_seconds = timeline.clock.duration_seconds.max(0.0);
+    let step_seconds = timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+    let total_sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
+    let mut runtime = timeline.snapshot_cache_runtime.take().unwrap_or_else(|| {
+        timeline.snapshot_cache.clear();
+        timeline.trail_point_cache.clear();
+        timeline.trail_segment_start_cache.clear();
+        timeline.snapshot_cache_next_index = 0;
+        TimelineSimulationRuntime::new(
+            spawn.position,
+            spawn.direction,
+            objects,
+            &timeline.taps.tap_times,
+        )
+    });
+    let start_index = timeline.snapshot_cache_next_index.min(total_sample_count);
+    let end_index = start_index
+        .saturating_add(MAX_SNAPSHOT_SAMPLES_PER_FRAME)
+        .min(total_sample_count.max(1));
+    let mut trail_segment_lengths = cached_trail_segment_lengths(timeline);
+    timeline
+        .snapshot_cache
+        .reserve(end_index.saturating_sub(start_index));
+
+    puffin::profile_scope!("TimelineSamplesChunk");
+    for index in start_index..end_index {
+        let sample_time = (index as f32 * step_seconds).min(duration_seconds);
+        runtime.advance_to(sample_time);
+        append_trail_cache(
+            timeline,
+            runtime.trail_segments(),
+            &mut trail_segment_lengths,
+        );
+        let snapshot = runtime.snapshot();
+        timeline.snapshot_cache.push(EditorTimelineSnapshot {
+            position: snapshot.position,
+            direction: snapshot.direction,
+            is_grounded: snapshot.is_grounded,
+            game_over: runtime.game_over(),
+            trail_segment_count: timeline.trail_segment_start_cache.len(),
+            trail_point_count: timeline.trail_point_cache.len(),
+        });
+    }
+
+    timeline.snapshot_cache_next_index = end_index;
+    if end_index >= total_sample_count {
+        timeline.snapshot_cache_revision = timeline.simulation_revision;
+        timeline.snapshot_cache_next_index = 0;
+        timeline.scrub_runtime = None;
+        timeline.scrub_runtime_revision = 0;
+    } else {
+        timeline.snapshot_cache_runtime = Some(runtime);
+    }
 }
 
 /// Rebuild the timeline snapshot/trail cache when the authored simulation
 /// revision changes. The App schedule and test helpers use this function so
 /// the render extraction path sees current editor data.
+#[cfg(test)]
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_if_needed(
     timeline: &mut EditorTimelineState,
     objects: &[LevelObject],

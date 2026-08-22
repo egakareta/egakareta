@@ -4548,6 +4548,64 @@ mod tests {
     }
 
     #[test]
+    fn scrubbing_uses_cached_timeline_positions_in_both_directions() {
+        let mut world = build_event_world();
+        set_test_phase(&mut world, AppPhase::Editor);
+        {
+            let mut timeline = world.resource_mut::<crate::state::EditorTimelineRes>();
+            timeline.0.clock.duration_seconds = 4.0;
+            timeline.0.snapshot_cache_step_seconds = 1.0;
+            timeline.0.snapshot_cache = (0..=4)
+                .map(|index| crate::state::EditorTimelineSnapshot {
+                    position: [index as f32, 0.0, index as f32],
+                    direction: eg_types::Direction::Forward,
+                    is_grounded: true,
+                    game_over: false,
+                    trail_segment_count: 0,
+                    trail_point_count: 0,
+                })
+                .collect();
+            timeline.0.snapshot_cache_revision = timeline.0.simulation_revision;
+        }
+
+        world.write_message(SetTimelineTime(3.5));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .preview
+                .position,
+            [3.5, 0.0, 3.5]
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .scrub_runtime
+                .is_none()
+        );
+
+        world.write_message(SetTimelineTime(0.5));
+        world.run_schedule(crate::state::StateSchedule);
+        assert_eq!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .preview
+                .position,
+            [0.5, 0.0, 0.5]
+        );
+        assert!(
+            world
+                .resource::<crate::state::EditorTimelineRes>()
+                .0
+                .scrub_runtime
+                .is_none()
+        );
+    }
+
+    #[test]
     fn carve_out_set_timeline_duration_mutates_editor_timeline_resource() {
         let mut world = build_event_world();
         {

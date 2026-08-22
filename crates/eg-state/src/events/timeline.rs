@@ -288,6 +288,7 @@ pub fn handle_set_timeline_duration(
 ) {
     for event in events.read() {
         resources.timeline.0.clock.duration_seconds = event.0.max(0.1);
+        resources.timeline.0.invalidate_samples();
         let next_time = resources
             .timeline
             .0
@@ -306,23 +307,44 @@ fn seek_timeline(resources: &mut TimelineSeekResources<'_, '_>, time_seconds: f3
         return;
     }
 
-    let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
-    let mut runtime = TimelineSimulationRuntime::new(
-        resources.spawn.0.position,
-        resources.spawn.0.direction,
-        &objects,
-        &resources.timeline.0.taps.tap_times,
-    );
-    runtime.advance_to(time_seconds);
-    let snapshot = runtime.snapshot();
-    resources.timeline.0.preview.position = snapshot.position;
-    resources.timeline.0.preview.direction = snapshot.direction;
+    let (position, direction) = if let Some(cached) =
+        resources.timeline.0.cached_state_at_seconds(time_seconds)
+    {
+        cached
+    } else {
+        let revision = resources.timeline.0.simulation_revision;
+        let mut runtime = resources
+            .timeline
+            .0
+            .scrub_runtime
+            .take()
+            .filter(|runtime| {
+                resources.timeline.0.scrub_runtime_revision == revision
+                    && runtime.elapsed_seconds() <= time_seconds + 1e-6
+            })
+            .unwrap_or_else(|| {
+                let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+                TimelineSimulationRuntime::new(
+                    resources.spawn.0.position,
+                    resources.spawn.0.direction,
+                    &objects,
+                    &resources.timeline.0.taps.tap_times,
+                )
+            });
+        runtime.advance_to(time_seconds);
+        let snapshot = runtime.snapshot();
+        resources.timeline.0.scrub_runtime_revision = revision;
+        resources.timeline.0.scrub_runtime = Some(runtime);
+        (snapshot.position, snapshot.direction)
+    };
+    resources.timeline.0.preview.position = position;
+    resources.timeline.0.preview.direction = direction;
 
     // Ctrl deliberately keeps the editor view fixed while scrubbing. The
     // default follows the simulated snake, matching the pre-ECS editor.
     if !resources.input.0.ctrl_held {
-        resources.camera.0.editor_pan = [snapshot.position[0] + 0.5, snapshot.position[2] + 0.5];
-        resources.camera.0.editor_target_z = snapshot.position[1];
+        resources.camera.0.editor_pan = [position[0] + 0.5, position[2] + 0.5];
+        resources.camera.0.editor_target_z = position[1];
     }
 }
 
@@ -347,6 +369,7 @@ pub fn handle_add_tap(mut events: MessageReader<AddTap>, mut timeline: ResMut<Ed
             )
         };
         timeline.0.taps.selected_index = selected_index;
+        timeline.0.invalidate_samples();
     }
 }
 
@@ -380,6 +403,7 @@ fn remove_tap_at_time(timeline: &mut EditorTimelineRes, time_seconds: f32) {
             Some(selected_index) if selected_index > removed_index => Some(selected_index - 1),
             selected_index => selected_index,
         };
+        timeline.0.invalidate_samples();
     }
 }
 
@@ -439,6 +463,7 @@ pub fn handle_set_selected_tap_time(
         taps.selected_index = Some(next_index);
         timeline.0.clock.time_seconds = next_time;
         input.0.cursor = selected_position;
+        timeline.0.invalidate_samples();
     }
 }
 
@@ -450,6 +475,7 @@ pub fn handle_clear_taps(
         timeline.0.taps.tap_times.clear();
         timeline.0.taps.tap_indicator_positions.clear();
         timeline.0.taps.selected_index = None;
+        timeline.0.invalidate_samples();
     }
 }
 

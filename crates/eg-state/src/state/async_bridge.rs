@@ -676,6 +676,7 @@ pub(crate) fn apply_imported_level_to_world(
         timeline.0.tap_cursor_override = None;
         timeline.0.clock.time_seconds = init.timeline_time_seconds;
         timeline.0.clock.duration_seconds = init.timeline_duration_seconds;
+        timeline.0.invalidate_samples();
     }
     {
         let mut timing = world.resource_mut::<EditorTimingRes>();
