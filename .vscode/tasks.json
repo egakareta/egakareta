@@ -2,33 +2,16 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "type": "npm",
-            "script": "install",
-            "group": "clean",
+            "type": "mise",
+            "task": "dev",
             "problemMatcher": [],
-            "label": "npm: install",
-            "detail": "install dependencies from package",
-            "presentation": {
-                "reveal": "silent",
-                "panel": "shared",
-                "close": true
-            },
-            "runOptions": {
-                "runOn": "folderOpen"
-            }
-        },
-        {
-            "type": "npm",
-            "script": "dev",
-            "problemMatcher": [],
-            "label": "npm: dev",
+            "label": "mise: dev",
             "detail": "run development server",
             "presentation": {
                 "reveal": "always",
                 "panel": "shared",
                 "close": false
             },
-            "dependsOn": "npm: install",
             "runOptions": {
                 "runOn": "folderOpen"
             }

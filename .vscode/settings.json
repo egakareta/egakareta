@@ -56,5 +56,11 @@
         "editor.defaultFormatter": "oxc.oxc-vscode",
         "editor.formatOnSave": true,
         "editor.formatOnSaveMode": "file"
-    }
+    },
+    "mise.configureExtensionsAutomatically": true,
+    "bun.runtime": "/home/vivim/.local/share/mise/shims/bun",
+    "debug.javascript.defaultRuntimeExecutable": {
+        "pwa-node": "/home/vivim/.local/share/mise/shims/node"
+    },
+    "oxc.path.node": "/home/vivim/.local/share/mise/shims/node"
 }
