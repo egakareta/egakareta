@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-**egakareta** is a high-performance 3D rhythm game written in Rust. It utilizes:
+**egakareta** is a 3D rhythm game written in Rust. It utilizes:
 
 - **Rust (2024 Edition)** as the core programming language.
 - **wgpu** for cross-platform, hardware-accelerated 3D rendering.
