@@ -1044,7 +1044,6 @@ pub struct EditorUiInputs<'a> {
 
 /// Render the editor UI from an App-owned view and write semantic commands to
 /// the supplied sink. Returns the rectangles used by platform input routing.
-#[allow(deprecated)]
 pub fn show_editor_ui(
     ctx: &egui::Context,
     inputs: EditorUiInputs<'_>,

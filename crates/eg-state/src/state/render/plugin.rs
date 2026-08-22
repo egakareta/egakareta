@@ -1727,9 +1727,10 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         }
     };
 
-    let view = glam::Mat4::look_at_rh(eye, target, Vec3::Y);
+    let view = glam::camera::rh::view::look_at_mat4(eye, target, Vec3::Y);
     let aspect = width as f32 / height as f32;
-    let proj = glam::Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+    let proj =
+        glam::camera::rh::proj::opengl::perspective(45f32.to_radians(), aspect, 0.1, 10000.0);
     let mut line = params.uniforms.line;
     if matches!(*params.phase.get(), AppPhase::Playing | AppPhase::GameOver) {
         line = LineUniform {

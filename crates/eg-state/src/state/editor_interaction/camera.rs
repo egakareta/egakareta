@@ -69,8 +69,13 @@ super::super::editor_context_methods! {
         );
         let eye = target + self.camera_offset();
         let up = Vec3::new(0.0, 1.0, 0.0);
-        let view = Mat4::look_at_rh(eye, target, up);
-        let proj = Mat4::perspective_rh_gl(45f32.to_radians(), aspect, 0.1, 10000.0);
+        let view = glam::camera::rh::view::look_at_mat4(eye, target, up);
+        let proj = glam::camera::rh::proj::opengl::perspective(
+            45f32.to_radians(),
+            aspect,
+            0.1,
+            10000.0,
+        );
         proj * view
     }
 

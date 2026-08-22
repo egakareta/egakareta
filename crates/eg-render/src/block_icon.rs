@@ -56,7 +56,7 @@ impl Default for IconCamera {
 }
 
 fn orthographic_projection(half_extent: f32) -> Mat4 {
-    Mat4::orthographic_rh(
+    glam::camera::rh::proj::directx::orthographic(
         -half_extent,
         half_extent,
         -half_extent,
@@ -221,7 +221,7 @@ impl GpuContext {
         let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let camera = IconCamera::default();
-        let view = Mat4::look_at_rh(camera.eye, camera.target, camera.up);
+        let view = glam::camera::rh::view::look_at_mat4(camera.eye, camera.target, camera.up);
         let view_proj = camera.projection * view;
         let camera_uniform = CameraUniform {
             view_proj: view_proj.to_cols_array_2d(),
