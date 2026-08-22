@@ -199,6 +199,11 @@ pub struct AudioBackend {
     playback_speed: f32,
     active_sfx: Vec<rodio::Player>,
     backend_name: String,
+    /// Test-only observation of how many full compressed-to-PCM track decodes
+    /// this backend performed. Regression tests assert this stays low so a
+    /// reintroduced synchronous re-decode fails loudly.
+    #[cfg(test)]
+    full_decode_count: usize,
 }
 
 impl AudioBackend {
@@ -217,6 +222,8 @@ impl AudioBackend {
             playback_speed: 1.0,
             active_sfx: Vec::new(),
             backend_name: host_id.to_string(),
+            #[cfg(test)]
+            full_decode_count: 0,
         }
     }
 
@@ -422,12 +429,16 @@ impl AudioBackend {
     /// gameplay-audio sync system calls `resume()` whenever the session
     /// reports `game_paused = false`, which would otherwise undo a playtest
     /// exit's stop and keep the playtest music playing in the editor.
+    ///
+    /// The decoded PCM cache is intentionally retained: a subsequent
+    /// [`AudioBackend::seek_and_play`] restart of the same source rebuilds a
+    /// player from it instantly instead of re-decoding the whole compressed
+    /// track on the calling thread.
     pub fn stop(&mut self) {
         if let Some(player) = self.current_player.take() {
             player.stop();
         }
         self.current_audio_source = None;
-        self.decoded_cache = None;
         self.playback_started_at = None;
         self.playback_start_offset_seconds = 0.0;
     }
@@ -435,6 +446,17 @@ impl AudioBackend {
     /// Check if the current audio source can be reused based on the provided source key.
     pub fn can_reuse_source(&self, source_key: &str) -> bool {
         self.current_audio_source.as_deref() == Some(source_key)
+    }
+
+    /// Check whether decoded PCM for `source_key` is available so playback can
+    /// restart without any full re-decode: either the source is actively
+    /// loaded or its decoded buffer survived a [`AudioBackend::stop`] call.
+    pub fn can_restart_without_decode(&self, source_key: &str) -> bool {
+        self.can_reuse_source(source_key)
+            || self
+                .decoded_cache
+                .as_ref()
+                .is_some_and(|(key, _)| key == source_key)
     }
 
     /// Seek to `start_seconds` and play, reusing already-decoded PCM when available.
@@ -445,7 +467,11 @@ impl AudioBackend {
     /// Returns `false` when no cached PCM matches the current source, signalling the
     /// caller to decode it fresh.
     pub fn seek_and_play(&mut self, start_seconds: f32) -> bool {
-        if let Some(source_key) = self.current_audio_source.clone() {
+        let source_key = self
+            .current_audio_source
+            .clone()
+            .or_else(|| self.decoded_cache.as_ref().map(|(key, _)| key.clone()));
+        if let Some(source_key) = source_key {
             let cached = match &self.decoded_cache {
                 Some((key, buffer)) if key == &source_key => Some(buffer.clone()),
                 _ => None,
@@ -475,6 +501,9 @@ impl AudioBackend {
             player.stop();
         }
         self.current_audio_source = None;
+
+        #[cfg(test)]
+        self.record_full_decode();
 
         log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
         match Self::decode_to_buffer(bytes) {
@@ -519,6 +548,8 @@ impl AudioBackend {
             "RodioAudioBackend: decoding {} bytes from asset",
             audio_bytes.len()
         );
+        #[cfg(test)]
+        self.record_full_decode();
         match Self::decode_to_buffer(&audio_bytes) {
             Some(buffer) => {
                 log::trace!("RodioAudioBackend: asset decoding successful");
@@ -529,6 +560,18 @@ impl AudioBackend {
                 log::warn!("Failed to decode level music '{}'", audio_path);
             }
         }
+    }
+
+    /// Record that a full compressed-to-PCM track decode is about to run.
+    #[cfg(test)]
+    fn record_full_decode(&mut self) {
+        self.full_decode_count += 1;
+    }
+
+    /// Number of full track decodes performed so far (test observation only).
+    #[cfg(test)]
+    fn full_decode_count(&self) -> usize {
+        self.full_decode_count
     }
 
     /// Get the current playback time in seconds, accounting for the playback speed and any offset. Returns None if no playback is active.
@@ -617,7 +660,7 @@ impl AudioBackend {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
-        if self.can_reuse_source(&source_key) && self.seek_and_play(start_seconds) {
+        if self.can_restart_without_decode(&source_key) && self.seek_and_play(start_seconds) {
             return;
         }
 
@@ -635,7 +678,7 @@ impl AudioBackend {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
-        if self.can_reuse_source(&source_key) {
+        if self.can_restart_without_decode(&source_key) {
             return;
         }
 
@@ -664,7 +707,7 @@ impl AudioBackend {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
-        if self.can_reuse_source(&source_key) {
+        if self.can_restart_without_decode(&source_key) {
             return;
         }
 
@@ -678,7 +721,7 @@ impl AudioBackend {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
-        if self.can_reuse_source(&source_key) && self.seek_and_play(start_seconds) {
+        if self.can_restart_without_decode(&source_key) && self.seek_and_play(start_seconds) {
             return;
         }
 
@@ -692,7 +735,7 @@ impl AudioBackend {
         let start_seconds = start_seconds.max(0.0);
         self.stop();
 
-        if self.can_reuse_source(&source_key) {
+        if self.can_restart_without_decode(&source_key) {
             return;
         }
 
@@ -1031,6 +1074,41 @@ mod tests {
         assert!(!backend.is_playing());
         assert!(backend.current_player.is_none());
         assert_eq!(backend.playback_time_seconds(), None);
+    }
+
+    /// Regression: restarting the same track through the public transport API
+    /// (restart at a new position, stop → play) must reuse the already-decoded
+    /// PCM cache instead of re-decoding the entire compressed track on the
+    /// calling thread, which stalled each editor playback start for seconds.
+    ///
+    /// The counter observes real full decodes performed by `replace_with_bytes`
+    /// / `replace_with_asset`, and the control step proves it can still count a
+    /// genuine decode for an uncached source — so this cannot pass vacuously.
+    #[test]
+    fn repeated_starts_of_same_track_decode_only_once() {
+        let mut backend = AudioBackend::new();
+        let wav = super::tiny_wav_bytes();
+
+        backend.start_with_bytes_at(&wav, 0.0);
+        assert_eq!(backend.full_decode_count(), 1);
+        assert_eq!(backend.playback_start_offset_seconds, 0.0);
+
+        // Restart at another position: must seek the cached PCM, not re-decode.
+        backend.start_with_bytes_at(&wav, 4.0);
+        assert_eq!(backend.full_decode_count(), 1);
+        assert_eq!(backend.playback_start_offset_seconds, 4.0);
+
+        // Explicit stop then play again (editor stop/play cycle).
+        backend.stop();
+        backend.start_with_bytes_at(&wav, 2.0);
+        assert_eq!(backend.full_decode_count(), 1);
+        assert_eq!(backend.playback_start_offset_seconds, 2.0);
+
+        // Control: a genuinely different source decodes exactly once more.
+        backend.start_preloaded_asset_at("regression-level", &wav, 0.5);
+        assert_eq!(backend.full_decode_count(), 2);
+        assert_eq!(backend.playback_start_offset_seconds, 0.5);
+        assert!(backend.can_reuse_source("asset:regression-level/audio.mp3"));
     }
 
     #[test]
