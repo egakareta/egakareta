@@ -101,13 +101,17 @@ jobs:
 
       - name: Package WebAssembly
         if: github.event_name == 'push'
-        run: zip -r egakareta-web.zip dist
+        run: |
+          cp dist/egakareta_lib_bg.wasm egakareta_lib_bg.wasm
+          zip -r egakareta-web.zip dist
 
       - if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: egakareta-web
-          path: egakareta-web.zip
+          path: |
+            egakareta-web.zip
+            egakareta_lib_bg.wasm
           retention-days: 1
 
   build-native:
