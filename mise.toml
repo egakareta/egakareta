@@ -38,7 +38,7 @@ depends = ["format:cargo", "format:oxfmt"]
 run = "cargo fmt --all -- --config-path .config/rustfmt.toml"
 
 [tasks."format:oxfmt"]
-run = "oxfmt --write ."
+run = "oxfmt"
 
 [tasks.lint]
 run = "cargo clippy --all-targets --all-features --workspace -- -D warnings"
