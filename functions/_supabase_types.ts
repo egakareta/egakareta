@@ -533,6 +533,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      can_current_user_comment: { Args: never; Returns: boolean }
       capture_daily_rank_pp_snapshots: { Args: never; Returns: number }
       check_if_email_exists: {
         Args: { email_to_check: string }
@@ -543,6 +544,7 @@ export type Database = {
         Returns: Json
       }
       cleanup_auth_handoffs: { Args: never; Returns: number }
+      current_user_is_admin: { Args: never; Returns: boolean }
       increment_beatmap_downloads: {
         Args: { target_beatmap_id: number }
         Returns: undefined

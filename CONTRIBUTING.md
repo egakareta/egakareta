@@ -20,7 +20,6 @@ We are committed to providing a friendly, safe, and welcoming environment for al
 
 - [VS Code (recommended)](https://code.visualstudio.com/)
 - [mise](https://mise.jdx.dev/)
-- [rustup](https://rustup.rs)
 
 ### Initial Setup
 

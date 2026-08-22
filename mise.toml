@@ -87,6 +87,7 @@ supabase start
 until supabase status; do sleep 2; done
 supabase status -o env > .env.local
 mise run typegen
+rustup toolchain install
 """
 
 [settings]
