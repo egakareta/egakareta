@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_platform::services::{trigger_auth_refresh, trigger_auth_sign_in, trigger_auth_sign_out};
 use eg_types::AuthSession;
 
@@ -180,7 +180,7 @@ mod tests {
         world.insert_resource(AuthSignOutRequest { pending: true });
         world.insert_resource(AuthOpenSignupRequest { pending: true });
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(process_auth_requests_system);
         schedule.run(&mut world);
 

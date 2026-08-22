@@ -10,10 +10,8 @@
 //! REFACTOR POINT(full-bevy): the custom egui presentation and semantic
 //! command adapter are replaced by `bevy_egui` systems writing Bevy input/events directly.
 
-use bevy::{
-    app::{App, Plugin},
-    ecs::prelude::*,
-};
+use bevy_app::{App, Plugin};
+use bevy_ecs::prelude::*;
 use eg_state::{commands::AppCommand, events};
 
 /// Registers egui-facing resources and typed command messages.
@@ -42,7 +40,8 @@ pub fn write_ui_command(world: &mut World, command: AppCommand) {
 
 #[cfg(test)]
 mod tests {
-    use bevy::{app::App, ecs::message::Messages};
+    use bevy_app::App;
+    use bevy_ecs::message::Messages;
     use eg_state::{
         events::{navigation, session},
         state::editor_command::EditorCommand,

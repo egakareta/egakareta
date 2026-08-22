@@ -5,10 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::{
-    ecs::prelude::{Res, ResMut},
-    state::prelude::State,
-};
+use bevy_ecs::prelude::{Res, ResMut};
+use bevy_state::prelude::State;
 use eg_types::{
     AppPhase, CameraMode, CameraTrigger, DEFAULT_CAMERA_DISTANCE, DEFAULT_CAMERA_PITCH,
     DEFAULT_CAMERA_YAW, EasingDirection, EditorInputState, LevelObject, TimedTrigger,

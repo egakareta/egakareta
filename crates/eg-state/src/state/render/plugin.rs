@@ -14,20 +14,18 @@
 //! mesh buffers, and presents the scene plus egui from App-owned resources.
 //!
 //! REFACTOR POINT(full-bevy): this plugin + system set graph is the
-//! placeholder for `bevy::render`'s render-world + render graph. The
+//! placeholder for `bevy_render`'s render-world + render graph. The
 //! `extract_render_state_system` here becomes a
 //! `RenderApp::extract` system in the full-Bevy migration; the
-//! `RenderPresentSet` is replaced by `bevy::render`'s `Render` set.
+//! `RenderPresentSet` is replaced by `bevy_render`'s `Render` set.
 
-use bevy::{
-    app::{App, Plugin},
-    ecs::{
-        prelude::*,
-        schedule::{Schedule, SystemSet},
-        system::SystemParam,
-    },
-    state::prelude::State,
+use bevy_app::{App, Plugin};
+use bevy_ecs::{
+    prelude::*,
+    schedule::{Schedule, SystemSet},
+    system::SystemParam,
 };
+use bevy_state::prelude::State;
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::{
     TapDivisionPreviewRange, derive_timing_division_tap_previews, tap_time_is_timing_division,
@@ -2073,7 +2071,8 @@ pub fn add_state_render_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
-    use bevy::{ecs::world::World, state::prelude::State};
+    use bevy_ecs::world::World;
+    use bevy_state::prelude::State;
     use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize};
 
     use super::*;
@@ -2145,7 +2144,7 @@ mod tests {
         let mut world = World::new();
         register_render_pod_resources(&mut world);
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(present_render_frame_system);
         schedule.run(&mut world);
     }
@@ -2158,7 +2157,7 @@ mod tests {
             .resource_mut::<RenderResizeRequest>()
             .request(PhysicalSize::new(320, 240));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(apply_resize_surface_system);
         schedule.run(&mut world);
 

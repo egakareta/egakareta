@@ -22,7 +22,7 @@
 
 use std::{collections::HashMap, sync::mpsc};
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_platform::services::AuthServiceMessage;
 use eg_types::{
     AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,

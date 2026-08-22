@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::ecs::{schedule::Schedule, world::World};
+use bevy_ecs::{schedule::Schedule, world::World};
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
 use crate::{

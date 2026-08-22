@@ -7,7 +7,8 @@
 */
 //! Shared App-world/editor compatibility timeline snapshot-cache rebuild.
 
-use bevy::{ecs::prelude::*, state::prelude::State};
+use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_game::TimelineSimulationRuntime;
 use eg_types::{AppPhase, LevelObject, SpawnMetadata};
 

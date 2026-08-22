@@ -20,11 +20,9 @@
 //! directly. Atomic gameplay resets and the shared audio backend remain
 //! App-owned resources.
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::{NextState, State},
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::{NextState, State};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
@@ -480,7 +478,7 @@ fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, di
 }
 
 pub fn handle_toggle_editor(world: &mut World) {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     let events: Vec<ToggleEditor> = world
         .resource_mut::<Messages<ToggleEditor>>()

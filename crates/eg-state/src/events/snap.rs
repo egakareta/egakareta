@@ -10,11 +10,9 @@
 //! These handlers own snap normalization, settings persistence, and selected
 //! object resnapping directly in App resources.
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::State,
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::State;
 use eg_editor_domain::{snap_cell_to_step, snap_component_to_step};
 use eg_types::AppPhase;
 

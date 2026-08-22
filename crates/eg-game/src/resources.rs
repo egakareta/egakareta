@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use crate::spatial::SpatialGrid;

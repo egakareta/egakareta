@@ -8,7 +8,8 @@
 //! Auth + clipboard + surface-resize events. One per `AppCommand` variant
 //! under `AppCommand::Auth` in the legacy enum.
 
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 use eg_types::PhysicalSize;
 
 use crate::state::{

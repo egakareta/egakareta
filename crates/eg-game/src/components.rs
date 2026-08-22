@@ -11,7 +11,7 @@
 //! `eg-game` crate stays free of wgpu/egui/I/O — it only operates on these
 //! components + the resources in [`crate::resources`].
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject};
 

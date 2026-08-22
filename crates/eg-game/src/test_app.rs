@@ -13,10 +13,8 @@
 //! runs the real Bevy `FixedUpdate` schedule for focused ECS
 //! tests.
 
-use bevy::{
-    app::{App, FixedUpdate},
-    ecs::prelude::*,
-};
+use bevy_app::{App, FixedUpdate};
+use bevy_ecs::prelude::*;
 
 use crate::plugin::GamePlugin;
 

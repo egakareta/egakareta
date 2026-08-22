@@ -90,9 +90,9 @@ pub(crate) use audio_state::{
     with_audio_backend,
 };
 #[cfg(test)]
-use bevy::ecs::prelude::ResMut;
+use bevy_ecs::prelude::ResMut;
 #[cfg(test)]
-use bevy::ecs::system::SystemState;
+use bevy_ecs::system::SystemState;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
 pub use editor_camera::{EditorCameraState, editor_camera_preview_for_objects};
 pub use editor_config_state::EditorConfigState;
@@ -185,7 +185,7 @@ pub(crate) struct EditorInteractionContext<'a> {
 
 #[cfg(test)]
 pub(crate) fn with_editor_interaction_context<R>(
-    world: &mut bevy::ecs::world::World,
+    world: &mut bevy_ecs::world::World,
     f: impl FnOnce(&mut EditorInteractionContext<'_>) -> R,
 ) -> R {
     let mut objects = editor_objects::collect_editor_objects(world);
@@ -240,12 +240,12 @@ pub(crate) fn with_editor_interaction_context<R>(
 /// Schedule label for the per-frame state update. Runtime runs this
 /// after App update and before the remaining compatibility update/render
 /// path.
-#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSchedule;
 
 /// Schedule label for the render extraction pass that runs after the
 /// App-world gameplay tick and refreshes render POD resources for present.
-#[derive(bevy::ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RenderExtractSchedule;
 
 pub struct RenderBootstrapResources {

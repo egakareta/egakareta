@@ -7,7 +7,7 @@
 */
 //! Domain tests for the App-owned editor resources.
 
-use bevy::state::prelude::State;
+use bevy_state::prelude::State;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
 use super::{

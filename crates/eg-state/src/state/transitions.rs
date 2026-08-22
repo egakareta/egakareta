@@ -10,10 +10,8 @@
 //! `State<AppPhase>` is authoritative. Transitions are queued through
 //! `NextState<AppPhase>` and observed through Bevy's enter/exit schedules.
 
-use bevy::{
-    app::App,
-    state::prelude::{OnEnter, OnExit},
-};
+use bevy_app::App;
+use bevy_state::prelude::{OnEnter, OnExit};
 use eg_types::AppPhase;
 
 /// Register the small remaining phase hooks on Bevy's transition schedules.

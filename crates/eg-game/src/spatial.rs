@@ -7,7 +7,7 @@
 */
 use std::collections::HashMap;
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_block_geometry::{hitbox_cuboids, rotated_cuboid_aabb_xz};
 use eg_types::LevelObject;
 

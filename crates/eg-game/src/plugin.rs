@@ -7,10 +7,8 @@
 */
 //! `GamePlugin` - the headless gameplay Bevy plugin.
 
-use bevy::{
-    app::{App, FixedUpdate, Plugin},
-    ecs::{prelude::*, schedule::Schedule},
-};
+use bevy_app::{App, FixedUpdate, Plugin};
+use bevy_ecs::{prelude::*, schedule::Schedule};
 
 use crate::{
     events::ConsumedEventsBuffer,

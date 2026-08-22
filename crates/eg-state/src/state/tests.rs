@@ -5,7 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::{ecs::prelude::With, state::prelude::State};
+use bevy_ecs::prelude::With;
+use bevy_state::prelude::State;
 use eg_editor_domain::derive_timeline_position;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
@@ -172,7 +173,7 @@ fn test_app_camera_pan_system_owns_key_motion() {
         EditorCameraRes, EditorInputRes, editor_camera::update_editor_camera_pan_system,
     };
 
-    let mut world = bevy::ecs::world::World::new();
+    let mut world = bevy_ecs::world::World::new();
     world.insert_resource(State::new(AppPhase::Editor));
     world.insert_resource(crate::state::FrameTimeRes {
         delta_seconds: 0.1,
@@ -184,7 +185,7 @@ fn test_app_camera_pan_system_owns_key_motion() {
     }));
     world.insert_resource(EditorCameraRes::default());
 
-    let mut schedule = bevy::ecs::schedule::Schedule::default();
+    let mut schedule = bevy_ecs::schedule::Schedule::default();
     schedule.add_systems(update_editor_camera_pan_system);
     schedule.run(&mut world);
 
@@ -352,7 +353,7 @@ fn tick_state_registers_render_pod_resources_on_construction() {
 
 #[test]
 fn tick_state_poll_channels_emits_audio_import_result_event() {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     use crate::{
         events::async_results::AudioImportResultEvent, state::async_bridge::AudioImportChannelRes,
@@ -391,7 +392,7 @@ fn tick_state_poll_channels_emits_audio_import_result_event() {
 
 #[test]
 fn tick_state_poll_channels_emits_level_import_result_event() {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     use crate::{
         events::async_results::LevelImportResultEvent, state::async_bridge::LevelImportChannelRes,
@@ -407,7 +408,7 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 
     tx.send(vec![0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
 
-    let mut poll_schedule = bevy::ecs::schedule::Schedule::default();
+    let mut poll_schedule = bevy_ecs::schedule::Schedule::default();
     poll_schedule.add_systems(crate::state::async_bridge::poll_channels_system);
     poll_schedule.run(app.world_mut());
 
@@ -420,7 +421,7 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 
 #[test]
 fn tick_state_poll_channels_emits_auth_service_result_event() {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     use crate::{
         events::async_results::AuthServiceResultEvent, state::async_bridge::AuthChannelRes,
@@ -537,7 +538,10 @@ fn test_app_render_extract_builds_playing_camera_and_line_uniform() {
     let player_entity = {
         let world = app.world_mut();
         world
-            .query_filtered::<bevy::ecs::entity::Entity, bevy::ecs::prelude::With<eg_game::PlayerPosition>>()
+            .query_filtered::<
+                bevy_ecs::entity::Entity,
+                bevy_ecs::prelude::With<eg_game::PlayerPosition>,
+            >()
             .single(world)
             .expect("TestApp should seed one player entity")
     };

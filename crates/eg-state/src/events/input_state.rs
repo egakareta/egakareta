@@ -12,7 +12,8 @@
 //! input-state path no longer needs to route these through legacy editor
 //! dispatch.
 
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 
 use crate::state::EditorInputRes;
 

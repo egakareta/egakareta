@@ -13,7 +13,7 @@
 //! can therefore query authored objects without making a `Vec<LevelObject>`
 //! resource authoritative.
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_game::{
     BlockId, CachedBlockBehavior, ColorTint, Object, ObjectBundle, ObjectData, ObjectId, Position,
     Rotation, Size,

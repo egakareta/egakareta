@@ -11,11 +11,9 @@
 //! directly to mirrored App-world resources so pointer routing no longer
 //! needs to stage legacy editor commands during the compatibility window.
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::State,
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::State;
 use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 use glam::Vec2;
 

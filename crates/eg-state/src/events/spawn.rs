@@ -19,7 +19,8 @@
 //! - `RotatePlacementPreview` mutates the authoritative
 //!   `EditorConfigRes.0.selected_block_rotation_degrees[1]` placement yaw.
 
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 use eg_editor_domain::toggle_spawn_direction;
 
 use crate::state::{EditorConfigRes, EditorInputRes, EditorSpawnRes};

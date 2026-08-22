@@ -27,17 +27,17 @@
 //!   `AudioImportResult` into the `Messages<AudioImportResultEvent>`
 //!   buffer and assert the handler behavior without going through
 //!   the platform layer.
-//! - Unlocks async-result consumers - `bevy::tasks`-based
+//! - Unlocks async-result consumers - `bevy_tasks`-based
 //!   systems can read the events without holding the channel
 //!   receiver (which is `!Sync`).
 //!
 //! REFACTOR POINT(full-bevy): the messages here migrate to
-//! `bevy::tasks` async event streams in the full-Bevy migration. The
+//! `bevy_tasks` async event streams in the full-Bevy migration. The
 //! `mpsc` channels disappear entirely; background tasks write
 //! directly into `Messages<T>` (or `AssetEvent<T>` for asset
 //! loading).
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_audio::service::{AudioPreloadResult, WaveformResult};
 
 /// Result of an async auth service call.

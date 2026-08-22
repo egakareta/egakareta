@@ -13,11 +13,9 @@
 //!
 //!
 
-use bevy::{
-    ecs::prelude::*,
-    state::prelude::State,
-    time::{Fixed, Time},
-};
+use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
+use bevy_time::{Fixed, Time};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
     BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FrameDelta,
@@ -160,7 +158,7 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
 
     if playtesting_editor {
         world
-            .resource_mut::<bevy::state::prelude::NextState<eg_types::AppPhase>>()
+            .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Editor);
         {
             let mut session = world.resource_mut::<SessionStateRes>();
@@ -178,7 +176,7 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
         crate::events::misc::restore_editor_objects_from_session(world);
     } else {
         world
-            .resource_mut::<bevy::state::prelude::NextState<eg_types::AppPhase>>()
+            .resource_mut::<bevy_state::prelude::NextState<eg_types::AppPhase>>()
             .set(eg_types::AppPhase::Menu);
         world.resource_mut::<SessionStateRes>().transition_to_menu();
     }

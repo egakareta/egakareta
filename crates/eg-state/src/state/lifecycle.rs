@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::ecs::world::World;
+use bevy_ecs::world::World;
 use eg_audio::service::{AudioPreloadResult, WaveformResult};
 use eg_blocks::BlockTextureAtlas;
 use eg_level::builtin_level_names;
@@ -379,8 +379,8 @@ impl AppBootstrap {
         world.insert_resource(super::MenuPreviewObjectsRes {
             objects: Vec::new(),
         });
-        world.insert_resource(bevy::state::prelude::State::new(phase));
-        world.init_resource::<bevy::state::prelude::NextState<eg_types::AppPhase>>();
+        world.insert_resource(bevy_state::prelude::State::new(phase));
+        world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
         world.insert_resource(super::MenuStateRes::new(menu));
         world.insert_resource(auth);
 

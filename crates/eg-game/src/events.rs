@@ -16,7 +16,7 @@
 //! REFACTOR POINT(full-bevy): [`ConsumedEventsBuffer`] resource becomes a
 //! `Message<ConsumedObjectEvent>` in the full-Bevy migration.
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_types::LevelObject;
 
 /// Emitted when an object entity is consumed (collectible or

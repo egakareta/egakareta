@@ -7,7 +7,8 @@
 */
 //! Platform input resources for the Bevy App world.
 
-use bevy::{ecs::prelude::*, state::prelude::State};
+use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_editor_domain::{TimingDivisionDirection, timing_division_time_in_direction};
 use eg_types::{AppPhase, EditorMode, KeyChord, normalize_binding_key};
 
@@ -576,7 +577,7 @@ fn is_modifier_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     use super::*;
     use crate::{

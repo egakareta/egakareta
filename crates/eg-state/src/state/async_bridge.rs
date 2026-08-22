@@ -59,7 +59,7 @@
 //! REFACTOR POINT(full-bevy): the `mpsc` channels disappear in the
 //! full-Bevy migration; background tasks write directly into
 //! `Messages<T>` or `AssetEvent<T>`. The `poll_channels_system` is
-//! replaced by `bevy::tasks` async event streams. Handler systems already
+//! replaced by `bevy_tasks` async event streams. Handler systems already
 //! mutate Bevy resources directly.
 
 use std::sync::{
@@ -67,7 +67,7 @@ use std::sync::{
     mpsc::{Receiver, TryRecvError},
 };
 
-use bevy::ecs::{prelude::*, schedule::SystemSet};
+use bevy_ecs::{prelude::*, schedule::SystemSet};
 use eg_audio::service::{AudioPreloadResult, WaveformLoadMessage, WaveformResult};
 use eg_platform::services::AuthServiceMessage;
 
@@ -331,7 +331,7 @@ pub fn install_async_channel_resources_arc(
 /// production bootstrap and headless fixtures.
 #[allow(dead_code)]
 pub fn register_async_channel_resources_world(world: &mut World) {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     world.init_resource::<Messages<AuthServiceResultEvent>>();
     world.init_resource::<Messages<AudioImportResultEvent>>();
@@ -347,7 +347,7 @@ pub fn register_async_channel_resources_world(world: &mut World) {
 /// The system is assigned to the [`PollChannelsSet`] so cross-set
 /// ordering can be expressed via `.in_set(PollChannelsSet)`.
 #[allow(dead_code)]
-pub fn add_poll_channels_systems(schedule: &mut bevy::ecs::schedule::Schedule) {
+pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     schedule.add_systems(poll_channels_system.in_set(PollChannelsSet));
 }
 
@@ -423,7 +423,7 @@ pub fn audio_import_handler_system(
 /// World` and `drain` the buffer to get owned `T` values.
 #[allow(dead_code)]
 pub fn waveform_handler_system(world: &mut World) {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
     use eg_audio::audio::runtime_asset_source_key;
 
     let current_level_name = world
@@ -616,7 +616,7 @@ pub fn audio_preload_handler_system(
 /// Bundled `.egz` audio bytes are inserted into the shared editor cache directly.
 #[allow(dead_code)]
 pub fn level_import_handler_system(world: &mut World) {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
 
     let events: Vec<LevelImportResultEvent> = world
         .resource_mut::<Messages<LevelImportResultEvent>>()
@@ -711,7 +711,7 @@ pub(crate) fn apply_imported_level_to_world(
 /// is assigned to [`ApplyAsyncResultsSet`] so cross-set ordering
 /// can be expressed via `.in_set(ApplyAsyncResultsSet)` / `.before()`.
 #[allow(dead_code)]
-pub fn add_apply_async_results_systems(schedule: &mut bevy::ecs::schedule::Schedule) {
+pub fn add_apply_async_results_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     schedule.add_systems(
         (
             auth_handler_system,
@@ -930,7 +930,7 @@ mod tests {
             Ok(()),
         )));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(auth_handler_system);
         schedule.run(&mut world);
 
@@ -951,7 +951,7 @@ mod tests {
             Some(vec![1, 2, 3, 4]),
         )));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_preload_handler_system);
         schedule.run(&mut world);
 
@@ -975,7 +975,7 @@ mod tests {
             None,
         )));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_preload_handler_system);
         schedule.run(&mut world);
 
@@ -995,7 +995,7 @@ mod tests {
         world.resource_mut::<SessionStateRes>().editor_level_name = Some("Original".to_string());
         world.write_message(LevelImportResultEvent::new(vec![0xDE, 0xAD]));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(level_import_handler_system);
         schedule.run(&mut world);
 
@@ -1035,7 +1035,7 @@ mod tests {
         let bytes = eg_codec::encode_level_metadata_binary(&metadata).expect("encode level");
         world.write_message(LevelImportResultEvent::new(bytes));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(level_import_handler_system);
         schedule.run(&mut world);
 
@@ -1087,7 +1087,7 @@ mod tests {
             },
         )));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(waveform_handler_system);
         schedule.run(&mut world);
 
@@ -1129,7 +1129,7 @@ mod tests {
             ))
             .expect("waveform channel remains connected");
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems((poll_channels_system, waveform_handler_system).chain());
         schedule.run(&mut world);
 
@@ -1163,7 +1163,7 @@ mod tests {
             },
         )));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(waveform_handler_system);
         schedule.run(&mut world);
 
@@ -1188,7 +1188,7 @@ mod tests {
         let mut world = build_world();
         world.write_message(AudioImportResultEvent::new("level1.ogg".to_string(), None));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_import_handler_system);
         schedule.run(&mut world);
 
@@ -1215,7 +1215,7 @@ mod tests {
             Some(vec![1, 2, 3, 4]),
         ));
 
-        let mut schedule = bevy::ecs::schedule::Schedule::default();
+        let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_import_handler_system);
         schedule.run(&mut world);
 

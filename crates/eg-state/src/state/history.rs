@@ -48,7 +48,7 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use bevy::state::prelude::State;
+    use bevy_state::prelude::State;
     use eg_types::{
         AppPhase, EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
         TriggerTarget,

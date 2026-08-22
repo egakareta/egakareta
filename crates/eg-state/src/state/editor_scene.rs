@@ -74,7 +74,8 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use bevy::{ecs::schedule::Schedule, state::prelude::State};
+    use bevy_ecs::schedule::Schedule;
+    use bevy_state::prelude::State;
     use eg_mesh::build_block_geometry_for_object;
     use eg_types::{
         AppPhase, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,

@@ -23,7 +23,7 @@
 //!
 //! ```ignore
 //! use eg_state::state::test_support::TestApp;
-//! use bevy::state::prelude::State;
+//! use bevy_state::prelude::State;
 //! use eg_types::AppPhase;
 //!
 //! let mut app = TestApp::minimal();
@@ -38,7 +38,8 @@
 //!
 //! [StateSchedule]: crate::state::StateSchedule
 
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 
 use super::{
     StateSchedule,
@@ -174,7 +175,8 @@ impl Default for TestApp {
 
 #[cfg(test)]
 mod tests {
-    use bevy::{app::FixedUpdate, state::prelude::State};
+    use bevy_app::FixedUpdate;
+    use bevy_state::prelude::State;
     use eg_game::TimelineSimulationRuntime;
     use eg_types::{AppPhase, Direction, EditorMode};
 

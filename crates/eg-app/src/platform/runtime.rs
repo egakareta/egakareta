@@ -6,13 +6,11 @@
 
 */
 #[cfg(test)]
-use bevy::app::FixedUpdate;
+use bevy_app::FixedUpdate;
+use bevy_app::{App, PostUpdate};
 #[cfg(not(test))]
-use bevy::ecs::world::World;
-use bevy::{
-    app::{App, PostUpdate},
-    state::prelude::State,
-};
+use bevy_ecs::world::World;
+use bevy_state::prelude::State;
 #[cfg(not(test))]
 use eg_render::block_icon_cache::BlockIconCache;
 #[cfg(not(test))]
@@ -605,7 +603,7 @@ impl Runtime {
         app.add_systems(PostUpdate, eg_state::state::run_state_schedule_system);
         register_ui_resources_world(app.world_mut());
         #[cfg(not(test))]
-        app.add_systems(bevy::app::Update, run_egui_ui_system);
+        app.add_systems(bevy_app::Update, run_egui_ui_system);
         bootstrap.install(app.world_mut());
 
         #[cfg(not(test))]
@@ -767,7 +765,7 @@ impl Runtime {
 }
 #[cfg(test)]
 mod tests {
-    use bevy::state::prelude::State;
+    use bevy_state::prelude::State;
     use eg_state::state::{
         AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
         EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,

@@ -7,7 +7,8 @@
 */
 //! App-world menu preview selection and metadata extraction.
 
-use bevy::{ecs::prelude::*, state::prelude::State};
+use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_types::{
     AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
     LevelMetadata,

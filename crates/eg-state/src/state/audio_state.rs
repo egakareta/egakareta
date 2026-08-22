@@ -13,7 +13,7 @@ use std::{
     },
 };
 
-use bevy::ecs::{prelude::Resource, world::World};
+use bevy_ecs::{prelude::Resource, world::World};
 use eg_audio::{
     audio::{AudioBackend, runtime_asset_source_key},
     service::{
@@ -39,10 +39,10 @@ pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
 pub struct AudioBackendRes(Arc<Mutex<AudioBackend>>);
 
 #[cfg(not(target_arch = "wasm32"))]
-pub type AudioBackendSystemParam<'w> = bevy::ecs::change_detection::Res<'w, AudioBackendRes>;
+pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::Res<'w, AudioBackendRes>;
 
 #[cfg(target_arch = "wasm32")]
-pub type AudioBackendSystemParam<'w> = bevy::ecs::change_detection::NonSend<'w, AudioBackendRes>;
+pub type AudioBackendSystemParam<'w> = bevy_ecs::change_detection::NonSend<'w, AudioBackendRes>;
 
 pub(crate) fn with_audio_backend<R>(world: &World, f: impl FnOnce(&AudioBackendRes) -> R) -> R {
     #[cfg(not(target_arch = "wasm32"))]

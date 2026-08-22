@@ -7,7 +7,7 @@
 */
 use std::fmt::Write as _;
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use puffin::{FrameView, GlobalFrameView, Reader, ScopeCollection};
 
 use super::{PerfFrameCopyRequest, PerfRes};
@@ -116,13 +116,13 @@ pub fn process_perf_frame_copy_request_system(
     }
 
     if let Some(text) = perf.0.format_latest_frame() {
-        let _ = bevy::clipboard::Clipboard::default().set_text(text);
+        let _ = bevy_clipboard::Clipboard::default().set_text(text);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use bevy::ecs::prelude::*;
+    use bevy_ecs::prelude::*;
 
     use super::process_perf_frame_copy_request_system;
     use crate::state::{PerfFrameCopyRequest, PerfRes};

@@ -8,11 +8,9 @@
 //! History (undo / redo) events + a `HistorySnapshot` marker Message used
 //! by direct-manipulation UI to mark a "before-mutation" snapshot.
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::State,
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::State;
 use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, EditorInputState, LevelObject};
 

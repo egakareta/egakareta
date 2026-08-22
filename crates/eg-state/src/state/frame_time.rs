@@ -5,10 +5,8 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use bevy::{
-    ecs::prelude::*,
-    time::{Time, Virtual},
-};
+use bevy_ecs::prelude::*;
+use bevy_time::{Time, Virtual};
 
 use crate::state::{FrameTimeRes, PerfRes};
 

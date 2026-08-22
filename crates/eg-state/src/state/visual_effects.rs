@@ -7,7 +7,8 @@
 */
 //! App-world lifecycle for block visual effects.
 
-use bevy::{ecs::prelude::*, state::prelude::State};
+use bevy_ecs::prelude::*;
+use bevy_state::prelude::State;
 use eg_types::AppPhase;
 
 use super::{BlockEffectsRes, EditorRuntimeRes, FrameTimeRes};

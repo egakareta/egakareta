@@ -20,7 +20,7 @@ pub mod plugin;
 
 use std::collections::{BTreeMap, HashMap};
 
-use bevy::ecs::world::World;
+use bevy_ecs::world::World;
 use eg_blocks::{BlockCategory, BlockDefinition, BlockId};
 use eg_state::{
     commands::AppCommand,
@@ -2399,7 +2399,7 @@ mod tests {
 
     #[test]
     fn world_command_sink_writes_messages_immediately() {
-        let mut app = bevy::app::App::new();
+        let mut app = bevy_app::App::new();
         app.add_plugins(crate::plugin::UiPlugin);
 
         {
@@ -2409,7 +2409,7 @@ mod tests {
 
         let messages = app
             .world()
-            .resource::<bevy::ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
+            .resource::<bevy_ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
         let mut reader = messages.get_cursor();
         assert_eq!(reader.read(messages).count(), 1);
     }

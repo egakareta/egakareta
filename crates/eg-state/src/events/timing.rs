@@ -17,7 +17,8 @@
 //! The bpm-tap fields are carved out in `events::bpm` and share the same
 //! authoritative `EditorTimingRes` resource.
 
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 
 use crate::state::EditorTimingRes;
 

@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use bevy::ecs::{prelude::*, schedule::SystemSet};
+use bevy_ecs::{prelude::*, schedule::SystemSet};
 use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};

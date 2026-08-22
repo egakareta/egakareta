@@ -14,7 +14,8 @@
 //! calculation as the legacy `State::editor_bpm_tap` /
 //! `editor_bpm_tap_reset` paths.
 //!
-use bevy::{app::App, ecs::prelude::*};
+use bevy_app::App;
+use bevy_ecs::prelude::*;
 
 use crate::state::EditorTimingRes;
 

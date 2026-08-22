@@ -7,10 +7,8 @@
 */
 //! App-world editor timeline playback.
 
-use bevy::{
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::State,
-};
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::State;
 use eg_blocks::BlockEffectColorMode;
 use eg_editor_domain::derive_timeline_elapsed_seconds;
 use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};

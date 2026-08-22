@@ -23,13 +23,13 @@
 //!   of platform-specific renderer handles.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
-//! entire module with `bevy::render` render-world resources
-//! (`bevy::render::render_resource::Buffer`) plus
-//! `bevy::render::camera::Camera` etc. The Bevy `Message`-driven
+//! entire module with `bevy_render` render-world resources
+//! (`bevy_render::render_resource::Buffer`) plus
+//! `bevy_camera::Camera` etc. The Bevy `Message`-driven
 //! `extract` system here is replaced by the `RenderApp` extract
-//! schedule in the `bevy::render` graph.
+//! schedule in the `bevy_render` graph.
 
-use bevy::ecs::prelude::*;
+use bevy_ecs::prelude::*;
 use eg_platform::state_host::SurfaceHost;
 use eg_render::{EditorOutlineInstance, RenderFrameInput, SceneMeshes};
 use eg_types::{CameraUniform, ColorSpaceUniform, LineUniform};

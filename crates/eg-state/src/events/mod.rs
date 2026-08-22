@@ -50,10 +50,8 @@
 //! `bevy_input` `Input<KeyCode>` / `ButtonInput<MouseButton>` in the
 //! full-Bevy migration. The Bevy `Message` types themselves stay.
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, schedule::SystemSet},
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, schedule::SystemSet};
 
 use crate::{commands::AppCommand, state::editor_command::EditorCommand};
 
@@ -125,7 +123,7 @@ pub fn register_command_events(app: &mut App) {
 /// schedule — see `register_state_schedule` for the full
 /// `World` setup.
 pub fn register_command_events_world(world: &mut World) {
-    use bevy::ecs::message::Messages;
+    use bevy_ecs::message::Messages;
     // Navigation
     world.init_resource::<Messages<navigation::TurnRight>>();
     world.init_resource::<Messages<navigation::NextLevel>>();
@@ -816,7 +814,8 @@ pub fn add_command_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
-    use bevy::{ecs::message::Messages, state::prelude::State};
+    use bevy_ecs::message::Messages;
+    use bevy_state::prelude::State;
     use eg_types::{
         AppPhase, DEFAULT_MENU_PREVIEW_CAMERA_POSITION, DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         EditorMode, LevelMetadata, LevelObject, MenuState,
@@ -831,11 +830,11 @@ mod tests {
         snap::SetSnapToGrid,
     };
 
-    fn replace_authored_objects(world: &mut bevy::ecs::world::World, objects: Vec<LevelObject>) {
+    fn replace_authored_objects(world: &mut bevy_ecs::world::World, objects: Vec<LevelObject>) {
         crate::state::replace_editor_objects(world, objects);
     }
 
-    fn authored_objects(world: &mut bevy::ecs::world::World) -> Vec<LevelObject> {
+    fn authored_objects(world: &mut bevy_ecs::world::World) -> Vec<LevelObject> {
         let mut query = world.query_filtered::<
             (&crate::state::EditorObjectOrder, &eg_game::ObjectData),
             With<crate::state::EditorAuthoredObject>,
@@ -848,22 +847,22 @@ mod tests {
         objects.into_iter().map(|(_, object)| object).collect()
     }
 
-    fn set_test_phase(world: &mut bevy::ecs::world::World, phase: AppPhase) {
+    fn set_test_phase(world: &mut bevy_ecs::world::World, phase: AppPhase) {
         world.insert_resource(State::new(phase));
     }
 
-    fn test_phase(world: &bevy::ecs::world::World) -> AppPhase {
+    fn test_phase(world: &bevy_ecs::world::World) -> AppPhase {
         *world.resource::<State<AppPhase>>().get()
     }
 
     fn apply_test_phase_transition(
-        mut next: ResMut<bevy::state::prelude::NextState<AppPhase>>,
+        mut next: ResMut<bevy_state::prelude::NextState<AppPhase>>,
         mut state: ResMut<State<AppPhase>>,
     ) {
         let target = match std::mem::take(&mut *next) {
-            bevy::state::prelude::NextState::Pending(target)
-            | bevy::state::prelude::NextState::PendingIfNeq(target) => Some(target),
-            bevy::state::prelude::NextState::Unchanged => None,
+            bevy_state::prelude::NextState::Pending(target)
+            | bevy_state::prelude::NextState::PendingIfNeq(target) => Some(target),
+            bevy_state::prelude::NextState::Unchanged => None,
         };
         if let Some(target) = target {
             *state = State::new(target);
@@ -872,8 +871,8 @@ mod tests {
 
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
-    fn build_event_world() -> bevy::ecs::world::World {
-        let mut world = bevy::ecs::world::World::new();
+    fn build_event_world() -> bevy_ecs::world::World {
+        let mut world = bevy_ecs::world::World::new();
         // All per-message drain systems run in the same schedule, so the
         // helper must register every resource any of them reads. The
         // carve-out handlers (input_state, pointer) reach for
@@ -915,7 +914,7 @@ mod tests {
         world.init_resource::<crate::state::PerfRes>();
         world.init_resource::<crate::state::PerfFrameCopyRequest>();
         world.insert_resource(State::new(AppPhase::Menu));
-        world.init_resource::<bevy::state::prelude::NextState<AppPhase>>();
+        world.init_resource::<bevy_state::prelude::NextState<AppPhase>>();
         world.init_resource::<crate::state::RenderUniformsRes>();
         world.init_resource::<crate::state::RenderConfigRes>();
         world.init_resource::<crate::state::RenderResizeRequest>();
@@ -948,12 +947,11 @@ mod tests {
             preview_camera_target: DEFAULT_MENU_PREVIEW_CAMERA_TARGET,
         }));
         register_command_events_world(&mut world);
-        let mut schedule = bevy::ecs::schedule::Schedule::new(crate::state::StateSchedule);
+        let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
         schedule.configure_sets(crate::events::CommandHandlerSet);
         add_command_systems(&mut schedule);
-        schedule.add_systems(
-            bevy::ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet),
-        );
+        schedule
+            .add_systems(bevy_ecs::schedule::ApplyDeferred.after(crate::events::CommandHandlerSet));
         schedule.add_systems(apply_test_phase_transition.after(crate::events::CommandHandlerSet));
         schedule.add_systems(
             crate::state::gameplay_world::apply_pending_gameplay_reset_system

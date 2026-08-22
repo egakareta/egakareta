@@ -9,11 +9,9 @@
 
 use std::collections::HashMap;
 
-use bevy::{
-    app::App,
-    ecs::{prelude::*, system::SystemParam},
-    state::prelude::State,
-};
+use bevy_app::App;
+use bevy_ecs::{prelude::*, system::SystemParam};
+use bevy_state::prelude::State;
 use eg_editor_domain::{
     remove_topmost_block_at_cursor, snap_cell_to_step, snap_component_to_step,
     topmost_block_index_at_cursor,
