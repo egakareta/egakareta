@@ -299,7 +299,7 @@ fn timeline_position_at_seconds(
     time_seconds: f32,
 ) -> [f32; 3] {
     let cache = &timeline.snapshot_cache;
-    if cache.is_empty() || timeline.snapshot_cache_revision != timeline.simulation_revision {
+    if cache.is_empty() || !timeline.snapshot_cache_complete {
         return timeline.preview.position;
     }
 

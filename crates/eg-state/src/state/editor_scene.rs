@@ -13,7 +13,6 @@ super::editor_context_methods! {
     pub fn sync_objects(&mut self) {
         self.normalize_block_selection();
         self.sync_trigger_selection_from_objects();
-        self.invalidate_samples();
         self.pick_spatial_index.invalidate();
         self.selected_mask_cache = None;
         self.block_static_vertex_cache.clear();
@@ -27,7 +26,6 @@ super::editor_context_methods! {
 
     pub fn sync_objects_after_drag_release(&mut self) {
         self.normalize_block_selection();
-        self.invalidate_samples();
         self.pick_spatial_index.invalidate();
     }
 

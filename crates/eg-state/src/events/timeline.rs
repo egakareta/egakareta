@@ -40,12 +40,12 @@ use eg_editor_domain::{
     derive_timeline_elapsed_seconds, remove_tap_with_indicator,
 };
 use eg_game::{LevelMeta, TimelineSimulationRuntime};
-use eg_types::{AppPhase, EditorMode};
+use eg_types::{AppPhase, Direction, EditorMode};
 
 use crate::state::{
     AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorInputRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes,
-    GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
+    EditorRuntimeRes, EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
     start_audio_source_at_seconds_for_resources,
 };
 
@@ -63,6 +63,7 @@ pub struct TimelineSeekResources<'w, 's> {
         With<crate::state::EditorAuthoredObject>,
     >,
     spawn: Res<'w, EditorSpawnRes>,
+    simulation_inputs: Option<Res<'w, EditorSimulationInputsRes>>,
     camera: ResMut<'w, EditorCameraRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
 }
@@ -288,7 +289,6 @@ pub fn handle_set_timeline_duration(
 ) {
     for event in events.read() {
         resources.timeline.0.clock.duration_seconds = event.0.max(0.1);
-        resources.timeline.0.invalidate_samples();
         let next_time = resources
             .timeline
             .0
@@ -307,35 +307,15 @@ fn seek_timeline(resources: &mut TimelineSeekResources<'_, '_>, time_seconds: f3
         return;
     }
 
-    let (position, direction) = if let Some(cached) =
-        resources.timeline.0.cached_state_at_seconds(time_seconds)
-    {
-        cached
+    let (position, direction) = if timeline_cache_matches_current_inputs(resources) {
+        if let Some(cached) = resources.timeline.0.cached_state_at_seconds(time_seconds) {
+            cached
+        } else {
+            seek_timeline_with_runtime(resources, time_seconds)
+        }
     } else {
-        let revision = resources.timeline.0.simulation_revision;
-        let mut runtime = resources
-            .timeline
-            .0
-            .scrub_runtime
-            .take()
-            .filter(|runtime| {
-                resources.timeline.0.scrub_runtime_revision == revision
-                    && runtime.elapsed_seconds() <= time_seconds + 1e-6
-            })
-            .unwrap_or_else(|| {
-                let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
-                TimelineSimulationRuntime::new(
-                    resources.spawn.0.position,
-                    resources.spawn.0.direction,
-                    &objects,
-                    &resources.timeline.0.taps.tap_times,
-                )
-            });
-        runtime.advance_to(time_seconds);
-        let snapshot = runtime.snapshot();
-        resources.timeline.0.scrub_runtime_revision = revision;
-        resources.timeline.0.scrub_runtime = Some(runtime);
-        (snapshot.position, snapshot.direction)
+        resources.timeline.0.scrub_runtime = None;
+        seek_timeline_with_runtime(resources, time_seconds)
     };
     resources.timeline.0.preview.position = position;
     resources.timeline.0.preview.direction = direction;
@@ -346,6 +326,52 @@ fn seek_timeline(resources: &mut TimelineSeekResources<'_, '_>, time_seconds: f3
         resources.camera.0.editor_pan = [position[0] + 0.5, position[2] + 0.5];
         resources.camera.0.editor_target_z = position[1];
     }
+}
+
+fn timeline_cache_matches_current_inputs(resources: &mut TimelineSeekResources<'_, '_>) -> bool {
+    let timeline = &resources.timeline.0;
+    let Some(simulation_inputs) = resources.simulation_inputs.as_ref() else {
+        return timeline.snapshot_cache_complete;
+    };
+    let inputs = &simulation_inputs.0;
+    if inputs.spawn_position != resources.spawn.0.position
+        || inputs.spawn_direction != resources.spawn.0.direction
+        || inputs.tap_times != timeline.taps.tap_times
+        || (inputs.duration_seconds - timeline.clock.duration_seconds).abs() > f32::EPSILON
+        || (inputs.snapshot_cache_step_seconds - timeline.snapshot_cache_step_seconds).abs()
+            > f32::EPSILON
+    {
+        return false;
+    }
+
+    let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+    inputs.objects == objects
+}
+
+fn seek_timeline_with_runtime(
+    resources: &mut TimelineSeekResources<'_, '_>,
+    time_seconds: f32,
+) -> ([f32; 3], Direction) {
+    let mut runtime = resources
+        .timeline
+        .0
+        .scrub_runtime
+        .take()
+        .filter(|runtime| runtime.elapsed_seconds() <= time_seconds + 1e-6);
+    if runtime.is_none() {
+        let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+        runtime = Some(TimelineSimulationRuntime::new(
+            resources.spawn.0.position,
+            resources.spawn.0.direction,
+            &objects,
+            &resources.timeline.0.taps.tap_times,
+        ));
+    }
+    let mut runtime = runtime.expect("timeline scrub runtime must be initialized");
+    runtime.advance_to(time_seconds);
+    let snapshot = runtime.snapshot();
+    resources.timeline.0.scrub_runtime = Some(runtime);
+    (snapshot.position, snapshot.direction)
 }
 
 fn queue_playback_seek(timeline: &mut EditorTimelineRes) {
@@ -369,7 +395,6 @@ pub fn handle_add_tap(mut events: MessageReader<AddTap>, mut timeline: ResMut<Ed
             )
         };
         timeline.0.taps.selected_index = selected_index;
-        timeline.0.invalidate_samples();
     }
 }
 
@@ -403,7 +428,6 @@ fn remove_tap_at_time(timeline: &mut EditorTimelineRes, time_seconds: f32) {
             Some(selected_index) if selected_index > removed_index => Some(selected_index - 1),
             selected_index => selected_index,
         };
-        timeline.0.invalidate_samples();
     }
 }
 
@@ -463,7 +487,6 @@ pub fn handle_set_selected_tap_time(
         taps.selected_index = Some(next_index);
         timeline.0.clock.time_seconds = next_time;
         input.0.cursor = selected_position;
-        timeline.0.invalidate_samples();
     }
 }
 
@@ -475,7 +498,6 @@ pub fn handle_clear_taps(
         timeline.0.taps.tap_times.clear();
         timeline.0.taps.tap_indicator_positions.clear();
         timeline.0.taps.selected_index = None;
-        timeline.0.invalidate_samples();
     }
 }
 

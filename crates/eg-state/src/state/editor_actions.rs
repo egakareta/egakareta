@@ -74,17 +74,8 @@ pub struct TapPathPick {
 
 super::editor_context_methods! {
     pub fn timing_division_tap_previews(&mut self) -> &[TapDivisionPreview] {
-        let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
-        let window = (0.0, duration_seconds);
-        let cache_is_current = self.timeline.tap_division_preview_cache_revision
-            == self.timeline.simulation_revision
-            && self.timeline.tap_division_preview_cache_timing_revision == self.timing.revision
-            && (self.timeline.tap_division_preview_cache_duration_seconds - duration_seconds).abs()
-                <= f32::EPSILON
-            && (self.timeline.tap_division_preview_cache_window.0 - window.0).abs() <= f32::EPSILON
-            && (self.timeline.tap_division_preview_cache_window.1 - window.1).abs() <= f32::EPSILON;
-
-        if !cache_is_current {
+        if self.timeline.tap_division_preview_cache.is_empty() {
+            let duration_seconds = self.timeline.clock.duration_seconds.max(0.0);
             self.timeline.tap_division_preview_cache = derive_timing_division_tap_previews(
                 self.spawn.position,
                 self.spawn.direction,
@@ -92,15 +83,11 @@ super::editor_context_methods! {
                 &self.timing.timing_points,
                 duration_seconds,
                 TapDivisionPreviewRange {
-                    start_seconds: window.0,
-                    end_seconds: window.1,
+                    start_seconds: 0.0,
+                    end_seconds: duration_seconds,
                 },
                 &self.objects,
             );
-            self.timeline.tap_division_preview_cache_revision = self.timeline.simulation_revision;
-            self.timeline.tap_division_preview_cache_timing_revision = self.timing.revision;
-            self.timeline.tap_division_preview_cache_duration_seconds = duration_seconds;
-            self.timeline.tap_division_preview_cache_window = window;
         }
 
         &self.timeline.tap_division_preview_cache
@@ -108,9 +95,7 @@ super::editor_context_methods! {
 
     pub fn tap_path_pick_near_world(&self, target_world: [f32; 3]) -> Option<TapPathPick> {
         let cache = &self.timeline.snapshot_cache;
-        if cache.is_empty()
-            || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
-        {
+        if cache.is_empty() || !self.timeline.snapshot_cache_complete {
             return None;
         }
 
@@ -268,8 +253,9 @@ mod tests {
     use eg_types::{AppPhase, Direction, EditorMode, LevelObject, TimingPoint};
 
     use super::super::{
-        EditorInputRes, EditorTimelineRes, collect_editor_objects_from_world,
-        replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
+        EditorBlockDrag, EditorInputRes, EditorRuntimeRes, EditorSimulationInputsRes,
+        EditorTimelineRes, collect_editor_objects_from_world, replace_editor_objects,
+        test_support::TestApp, with_editor_interaction_context,
     };
 
     fn test_block(position: [f32; 3]) -> LevelObject {
@@ -291,13 +277,87 @@ mod tests {
         for _ in 0..128 {
             app.tick_state();
             let timeline = &app.world().resource::<EditorTimelineRes>().0;
-            if timeline.snapshot_cache_revision == timeline.simulation_revision
-                && !timeline.snapshot_cache.is_empty()
-            {
+            if timeline.snapshot_cache_complete && !timeline.snapshot_cache.is_empty() {
                 return;
             }
         }
         panic!("timeline snapshot cache did not finish");
+    }
+
+    #[test]
+    fn timeline_cache_reacts_to_inputs_without_reacting_to_scrubbing() {
+        let mut app = editor_app();
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.timeline.clock.duration_seconds = 1.0;
+            editor.timeline.preview.position = [0.5, 0.0, 0.5];
+        });
+        complete_snapshot_cache(&mut app);
+
+        let cached_sample_count = app
+            .world()
+            .resource::<EditorTimelineRes>()
+            .0
+            .snapshot_cache
+            .len();
+
+        app.world_mut()
+            .write_message(crate::events::timeline::SetTimelineTime(0.5));
+        app.tick_state();
+        let timeline = &app.world().resource::<EditorTimelineRes>().0;
+        assert!(timeline.snapshot_cache_complete);
+        assert_eq!(timeline.snapshot_cache.len(), cached_sample_count);
+
+        app.world_mut()
+            .write_message(crate::events::timeline::AddTap);
+        app.tick_state();
+        let timeline = &app.world().resource::<EditorTimelineRes>().0;
+        assert!(!timeline.snapshot_cache_complete);
+        assert!(timeline.snapshot_cache.len() < cached_sample_count);
+    }
+
+    #[test]
+    fn timeline_inputs_wait_for_block_drag_release() {
+        let mut app = editor_app();
+        let initial_object = test_block([0.0, 0.0, 0.0]);
+        let moved_object = test_block([4.0, 0.0, 0.0]);
+        replace_editor_objects(app.world_mut(), vec![initial_object.clone()]);
+        app.tick_state();
+
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .block_drag = Some(EditorBlockDrag {
+            start_mouse: [0.0, 0.0],
+            start_center_world: [0.0, 0.0, 0.0],
+            start_drag_world: [0.0, 0.0, 0.0],
+            start_blocks: Vec::new(),
+            start_cursor: [0.0, 0.0, 0.0],
+        });
+        replace_editor_objects(app.world_mut(), vec![moved_object.clone()]);
+        app.tick_state();
+
+        assert_eq!(
+            app.world()
+                .resource::<EditorSimulationInputsRes>()
+                .0
+                .objects,
+            vec![initial_object]
+        );
+
+        app.world_mut()
+            .resource_mut::<EditorRuntimeRes>()
+            .0
+            .interaction
+            .block_drag = None;
+        app.tick_state();
+        assert_eq!(
+            app.world()
+                .resource::<EditorSimulationInputsRes>()
+                .0
+                .objects,
+            vec![moved_object]
+        );
     }
 
     #[test]
@@ -446,7 +506,7 @@ mod tests {
             editor.config.snap_step = 1.0;
             editor.timeline.clock.duration_seconds = 2.0;
             editor.timeline.snapshot_cache_step_seconds = 1.0;
-            editor.timeline.snapshot_cache_revision = editor.timeline.simulation_revision;
+            editor.timeline.snapshot_cache_complete = true;
             editor.timeline.snapshot_cache = vec![
                 crate::state::editor_timeline::EditorTimelineSnapshot {
                     position: [1.44, 0.0, 1.5],

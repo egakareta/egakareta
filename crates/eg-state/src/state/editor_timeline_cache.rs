@@ -9,19 +9,26 @@
 
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::State;
+use eg_editor_domain::{TapDivisionPreviewRange, derive_timing_division_tap_previews};
 use eg_game::TimelineSimulationRuntime;
-use eg_types::{AppPhase, LevelObject, SpawnMetadata};
+use eg_types::AppPhase;
+#[cfg(test)]
+use eg_types::{LevelObject, SpawnMetadata};
 
 use super::{
-    EditorSpawnRes, EditorTimelineRes,
+    EditorRuntimeRes, EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes,
     editor_timeline::{EditorTimelineSnapshot, EditorTimelineState},
+    state_resources::EditorSimulationInputs,
 };
 
 const MAX_SNAPSHOT_SAMPLES_PER_FRAME: usize = 32;
 
-/// Keep the App-owned timeline cache current before render extraction.
-pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
-    phase: Res<State<AppPhase>>,
+pub(crate) fn sync_editor_simulation_inputs_system(
+    runtime: Res<EditorRuntimeRes>,
+    timeline: Res<EditorTimelineRes>,
+    spawn: Res<EditorSpawnRes>,
+    timing: Res<EditorTimingRes>,
     authored_objects: Query<
         (
             &super::editor_objects::EditorObjectOrder,
@@ -29,30 +36,83 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
         ),
         With<super::editor_objects::EditorAuthoredObject>,
     >,
-    spawn: Res<EditorSpawnRes>,
+    mut inputs: ResMut<EditorSimulationInputsRes>,
+) {
+    if runtime.0.interaction.block_drag.is_some() || runtime.0.interaction.gizmo_drag.is_some() {
+        return;
+    }
+
+    let objects = super::editor_objects::collect_editor_object_data(&authored_objects);
+    let next_inputs = EditorSimulationInputs {
+        spawn_position: spawn.0.position,
+        spawn_direction: spawn.0.direction,
+        objects,
+        tap_times: timeline.0.taps.tap_times.clone(),
+        duration_seconds: timeline.0.clock.duration_seconds,
+        snapshot_cache_step_seconds: timeline.0.snapshot_cache_step_seconds,
+        timing_points: timing.0.timing_points.clone(),
+    };
+
+    if inputs.0 != next_inputs {
+        inputs.0 = next_inputs;
+    }
+}
+
+pub(crate) fn reset_editor_timeline_derived_caches_system(
+    inputs: Res<EditorSimulationInputsRes>,
+    mut timeline: ResMut<EditorTimelineRes>,
+) {
+    if inputs.is_changed() {
+        timeline.0.clear_derived_caches();
+    }
+}
+
+pub(crate) fn rebuild_editor_timeline_tap_preview_cache_system(
+    inputs: Res<EditorSimulationInputsRes>,
+    mut timeline: ResMut<EditorTimelineRes>,
+) {
+    if !inputs.is_changed() {
+        return;
+    }
+
+    let duration_seconds = inputs.0.duration_seconds.max(0.0);
+    timeline.0.tap_division_preview_cache = derive_timing_division_tap_previews(
+        inputs.0.spawn_position,
+        inputs.0.spawn_direction,
+        &inputs.0.tap_times,
+        &inputs.0.timing_points,
+        duration_seconds,
+        TapDivisionPreviewRange {
+            start_seconds: 0.0,
+            end_seconds: duration_seconds,
+        },
+        &inputs.0.objects,
+    );
+}
+
+/// Keep the App-owned timeline cache current before render extraction.
+pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
+    phase: Res<State<AppPhase>>,
+    inputs: Res<EditorSimulationInputsRes>,
     mut timeline: ResMut<EditorTimelineRes>,
 ) {
     if *phase.get() != AppPhase::Editor {
         return;
     }
 
-    let objects = super::editor_objects::collect_editor_object_data(&authored_objects);
-    rebuild_editor_timeline_snapshot_cache_chunk(&mut timeline.0, &objects, &spawn.0);
+    rebuild_editor_timeline_snapshot_cache_chunk(&mut timeline.0, &inputs.0);
 }
 
 fn rebuild_editor_timeline_snapshot_cache_chunk(
     timeline: &mut EditorTimelineState,
-    objects: &[LevelObject],
-    spawn: &SpawnMetadata,
+    inputs: &EditorSimulationInputs,
 ) {
-    if timeline.snapshot_cache_revision == timeline.simulation_revision
-        && !timeline.snapshot_cache.is_empty()
-    {
+    if timeline.snapshot_cache_complete {
         return;
     }
 
-    let duration_seconds = timeline.clock.duration_seconds.max(0.0);
-    let step_seconds = timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
+    let duration_seconds = inputs.duration_seconds.max(0.0);
+    let step_seconds = inputs.snapshot_cache_step_seconds.max(1.0 / 480.0);
     let total_sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
     let mut runtime = timeline.snapshot_cache_runtime.take().unwrap_or_else(|| {
         timeline.snapshot_cache.clear();
@@ -60,10 +120,10 @@ fn rebuild_editor_timeline_snapshot_cache_chunk(
         timeline.trail_segment_start_cache.clear();
         timeline.snapshot_cache_next_index = 0;
         TimelineSimulationRuntime::new(
-            spawn.position,
-            spawn.direction,
-            objects,
-            &timeline.taps.tap_times,
+            inputs.spawn_position,
+            inputs.spawn_direction,
+            &inputs.objects,
+            &inputs.tap_times,
         )
     });
     let start_index = timeline.snapshot_cache_next_index.min(total_sample_count);
@@ -97,10 +157,9 @@ fn rebuild_editor_timeline_snapshot_cache_chunk(
 
     timeline.snapshot_cache_next_index = end_index;
     if end_index >= total_sample_count {
-        timeline.snapshot_cache_revision = timeline.simulation_revision;
+        timeline.snapshot_cache_complete = true;
         timeline.snapshot_cache_next_index = 0;
         timeline.scrub_runtime = None;
-        timeline.scrub_runtime_revision = 0;
     } else {
         timeline.snapshot_cache_runtime = Some(runtime);
     }
@@ -115,9 +174,7 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_if_needed(
     objects: &[LevelObject],
     spawn: &SpawnMetadata,
 ) {
-    if timeline.snapshot_cache_revision == timeline.simulation_revision
-        && !timeline.snapshot_cache.is_empty()
-    {
+    if timeline.snapshot_cache_complete {
         return;
     }
 
@@ -127,7 +184,7 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_if_needed(
     let total_sample_count = ((duration_seconds / step_seconds).ceil() as usize).saturating_add(1);
 
     let existing_count = timeline.snapshot_cache.len();
-    let resume_index = if existing_count > 0 && timeline.snapshot_cache_revision == 0 {
+    let resume_index = if existing_count > 0 {
         existing_count
     } else {
         timeline.snapshot_cache.clear();
@@ -177,9 +234,8 @@ pub(crate) fn rebuild_editor_timeline_snapshot_cache_if_needed(
         });
     }
 
-    timeline.snapshot_cache_revision = timeline.simulation_revision;
+    timeline.snapshot_cache_complete = true;
     timeline.scrub_runtime = None;
-    timeline.scrub_runtime_revision = 0;
 }
 
 fn append_trail_cache(

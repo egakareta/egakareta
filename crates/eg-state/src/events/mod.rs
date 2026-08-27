@@ -4565,7 +4565,7 @@ mod tests {
                     trail_point_count: 0,
                 })
                 .collect();
-            timeline.0.snapshot_cache_revision = timeline.0.simulation_revision;
+            timeline.0.snapshot_cache_complete = true;
         }
 
         world.write_message(SetTimelineTime(3.5));

@@ -27,9 +27,7 @@ use bevy_ecs::{
 };
 use bevy_state::prelude::State;
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
-use eg_editor_domain::{
-    TapDivisionPreviewRange, derive_timing_division_tap_previews, tap_time_is_timing_division,
-};
+use eg_editor_domain::tap_time_is_timing_division;
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
     BlockEffectInstance, GizmoParams, GizmoPart, PracticeCheckpointFlagInstance,
@@ -1075,21 +1073,11 @@ fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
 /// resources. The scheduled upload system writes the derived vertices to the
 /// GPU mesh.
 #[derive(SystemParam)]
-pub(crate) struct EditorTapIndicatorExtractionParams<'w, 's> {
+pub(crate) struct EditorTapIndicatorExtractionParams<'w> {
     phase: Res<'w, State<AppPhase>>,
     input: Res<'w, EditorInputRes>,
     runtime: Res<'w, EditorRuntimeRes>,
-    authored_objects: Query<
-        'w,
-        's,
-        (
-            &'static super::super::editor_objects::EditorObjectOrder,
-            &'static eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
-    spawn: Res<'w, EditorSpawnRes>,
-    timeline: ResMut<'w, EditorTimelineRes>,
+    timeline: Res<'w, EditorTimelineRes>,
     timing: Res<'w, EditorTimingRes>,
     tap_vertices: ResMut<'w, RenderEditorTapIndicatorVerticesRes>,
 }
@@ -1118,42 +1106,9 @@ pub(crate) fn extract_editor_tap_indicator_vertices_system(
     let selected_tap_index = params.timeline.0.taps.selected_index;
     let hovered_division = params.runtime.0.interaction.hovered_tap_division;
     let duration_seconds = params.timeline.0.clock.duration_seconds.max(0.0);
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
     let preview_indicators: Vec<([f32; 3], [f32; 4])> = if show_timing_division_previews {
-        let preview_window = (0.0, duration_seconds);
-        let timeline = &mut params.timeline.0;
-        let cache_is_current = timeline.tap_division_preview_cache_revision
-            == timeline.simulation_revision
-            && timeline.tap_division_preview_cache_timing_revision == params.timing.0.revision
-            && (timeline.tap_division_preview_cache_duration_seconds - duration_seconds).abs()
-                <= f32::EPSILON
-            && (timeline.tap_division_preview_cache_window.0 - preview_window.0).abs()
-                <= f32::EPSILON
-            && (timeline.tap_division_preview_cache_window.1 - preview_window.1).abs()
-                <= f32::EPSILON;
-
-        if !cache_is_current {
-            timeline.tap_division_preview_cache = derive_timing_division_tap_previews(
-                params.spawn.0.position,
-                params.spawn.0.direction,
-                &timeline.taps.tap_times,
-                &params.timing.0.timing_points,
-                duration_seconds,
-                TapDivisionPreviewRange {
-                    start_seconds: preview_window.0,
-                    end_seconds: preview_window.1,
-                },
-                &authored_objects,
-            );
-            timeline.tap_division_preview_cache_revision = timeline.simulation_revision;
-            timeline.tap_division_preview_cache_timing_revision = params.timing.0.revision;
-            timeline.tap_division_preview_cache_duration_seconds = duration_seconds;
-            timeline.tap_division_preview_cache_window = preview_window;
-        }
-
-        let previews = &timeline.tap_division_preview_cache;
-        let tap_positions = &timeline.taps.tap_indicator_positions;
+        let previews = &params.timeline.0.tap_division_preview_cache;
+        let tap_positions = &params.timeline.0.taps.tap_indicator_positions;
         let mut indicators: Vec<([f32; 3], [f32; 4])> = previews
             .iter()
             .copied()

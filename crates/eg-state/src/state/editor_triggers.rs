@@ -70,9 +70,7 @@ super::editor_context_methods! {
 
     fn timeline_position_for_camera_trigger_marker(&self, time_seconds: f32) -> Option<[f32; 3]> {
         let cache = &self.timeline.snapshot_cache;
-        if cache.is_empty()
-            || self.timeline.snapshot_cache_revision != self.timeline.simulation_revision
-        {
+        if cache.is_empty() || !self.timeline.snapshot_cache_complete {
             return None;
         }
 

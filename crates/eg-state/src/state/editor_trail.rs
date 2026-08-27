@@ -119,9 +119,7 @@ pub(crate) fn build_editor_scrub_trail_vertices(
     const POSITION_EPSILON: f32 = 0.001;
     const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
 
-    if timeline.snapshot_cache.is_empty()
-        || timeline.snapshot_cache_revision != timeline.simulation_revision
-    {
+    if timeline.snapshot_cache.is_empty() || !timeline.snapshot_cache_complete {
         return Vec::new();
     }
 
@@ -283,7 +281,7 @@ mod tests {
     fn fresh_cache_draws_grounded_scrub_trail() {
         let mut timeline = EditorTimelineState::default();
         timeline.clock.duration_seconds = 2.0;
-        timeline.simulation_revision = 1;
+        timeline.snapshot_cache_complete = false;
         let spawn = SpawnMetadata {
             position: [0.0, 0.0, 0.0],
             direction: Direction::Forward,

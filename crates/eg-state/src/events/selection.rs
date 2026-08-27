@@ -410,7 +410,6 @@ fn snap_selected_tap_to_grid(resources: &mut SelectionResources<'_, '_>) -> bool
     resources.timeline.0.tap_cursor_override = Some(snapped_position);
     resources.timeline.0.clock.time_seconds = next_time;
     resources.input.0.cursor = snapped_position;
-    resources.timeline.0.invalidate_samples();
     true
 }
 

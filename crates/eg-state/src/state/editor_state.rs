@@ -47,12 +47,7 @@ super::editor_context_methods! {
             indicator_position,
         );
         self.set_selected_tap_index(selected_index);
-        self.invalidate_samples();
         self.timeline.clock.time_seconds
-    }
-
-    pub fn invalidate_samples(&mut self) {
-        self.timeline.invalidate_samples();
     }
 
 }

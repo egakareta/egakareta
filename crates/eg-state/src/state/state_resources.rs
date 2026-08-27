@@ -26,7 +26,7 @@ use bevy_ecs::prelude::*;
 use eg_platform::services::AuthServiceMessage;
 use eg_types::{
     AppSettings, AuthSession, BasicLevelMetadata, Direction, LevelObject,
-    LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress, SpawnMetadata,
+    LevelPreviewCameraMetadata, MenuState, PlayerLevelProgress, SpawnMetadata, TimingPoint,
 };
 
 use crate::state::{
@@ -288,6 +288,20 @@ pub struct EditorTriggerRes(pub EditorTriggerState);
 /// `EditorTimelineState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorTimelineRes(pub EditorTimelineState);
+
+#[derive(Default, Clone, PartialEq)]
+pub struct EditorSimulationInputs {
+    pub spawn_position: [f32; 3],
+    pub spawn_direction: Direction,
+    pub objects: Vec<LevelObject>,
+    pub tap_times: Vec<f32>,
+    pub duration_seconds: f32,
+    pub snapshot_cache_step_seconds: f32,
+    pub timing_points: Vec<TimingPoint>,
+}
+
+#[derive(Resource, Default)]
+pub struct EditorSimulationInputsRes(pub EditorSimulationInputs);
 
 /// `EditorTimingState` mirrored as a resource.
 #[derive(Resource, Default)]

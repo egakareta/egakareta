@@ -159,7 +159,6 @@ fn apply_history_snapshot_to_resources(
 
     resources.timing.0.timing_points = snapshot.timing_points;
     resources.timing.0.mark_timing_points_changed();
-    resources.timeline.0.invalidate_samples();
 
     let trigger_count = objects
         .iter()

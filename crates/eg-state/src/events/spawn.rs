@@ -23,7 +23,7 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_editor_domain::toggle_spawn_direction;
 
-use crate::state::{EditorConfigRes, EditorInputRes, EditorSpawnRes, EditorTimelineRes};
+use crate::state::{EditorConfigRes, EditorInputRes, EditorSpawnRes};
 
 /// Set spawn position to the current editor cursor.
 #[derive(Message, Debug, Clone, Copy, Default)]
@@ -55,11 +55,9 @@ pub fn handle_set_spawn_here(
     mut events: MessageReader<SetSpawnHere>,
     mut spawn: ResMut<EditorSpawnRes>,
     input: Res<EditorInputRes>,
-    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for _ in events.read() {
         spawn.0.position = input.0.cursor;
-        timeline.0.invalidate_samples();
     }
 }
 
@@ -68,11 +66,9 @@ pub fn handle_set_spawn_here(
 pub fn handle_rotate_spawn_direction(
     mut events: MessageReader<RotateSpawnDirection>,
     mut spawn: ResMut<EditorSpawnRes>,
-    mut timeline: ResMut<EditorTimelineRes>,
 ) {
     for _ in events.read() {
         spawn.0.direction = toggle_spawn_direction(spawn.0.direction);
-        timeline.0.invalidate_samples();
     }
 }
 

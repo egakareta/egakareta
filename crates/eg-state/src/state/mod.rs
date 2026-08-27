@@ -137,10 +137,10 @@ pub use runtime::{BlockVisualEffect, EditorRuntimeState};
 pub use state_resources::{
     AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-    GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes,
-    MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
+    EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSimulationInputsRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
+    GameplayResetRes, GameplayResetSeed, LevelExportServiceRes, LevelImportSenderRes,
+    MenuPreviewObjectsRes, MenuStateRes, PerfFrameCopyRequest, PerfRes, SessionStateRes,
 };
 
 #[derive(Clone)]

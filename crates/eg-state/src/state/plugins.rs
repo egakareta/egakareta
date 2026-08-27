@@ -43,10 +43,11 @@ use super::{
     state_resources::{
         AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
         AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-        LevelExportServiceRes, LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest,
-        PerfRes, SessionStateRes,
+        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
+        EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+        EditorTriggerRes, FrameTimeRes, GameplayResetRes, LevelExportServiceRes,
+        LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest, PerfRes,
+        SessionStateRes,
     },
 };
 
@@ -94,6 +95,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorSpawnRes>()
             .init_resource::<EditorTriggerRes>()
             .init_resource::<EditorTimelineRes>()
+            .init_resource::<EditorSimulationInputsRes>()
             .init_resource::<EditorTimingRes>()
             .init_resource::<EditorRuntimeRes>()
             .init_resource::<EditorHistoryRes>()
@@ -266,6 +268,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorSpawnRes>();
     world.init_resource::<EditorTriggerRes>();
     world.init_resource::<EditorTimelineRes>();
+    world.init_resource::<EditorSimulationInputsRes>();
     world.init_resource::<EditorTimingRes>();
     world.init_resource::<EditorRuntimeRes>();
     world.init_resource::<EditorHistoryRes>();
@@ -351,8 +354,23 @@ pub fn register_state_schedule(world: &mut World) {
             .after(crate::events::CommandHandlerSet),
     );
     schedule.add_systems(
-        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_system
+        crate::state::editor_timeline_cache::sync_editor_simulation_inputs_system
             .after(crate::state::editor_playback::update_editor_timeline_playback_system),
+    );
+    schedule.add_systems(
+        crate::state::editor_timeline_cache::reset_editor_timeline_derived_caches_system
+            .after(crate::state::editor_timeline_cache::sync_editor_simulation_inputs_system),
+    );
+    schedule.add_systems(
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_tap_preview_cache_system
+            .after(
+                crate::state::editor_timeline_cache::reset_editor_timeline_derived_caches_system,
+            ),
+    );
+    schedule.add_systems(
+        crate::state::editor_timeline_cache::rebuild_editor_timeline_snapshot_cache_system.after(
+            crate::state::editor_timeline_cache::rebuild_editor_timeline_tap_preview_cache_system,
+        ),
     );
     schedule.add_systems(
         crate::state::menu_preview::refresh_menu_preview_system
