@@ -153,6 +153,8 @@ mod tests {
         parse_level_metadata_json, read_metadata_from_egz,
     };
 
+    const KNOWN_BUILTIN_LEVEL: &str = "Flowerfield";
+
     #[test]
     fn discovers_builtin_levels_from_assets_directory() {
         let names = builtin_level_names();
@@ -161,13 +163,13 @@ mod tests {
 
     #[test]
     fn loads_known_level_metadata() {
-        let metadata = load_builtin_level_metadata("Ambition");
+        let metadata = load_builtin_level_metadata(KNOWN_BUILTIN_LEVEL);
         assert!(metadata.is_some());
     }
 
     #[test]
     fn roundtrips_binary_metadata() {
-        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
+        let metadata = load_builtin_level_metadata(KNOWN_BUILTIN_LEVEL).expect("missing level");
         let encoded = encode_level_metadata_binary(&metadata).expect("serialize");
         let decoded = decode_level_metadata_binary(&encoded).expect("parse");
 
@@ -194,7 +196,7 @@ mod tests {
 
     #[test]
     fn builds_and_reads_egz_archive_without_audio() {
-        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
+        let metadata = load_builtin_level_metadata(KNOWN_BUILTIN_LEVEL).expect("missing level");
 
         let archive_bytes = build_egz_archive(&metadata, None).expect("build egz");
         let (decoded, audio) = read_metadata_from_egz(&archive_bytes).expect("read egz");
@@ -206,7 +208,7 @@ mod tests {
 
     #[test]
     fn builds_and_reads_egz_archive_with_audio() {
-        let metadata = load_builtin_level_metadata("Ambition").expect("missing level");
+        let metadata = load_builtin_level_metadata(KNOWN_BUILTIN_LEVEL).expect("missing level");
         let audio = vec![8_u8, 6, 7, 5, 3, 0, 9];
 
         let archive_bytes =
@@ -219,7 +221,7 @@ mod tests {
 
     #[test]
     fn reads_builtin_audio_and_handles_missing_audio() {
-        let bytes = get_builtin_audio("Ambition").expect("expected built-in audio bytes");
+        let bytes = get_builtin_audio(KNOWN_BUILTIN_LEVEL).expect("expected built-in audio bytes");
         assert!(!bytes.is_empty());
 
         assert!(get_builtin_audio("UnknownLevel").is_none());
