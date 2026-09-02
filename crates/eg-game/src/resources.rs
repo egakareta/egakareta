@@ -129,12 +129,6 @@ pub enum TurnInputKind {
 #[derive(Resource, Default, Clone, Copy)]
 pub struct FrameDelta(pub f32);
 
-/// Resource set when the player dies this frame. Drained by
-/// `eg-state` to play the death SFX. A `bool` (or unit) flag is enough — the
-/// audio system polls it once per frame and resets it.
-#[derive(Resource, Default)]
-pub struct DeathSfxFlag(pub bool);
-
 /// Constants used by the gameplay systems. Centralized as a resource so
 /// tests can override them.
 #[derive(Resource, Clone, Copy)]

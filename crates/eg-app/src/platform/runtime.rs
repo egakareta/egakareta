@@ -1546,7 +1546,7 @@ mod tests {
                     at_seconds: 1.0,
                     kind: eg_game::TurnInputKind::TurnRight,
                 });
-            world.resource_mut::<eg_game::DeathSfxFlag>().0 = true;
+            world.write_message(eg_game::PlayerDied);
         }
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1563,7 +1563,9 @@ mod tests {
                 .taps
                 .is_empty()
         );
-        assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
+        let messages = world.resource::<bevy_ecs::message::Messages<eg_game::PlayerDied>>();
+        let mut cursor = messages.get_cursor();
+        assert!(cursor.read(messages).next().is_none());
     }
 
     #[test]
@@ -1600,7 +1602,7 @@ mod tests {
                     gameplay: checkpoint,
                     trigger_base_objects: None,
                 });
-            world.resource_mut::<eg_game::DeathSfxFlag>().0 = true;
+            world.write_message(eg_game::PlayerDied);
         }
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
@@ -1609,7 +1611,9 @@ mod tests {
         assert!(!world.resource::<eg_game::GameClock>().game_over);
         assert_eq!(world.resource::<eg_game::GameClock>().elapsed_seconds, 3.5);
         assert!(world.resource::<SessionStateRes>().practice_mode_enabled);
-        assert!(!world.resource::<eg_game::DeathSfxFlag>().0);
+        let messages = world.resource::<bevy_ecs::message::Messages<eg_game::PlayerDied>>();
+        let mut cursor = messages.get_cursor();
+        assert!(cursor.read(messages).next().is_none());
     }
 
     #[test]

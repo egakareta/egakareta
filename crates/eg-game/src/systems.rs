@@ -21,11 +21,11 @@ use crate::{
         CachedBlockBehavior, Grounded, ObjectData, PlayerDirection, PlayerPosition, PlayerSpeed,
         Trail, VerticalVelocity,
     },
-    events::{ConsumedEventsBuffer, ConsumedObjectEvent},
+    events::{ConsumedObjectEvent, PlayerDied},
     physics::aabb_overlaps_cuboid_xz,
     resources::{
-        DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress,
-        SpatialIndex, TimedTurnInput, TurnInputKind,
+        FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress, SpatialIndex,
+        TimedTurnInput, TurnInputKind,
     },
 };
 
@@ -227,15 +227,15 @@ pub fn collision_query_system(
 // ---------------------------------------------------------------------------
 
 /// Apply collision outcomes: despawn consumed objects, update player speed +
-/// progress, push events to [`ConsumedEventsBuffer`].
+/// progress, and emit typed gameplay messages.
 #[allow(clippy::too_many_arguments)]
 pub fn consume_objects_system(
     mut commands: Commands,
     mut clock: ResMut<GameClock>,
     mut progress: ResMut<PlayerProgress>,
     mut outcome: ResMut<CollisionOutcome>,
-    mut death_sfx: ResMut<DeathSfxFlag>,
-    mut events: ResMut<ConsumedEventsBuffer>,
+    mut death_events: MessageWriter<PlayerDied>,
+    mut consumed_events: MessageWriter<ConsumedObjectEvent>,
     mut speed: Query<&mut PlayerSpeed>,
     objects: Query<(&ObjectData, &CachedBlockBehavior)>,
 ) {
@@ -253,7 +253,7 @@ pub fn consume_objects_system(
     }
     if killed {
         clock.game_over = true;
-        death_sfx.0 = true;
+        death_events.write(PlayerDied);
         outcome.clear();
         return;
     }
@@ -285,7 +285,7 @@ pub fn consume_objects_system(
         let object_snapshot = objects.get(entity).ok().map(|(obj, _)| obj.0.clone());
         commands.entity(entity).despawn();
         if emit_event && let Some(obj) = object_snapshot {
-            events.events.push(ConsumedObjectEvent { object: obj });
+            consumed_events.write(ConsumedObjectEvent { object: obj });
         }
     }
     outcome.clear();
@@ -301,7 +301,7 @@ pub fn ground_gravity_system(
     mut clock: ResMut<GameClock>,
     tuning: Res<GameRuntimeTuning>,
     spatial: Res<SpatialIndex>,
-    mut death_sfx: ResMut<DeathSfxFlag>,
+    mut death_events: MessageWriter<PlayerDied>,
     mut players: Query<(&mut PlayerPosition, &mut VerticalVelocity, &mut Grounded)>,
     objects: Query<&ObjectData>,
 ) {
@@ -381,7 +381,7 @@ pub fn ground_gravity_system(
 
     if pos.0[1] < tuning.death_y {
         clock.game_over = true;
-        death_sfx.0 = true;
+        death_events.write(PlayerDied);
     }
 }
 

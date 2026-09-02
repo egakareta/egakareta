@@ -906,8 +906,8 @@ mod tests {
         world.init_resource::<eg_game::PendingTurnInputs>();
         world.init_resource::<eg_game::PlayerProgress>();
         world.init_resource::<eg_game::FrameDelta>();
+        world.init_resource::<Messages<eg_game::PlayerDied>>();
 
-        world.init_resource::<eg_game::DeathSfxFlag>();
         world.init_resource::<eg_game::SpatialIndex>();
         world.init_resource::<eg_game::GameRuntimeTuning>();
         world.init_resource::<eg_game::LevelMeta>();

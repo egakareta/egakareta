@@ -5,6 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
+use bevy_ecs::message::Messages;
 use eg_block_geometry::hitbox_cuboids;
 use eg_types::{Direction, LevelObject};
 
@@ -14,7 +15,7 @@ use super::{
         ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
         Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
     },
-    events::ConsumedEventsBuffer,
+    events::{ConsumedObjectEvent, PlayerDied},
     physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains},
     resources::{
         FrameDelta, GameClock, PendingTurnInputs, PlayerProgress, SpatialIndex, TimedTurnInput,
@@ -356,11 +357,97 @@ fn gem_overlap_collects_and_tracks_progress() {
     let progress = *app.world().resource::<PlayerProgress>();
     assert_eq!(progress.gems_collected, 1);
     assert_eq!(progress.gems_max, 1);
-    let events = &app.world().resource::<ConsumedEventsBuffer>().events;
+    let events = app
+        .world_mut()
+        .resource_mut::<Messages<ConsumedObjectEvent>>()
+        .drain()
+        .collect::<Vec<_>>();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].object.block_id, "core/gem");
     assert!(object_snapshots(&mut app).is_empty());
     assert!(!app.world().resource::<GameClock>().game_over);
+}
+
+#[test]
+fn falling_below_death_height_emits_one_player_death_message() {
+    let mut app = app_with_objects([]);
+    spawn_player(
+        &mut app,
+        [0.0, -5.9, 0.0],
+        Direction::Forward,
+        BASE_PLAYER_SPEED,
+        false,
+    );
+    start_game(&mut app);
+
+    tick(&mut app, 0.1);
+
+    assert!(app.world().resource::<GameClock>().game_over);
+    let events = app
+        .world_mut()
+        .resource_mut::<Messages<PlayerDied>>()
+        .drain()
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 1);
+
+    tick(&mut app, 0.1);
+    assert!(
+        app.world_mut()
+            .resource_mut::<Messages<PlayerDied>>()
+            .drain()
+            .next()
+            .is_none()
+    );
+}
+
+#[test]
+fn hazard_collision_emits_player_death_message() {
+    let mut app = app_with_objects([LevelObject::new("core/spike_trap")]);
+    spawn_player(
+        &mut app,
+        [0.5, 0.0, 0.5],
+        Direction::Forward,
+        BASE_PLAYER_SPEED,
+        true,
+    );
+    start_game(&mut app);
+
+    tick(&mut app, 0.0);
+
+    assert!(app.world().resource::<GameClock>().game_over);
+    assert_eq!(
+        app.world_mut()
+            .resource_mut::<Messages<PlayerDied>>()
+            .drain()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn gameplay_messages_expire_after_two_app_updates() {
+    let mut app = TestApp::minimal();
+    app.world_mut().write_message(PlayerDied);
+    app.world_mut().write_message(ConsumedObjectEvent {
+        object: LevelObject::default(),
+    });
+
+    app.tick();
+    assert_eq!(app.world().resource::<Messages<PlayerDied>>().len(), 1);
+    assert_eq!(
+        app.world()
+            .resource::<Messages<ConsumedObjectEvent>>()
+            .len(),
+        1
+    );
+
+    app.tick();
+    assert!(app.world().resource::<Messages<PlayerDied>>().is_empty());
+    assert!(
+        app.world()
+            .resource::<Messages<ConsumedObjectEvent>>()
+            .is_empty()
+    );
 }
 
 #[test]

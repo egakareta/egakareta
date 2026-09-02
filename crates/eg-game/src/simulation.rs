@@ -14,7 +14,7 @@ use crate::{
         ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
         Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
     },
-    events::{ConsumedEventsBuffer, ConsumedObjectEvent},
+    events::ConsumedObjectEvent,
     physics::BASE_PLAYER_SPEED,
     plugin::{build_fixed_update_schedule, initialize_gameplay_world},
     resources::{FrameDelta, GameClock, LevelMeta, SpatialIndex},
@@ -291,7 +291,10 @@ impl TimelineSimulationRuntime {
 
     pub fn take_consumed_object_events(&mut self) -> Vec<ConsumedObjectEvent> {
         let world = &mut self.world;
-        std::mem::take(&mut world.resource_mut::<ConsumedEventsBuffer>().events)
+        world
+            .resource_mut::<bevy_ecs::message::Messages<ConsumedObjectEvent>>()
+            .drain()
+            .collect()
     }
 
     pub fn trail_segments(&self) -> &[Vec<[f32; 3]>] {

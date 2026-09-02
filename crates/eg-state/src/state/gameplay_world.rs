@@ -13,14 +13,14 @@
 //!
 //!
 
-use bevy_ecs::prelude::*;
+use bevy_ecs::{message::Messages, prelude::*};
 use bevy_state::prelude::State;
 use bevy_time::{Fixed, Time};
 use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
-    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, DeathSfxFlag, FrameDelta,
-    GameClock, LevelMeta, Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player,
-    PlayerBundle, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation,
+    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, FrameDelta, GameClock, LevelMeta,
+    Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player, PlayerBundle,
+    PlayerDied, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation,
     Size, SpatialIndex, SpawnDirection, SpawnPosition, TimedTurnInput, Trail, VerticalVelocity,
 };
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
@@ -58,7 +58,6 @@ pub(super) fn seed_app_gameplay_world(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: PlayerLevelProgress::default(),
             pending_turns: Vec::new(),
-            death_sfx_played: false,
         },
     );
 }
@@ -202,7 +201,6 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: eg_types::PlayerLevelProgress::default(),
             pending_turns: Vec::new(),
-            death_sfx_played: false,
         },
     );
 }
@@ -225,12 +223,11 @@ pub fn apply_game_over_transition_system(world: &mut World) {
         )
     };
 
-    let should_play_death_sfx = {
-        let mut death_sfx = world.resource_mut::<DeathSfxFlag>();
-        let pending = death_sfx.0;
-        death_sfx.0 = false;
-        pending
-    };
+    let should_play_death_sfx = world
+        .resource_mut::<Messages<PlayerDied>>()
+        .drain()
+        .next()
+        .is_some();
     if should_play_death_sfx {
         with_audio_backend(world, |audio| audio.play_sfx(DEAD_SFX));
     }
@@ -430,7 +427,6 @@ pub(crate) fn apply_pending_gameplay_reset_system(world: &mut World) {
             completion_hold_seconds: 0.0,
             progress: progress.unwrap_or_default(),
             pending_turns: Vec::new(),
-            death_sfx_played: false,
         },
     );
 }
@@ -451,7 +447,6 @@ struct GameplayWorldSeed {
     completion_hold_seconds: f32,
     progress: eg_types::PlayerLevelProgress,
     pending_turns: Vec<TimedTurnInput>,
-    death_sfx_played: bool,
 }
 
 fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
@@ -471,7 +466,6 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
         completion_hold_seconds,
         progress,
         pending_turns,
-        death_sfx_played,
     } = seed;
 
     let entities = {
@@ -538,8 +532,8 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
     }
     world.resource_mut::<PendingTurnInputs>().taps = pending_turns.into();
     world.resource_mut::<FrameDelta>().0 = 0.0;
+    world.resource_mut::<Messages<PlayerDied>>().clear();
 
-    world.resource_mut::<DeathSfxFlag>().0 = death_sfx_played;
     rebuild_spatial_index(world);
 }
 
@@ -562,6 +556,17 @@ fn rebuild_spatial_index(world: &mut World) {
 mod tests {
     use super::*;
     use crate::state::test_support::TestApp;
+
+    #[test]
+    fn gameplay_reset_clears_pending_player_death_messages() {
+        let mut app = TestApp::minimal();
+        app.world_mut().write_message(PlayerDied);
+        app.world_mut().resource_mut::<GameplayResetRes>().request();
+
+        apply_pending_gameplay_reset_system(app.world_mut());
+
+        assert!(app.world().resource::<Messages<PlayerDied>>().is_empty());
+    }
 
     #[test]
     fn gameplay_entity_replacement_keeps_initial_level_seed_immutable() {
@@ -588,7 +593,6 @@ mod tests {
                 completion_hold_seconds: 0.0,
                 progress: PlayerLevelProgress::default(),
                 pending_turns: Vec::new(),
-                death_sfx_played: false,
             },
         );
 

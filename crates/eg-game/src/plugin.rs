@@ -11,10 +11,10 @@ use bevy_app::{App, FixedUpdate, Plugin};
 use bevy_ecs::{prelude::*, schedule::Schedule};
 
 use crate::{
-    events::ConsumedEventsBuffer,
+    events::{ConsumedObjectEvent, PlayerDied},
     resources::{
-        DeathSfxFlag, FrameDelta, GameClock, GameRuntimeTuning, LevelMeta, PendingTurnInputs,
-        PlayerProgress, SpatialIndex,
+        FrameDelta, GameClock, GameRuntimeTuning, LevelMeta, PendingTurnInputs, PlayerProgress,
+        SpatialIndex,
     },
     systems::{self, CollisionOutcome, GameplaySet},
 };
@@ -24,6 +24,8 @@ pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
+        app.add_message::<ConsumedObjectEvent>()
+            .add_message::<PlayerDied>();
         initialize_gameplay_world(app.world_mut());
         app.add_systems(
             FixedUpdate,
@@ -63,10 +65,10 @@ pub fn initialize_gameplay_world(world: &mut World) {
     world.init_resource::<PendingTurnInputs>();
 
     world.init_resource::<FrameDelta>();
-    world.init_resource::<DeathSfxFlag>();
     world.init_resource::<GameRuntimeTuning>();
     world.init_resource::<CollisionOutcome>();
-    world.init_resource::<ConsumedEventsBuffer>();
+    world.init_resource::<bevy_ecs::message::Messages<ConsumedObjectEvent>>();
+    world.init_resource::<bevy_ecs::message::Messages<PlayerDied>>();
 }
 
 /// Build the same standard Bevy fixed-time schedule for an isolated gameplay

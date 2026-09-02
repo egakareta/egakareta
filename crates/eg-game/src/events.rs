@@ -5,16 +5,12 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Plain Rust event types emitted by the gameplay systems.
+//! Buffered messages emitted by the gameplay systems.
 //!
-//! Bevy 0.19's `Event` trait is for fire-and-forget observer triggers; for
-//! buffered per-frame events we use a regular struct + a `Resource` buffer
-//! ([`ConsumedEventsBuffer`]). App-world consumers drain that buffer
-//! when they need the consumed object data; gameplay systems own no
-//! duplicate state mirror.
-//!
-//! REFACTOR POINT(full-bevy): [`ConsumedEventsBuffer`] resource becomes a
-//! `Message<ConsumedObjectEvent>` in the full-Bevy migration.
+//! Bevy 0.19's `Message` API gives gameplay a typed, pull-based output channel
+//! without adding another manually managed resource buffer. App-world
+//! consumers drain these messages at the boundary where they handle the
+//! gameplay result.
 
 use bevy_ecs::prelude::*;
 use eg_types::LevelObject;
@@ -22,14 +18,11 @@ use eg_types::LevelObject;
 /// Emitted when an object entity is consumed (collectible or
 /// portal-with-flag). Consumed by `eg-state` to play block-effect SFX /
 /// particles.
-#[derive(Clone, Debug)]
+#[derive(Message, Clone, Debug)]
 pub struct ConsumedObjectEvent {
     pub object: LevelObject,
 }
 
-/// Per-frame buffer of [`ConsumedObjectEvent`]s. Drained by the consuming
-/// App-world schedule each tick.
-#[derive(Resource, Default)]
-pub struct ConsumedEventsBuffer {
-    pub events: Vec<ConsumedObjectEvent>,
-}
+/// Emitted once when the player enters the game-over state.
+#[derive(Message, Clone, Copy, Debug, Default)]
+pub struct PlayerDied;
