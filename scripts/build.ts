@@ -16,6 +16,9 @@ const WASM_ATOMICS_WARNING_LINES = [
     "  |",
     "  = note: this feature is not stably supported; its behavior can change in the future",
 ];
+const WASM_FILENAME = "egakareta_lib_bg.wasm";
+const WASM_PART_MANIFEST_FILENAME = `${WASM_FILENAME}.parts.json`;
+const WASM_PART_SIZE = 20 * 1024 * 1024;
 
 const rootDir = path.resolve(
     path.dirname(url.fileURLToPath(import.meta.url)),
@@ -224,25 +227,78 @@ async function createDist() {
         fs.writeFileSync(wasmBindgenJsPath, wasmBindgenJs);
     }
 
-    // Add _headers file to dist
-    let wasmSize = 0;
-    const wasmPath = path.join(distPath, "pkg", "egakareta_lib_bg.wasm");
-    if (fs.existsSync(wasmPath)) {
-        wasmSize = fs.statSync(wasmPath).size;
-    } else {
-        console.warn(`Missing WASM artifact at ${wasmPath}`);
+    const wasmPath = path.join(distPath, "pkg", WASM_FILENAME);
+    if (!fs.existsSync(wasmPath)) {
+        throw new Error(`Missing WASM artifact at ${wasmPath}`);
     }
+    splitWasmForStaticHosting(wasmPath);
 
+    // Add _headers file to dist
     const headersContent = `
 /*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Resource-Policy: same-site
-
-/pkg/egakareta_lib_bg.wasm
-  x-wasm-content-length: ${wasmSize}
 `;
     fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
 
     console.log(`created dist in ${Date.now() - start}ms`);
+}
+
+function splitWasmForStaticHosting(wasmPath: string) {
+    const wasmSize = fs.statSync(wasmPath).size;
+    if (wasmSize === 0) {
+        throw new Error(`Cannot split empty WASM artifact at ${wasmPath}`);
+    }
+
+    const outputDir = path.dirname(wasmPath);
+    const wasmStem = path.basename(wasmPath, ".wasm");
+    const wasmFile = fs.openSync(wasmPath, "r");
+    const parts: { file: string; size: number }[] = [];
+
+    try {
+        for (
+            let offset = 0, index = 0;
+            offset < wasmSize;
+            offset += WASM_PART_SIZE, index += 1
+        ) {
+            const partSize = Math.min(WASM_PART_SIZE, wasmSize - offset);
+            const partBytes = Buffer.allocUnsafe(partSize);
+            let bytesRead = 0;
+
+            while (bytesRead < partSize) {
+                const read = fs.readSync(
+                    wasmFile,
+                    partBytes,
+                    bytesRead,
+                    partSize - bytesRead,
+                    offset + bytesRead,
+                );
+                if (read === 0) {
+                    throw new Error(
+                        `Unexpected end of WASM artifact at ${offset}`,
+                    );
+                }
+                bytesRead += read;
+            }
+
+            const partFilename = `${wasmStem}.part-${index
+                .toString()
+                .padStart(3, "0")}.wasm`;
+            fs.writeFileSync(path.join(outputDir, partFilename), partBytes);
+            parts.push({ file: partFilename, size: partSize });
+        }
+    } finally {
+        fs.closeSync(wasmFile);
+    }
+
+    fs.writeFileSync(
+        path.join(outputDir, WASM_PART_MANIFEST_FILENAME),
+        `${JSON.stringify({ version: 1, totalSize: wasmSize, parts }, null, 2)}\n`,
+    );
+    fs.unlinkSync(wasmPath);
+
+    console.log(
+        `split ${WASM_FILENAME} (${wasmSize} bytes) into ${parts.length} static assets`,
+    );
 }

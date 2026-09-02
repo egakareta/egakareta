@@ -178,87 +178,151 @@ See LICENSE and COMMERCIAL.md for details.
 
             let run_game_fn = null;
 
-            const fetchMultipleWithProgress = async (urls) => {
-                const responses = await Promise.all(
-                    urls.map((url) => fetch(url)),
-                );
-                let total = 0;
+            const fetchWasmWithProgress = async (manifestUrl) => {
+                const manifestResponse = await fetch(manifestUrl);
+                if (!manifestResponse.ok) {
+                    throw new Error(
+                        `failed to fetch WASM manifest: ${manifestResponse.status}`,
+                    );
+                }
+
+                const manifest = await manifestResponse.json();
+                if (
+                    manifest.version !== 1 ||
+                    !Number.isSafeInteger(manifest.totalSize) ||
+                    manifest.totalSize <= 0 ||
+                    !Array.isArray(manifest.parts) ||
+                    manifest.parts.length === 0
+                ) {
+                    throw new Error("invalid WASM parts manifest");
+                }
+
+                let declaredSize = 0;
+                for (const part of manifest.parts) {
+                    if (
+                        typeof part.file !== "string" ||
+                        part.file.length === 0 ||
+                        !Number.isSafeInteger(part.size) ||
+                        part.size <= 0
+                    ) {
+                        throw new Error("invalid WASM part entry");
+                    }
+                    declaredSize += part.size;
+                }
+                if (declaredSize !== manifest.totalSize) {
+                    throw new Error(
+                        "WASM part sizes do not match manifest total",
+                    );
+                }
+
+                const total = manifest.totalSize;
                 let loaded = 0;
                 const startTime = performance.now();
+                let partIndex = 0;
+                let partReader = null;
+                let partLoaded = 0;
 
-                responses.forEach((res) => {
-                    const contentLength =
-                        res.headers.get("x-wasm-content-length") ||
-                        res.headers.get("Content-Length");
-                    const parsedLength = Number(contentLength);
-                    if (Number.isFinite(parsedLength) && parsedLength > 0) {
-                        total += parsedLength;
-                    }
-                });
-
-                const streams = responses.map((res) => {
-                    const stream = new ReadableStream({
-                        async start(controller) {
-                            const reader = res.body.getReader();
+                const stream = new ReadableStream({
+                    async pull(controller) {
+                        try {
                             while (true) {
-                                const { done, value } = await reader.read();
-                                if (done) break;
-                                loaded += value.byteLength;
-                                if (total) {
-                                    const percent = Math.min(
-                                        100,
-                                        Math.round((loaded / total) * 100),
-                                    );
-                                    progressBar.style.width = `${percent}%`;
-
-                                    const loadedMB = (
-                                        loaded /
-                                        (1024 * 1024)
-                                    ).toFixed(1);
-                                    const totalMB = (
-                                        total /
-                                        (1024 * 1024)
-                                    ).toFixed(1);
-                                    const elapsed =
-                                        (performance.now() - startTime) / 1000;
-                                    let timeText = "";
-                                    if (elapsed > 0.5 && loaded > 0) {
-                                        const speed = loaded / elapsed;
-                                        const remaining = Math.max(
-                                            0,
-                                            (total - loaded) / speed,
-                                        );
-                                        if (
-                                            Number.isFinite(remaining) &&
-                                            remaining > 0
-                                        ) {
-                                            timeText = ` (${Math.ceil(remaining)}s left)`;
+                                if (partReader === null) {
+                                    if (partIndex === manifest.parts.length) {
+                                        if (loaded !== total) {
+                                            throw new Error(
+                                                "downloaded WASM size does not match manifest",
+                                            );
                                         }
+                                        controller.close();
+                                        return;
                                     }
-                                    loadingText.textContent = `loading... ${loadedMB}/${totalMB} MB${timeText}`;
-                                } else {
-                                    const loadedMB = (
-                                        loaded /
-                                        (1024 * 1024)
-                                    ).toFixed(1);
-                                    loadingText.textContent = `loading... ${loadedMB} MB`;
-                                }
-                                controller.enqueue(value);
-                            }
-                            controller.close();
-                        },
-                    });
 
-                    return new Response(stream, {
-                        headers: {
-                            "content-type":
-                                res.headers.get("content-type") ||
-                                "application/octet-stream",
-                        },
-                    });
+                                    const part = manifest.parts[partIndex];
+                                    const partUrl = new URL(
+                                        part.file,
+                                        manifestResponse.url,
+                                    );
+                                    const response = await fetch(partUrl);
+                                    if (!response.ok || !response.body) {
+                                        throw new Error(
+                                            `failed to fetch WASM part ${partIndex}: ${response.status}`,
+                                        );
+                                    }
+                                    partReader = response.body.getReader();
+                                    partLoaded = 0;
+                                }
+
+                                const { done, value } = await partReader.read();
+                                if (done) {
+                                    const expectedSize =
+                                        manifest.parts[partIndex].size;
+                                    if (partLoaded !== expectedSize) {
+                                        throw new Error(
+                                            `WASM part ${partIndex} size does not match manifest`,
+                                        );
+                                    }
+                                    partReader = null;
+                                    partIndex += 1;
+                                    continue;
+                                }
+
+                                partLoaded += value.byteLength;
+                                loaded += value.byteLength;
+                                if (
+                                    partLoaded >
+                                        manifest.parts[partIndex].size ||
+                                    loaded > total
+                                ) {
+                                    throw new Error(
+                                        "downloaded WASM data exceeds manifest size",
+                                    );
+                                }
+
+                                const percent = Math.min(
+                                    100,
+                                    Math.round((loaded / total) * 100),
+                                );
+                                progressBar.style.width = `${percent}%`;
+
+                                const loadedMB = (
+                                    loaded /
+                                    (1024 * 1024)
+                                ).toFixed(1);
+                                const totalMB = (total / (1024 * 1024)).toFixed(
+                                    1,
+                                );
+                                const elapsed =
+                                    (performance.now() - startTime) / 1000;
+                                let timeText = "";
+                                if (elapsed > 0.5 && loaded > 0) {
+                                    const speed = loaded / elapsed;
+                                    const remaining = Math.max(
+                                        0,
+                                        (total - loaded) / speed,
+                                    );
+                                    if (
+                                        Number.isFinite(remaining) &&
+                                        remaining > 0
+                                    ) {
+                                        timeText = ` (${Math.ceil(remaining)}s left)`;
+                                    }
+                                }
+                                loadingText.textContent = `loading... ${loadedMB}/${totalMB} MB${timeText}`;
+                                controller.enqueue(value);
+                                return;
+                            }
+                        } catch (error) {
+                            controller.error(error);
+                        }
+                    },
+                    cancel(reason) {
+                        return partReader?.cancel(reason);
+                    },
                 });
 
-                return streams;
+                return new Response(stream, {
+                    headers: { "content-type": "application/wasm" },
+                });
             };
 
             const init_wasm = async () => {
@@ -272,9 +336,9 @@ See LICENSE and COMMERCIAL.md for details.
                     run_game_fn = run_game;
 
                     console.log("fetching wasm");
-                    const [wasmResponse] = await fetchMultipleWithProgress([
-                        "./pkg/egakareta_lib_bg.wasm",
-                    ]);
+                    const wasmResponse = await fetchWasmWithProgress(
+                        "./pkg/egakareta_lib_bg.wasm.parts.json",
+                    );
 
                     // Initialize WebAssembly
                     console.log("initializing wasm");
