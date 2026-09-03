@@ -240,10 +240,21 @@ pub struct RenderEditorHoverOverlayRes {
     pub outline_vertices: Vec<eg_mesh::Vertex>,
 }
 
-/// Extracted editor transform-trigger marker vertices consumed by the custom
+/// One keyed procedural transform-trigger marker update.
+#[derive(Clone)]
+pub struct EditorTransformTriggerMarkerUpdate {
+    pub marker_id: String,
+    pub geometry: eg_mesh::MeshGeometry,
+}
+
+/// Incremental editor transform-trigger marker updates consumed by the custom
 /// renderer.
 #[derive(Resource, Default, Clone)]
-pub struct RenderEditorTransformTriggerMarkerVerticesRes(pub Vec<eg_mesh::Vertex>);
+pub struct RenderEditorTransformTriggerMarkerVerticesRes {
+    pub generation: u64,
+    pub updates: Vec<EditorTransformTriggerMarkerUpdate>,
+    pub removals: Vec<String>,
+}
 
 /// Extracted block-effect vertices consumed by the custom renderer.
 #[derive(Resource, Default, Clone)]
@@ -268,11 +279,26 @@ pub struct RenderMenuPreviewBlockMeshesRes {
     pub chunked: Option<eg_mesh::ChunkedBlockMesh>,
 }
 
-/// CPU editor block meshes extracted from App-owned editor resources.
+/// CPU editor block instances extracted from App-owned editor resources.
+///
+/// The extraction system emits only changed object records and removed IDs.
+/// The render slot owns the retained GPU batches; a separate CPU cache keeps
+/// the complete instance state available for GPU-loss recovery.
+#[derive(Clone)]
+pub struct EditorInstanceUpdate {
+    pub object_id: String,
+    pub batch_key: eg_render::InstanceBatchKey,
+    pub template: eg_mesh::MeshGeometry,
+    pub instance: eg_mesh::BlockInstance,
+    pub aabb: eg_mesh::ChunkAabb,
+}
+
 #[derive(Resource, Default, Clone)]
 pub struct RenderEditorBlockMeshesRes {
-    pub static_mesh: eg_mesh::ChunkedBlockMesh,
-    pub selected_geometry: eg_mesh::MeshGeometry,
+    pub generation: u64,
+    pub updates: Vec<EditorInstanceUpdate>,
+    pub removals: Vec<String>,
+    pub template_invalidations: Vec<String>,
 }
 
 /// Extracted editor spawn-marker vertices consumed by the custom renderer.

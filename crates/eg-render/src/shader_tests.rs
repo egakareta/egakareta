@@ -118,3 +118,18 @@ fn fragment_shader_discards_zero_alpha_fragments() {
         "fs_main must contain a discard statement to prevent zero-alpha fragments from writing to the depth buffer"
     );
 }
+
+#[test]
+fn instanced_camera_outline_anchor_is_transformed_to_world_space() {
+    let instanced_start = SHADER_WGSL
+        .find("fn vs_instanced")
+        .expect("shader must contain the instanced vertex entry point");
+    let regular_start = SHADER_WGSL
+        .find("fn vs_main")
+        .expect("shader must contain the regular vertex entry point");
+    let vertex_source = &SHADER_WGSL[instanced_start..regular_start];
+
+    assert!(vertex_source.contains("outline_anchor_local"));
+    assert!(vertex_source.contains("outline_anchor_world"));
+    assert!(vertex_source.contains("dot(instance.model_row_0, outline_anchor_local)"));
+}

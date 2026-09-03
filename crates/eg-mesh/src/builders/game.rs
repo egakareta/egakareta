@@ -35,6 +35,7 @@ pub struct PracticeCheckpointFlagInstance {
     pub is_latest: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct TransformTriggerMarker {
     pub source_position: Option<[f32; 3]>,
     pub source_size: Option<[f32; 3]>,

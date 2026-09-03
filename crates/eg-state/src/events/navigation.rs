@@ -189,7 +189,17 @@ pub struct TurnRightResources<'w, 's> {
         (&'static EditorObjectOrder, &'static ObjectData),
         With<EditorAuthoredObject>,
     >,
-    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    existing_objects: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static ObjectId,
+            &'static ObjectData,
+            &'static EditorObjectOrder,
+        ),
+        With<EditorAuthoredObject>,
+    >,
     commands: Commands<'w, 's>,
     objects: Local<'s, EditorObjectScratch>,
     input: ResMut<'w, EditorInputRes>,

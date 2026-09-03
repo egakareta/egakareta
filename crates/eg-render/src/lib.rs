@@ -15,9 +15,19 @@ mod mesh_slot_tests;
 #[cfg(test)]
 mod shader_tests;
 
-use eg_mesh::{ChunkAabb, ChunkedBlockMesh, MeshGeometry, RenderChunkKey, Vertex};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::{Hash, Hasher},
+    ops::Range,
+    sync::Arc,
+};
+
+use eg_mesh::{BlockInstance, ChunkAabb, ChunkedBlockMesh, MeshGeometry, RenderChunkKey, Vertex};
 use eg_types::{AppPhase, EditorMode, GridUniform, PhysicalSize};
 use wgpu::util::DeviceExt;
+
+const RETAINED_INSTANCE_BUFFER_LABEL: &str = "Retained Instance Buffer";
+const RETAINED_TEMPLATE_BUFFER_LABEL: &str = "Retained Template Buffer";
 
 pub const SHADER_WGSL: &str = include_str!("shader.wgsl");
 pub const GRID_WGSL: &str = include_str!("grid.wgsl");
@@ -194,6 +204,12 @@ pub fn draw_instanced_blocks(render_pass: &mut wgpu::RenderPass<'_>, slot: &Inst
         render_pass.set_vertex_buffer(1, batch.instance_buffer.slice(..));
         render_pass.draw(0..batch.template_vertex_count, 0..batch.instance_count);
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct InstanceBatchKey {
+    pub chunk: Option<RenderChunkKey>,
+    pub block_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -423,6 +439,63 @@ impl MeshSlot {
         }
     }
 
+    /// Update geometry while retaining a compatible streaming allocation.
+    ///
+    /// This is useful for small procedural editor sidecars, such as trigger
+    /// visuals. The buffer is recreated only when the representation or its
+    /// capacity is no longer compatible.
+    pub fn update_with_streaming_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        geometry: &MeshGeometry,
+        spare_capacity_vertices: u32,
+        spare_capacity_indices: u32,
+    ) {
+        if geometry.is_empty() {
+            self.clear();
+            return;
+        }
+
+        let can_reuse = match (&*self, geometry.indices.as_ref()) {
+            (
+                Self::Streaming {
+                    capacity_vertices, ..
+                },
+                None,
+            ) => geometry.vertices.len() <= *capacity_vertices as usize,
+            (
+                Self::IndexedStreaming {
+                    capacity_vertices,
+                    capacity_indices,
+                    ..
+                },
+                Some(indices),
+            ) => {
+                geometry.vertices.len() <= *capacity_vertices as usize
+                    && indices.len() <= *capacity_indices as usize
+            }
+            _ => false,
+        };
+
+        if can_reuse {
+            self.clear();
+            if self.append_streaming_geometry(queue, 0, 0, geometry) {
+                return;
+            }
+        }
+
+        self.replace_with_streaming_geometry(
+            device,
+            queue,
+            label,
+            geometry,
+            spare_capacity_vertices,
+            spare_capacity_indices,
+        );
+    }
+
     /// Replace dynamic vertex data while retaining a reusable GPU buffer.
     ///
     /// This is for presentation meshes that change often (trails, gizmos,
@@ -612,14 +685,90 @@ impl MeshSlot {
     }
 }
 
+/// Retained collection of keyed, procedural vertex sidecars.
+///
+/// Each key owns its own streaming allocation, so a changed sidecar updates
+/// only its buffer and an unchanged sidecar is not rewritten.
+#[derive(Default)]
+pub struct RetainedMeshSlot {
+    batches: BTreeMap<String, MeshSlot>,
+}
+
+impl RetainedMeshSlot {
+    pub fn destroy(&mut self) {
+        for slot in self.batches.values_mut() {
+            slot.destroy();
+        }
+        self.batches.clear();
+    }
+
+    pub fn clear(&mut self) {
+        self.destroy();
+    }
+
+    pub fn remove(&mut self, key: &str) -> bool {
+        let Some(mut slot) = self.batches.remove(key) else {
+            return false;
+        };
+        slot.destroy();
+        true
+    }
+
+    pub fn update_with_streaming_geometry(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        key: &str,
+        geometry: &MeshGeometry,
+    ) {
+        if geometry.is_empty() {
+            self.remove(key);
+            return;
+        }
+        self.batches
+            .entry(key.to_string())
+            .or_default()
+            .update_with_streaming_geometry(
+                device,
+                queue,
+                label,
+                geometry,
+                geometry.vertex_count().min(u32::MAX as usize) as u32,
+                geometry.draw_count().min(u32::MAX as usize) as u32,
+            );
+    }
+
+    pub fn draw_batches(&self) -> impl Iterator<Item = &MeshSlot> {
+        self.batches.values()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.batches.values().all(|slot| slot.draw_data().is_none())
+    }
+
+    #[cfg(test)]
+    fn batch(&self, key: &str) -> Option<&MeshSlot> {
+        self.batches.get(key)
+    }
+}
+
 /// A single instanced batch on the GPU: one template vertex buffer shared by
 /// `instance_count` per-instance records.
 pub struct InstancedBatch {
     pub block_id: String,
-    pub template_buffer: wgpu::Buffer,
+    pub chunk_key: Option<RenderChunkKey>,
+    pub aabb: Option<ChunkAabb>,
+    pub template_buffer: Arc<wgpu::Buffer>,
     pub template_vertex_count: u32,
+    template_signature: u64,
     pub instance_buffer: wgpu::Buffer,
     pub instance_count: u32,
+    capacity_instances: u32,
+    object_ids: Vec<String>,
+    instances: Vec<BlockInstance>,
+    object_aabbs: Vec<Option<ChunkAabb>>,
+    dirty_ranges: Vec<Range<usize>>,
 }
 
 pub struct RenderedBlockChunk {
@@ -702,14 +851,32 @@ impl ChunkedBlockMeshSlot {
 #[derive(Default)]
 pub struct InstancedMeshSlot {
     batches: Vec<InstancedBatch>,
+    batch_indices: HashMap<InstanceBatchKey, usize>,
+    object_locations: HashMap<String, InstanceLocation>,
+    templates: HashMap<String, CachedTemplate>,
+}
+
+struct CachedTemplate {
+    buffer: Arc<wgpu::Buffer>,
+    signature: u64,
+}
+
+#[derive(Clone, Copy)]
+struct InstanceLocation {
+    batch_index: usize,
+    slot: usize,
 }
 
 impl InstancedMeshSlot {
     pub fn destroy(&mut self) {
         for batch in self.batches.drain(..) {
-            batch.template_buffer.destroy();
             batch.instance_buffer.destroy();
         }
+        for template in self.templates.drain().map(|(_, template)| template.buffer) {
+            template.destroy();
+        }
+        self.batch_indices.clear();
+        self.object_locations.clear();
     }
 
     pub fn clear(&mut self) {
@@ -748,25 +915,398 @@ impl InstancedMeshSlot {
             if batch.instances.is_empty() || batch.template.vertices.is_empty() {
                 continue;
             }
-            let template_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(label),
-                contents: bytemuck::cast_slice(&batch.template.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let (template_buffer, template_signature) =
+                self.template_buffer(device, label, &batch.block_id, &batch.template);
             let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
                 contents: bytemuck::cast_slice(&batch.instances),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
             self.batches.push(InstancedBatch {
                 block_id: batch.block_id.clone(),
+                chunk_key: batch.chunk_key,
+                aabb: batch.aabb,
                 template_buffer,
                 template_vertex_count: batch.template.vertices.len() as u32,
+                template_signature,
                 instance_buffer,
                 instance_count: batch.instances.len() as u32,
+                capacity_instances: batch.instances.len() as u32,
+                object_ids: batch.object_ids.clone(),
+                instances: batch.instances.clone(),
+                object_aabbs: batch.object_aabbs.clone(),
+                dirty_ranges: Vec::new(),
             });
         }
+        self.rebuild_indices();
     }
+
+    /// Apply an instanced build result without destroying unchanged batches.
+    ///
+    /// Batch identity is the block ID plus optional spatial chunk. Existing
+    /// instance buffers are retained when their capacity is sufficient;
+    /// changed records are uploaded in place and only growth, new block types,
+    /// or removed batches allocate or destroy GPU resources.
+    pub fn update_retained_batches(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        result: &eg_mesh::BlockInstanceBuildResult,
+    ) {
+        puffin::profile_scope!("InstancedMeshSlotUpdateRetained");
+        let desired_ids = result
+            .batches
+            .iter()
+            .flat_map(|batch| batch.object_ids.iter())
+            .filter(|object_id| !object_id.is_empty())
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        for object_id in self
+            .object_locations
+            .keys()
+            .filter(|object_id| !desired_ids.contains(*object_id))
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            self.remove_instance(&object_id);
+        }
+
+        for source in &result.batches {
+            if source.instances.is_empty() || source.template.vertices.is_empty() {
+                continue;
+            }
+            let key = InstanceBatchKey {
+                chunk: source.chunk_key,
+                block_id: source.block_id.clone(),
+            };
+            for (index, instance) in source.instances.iter().enumerate() {
+                let Some(object_id) = source.object_ids.get(index).filter(|id| !id.is_empty())
+                else {
+                    continue;
+                };
+                let object_aabb = source.object_aabbs.get(index).copied().flatten();
+                self.upsert_instance(
+                    device,
+                    object_id,
+                    &key,
+                    &source.template,
+                    *instance,
+                    object_aabb,
+                );
+            }
+        }
+        self.sync_dirty_ranges(queue);
+    }
+
+    pub fn upsert_instance(
+        &mut self,
+        device: &wgpu::Device,
+        object_id: &str,
+        batch_key: &InstanceBatchKey,
+        template: &MeshGeometry,
+        instance: BlockInstance,
+        object_aabb: Option<ChunkAabb>,
+    ) {
+        let template_signature = mesh_geometry_signature(template);
+        if let Some(location) = self.object_locations.get(object_id).copied()
+            && self.batch_key(location.batch_index) != *batch_key
+        {
+            self.remove_instance(object_id);
+        }
+
+        if let Some(location) = self.object_locations.get(object_id).copied() {
+            let template_update =
+                if self.batches[location.batch_index].template_signature != template_signature {
+                    Some(self.template_buffer(
+                        device,
+                        RETAINED_TEMPLATE_BUFFER_LABEL,
+                        &batch_key.block_id,
+                        template,
+                    ))
+                } else {
+                    None
+                };
+            let batch = &mut self.batches[location.batch_index];
+            if let Some((template_buffer, template_signature)) = template_update {
+                batch.template_buffer = template_buffer;
+                batch.template_vertex_count = template.vertices.len() as u32;
+                batch.template_signature = template_signature;
+            }
+            if batch.instances[location.slot] != instance {
+                batch.instances[location.slot] = instance;
+                mark_dirty(batch, location.slot);
+            }
+            batch.object_aabbs[location.slot] = object_aabb;
+            recompute_batch_aabb(batch);
+            return;
+        }
+
+        let batch_index = if let Some(index) = self.batch_indices.get(batch_key).copied() {
+            index
+        } else {
+            let (template_buffer, template_signature) = self.template_buffer(
+                device,
+                RETAINED_TEMPLATE_BUFFER_LABEL,
+                &batch_key.block_id,
+                template,
+            );
+            let instance_buffer = create_instance_buffer(device, RETAINED_INSTANCE_BUFFER_LABEL, 1);
+            let index = self.batches.len();
+            self.batches.push(InstancedBatch {
+                block_id: batch_key.block_id.clone(),
+                chunk_key: batch_key.chunk,
+                aabb: object_aabb,
+                template_buffer,
+                template_vertex_count: template.vertices.len() as u32,
+                template_signature,
+                instance_buffer,
+                instance_count: 1,
+                capacity_instances: 1,
+                object_ids: vec![object_id.to_string()],
+                instances: vec![instance],
+                object_aabbs: vec![object_aabb],
+                dirty_ranges: Vec::new(),
+            });
+            mark_dirty(&mut self.batches[index], 0);
+            self.batch_indices.insert(batch_key.clone(), index);
+            self.object_locations.insert(
+                object_id.to_string(),
+                InstanceLocation {
+                    batch_index: index,
+                    slot: 0,
+                },
+            );
+            return;
+        };
+
+        let template_update = if self.batches[batch_index].template_signature != template_signature
+        {
+            Some(self.template_buffer(
+                device,
+                RETAINED_TEMPLATE_BUFFER_LABEL,
+                &batch_key.block_id,
+                template,
+            ))
+        } else {
+            None
+        };
+        let batch = &mut self.batches[batch_index];
+        if let Some((template_buffer, template_signature)) = template_update {
+            batch.template_buffer = template_buffer;
+            batch.template_vertex_count = template.vertices.len() as u32;
+            batch.template_signature = template_signature;
+        }
+        let slot = batch.instances.len();
+        let required = slot.saturating_add(1) as u32;
+        if required > batch.capacity_instances {
+            let capacity = batch.capacity_instances.saturating_mul(2).max(required);
+            batch.instance_buffer.destroy();
+            batch.instance_buffer =
+                create_instance_buffer(device, RETAINED_INSTANCE_BUFFER_LABEL, capacity);
+            batch.capacity_instances = capacity;
+            let existing_len = batch.instances.len();
+            if existing_len != 0 {
+                mark_dirty_range(batch, 0..existing_len);
+            }
+        }
+        batch.object_ids.push(object_id.to_string());
+        batch.instances.push(instance);
+        batch.object_aabbs.push(object_aabb);
+        batch.instance_count = required;
+        mark_dirty(batch, slot);
+        recompute_batch_aabb(batch);
+        self.object_locations.insert(
+            object_id.to_string(),
+            InstanceLocation { batch_index, slot },
+        );
+    }
+
+    pub fn remove_instance(&mut self, object_id: &str) -> bool {
+        let Some(location) = self.object_locations.remove(object_id) else {
+            return false;
+        };
+        let batch = &mut self.batches[location.batch_index];
+        let last_slot = batch.instances.len() - 1;
+        if location.slot != last_slot {
+            let moved_id = batch.object_ids[last_slot].clone();
+            batch.object_ids.swap(location.slot, last_slot);
+            batch.instances.swap(location.slot, last_slot);
+            batch.object_aabbs.swap(location.slot, last_slot);
+            mark_dirty(batch, location.slot);
+            self.object_locations.insert(
+                moved_id,
+                InstanceLocation {
+                    batch_index: location.batch_index,
+                    slot: location.slot,
+                },
+            );
+        }
+        batch.object_ids.pop();
+        batch.instances.pop();
+        batch.object_aabbs.pop();
+        batch.instance_count = batch.instances.len() as u32;
+        recompute_batch_aabb(batch);
+        if batch.instances.is_empty() {
+            self.remove_empty_batch(location.batch_index);
+        }
+        true
+    }
+
+    /// Drop one cached template so the next upsert for that block ID recreates
+    /// its shared GPU buffer. Existing batches are hidden until then.
+    pub fn invalidate_template(&mut self, block_id: &str) {
+        self.templates.remove(block_id);
+        for batch in &mut self.batches {
+            if batch.block_id == block_id {
+                batch.template_vertex_count = 0;
+                batch.template_signature = u64::MAX;
+            }
+        }
+    }
+
+    pub fn sync_dirty_ranges(&mut self, queue: &wgpu::Queue) {
+        for batch in &mut self.batches {
+            let dirty_ranges = std::mem::take(&mut batch.dirty_ranges);
+            for range in dirty_ranges {
+                if range.is_empty() {
+                    continue;
+                }
+                let offset = (range.start * std::mem::size_of::<BlockInstance>()) as u64;
+                queue.write_buffer(
+                    &batch.instance_buffer,
+                    offset,
+                    bytemuck::cast_slice(&batch.instances[range]),
+                );
+            }
+        }
+    }
+
+    fn template_buffer(
+        &mut self,
+        device: &wgpu::Device,
+        label: &'static str,
+        block_id: &str,
+        template: &MeshGeometry,
+    ) -> (Arc<wgpu::Buffer>, u64) {
+        let signature = mesh_geometry_signature(template);
+        if let Some(cached) = self.templates.get(block_id)
+            && cached.signature == signature
+        {
+            return (Arc::clone(&cached.buffer), signature);
+        }
+        let buffer = Arc::new(
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(&template.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+        );
+        self.templates.insert(
+            block_id.to_string(),
+            CachedTemplate {
+                buffer: Arc::clone(&buffer),
+                signature,
+            },
+        );
+        (buffer, signature)
+    }
+
+    fn batch_key(&self, index: usize) -> InstanceBatchKey {
+        let batch = &self.batches[index];
+        InstanceBatchKey {
+            chunk: batch.chunk_key,
+            block_id: batch.block_id.clone(),
+        }
+    }
+
+    fn rebuild_indices(&mut self) {
+        self.batch_indices.clear();
+        self.object_locations.clear();
+        for (batch_index, batch) in self.batches.iter().enumerate() {
+            self.batch_indices.insert(
+                InstanceBatchKey {
+                    chunk: batch.chunk_key,
+                    block_id: batch.block_id.clone(),
+                },
+                batch_index,
+            );
+            for (slot, object_id) in batch.object_ids.iter().enumerate() {
+                if !object_id.is_empty() {
+                    self.object_locations
+                        .insert(object_id.clone(), InstanceLocation { batch_index, slot });
+                }
+            }
+        }
+    }
+
+    fn remove_empty_batch(&mut self, batch_index: usize) {
+        let key = self.batch_key(batch_index);
+        let removed = self.batches.swap_remove(batch_index);
+        removed.instance_buffer.destroy();
+        self.batch_indices.remove(&key);
+        if batch_index < self.batches.len() {
+            let moved_key = self.batch_key(batch_index);
+            self.batch_indices.insert(moved_key, batch_index);
+            for object_id in &self.batches[batch_index].object_ids {
+                if let Some(location) = self.object_locations.get_mut(object_id) {
+                    location.batch_index = batch_index;
+                }
+            }
+        }
+    }
+}
+
+fn mark_dirty(batch: &mut InstancedBatch, slot: usize) {
+    if let Some(last) = batch.dirty_ranges.last_mut()
+        && slot >= last.start
+        && slot <= last.end
+    {
+        last.end = last.end.max(slot + 1);
+        return;
+    }
+    batch.dirty_ranges.push(slot..slot + 1);
+}
+
+fn mesh_geometry_signature(geometry: &MeshGeometry) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytemuck::cast_slice::<Vertex, u8>(&geometry.vertices).hash(&mut hasher);
+    geometry.indices.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn mark_dirty_range(batch: &mut InstancedBatch, range: Range<usize>) {
+    if range.is_empty() {
+        return;
+    }
+    batch.dirty_ranges.push(range);
+}
+
+fn recompute_batch_aabb(batch: &mut InstancedBatch) {
+    let mut aabb: Option<ChunkAabb> = None;
+    for object_aabb in batch.object_aabbs.iter().flatten().copied() {
+        if let Some(target) = &mut aabb {
+            for axis in 0..3 {
+                target.min[axis] = target.min[axis].min(object_aabb.min[axis]);
+                target.max[axis] = target.max[axis].max(object_aabb.max[axis]);
+            }
+        } else {
+            aabb = Some(object_aabb);
+        }
+    }
+    batch.aabb = aabb;
+}
+
+fn create_instance_buffer(
+    device: &wgpu::Device,
+    label: &'static str,
+    capacity: u32,
+) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: (std::mem::size_of::<eg_mesh::BlockInstance>() * capacity as usize) as u64,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 pub struct SceneMeshes {
@@ -775,13 +1315,9 @@ pub struct SceneMeshes {
     pub trail: MeshSlot,
     pub gem_shatter_effects: MeshSlot,
     pub practice_checkpoints: MeshSlot,
-    pub blocks: MeshSlot,
     pub blocks_chunked: ChunkedBlockMeshSlot,
     pub blocks_instanced: InstancedMeshSlot,
-    pub blocks_static: MeshSlot,
-    pub blocks_static_chunked: ChunkedBlockMeshSlot,
     pub blocks_static_instanced: InstancedMeshSlot,
-    pub blocks_selected: MeshSlot,
     pub editor_cursor: MeshSlot,
     pub editor_hover_stencil: MeshSlot,
     pub editor_hover_outline: MeshSlot,
@@ -790,12 +1326,17 @@ pub struct SceneMeshes {
     pub editor_selection_outline_instances: Vec<EditorOutlineInstance>,
     pub editor_gizmo: MeshSlot,
     pub tap_indicators: MeshSlot,
-    pub transform_trigger_markers: MeshSlot,
+    pub transform_trigger_markers: RetainedMeshSlot,
     pub spawn_marker: MeshSlot,
-    pub camera_trigger_markers: MeshSlot,
     pub editor_preview_player: MeshSlot,
     pub editor_hitbox_visualization: MeshSlot,
     pub camera_arrow: MeshSlot,
+    /// Generation of the editor instance result currently resident on the GPU.
+    /// This is render bookkeeping, not authored scene state.
+    pub editor_block_mesh_generation: u64,
+    /// Generation of the keyed transform-trigger marker sidecars resident on
+    /// the GPU. This is render bookkeeping, not authored scene state.
+    pub transform_trigger_marker_generation: u64,
 }
 
 impl Default for SceneMeshes {
@@ -806,13 +1347,9 @@ impl Default for SceneMeshes {
             trail: MeshSlot::Empty,
             gem_shatter_effects: MeshSlot::Empty,
             practice_checkpoints: MeshSlot::Empty,
-            blocks: MeshSlot::Empty,
             blocks_chunked: ChunkedBlockMeshSlot::default(),
             blocks_instanced: InstancedMeshSlot::default(),
-            blocks_static: MeshSlot::Empty,
-            blocks_static_chunked: ChunkedBlockMeshSlot::default(),
             blocks_static_instanced: InstancedMeshSlot::default(),
-            blocks_selected: MeshSlot::Empty,
             editor_cursor: MeshSlot::Empty,
             editor_hover_stencil: MeshSlot::Empty,
             editor_hover_outline: MeshSlot::Empty,
@@ -821,12 +1358,13 @@ impl Default for SceneMeshes {
             editor_selection_outline_instances: Vec::new(),
             editor_gizmo: MeshSlot::Empty,
             tap_indicators: MeshSlot::Empty,
-            transform_trigger_markers: MeshSlot::Empty,
+            transform_trigger_markers: RetainedMeshSlot::default(),
             spawn_marker: MeshSlot::Empty,
-            camera_trigger_markers: MeshSlot::Empty,
             editor_preview_player: MeshSlot::Empty,
             editor_hitbox_visualization: MeshSlot::Empty,
             camera_arrow: MeshSlot::Empty,
+            editor_block_mesh_generation: u64::MAX,
+            transform_trigger_marker_generation: u64::MAX,
         }
     }
 }
@@ -838,13 +1376,9 @@ impl SceneMeshes {
         self.trail.destroy();
         self.gem_shatter_effects.destroy();
         self.practice_checkpoints.destroy();
-        self.blocks.destroy();
         self.blocks_chunked.destroy();
         self.blocks_instanced.destroy();
-        self.blocks_static.destroy();
-        self.blocks_static_chunked.destroy();
         self.blocks_static_instanced.destroy();
-        self.blocks_selected.destroy();
         self.editor_cursor.destroy();
         self.editor_hover_stencil.destroy();
         self.editor_hover_outline.destroy();
@@ -854,7 +1388,6 @@ impl SceneMeshes {
         self.tap_indicators.destroy();
         self.transform_trigger_markers.destroy();
         self.spawn_marker.destroy();
-        self.camera_trigger_markers.destroy();
         self.editor_preview_player.destroy();
         self.editor_hitbox_visualization.destroy();
         self.camera_arrow.destroy();

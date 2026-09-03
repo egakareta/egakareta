@@ -19,6 +19,8 @@
 //! `RenderApp::extract` system in the full-Bevy migration; the
 //! `RenderPresentSet` is replaced by `bevy_render`'s `Render` set.
 
+use std::collections::BTreeMap;
+
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
     prelude::*,
@@ -30,20 +32,20 @@ use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_game::trigger_transformed_objects_at_time;
 use eg_mesh::{
-    BlockEffectInstance, GizmoParams, GizmoPart, PracticeCheckpointFlagInstance,
-    TransformTriggerMarker, Vertex, build_block_effect_vertices, build_block_geometry_for_object,
-    build_block_geometry_from_refs, build_block_geometry_from_refs_at_time,
-    build_block_instance_batches_from_refs_at_time, build_camera_arrow_vertices,
-    build_chunked_block_mesh_from_refs, build_chunked_block_mesh_from_refs_at_time,
-    build_colored_tap_indicator_vertices, build_editor_cursor_vertices,
-    build_editor_gizmo_vertices, build_editor_hitbox_visualization_vertices,
-    build_editor_hover_outline_vertices, build_editor_selection_outline_vertices,
-    build_editor_tap_cursor_vertices, build_editor_transform_trigger_target_outline_vertices,
+    BlockEffectInstance, ChunkAabb, GizmoParams, GizmoPart, PracticeCheckpointFlagInstance,
+    RenderChunkKey, TransformTriggerMarker, Vertex, build_block_effect_vertices,
+    build_block_geometry_for_object, build_block_instance_batches_from_refs_at_time,
+    build_block_instance_for_object, build_block_template_geometry, build_camera_arrow_vertices,
+    build_chunked_block_mesh_from_refs, build_colored_tap_indicator_vertices,
+    build_editor_cursor_vertices, build_editor_gizmo_vertices,
+    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
+    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
+    build_editor_transform_trigger_target_outline_vertices,
     build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
     build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
     build_transform_trigger_marker_vertices,
 };
-use eg_render::EditorOutlineInstance;
+use eg_render::{EditorOutlineInstance, InstanceBatchKey};
 use eg_types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelMetadata, LevelObject,
     LineUniform, TransformVisibility, TriggerTarget,
@@ -53,15 +55,15 @@ use glam::{Mat4, Vec2, Vec3};
 use super::{
     draw::render_egui_with_resources,
     resources::{
-        RenderBlockEffectVerticesRes, RenderConfigRes, RenderEditorBlockMeshesRes,
-        RenderEditorCameraArrowVerticesRes, RenderEditorCursorVerticesRes,
-        RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes, RenderEditorHoverOverlayRes,
-        RenderEditorSelectionOverlayRes, RenderEditorSpawnMarkerVerticesRes,
-        RenderEditorTapIndicatorVerticesRes, RenderEditorTransformTriggerMarkerVerticesRes,
-        RenderEguiRes, RenderFrameInputRes, RenderGpuRes, RenderMenuPreviewBlockMeshesRes,
-        RenderMeshesRes, RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes,
-        RenderResizeRequest, RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes,
-        RenderUniformsRes,
+        EditorInstanceUpdate, EditorTransformTriggerMarkerUpdate, RenderBlockEffectVerticesRes,
+        RenderConfigRes, RenderEditorBlockMeshesRes, RenderEditorCameraArrowVerticesRes,
+        RenderEditorCursorVerticesRes, RenderEditorGizmoVerticesRes, RenderEditorHitboxVerticesRes,
+        RenderEditorHoverOverlayRes, RenderEditorSelectionOverlayRes,
+        RenderEditorSpawnMarkerVerticesRes, RenderEditorTapIndicatorVerticesRes,
+        RenderEditorTransformTriggerMarkerVerticesRes, RenderEguiRes, RenderFrameInputRes,
+        RenderGpuRes, RenderMenuPreviewBlockMeshesRes, RenderMeshesRes,
+        RenderPlayingBlockMeshesRes, RenderPracticeCheckpointVerticesRes, RenderResizeRequest,
+        RenderSurfaceHostRes, RenderTrailVerticesRes, RenderUniformUploadRes, RenderUniformsRes,
     },
 };
 use crate::state::{
@@ -123,6 +125,8 @@ impl Plugin for RenderPlugin {
             .init_resource::<RenderPlayingBlockMeshesRes>()
             .init_resource::<RenderMenuPreviewBlockMeshesRes>()
             .init_resource::<RenderEditorBlockMeshesRes>()
+            .init_resource::<EditorBlockMeshCache>()
+            .init_resource::<EditorTransformTriggerMarkerCache>()
             .init_resource::<RenderEditorSpawnMarkerVerticesRes>()
             .init_resource::<RenderEditorGizmoVerticesRes>()
             .init_resource::<RenderConfigRes>()
@@ -152,6 +156,8 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderPlayingBlockMeshesRes>();
     world.init_resource::<RenderMenuPreviewBlockMeshesRes>();
     world.init_resource::<RenderEditorBlockMeshesRes>();
+    world.init_resource::<EditorBlockMeshCache>();
+    world.init_resource::<EditorTransformTriggerMarkerCache>();
     world.init_resource::<RenderEditorSpawnMarkerVerticesRes>();
     world.init_resource::<RenderEditorGizmoVerticesRes>();
     world.init_resource::<RenderConfigRes>();
@@ -494,16 +500,101 @@ fn has_camera_timeline_triggers(triggers: &[LevelObject]) -> bool {
     })
 }
 
+fn build_transform_trigger_dependency_index(
+    triggers: &[LevelObject],
+) -> BTreeMap<String, Vec<usize>> {
+    let mut dependencies = BTreeMap::new();
+    for (trigger_index, trigger_object) in triggers.iter().enumerate() {
+        let Some(trigger) = trigger_object.trigger.as_ref() else {
+            continue;
+        };
+        if !trigger.transform {
+            continue;
+        }
+        let TriggerTarget::Objects { object_ids } = &trigger.target else {
+            continue;
+        };
+        for object_id in object_ids {
+            if object_id.is_empty() {
+                continue;
+            }
+            let dependency = dependencies
+                .entry(object_id.clone())
+                .or_insert_with(Vec::new);
+            if !dependency.contains(&trigger_index) {
+                dependency.push(trigger_index);
+            }
+        }
+    }
+    dependencies
+}
+
+#[cfg(test)]
+fn editor_objects_with_transform_dependencies(
+    objects: &[LevelObject],
+    triggers: &[LevelObject],
+    dependencies: &BTreeMap<String, Vec<usize>>,
+    time_seconds: f32,
+) -> Vec<LevelObject> {
+    let mut rendered = objects.to_vec();
+    for (object_index, object) in objects.iter().enumerate() {
+        if object.id.is_empty() {
+            continue;
+        }
+        apply_transform_trigger_dependencies(
+            &mut rendered[object_index],
+            triggers,
+            dependencies,
+            time_seconds,
+        );
+    }
+    rendered
+}
+
+fn apply_transform_trigger_dependencies(
+    object: &mut LevelObject,
+    triggers: &[LevelObject],
+    dependencies: &BTreeMap<String, Vec<usize>>,
+    time_seconds: f32,
+) {
+    let Some(trigger_indices) = dependencies.get(&object.id) else {
+        return;
+    };
+    for &trigger_index in trigger_indices {
+        let trigger_object = &triggers[trigger_index];
+        let Some(trigger) = trigger_object.trigger.as_ref() else {
+            continue;
+        };
+        let Some(progress) = trigger.progress(time_seconds) else {
+            continue;
+        };
+        trigger_object.apply_transform_trigger(object, progress);
+    }
+}
+
+#[cfg(test)]
 fn editor_objects_for_render(
     objects: &[LevelObject],
     timeline: &EditorTimelineRes,
     trigger_objects: &[LevelObject],
 ) -> Vec<LevelObject> {
+    let dependencies = build_transform_trigger_dependency_index(trigger_objects);
+    editor_objects_for_render_with_dependencies(objects, timeline, trigger_objects, &dependencies)
+}
+
+#[cfg(test)]
+fn editor_objects_for_render_with_dependencies(
+    objects: &[LevelObject],
+    timeline: &EditorTimelineRes,
+    trigger_objects: &[LevelObject],
+    dependencies: &BTreeMap<String, Vec<usize>>,
+) -> Vec<LevelObject> {
     if !timeline.0.playback.playing {
         if has_object_transform_triggers(trigger_objects) {
-            return trigger_transformed_objects_at_time(
+            return editor_objects_with_transform_dependencies(
                 objects,
                 trigger_objects,
+                dependencies,
                 timeline.0.clock.time_seconds,
             );
         }
@@ -520,7 +611,12 @@ fn editor_objects_for_render(
             .unwrap_or_else(|| objects.to_vec());
     }
 
-    trigger_transformed_objects_at_time(objects, trigger_objects, timeline.0.clock.time_seconds)
+    editor_objects_with_transform_dependencies(
+        objects,
+        trigger_objects,
+        dependencies,
+        timeline.0.clock.time_seconds,
+    )
 }
 
 /// Extract time-dependent gameplay block batches from App-owned gameplay
@@ -570,7 +666,12 @@ pub(crate) fn extract_playing_block_meshes_system(
         .collect::<Vec<_>>();
     let authored_objects =
         super::super::editor_objects::collect_editor_object_data(&authored_objects);
-    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
+    let authored_trigger_objects = authored_objects
+        .iter()
+        .filter(|object| object.trigger.is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    let trigger_objects = editor_trigger_objects_for_render(&authored_trigger_objects);
     let has_object_transform_triggers = has_object_transform_triggers(&trigger_objects);
     let has_camera_timeline_triggers = has_camera_timeline_triggers(&trigger_objects);
     let has_animated_blocks = gameplay_objects.iter().any(|object| {
@@ -634,18 +735,90 @@ pub(crate) fn extract_menu_preview_block_mesh_system(
     block_meshes.chunked = Some(build_chunked_block_mesh_from_refs(&objects));
 }
 
-/// Extract the editor static and selected block meshes from App-owned editor
-/// resources.
-#[derive(PartialEq)]
+/// Cached instance state for one authored object in the editor scene.
+struct CachedEditorBlockObject {
+    source: LevelObject,
+    camera_time_seconds: Option<f32>,
+    block_id: String,
+    batch_key: InstanceBatchKey,
+    instance: eg_mesh::BlockInstance,
+    aabb: ChunkAabb,
+}
+
+struct CachedEditorBlockTemplate {
+    definition: BlockDefinition,
+    geometry: eg_mesh::MeshGeometry,
+}
+
+fn editor_instance_chunk_key(object: &LevelObject) -> RenderChunkKey {
+    let chunk_size = eg_mesh::DEFAULT_RENDER_CHUNK_SIZE as f32;
+    RenderChunkKey {
+        x: (object.position[0] / chunk_size).floor() as i32,
+        y: (object.position[1] / chunk_size).floor() as i32,
+        z: (object.position[2] / chunk_size).floor() as i32,
+    }
+}
+
+fn editor_instance_aabb(object: &LevelObject) -> ChunkAabb {
+    let center = object.center();
+    let half_size = Vec3::from_array(object.size).abs() * 0.5;
+    let trigger_extent = match BlockDefinition::get(&object.block_id).render.profile {
+        BlockRenderProfile::CameraTrigger => 2.0,
+        BlockRenderProfile::TransformTrigger => 0.75,
+        _ => 0.0,
+    };
+    let radius = half_size.length() + trigger_extent;
+    ChunkAabb::from_min_max(
+        (center - Vec3::splat(radius)).to_array(),
+        (center + Vec3::splat(radius)).to_array(),
+    )
+}
+
+/// Retained CPU cache for editor block instances.
+///
+/// The cache stores one instance record per stable object ID and one CPU
+/// template per block ID. Render extraction emits only the changed records;
+/// the complete cache is used only when a GPU resource needs recovery.
+#[derive(Resource, Default)]
 pub(crate) struct EditorBlockMeshCache {
-    objects: Vec<LevelObject>,
-    selected_indices: Vec<usize>,
-    time_seconds: Option<f32>,
+    objects: BTreeMap<String, CachedEditorBlockObject>,
+    templates: BTreeMap<String, CachedEditorBlockTemplate>,
+    trigger_objects: Vec<LevelObject>,
+    transform_dependencies: BTreeMap<String, Vec<usize>>,
+    last_object_revision: u64,
+    last_timeline_time: f32,
+    last_playback: bool,
+    time_sensitive: bool,
+    initialized: bool,
+}
+
+impl EditorBlockMeshCache {
+    fn template_needs_invalidation(&self, block_id: &str) -> bool {
+        self.templates
+            .get(block_id)
+            .is_some_and(|cached| cached.definition != *BlockDefinition::get(block_id))
+    }
+
+    fn invalidate_template(&mut self, block_id: &str) {
+        self.templates.remove(block_id);
+        self.objects.retain(|_, cached| cached.block_id != block_id);
+    }
+
+    fn template_for(&mut self, block_id: &str) -> eg_mesh::MeshGeometry {
+        let definition = BlockDefinition::get(block_id);
+        self.templates
+            .entry(block_id.to_string())
+            .or_insert_with(|| CachedEditorBlockTemplate {
+                definition: definition.clone(),
+                geometry: build_block_template_geometry(block_id),
+            })
+            .geometry
+            .clone()
+    }
 }
 
 pub(crate) fn extract_editor_block_meshes_system(
     phase: Res<State<AppPhase>>,
-    input: Res<EditorInputRes>,
     authored_objects: Query<
         (
             &super::super::editor_objects::EditorObjectOrder,
@@ -653,70 +826,148 @@ pub(crate) fn extract_editor_block_meshes_system(
         ),
         With<super::super::editor_objects::EditorAuthoredObject>,
     >,
+    revision: Res<super::super::editor_objects::EditorObjectRevision>,
     timeline: Res<EditorTimelineRes>,
     mut block_meshes: ResMut<RenderEditorBlockMeshesRes>,
-    mut cache: Local<Option<EditorBlockMeshCache>>,
+    mut cache: ResMut<EditorBlockMeshCache>,
 ) {
     if *phase.get() != AppPhase::Editor {
-        if cache.take().is_some() {
-            block_meshes.static_mesh = eg_mesh::ChunkedBlockMesh::default();
-            block_meshes.selected_geometry = eg_mesh::MeshGeometry::default();
-        }
         return;
     }
 
-    let authored_objects =
+    block_meshes.updates.clear();
+    block_meshes.removals.clear();
+    block_meshes.template_invalidations.clear();
+    let playback = timeline.0.playback.playing;
+    let timeline_time = timeline.0.clock.time_seconds;
+    if cache.initialized
+        && cache.last_object_revision == revision.0
+        && cache.last_playback == playback
+        && (!cache.time_sensitive || cache.last_timeline_time == timeline_time)
+    {
+        return;
+    }
+    let authored_objects_for_triggers =
         super::super::editor_objects::collect_editor_object_data(&authored_objects);
-    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
-    let object_source = editor_objects_for_render(&authored_objects, &timeline, &trigger_objects);
-    let selected_indices = normalized_editor_selection_indices(&input, object_source.len());
-    let selected_mask = selected_indices
+    let authored_trigger_objects = authored_objects_for_triggers
         .iter()
-        .copied()
-        .collect::<std::collections::HashSet<_>>();
-    let static_objects = object_source
-        .iter()
-        .enumerate()
-        .filter_map(|(index, object)| (!selected_mask.contains(&index)).then_some(object))
+        .filter(|object| object.trigger.is_some())
+        .cloned()
         .collect::<Vec<_>>();
-    let time_seconds =
+    let trigger_objects = editor_trigger_objects_for_render(&authored_trigger_objects);
+    if cache.trigger_objects != trigger_objects {
+        cache.transform_dependencies = build_transform_trigger_dependency_index(&trigger_objects);
+        cache.trigger_objects = trigger_objects.clone();
+    }
+    let time_sensitive = has_object_transform_triggers(&trigger_objects)
+        || has_camera_timeline_triggers(&trigger_objects);
+    let camera_time_seconds =
         has_camera_timeline_triggers(&trigger_objects).then_some(timeline.0.clock.time_seconds);
-    let cache_key = EditorBlockMeshCache {
-        objects: object_source.clone(),
-        selected_indices: selected_indices.clone(),
-        time_seconds,
-    };
-    if cache.as_ref() == Some(&cache_key) {
-        return;
-    }
-    *cache = Some(cache_key);
-    block_meshes.static_mesh = match time_seconds {
-        Some(time_seconds) => build_chunked_block_mesh_from_refs_at_time(
-            &static_objects,
-            Some(time_seconds),
-            eg_mesh::DEFAULT_RENDER_CHUNK_SIZE,
-        ),
-        None => build_chunked_block_mesh_from_refs(&static_objects),
-    };
+    let mut changed = !cache.initialized;
+    let mut seen_keys = BTreeMap::<String, ()>::new();
 
-    if selected_indices.len() > 100_000 {
-        log::warn!(
-            "Skipping selected block mesh for {} selected objects to avoid an oversized expanded mesh",
-            selected_indices.len()
-        );
+    for (order, object_data) in authored_objects.iter() {
+        let authored_object = &object_data.0;
+        let mut transformed_object = None;
+        if !authored_object.id.is_empty()
+            && cache
+                .transform_dependencies
+                .contains_key(&authored_object.id)
+        {
+            let mut rendered_object = authored_object.clone();
+            apply_transform_trigger_dependencies(
+                &mut rendered_object,
+                &trigger_objects,
+                &cache.transform_dependencies,
+                timeline_time,
+            );
+            transformed_object = Some(rendered_object);
+        }
+        let object = transformed_object.as_ref().unwrap_or(authored_object);
+        // Imported levels normalize IDs. The fallback keeps malformed test or
+        // in-progress data deterministic without merging two empty IDs.
+        let key = if authored_object.id.is_empty() {
+            format!("__editor_order_{}", order.0)
+        } else {
+            authored_object.id.clone()
+        };
+        seen_keys.insert(key.clone(), ());
+        let object_camera_time = camera_time_seconds.filter(|_| is_camera_trigger_block(object));
+        let block_id = BlockDefinition::get(&object.block_id).id.to_string();
+        if cache.template_needs_invalidation(&block_id) {
+            cache.invalidate_template(&block_id);
+            block_meshes.template_invalidations.push(block_id.clone());
+            changed = true;
+        }
+        if transformed_object.is_none()
+            && object_camera_time.is_none()
+            && cache.objects.get(&key).is_some_and(|cached| {
+                cached.source == *authored_object && cached.camera_time_seconds.is_none()
+            })
+        {
+            continue;
+        }
+        let batch_key = InstanceBatchKey {
+            chunk: Some(editor_instance_chunk_key(object)),
+            block_id: block_id.clone(),
+        };
+        let instance = build_block_instance_for_object(object, object_camera_time);
+        let aabb = editor_instance_aabb(object);
+        let needs_rebuild = cache.objects.get(&key).is_none_or(|cached| {
+            cached.source != *object
+                || cached.camera_time_seconds != object_camera_time
+                || cached.batch_key != batch_key
+                || cached.instance != instance
+                || cached.aabb != aabb
+        });
+        if needs_rebuild {
+            let template = cache.template_for(&block_id);
+            cache.objects.insert(
+                key.clone(),
+                CachedEditorBlockObject {
+                    source: object.clone(),
+                    camera_time_seconds: object_camera_time,
+                    block_id: block_id.clone(),
+                    batch_key: batch_key.clone(),
+                    instance,
+                    aabb,
+                },
+            );
+            block_meshes.updates.push(EditorInstanceUpdate {
+                object_id: key,
+                batch_key,
+                template,
+                instance,
+                aabb,
+            });
+            changed = true;
+        }
+    }
+
+    let mut removed_keys = Vec::new();
+    cache.objects.retain(|key, _| {
+        let retained = seen_keys.contains_key(key);
+        if !retained {
+            removed_keys.push(key.clone());
+            changed = true;
+        }
+        retained
+    });
+    block_meshes.removals = removed_keys;
+
+    if !changed {
+        cache.last_object_revision = revision.0;
+        cache.last_timeline_time = timeline_time;
+        cache.last_playback = playback;
+        cache.time_sensitive = time_sensitive;
         return;
     }
-    let selected_objects = object_source
-        .iter()
-        .enumerate()
-        .filter_map(|(index, object)| selected_mask.contains(&index).then_some(object))
-        .collect::<Vec<_>>();
-    block_meshes.selected_geometry = match time_seconds {
-        Some(time_seconds) => {
-            build_block_geometry_from_refs_at_time(&selected_objects, Some(time_seconds))
-        }
-        None => build_block_geometry_from_refs(&selected_objects),
-    };
+    cache.initialized = true;
+    cache.last_object_revision = revision.0;
+    cache.last_timeline_time = timeline_time;
+    cache.last_playback = playback;
+    cache.time_sensitive = time_sensitive;
+    block_meshes.generation = block_meshes.generation.wrapping_add(1);
 }
 
 /// Extract the editor spawn marker from App-owned spawn metadata.
@@ -1508,9 +1759,10 @@ fn transform_trigger_markers_for_triggers(
     objects: &[LevelObject],
     trigger_objects: &[LevelObject],
     selected_trigger_index: Option<usize>,
-) -> Vec<TransformTriggerMarker> {
-    let mut markers = Vec::new();
-    for (trigger_index, trigger_object) in trigger_objects.iter().enumerate() {
+) -> BTreeMap<String, TransformTriggerMarker> {
+    let ordered_trigger_objects = editor_trigger_objects_for_render(trigger_objects);
+    let mut markers = BTreeMap::new();
+    for (trigger_index, trigger_object) in ordered_trigger_objects.iter().enumerate() {
         let Some(trigger) = trigger_object.trigger.as_ref() else {
             continue;
         };
@@ -1520,48 +1772,74 @@ fn transform_trigger_markers_for_triggers(
         if !trigger.transform {
             continue;
         }
+        let trigger_key = if trigger_object.id.is_empty() {
+            format!("__editor_trigger_order_{trigger_index}")
+        } else {
+            trigger_object.id.clone()
+        };
 
         let source_objects = if trigger_index == 0 {
             std::borrow::Cow::Borrowed(objects)
         } else {
             std::borrow::Cow::Owned(trigger_transformed_objects_at_time(
                 objects,
-                &trigger_objects[..trigger_index],
+                &ordered_trigger_objects[..trigger_index],
                 trigger.time_seconds,
             ))
         };
         if object_ids.is_empty() {
-            markers.push(TransformTriggerMarker {
-                source_position: None,
-                source_size: None,
-                target_position: trigger_object.position,
-                target_rotation_degrees: trigger_object.rotation,
-                target_size: trigger_object.size,
-                time_seconds: trigger.time_seconds,
-                duration_seconds: trigger.duration_seconds,
-                is_selected: selected_trigger_index == Some(trigger_index),
-            });
-        } else {
-            for object_id in object_ids {
-                let Some(source_object) =
-                    source_objects.iter().find(|object| object.id == *object_id)
-                else {
-                    continue;
-                };
-                markers.push(TransformTriggerMarker {
-                    source_position: Some(source_object.position),
-                    source_size: Some(source_object.size),
+            markers.insert(
+                trigger_key,
+                TransformTriggerMarker {
+                    source_position: None,
+                    source_size: None,
                     target_position: trigger_object.position,
                     target_rotation_degrees: trigger_object.rotation,
                     target_size: trigger_object.size,
                     time_seconds: trigger.time_seconds,
                     duration_seconds: trigger.duration_seconds,
                     is_selected: selected_trigger_index == Some(trigger_index),
-                });
+                },
+            );
+        } else {
+            for (target_index, object_id) in object_ids.iter().enumerate() {
+                let Some(source_object) =
+                    source_objects.iter().find(|object| object.id == *object_id)
+                else {
+                    continue;
+                };
+                markers.insert(
+                    format!("{trigger_key}:{object_id}:{target_index}"),
+                    TransformTriggerMarker {
+                        source_position: Some(source_object.position),
+                        source_size: Some(source_object.size),
+                        target_position: trigger_object.position,
+                        target_rotation_degrees: trigger_object.rotation,
+                        target_size: trigger_object.size,
+                        time_seconds: trigger.time_seconds,
+                        duration_seconds: trigger.duration_seconds,
+                        is_selected: selected_trigger_index == Some(trigger_index),
+                    },
+                );
             }
         }
     }
     markers
+}
+
+struct CachedTransformTriggerMarker {
+    marker: TransformTriggerMarker,
+    geometry: eg_mesh::MeshGeometry,
+}
+
+/// Retained CPU cache for keyed transform-trigger marker sidecars.
+#[derive(Resource, Default)]
+pub(crate) struct EditorTransformTriggerMarkerCache {
+    markers: BTreeMap<String, CachedTransformTriggerMarker>,
+    last_object_revision: u64,
+    last_timeline_time: f32,
+    last_selected_index: Option<usize>,
+    initialized: bool,
 }
 
 /// Extract editor transform-trigger markers from App-owned objects and
@@ -1576,15 +1854,29 @@ pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
         ),
         With<super::super::editor_objects::EditorAuthoredObject>,
     >,
+    revision: Res<super::super::editor_objects::EditorObjectRevision>,
     triggers: Res<EditorTriggerRes>,
     timeline: Res<EditorTimelineRes>,
     mut marker_vertices: ResMut<RenderEditorTransformTriggerMarkerVerticesRes>,
+    mut cache: ResMut<EditorTransformTriggerMarkerCache>,
 ) {
     if *phase.get() != AppPhase::Editor {
-        marker_vertices.0.clear();
+        marker_vertices.updates.clear();
+        marker_vertices.removals.clear();
         return;
     }
 
+    let timeline_time = timeline.0.clock.time_seconds;
+    let selected_index = triggers.0.selected_index;
+    marker_vertices.updates.clear();
+    marker_vertices.removals.clear();
+    if cache.initialized
+        && cache.last_object_revision == revision.0
+        && cache.last_timeline_time == timeline_time
+        && cache.last_selected_index == selected_index
+    {
+        return;
+    }
     let authored_objects =
         super::super::editor_objects::collect_editor_object_data(&authored_objects);
     let trigger_objects = authored_objects
@@ -1592,17 +1884,56 @@ pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
         .filter(|object| object.trigger.is_some())
         .cloned()
         .collect::<Vec<_>>();
-    let markers = transform_trigger_markers_for_triggers(
-        &authored_objects,
-        &trigger_objects,
-        triggers.0.selected_index,
-    );
-    if markers.is_empty() {
-        marker_vertices.0.clear();
-        return;
+    let markers =
+        transform_trigger_markers_for_triggers(&authored_objects, &trigger_objects, selected_index);
+    let timeline_changed = cache.last_timeline_time != timeline_time;
+    let mut changed = !cache.initialized;
+    for (marker_id, marker) in &markers {
+        let needs_update = timeline_changed
+            || cache
+                .markers
+                .get(marker_id)
+                .is_none_or(|cached| cached.marker != *marker);
+        if needs_update {
+            let geometry =
+                eg_mesh::MeshGeometry::from_vertices(build_transform_trigger_marker_vertices(
+                    std::slice::from_ref(marker),
+                    timeline_time,
+                ));
+            marker_vertices
+                .updates
+                .push(EditorTransformTriggerMarkerUpdate {
+                    marker_id: marker_id.clone(),
+                    geometry: geometry.clone(),
+                });
+            cache.markers.insert(
+                marker_id.clone(),
+                CachedTransformTriggerMarker {
+                    marker: marker.clone(),
+                    geometry,
+                },
+            );
+            changed = true;
+        }
     }
-    marker_vertices.0 =
-        build_transform_trigger_marker_vertices(&markers, timeline.0.clock.time_seconds);
+
+    let mut removed_markers = Vec::new();
+    cache.markers.retain(|marker_id, _| {
+        let retained = markers.contains_key(marker_id);
+        if !retained {
+            removed_markers.push(marker_id.clone());
+            changed = true;
+        }
+        retained
+    });
+    marker_vertices.removals = removed_markers;
+    cache.last_object_revision = revision.0;
+    cache.last_timeline_time = timeline_time;
+    cache.last_selected_index = selected_index;
+    cache.initialized = true;
+    if changed {
+        marker_vertices.generation = marker_vertices.generation.wrapping_add(1);
+    }
 }
 
 fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
@@ -1816,6 +2147,8 @@ pub(crate) struct RenderMeshUploadParams<'w> {
     playing: Res<'w, RenderPlayingBlockMeshesRes>,
     menu_preview: Res<'w, RenderMenuPreviewBlockMeshesRes>,
     editor_blocks: Res<'w, RenderEditorBlockMeshesRes>,
+    editor_cache: Res<'w, EditorBlockMeshCache>,
+    transform_marker_cache: Res<'w, EditorTransformTriggerMarkerCache>,
     spawn_marker: Res<'w, RenderEditorSpawnMarkerVerticesRes>,
     gizmo: Res<'w, RenderEditorGizmoVerticesRes>,
     trail: Res<'w, RenderTrailVerticesRes>,
@@ -1838,6 +2171,8 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
         playing,
         menu_preview,
         editor_blocks,
+        editor_cache,
+        transform_marker_cache,
         spawn_marker,
         gizmo,
         trail,
@@ -1873,23 +2208,13 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
             .0
             .blocks_instanced
             .replace_with_batches(device, "Block Instance Buffer", result);
-        meshes.0.blocks.replace_with_geometry(
-            device,
-            "Block Vertex Buffer",
-            &result.fallback_geometry,
-        );
         meshes.0.blocks_chunked.clear();
     } else if let Some(chunked) = playing.chunked.as_ref() {
         meshes
             .0
             .blocks_chunked
             .replace_with_chunked_mesh(device, "Chunked Block Buffer", chunked);
-        meshes.0.blocks.clear();
         meshes.0.blocks_instanced.clear();
-        meshes.0.blocks_static.clear();
-        meshes.0.blocks_static_chunked.clear();
-        meshes.0.blocks_static_instanced.clear();
-        meshes.0.blocks_selected.clear();
     }
     if *phase.get() == AppPhase::Menu
         && let Some(chunked) = menu_preview.chunked.as_ref()
@@ -1899,28 +2224,92 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
             "Menu Preview Chunked Block Buffer",
             chunked,
         );
-        meshes.0.blocks.clear();
         meshes.0.blocks_instanced.clear();
-        meshes.0.blocks_static.clear();
-        meshes.0.blocks_static_chunked.clear();
-        meshes.0.blocks_static_instanced.clear();
-        meshes.0.blocks_selected.clear();
     }
-    if *phase.get() == AppPhase::Editor {
-        meshes.0.blocks_static_chunked.replace_with_chunked_mesh(
-            device,
-            "Chunked Block Static Buffer",
-            &editor_blocks.static_mesh,
-        );
-        meshes.0.blocks_selected.replace_with_geometry(
-            device,
-            "Block Selected Vertex Buffer",
-            &editor_blocks.selected_geometry,
-        );
-        meshes.0.blocks_static.clear();
-        meshes.0.blocks_static_instanced.clear();
-        meshes.0.blocks.clear();
+    if *phase.get() == AppPhase::Editor
+        && meshes.0.editor_block_mesh_generation != editor_blocks.generation
+    {
+        let needs_full_sync = meshes.0.editor_block_mesh_generation == u64::MAX;
+        if needs_full_sync {
+            meshes.0.blocks_static_instanced.clear();
+            for (object_id, cached) in &editor_cache.objects {
+                let Some(template) = editor_cache
+                    .templates
+                    .get(&cached.block_id)
+                    .map(|template| &template.geometry)
+                else {
+                    continue;
+                };
+                meshes.0.blocks_static_instanced.upsert_instance(
+                    device,
+                    object_id,
+                    &cached.batch_key,
+                    template,
+                    cached.instance,
+                    Some(cached.aabb),
+                );
+            }
+        } else {
+            for block_id in &editor_blocks.template_invalidations {
+                meshes
+                    .0
+                    .blocks_static_instanced
+                    .invalidate_template(block_id);
+            }
+            for object_id in &editor_blocks.removals {
+                meshes.0.blocks_static_instanced.remove_instance(object_id);
+            }
+            for update in &editor_blocks.updates {
+                meshes.0.blocks_static_instanced.upsert_instance(
+                    device,
+                    &update.object_id,
+                    &update.batch_key,
+                    &update.template,
+                    update.instance,
+                    Some(update.aabb),
+                );
+            }
+        }
+        meshes.0.blocks_static_instanced.sync_dirty_ranges(queue);
         meshes.0.blocks_chunked.clear();
+        meshes.0.editor_block_mesh_generation = editor_blocks.generation;
+    }
+    if *phase.get() == AppPhase::Editor
+        && meshes.0.transform_trigger_marker_generation != transform_markers.generation
+    {
+        let needs_full_sync = meshes.0.transform_trigger_marker_generation == u64::MAX;
+        if needs_full_sync {
+            meshes.0.transform_trigger_markers.clear();
+            for (marker_id, cached) in &transform_marker_cache.markers {
+                meshes
+                    .0
+                    .transform_trigger_markers
+                    .update_with_streaming_geometry(
+                        device,
+                        queue,
+                        "Transform Trigger Marker Vertex Buffer",
+                        marker_id,
+                        &cached.geometry,
+                    );
+            }
+        } else {
+            for marker_id in &transform_markers.removals {
+                meshes.0.transform_trigger_markers.remove(marker_id);
+            }
+            for update in &transform_markers.updates {
+                meshes
+                    .0
+                    .transform_trigger_markers
+                    .update_with_streaming_geometry(
+                        device,
+                        queue,
+                        "Transform Trigger Marker Vertex Buffer",
+                        &update.marker_id,
+                        &update.geometry,
+                    );
+            }
+        }
+        meshes.0.transform_trigger_marker_generation = transform_markers.generation;
     }
 
     meshes.0.spawn_marker.replace_with_streaming_vertices(
@@ -2009,15 +2398,6 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
             "Editor Hover Outline Vertex Buffer",
             &hover.outline_vertices,
         );
-    meshes
-        .0
-        .transform_trigger_markers
-        .replace_with_streaming_vertices(
-            device,
-            queue,
-            "Transform Trigger Marker Vertex Buffer",
-            &transform_markers.0,
-        );
 }
 
 /// Add the App-world render bookkeeping systems to a [`Schedule`].
@@ -2053,7 +2433,7 @@ mod tests {
 
     use super::*;
     use crate::state::{
-        EditorCameraRes, EditorInputRes, SessionStateRes,
+        EditorAuthoredObject, EditorCameraRes, EditorInputRes, SessionStateRes,
         render::resources::render_pod_resources_present,
     };
 
@@ -2357,7 +2737,7 @@ mod tests {
         assert!(
             !app.world()
                 .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
-                .0
+                .updates
                 .is_empty()
         );
 
@@ -2366,7 +2746,7 @@ mod tests {
         assert!(
             app.world()
                 .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
-                .0
+                .updates
                 .is_empty()
         );
     }
@@ -2390,16 +2770,88 @@ mod tests {
                     position: [2.0, 0.0, 0.0],
                     ..LevelObject::new("core/grass")
                 },
+                LevelObject {
+                    id: "far_object".to_string(),
+                    position: [20.0, 0.0, 0.0],
+                    ..LevelObject::new("core/stone")
+                },
             ],
         );
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(extract_editor_block_meshes_system);
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                extract_editor_block_meshes_system,
+            )
+                .chain(),
+        );
         schedule.run(app.world_mut());
 
         let meshes = app.world().resource::<RenderEditorBlockMeshesRes>();
-        assert!(!meshes.static_mesh.chunks.is_empty());
-        assert!(!meshes.selected_geometry.is_empty());
+        assert_eq!(meshes.updates.len(), 3);
+        assert!(meshes.removals.is_empty());
+        assert!(
+            meshes
+                .updates
+                .iter()
+                .all(|update| update.batch_key.chunk.is_some())
+        );
+        assert_eq!(meshes.generation, 1);
+
+        schedule.run(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<RenderEditorBlockMeshesRes>()
+                .updates
+                .is_empty()
+        );
+        assert_eq!(
+            app.world()
+                .resource::<RenderEditorBlockMeshesRes>()
+                .generation,
+            1
+        );
+
+        let mut object_query = app
+            .world_mut()
+            .query_filtered::<&mut eg_game::ObjectData, With<EditorAuthoredObject>>();
+        object_query
+            .iter_mut(app.world_mut())
+            .next()
+            .expect("editor object")
+            .0
+            .position = [4.0, 0.0, 0.0];
+        schedule.run(app.world_mut());
+        assert_eq!(
+            app.world()
+                .resource::<RenderEditorBlockMeshesRes>()
+                .updates
+                .len(),
+            1
+        );
+        assert_eq!(
+            app.world()
+                .resource::<RenderEditorBlockMeshesRes>()
+                .generation,
+            2
+        );
+
+        crate::state::editor_objects::replace_editor_objects(
+            app.world_mut(),
+            vec![LevelObject {
+                id: "far_object".to_string(),
+                position: [20.0, 0.0, 0.0],
+                ..LevelObject::new("core/grass")
+            }],
+        );
+        schedule.run(app.world_mut());
+        let meshes = app.world().resource::<RenderEditorBlockMeshesRes>();
+        assert_eq!(meshes.removals.len(), 2);
+        assert!(meshes.removals.iter().all(|id| id.starts_with("__editor_")));
+        assert_eq!(meshes.updates.len(), 1);
+        assert_eq!(meshes.updates[0].object_id, "far_object");
+        assert_eq!(meshes.updates[0].batch_key.block_id, "core/grass");
     }
     #[test]
     fn editor_render_objects_apply_transform_triggers_without_mutating_authored_objects() {

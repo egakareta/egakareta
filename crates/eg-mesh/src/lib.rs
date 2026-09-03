@@ -168,16 +168,20 @@ pub struct BlockInstance {
     pub model_rows: [[f32; 4]; 3],
     pub color_tint_and_noise: [f32; 4],
     pub animation_anchor: [f32; 4],
+    /// Camera-trigger visual parameters. `x` is the countdown progress;
+    /// other profiles leave this at zero.
+    pub trigger_params: [f32; 4],
 }
 
 impl BlockInstance {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+        const ATTRS: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
             10 => Float32x4,
             11 => Float32x4,
             12 => Float32x4,
             13 => Float32x4,
-            14 => Float32x4
+            14 => Float32x4,
+            15 => Float32x4
         ];
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<BlockInstance>() as u64,

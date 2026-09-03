@@ -10,7 +10,9 @@ use std::hint::black_box;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use egakareta_lib::bench_support::{
     TimelineScrubBenchmarkState, advance_timeline_preview, rebuild_chunked_dense_block_mesh,
-    rebuild_full_block_mesh, rebuild_transformed_block_mesh, transform_objects_only,
+    rebuild_full_block_mesh, rebuild_instanced_block_batch, rebuild_transform_marker_sidecars,
+    rebuild_transformed_block_mesh, transform_objects_only, update_one_instanced_block,
+    update_one_transform_marker_sidecar,
 };
 
 fn editor_mesh_rebuild_benchmarks(c: &mut Criterion) {
@@ -21,6 +23,36 @@ fn editor_mesh_rebuild_benchmarks(c: &mut Criterion) {
         });
     }
     group.finish();
+}
+
+fn retained_editor_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("editor_retained_instance_updates");
+    for object_count in [256, 1_024, 4_096] {
+        group.bench_function(format!("full_instanced_{object_count}_objects"), |b| {
+            b.iter(|| rebuild_instanced_block_batch(black_box(object_count)))
+        });
+        group.bench_function(format!("single_update_in_{object_count}_objects"), |b| {
+            b.iter(|| update_one_instanced_block(black_box(object_count), black_box(17)))
+        });
+    }
+    group.finish();
+
+    let mut marker_group = c.benchmark_group("editor_retained_marker_updates");
+    for marker_count in [16, 64, 256] {
+        marker_group.bench_function(format!("full_{marker_count}_markers"), |b| {
+            b.iter(|| rebuild_transform_marker_sidecars(black_box(marker_count), black_box(2.75)))
+        });
+        marker_group.bench_function(format!("single_update_in_{marker_count}_markers"), |b| {
+            b.iter(|| {
+                update_one_transform_marker_sidecar(
+                    black_box(marker_count),
+                    black_box(7),
+                    black_box(2.75),
+                )
+            })
+        });
+    }
+    marker_group.finish();
 }
 
 fn chunked_greedy_mesh_benchmarks(c: &mut Criterion) {
@@ -137,6 +169,7 @@ fn editor_timeline_scrub_benchmarks(c: &mut Criterion) {
 criterion_group!(
     perf_hot_paths,
     editor_mesh_rebuild_benchmarks,
+    retained_editor_benchmarks,
     chunked_greedy_mesh_benchmarks,
     trigger_transform_benchmarks,
     timeline_preview_benchmarks,

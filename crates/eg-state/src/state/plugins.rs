@@ -98,6 +98,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<EditorSimulationInputsRes>()
             .init_resource::<EditorTimingRes>()
             .init_resource::<EditorRuntimeRes>()
+            .init_resource::<super::editor_objects::EditorObjectRevision>()
             .init_resource::<EditorHistoryRes>()
             .init_resource::<FrameTimeRes>()
             .init_resource::<PerfRes>()
@@ -271,6 +272,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<EditorSimulationInputsRes>();
     world.init_resource::<EditorTimingRes>();
     world.init_resource::<EditorRuntimeRes>();
+    world.init_resource::<super::editor_objects::EditorObjectRevision>();
     world.init_resource::<EditorHistoryRes>();
     world.init_resource::<FrameTimeRes>();
     world.init_resource::<PerfRes>();
@@ -412,6 +414,7 @@ pub fn register_state_schedule(world: &mut World) {
         bevy_ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
     render_extract_schedule.add_systems(
         (
+            crate::state::editor_objects::observe_editor_object_changes_system,
             crate::state::render::plugin::extract_trail_vertices_system,
             crate::state::render::plugin::extract_block_effect_vertices_system,
             crate::state::render::plugin::extract_practice_checkpoint_vertices_system,

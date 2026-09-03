@@ -10,7 +10,11 @@
 use std::hint::black_box;
 
 use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
-use eg_mesh::{build_block_geometry, build_chunked_block_mesh, build_trail_vertices_with_alpha};
+use eg_mesh::{
+    BlockInstance, TransformTriggerMarker, build_block_geometry, build_block_instance_batches,
+    build_block_instance_for_object, build_chunked_block_mesh, build_trail_vertices_with_alpha,
+    build_transform_trigger_marker_vertices,
+};
 use eg_types::{
     Direction, EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
     TriggerTarget,
@@ -35,6 +39,87 @@ pub fn rebuild_full_block_mesh(object_count: usize) -> BenchmarkWorkSummary {
         object_count: objects.len(),
         vertex_count: geometry.vertex_count(),
         draw_count: geometry.draw_count(),
+    }
+}
+
+/// Builds the complete compact instanced representation for a synthetic editor level.
+pub fn rebuild_instanced_block_batch(object_count: usize) -> BenchmarkWorkSummary {
+    let objects = benchmark_objects(object_count);
+    let result = build_block_instance_batches(black_box(&objects));
+    let vertex_count = result
+        .batches
+        .iter()
+        .map(|batch| batch.template.vertex_count())
+        .sum::<usize>()
+        + result.instance_count() * std::mem::size_of::<BlockInstance>();
+    BenchmarkWorkSummary {
+        object_count: result.instance_count(),
+        vertex_count,
+        draw_count: result.batches.len(),
+    }
+}
+
+/// Builds one changed editor instance record without rebuilding the level mesh.
+pub fn update_one_instanced_block(
+    object_count: usize,
+    changed_index: usize,
+) -> BenchmarkWorkSummary {
+    let object_count = black_box(object_count);
+    if object_count == 0 {
+        return BenchmarkWorkSummary {
+            object_count: 0,
+            vertex_count: 0,
+            draw_count: 0,
+        };
+    }
+    let side = (object_count as f32).sqrt().ceil() as usize;
+    let object = benchmark_object_with_side(changed_index % object_count, side.max(1));
+    let instance = build_block_instance_for_object(black_box(&object), None);
+    black_box(instance);
+    BenchmarkWorkSummary {
+        object_count: 1,
+        vertex_count: std::mem::size_of::<BlockInstance>(),
+        draw_count: 1,
+    }
+}
+
+/// Rebuilds every transform-trigger marker sidecar for a timeline sample.
+pub fn rebuild_transform_marker_sidecars(
+    marker_count: usize,
+    time_seconds: f32,
+) -> BenchmarkWorkSummary {
+    let markers = benchmark_transform_markers(marker_count);
+    let vertices = build_transform_trigger_marker_vertices(black_box(&markers), time_seconds);
+    BenchmarkWorkSummary {
+        object_count: markers.len(),
+        vertex_count: vertices.len(),
+        draw_count: markers.len(),
+    }
+}
+
+/// Rebuilds only one keyed transform-trigger marker sidecar.
+pub fn update_one_transform_marker_sidecar(
+    marker_count: usize,
+    changed_index: usize,
+    time_seconds: f32,
+) -> BenchmarkWorkSummary {
+    let marker_count = black_box(marker_count);
+    if marker_count == 0 {
+        return BenchmarkWorkSummary {
+            object_count: 0,
+            vertex_count: 0,
+            draw_count: 0,
+        };
+    }
+    let marker = benchmark_transform_marker(changed_index % marker_count);
+    let vertices = build_transform_trigger_marker_vertices(
+        std::slice::from_ref(black_box(&marker)),
+        time_seconds,
+    );
+    BenchmarkWorkSummary {
+        object_count: 1,
+        vertex_count: vertices.len(),
+        draw_count: 1,
     }
 }
 
@@ -487,18 +572,20 @@ fn cached_trail_point_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
 pub fn benchmark_objects(object_count: usize) -> Vec<LevelObject> {
     let side = (object_count as f32).sqrt().ceil() as usize;
     (0..object_count)
-        .map(|index| {
-            let x = (index % side) as f32;
-            let z = (index / side) as f32;
-            LevelObject {
-                id: format!("object_{index}"),
-                position: [x, 0.0, z],
-                size: [1.0, 1.0 + ((index % 3) as f32 * 0.25), 1.0],
-                rotation: [0.0, ((index % 4) as f32) * 15.0, 0.0],
-                ..LevelObject::new("core/stone")
-            }
-        })
+        .map(|index| benchmark_object_with_side(index, side))
         .collect()
+}
+
+fn benchmark_object_with_side(index: usize, side: usize) -> LevelObject {
+    let x = (index % side) as f32;
+    let z = (index / side) as f32;
+    LevelObject {
+        id: format!("object_{index}"),
+        position: [x, 0.0, z],
+        size: [1.0, 1.0 + ((index % 3) as f32 * 0.25), 1.0],
+        rotation: [0.0, ((index % 4) as f32) * 15.0, 0.0],
+        ..LevelObject::new("core/stone")
+    }
 }
 
 /// Builds grid-aligned full-cube blocks for greedy meshing benchmarks.
@@ -562,6 +649,24 @@ pub fn benchmark_object_triggers(
             }
         })
         .collect()
+}
+
+fn benchmark_transform_markers(marker_count: usize) -> Vec<TransformTriggerMarker> {
+    (0..marker_count).map(benchmark_transform_marker).collect()
+}
+
+fn benchmark_transform_marker(index: usize) -> TransformTriggerMarker {
+    let position = [index as f32 * 0.5, 0.0, index as f32 * 0.25];
+    TransformTriggerMarker {
+        source_position: Some(position),
+        source_size: Some([1.0, 1.0, 1.0]),
+        target_position: [position[0] + 2.0, 0.5, position[2] + 1.0],
+        target_rotation_degrees: [0.0, (index % 8) as f32 * 45.0, 0.0],
+        target_size: [1.0, 1.0, 1.0],
+        time_seconds: (index % 32) as f32 * 0.125,
+        duration_seconds: 1.5,
+        is_selected: index == 0,
+    }
 }
 
 /// Builds evenly spaced tap times up to `target_time_seconds`.

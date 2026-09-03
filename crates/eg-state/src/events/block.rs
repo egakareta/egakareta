@@ -68,7 +68,17 @@ pub struct BlockResources<'w, 's> {
         (&'static EditorObjectOrder, &'static eg_game::ObjectData),
         With<EditorAuthoredObject>,
     >,
-    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    existing_objects: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static eg_game::ObjectId,
+            &'static eg_game::ObjectData,
+            &'static EditorObjectOrder,
+        ),
+        With<EditorAuthoredObject>,
+    >,
     commands: Commands<'w, 's>,
     input: ResMut<'w, EditorInputRes>,
     config: ResMut<'w, EditorConfigRes>,

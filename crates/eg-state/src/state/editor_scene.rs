@@ -72,7 +72,7 @@ super::editor_context_methods! {
 
 #[cfg(test)]
 mod tests {
-    use bevy_ecs::schedule::Schedule;
+    use bevy_ecs::schedule::{IntoScheduleConfigs, Schedule};
     use bevy_state::prelude::State;
     use eg_mesh::build_block_geometry_for_object;
     use eg_types::{
@@ -161,12 +161,78 @@ mod tests {
                     ..LevelObject::new("core/stone")
                 },
                 transform_trigger_object(
+                    3.0,
+                    1.0,
+                    [10.0, 0.0, 0.0],
+                    [0.0, 180.0, 0.0],
+                    [3.0, 1.0, 1.0],
+                ),
+                transform_trigger_object(
                     1.0,
                     4.0,
                     [8.0, 0.0, 0.0],
                     [0.0, 90.0, 0.0],
                     [2.0, 1.0, 1.0],
                 ),
+            ],
+        );
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.set_trigger_selected(Some(0));
+        });
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            )
+                .chain(),
+        );
+        schedule.run(app.world_mut());
+
+        let marker_updates = &app
+            .world()
+            .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+            .updates;
+        assert!(!marker_updates.is_empty());
+        let selected_updates = marker_updates
+            .iter()
+            .filter(|update| {
+                update
+                    .geometry
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.color == [1.0, 0.8, 0.18, 0.96])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(selected_updates.len(), 1);
+        assert!(selected_updates[0].marker_id.starts_with("trigger_1:"));
+
+        schedule.run(app.world_mut());
+        assert!(
+            app.world()
+                .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+                .updates
+                .is_empty()
+        );
+
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.set_trigger_selected(Some(1));
+        });
+        schedule.run(app.world_mut());
+        let selection_updates = &app
+            .world()
+            .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+            .updates;
+        assert_eq!(selection_updates.len(), 2);
+
+        replace_editor_objects(
+            app.world_mut(),
+            vec![
+                LevelObject {
+                    id: "target".to_string(),
+                    ..LevelObject::new("core/stone")
+                },
                 transform_trigger_object(
                     3.0,
                     1.0,
@@ -176,26 +242,11 @@ mod tests {
                 ),
             ],
         );
-        with_editor_interaction_context(app.world_mut(), |editor| {
-            editor.set_trigger_selected(Some(1));
-        });
-
-        let mut schedule = Schedule::default();
-        schedule.add_systems(
-            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
-        );
         schedule.run(app.world_mut());
-
-        let marker_vertices = &app
+        let marker_vertices = app
             .world()
-            .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
-            .0;
-        assert!(!marker_vertices.is_empty());
-        assert!(
-            marker_vertices
-                .iter()
-                .any(|vertex| vertex.color == [1.0, 0.8, 0.18, 0.96])
-        );
+            .resource::<RenderEditorTransformTriggerMarkerVerticesRes>();
+        assert_eq!(marker_vertices.removals, vec!["trigger_1:target:0"]);
     }
 
     #[test]
@@ -235,8 +286,56 @@ mod tests {
         assert!(
             !app.world()
                 .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
-                .0
+                .updates
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn transform_trigger_marker_ties_preserve_authored_order() {
+        let mut app = TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(AppPhase::Editor));
+        let mut first =
+            transform_trigger_object(1.0, 1.0, [4.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        first.id = "trigger_first".to_string();
+        let mut second =
+            transform_trigger_object(1.0, 1.0, [8.0, 0.0, 0.0], [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        second.id = "trigger_second".to_string();
+        replace_editor_objects(
+            app.world_mut(),
+            vec![
+                LevelObject {
+                    id: "target".to_string(),
+                    ..LevelObject::new("core/stone")
+                },
+                first,
+                second,
+            ],
+        );
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.set_trigger_selected(Some(0));
+        });
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(
+            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+        );
+        schedule.run(app.world_mut());
+
+        let selected_update = app
+            .world()
+            .resource::<RenderEditorTransformTriggerMarkerVerticesRes>()
+            .updates
+            .iter()
+            .find(|update| {
+                update
+                    .geometry
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.color == [1.0, 0.8, 0.18, 0.96])
+            })
+            .expect("one trigger marker should be selected");
+        assert!(selected_update.marker_id.starts_with("trigger_first:"));
     }
 }

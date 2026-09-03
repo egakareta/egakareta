@@ -130,6 +130,24 @@ fn draw_visible_chunked_instances(
     }
 }
 
+fn draw_visible_retained_instances(
+    render_pass: &mut wgpu::RenderPass<'_>,
+    slot: &eg_render::InstancedMeshSlot,
+    frustum: ViewFrustum,
+) {
+    for batch in slot.draw_batches() {
+        if batch
+            .aabb
+            .is_some_and(|aabb| !frustum.intersects_aabb(aabb))
+        {
+            continue;
+        }
+        render_pass.set_vertex_buffer(0, batch.template_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, batch.instance_buffer.slice(..));
+        render_pass.draw(0..batch.template_vertex_count, 0..batch.instance_count);
+    }
+}
+
 struct RenderContext<'a> {
     gpu: &'a mut eg_render::GpuContext,
     meshes: &'a mut eg_render::SceneMeshes,
@@ -351,37 +369,16 @@ impl RenderContext<'_> {
                 if phase == AppPhase::Editor {
                     render_pass.set_pipeline(&self.render_gpu().instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                    draw_visible_chunked_instances(
-                        &mut render_pass,
-                        &self.render_meshes().blocks_static_chunked,
-                        block_frustum,
-                    );
-                    draw_instanced_blocks(
+                    draw_visible_retained_instances(
                         &mut render_pass,
                         &self.render_meshes().blocks_static_instanced,
+                        block_frustum,
                     );
                     render_pass.set_pipeline(&self.render_gpu().render_pipeline);
                     render_pass.set_bind_group(0, &self.render_gpu().camera_bind_group, &[]);
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     render_pass.set_bind_group(2, &self.render_gpu().color_space_bind_group, &[]);
                     render_pass.set_bind_group(3, &self.render_gpu().block_texture_bind_group, &[]);
-
-                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                    draw_visible_chunked_geometry(
-                        &mut render_pass,
-                        &self.render_meshes().blocks_static_chunked,
-                        block_frustum,
-                    );
-
-                    if let Some(draw_data) = self.render_meshes().blocks_static.draw_data() {
-                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                        draw_mesh(&mut render_pass, draw_data);
-                    }
-
-                    if let Some(draw_data) = self.render_meshes().blocks_selected.draw_data() {
-                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                        draw_mesh(&mut render_pass, draw_data);
-                    }
                 } else {
                     render_pass.set_pipeline(&self.render_gpu().instanced_block_pipeline);
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
@@ -403,11 +400,6 @@ impl RenderContext<'_> {
                         &self.render_meshes().blocks_chunked,
                         block_frustum,
                     );
-
-                    if let Some(draw_data) = self.render_meshes().blocks.draw_data() {
-                        render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                        draw_mesh(&mut render_pass, draw_data);
-                    }
                 }
 
                 if let Some(draw_data) = self.render_meshes().gem_shatter_effects.draw_data() {
@@ -465,11 +457,6 @@ impl RenderContext<'_> {
                     draw_mesh(&mut render_pass, draw_data);
                 }
 
-                if let Some(draw_data) = self.render_meshes().camera_trigger_markers.draw_data() {
-                    render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
-                    draw_mesh(&mut render_pass, draw_data);
-                }
-
                 if let Some(draw_data) = self.render_meshes().tap_indicators.draw_data() {
                     render_pass.set_bind_group(1, &self.render_gpu().zero_line_bind_group, &[]);
                     draw_mesh(&mut render_pass, draw_data);
@@ -482,7 +469,7 @@ impl RenderContext<'_> {
         if draw_editor_overlays {
             puffin::profile_scope!("DrawEditorOverlays");
 
-            if let Some(draw_data) = self.render_meshes().transform_trigger_markers.draw_data() {
+            if !self.render_meshes().transform_trigger_markers.is_empty() {
                 puffin::profile_scope!("DrawTransformTriggerMarkers");
                 let mut transform_marker_pass =
                     encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -528,7 +515,15 @@ impl RenderContext<'_> {
                     &self.render_gpu().block_texture_bind_group,
                     &[],
                 );
-                draw_mesh(&mut transform_marker_pass, draw_data);
+                for slot in self
+                    .render_meshes()
+                    .transform_trigger_markers
+                    .draw_batches()
+                {
+                    if let Some(draw_data) = slot.draw_data() {
+                        draw_mesh(&mut transform_marker_pass, draw_data);
+                    }
+                }
             }
 
             // Selection outlines use a selected-only depth prepass, so each block keeps its own

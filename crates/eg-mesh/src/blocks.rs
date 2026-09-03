@@ -23,6 +23,7 @@ use crate::{
         append_cylinder_segment, append_oriented_box_edges, append_xz_ring, object_center,
         transform_marker_rotation,
     },
+    chunked::{ChunkAabb, RenderChunkKey},
     geometry::MeshGeometry,
     noise::pseudo_random_noise,
     shapes::{PrismFaceColors, PrismTextureLayers, append_prism_with_layers},
@@ -35,8 +36,6 @@ const CAMERA_TRIGGER_PROFILE_TAG: f32 = 6.0;
 const PARALLEL_GEOMETRY_OBJECT_THRESHOLD: usize = 256;
 const PARALLEL_CHUNK_SIZE: usize = 128;
 const VERTICES_PER_PRISM: usize = 36;
-const MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS: usize = 10_000;
-
 pub fn build_block_vertices(objects: &[LevelObject]) -> Vec<Vertex> {
     puffin::profile_scope!("BuildBlockVertices");
     build_block_geometry_from_slice(objects, None).to_triangle_vertices()
@@ -97,10 +96,30 @@ pub fn build_block_geometry_for_object(object: &LevelObject) -> MeshGeometry {
     geometry
 }
 
+pub fn build_block_instance_for_object(
+    object: &LevelObject,
+    current_time_seconds: Option<f32>,
+) -> BlockInstance {
+    let block = BlockDefinition::get(&object.block_id);
+    block_instance_from_object(object, block, current_time_seconds)
+}
+
 #[derive(Clone)]
 pub struct BlockInstanceBatch {
     pub block_id: String,
     pub template: MeshGeometry,
+    /// Optional spatial metadata used by the editor's retained batch culling.
+    /// General instance callers can leave this unset.
+    pub chunk_key: Option<RenderChunkKey>,
+    pub aabb: Option<ChunkAabb>,
+    /// Stable authored IDs corresponding one-to-one with `instances`.
+    ///
+    /// Gameplay callers may provide empty IDs. The retained GPU cache treats
+    /// those entries as positional, while editor objects always have stable
+    /// normalized IDs.
+    pub object_ids: Vec<String>,
+    /// Optional per-object bounds corresponding one-to-one with `instances`.
+    pub object_aabbs: Vec<Option<ChunkAabb>>,
     pub instances: Vec<BlockInstance>,
 }
 
@@ -145,51 +164,35 @@ pub fn build_block_instance_batches_from_refs_at_time(
     current_time_seconds: Option<f32>,
 ) -> BlockInstanceBuildResult {
     puffin::profile_scope!("BuildBlockInstanceBatches");
-    let mut grouped_instances = BTreeMap::<String, Vec<BlockInstance>>::new();
-    let mut fallback_geometry = MeshGeometry::default();
-    let mut scratch = Vec::with_capacity(VERTICES_PER_PRISM);
-    let mut fallback_object_count = 0usize;
-    let mut warned_about_fallback_limit = false;
+    let mut grouped_instances = BTreeMap::<String, (Vec<String>, Vec<BlockInstance>)>::new();
 
     for object in objects {
         let block = BlockDefinition::get(&object.block_id);
-        if is_instanced_block_definition(block) {
-            grouped_instances
-                .entry(block.id.to_string())
-                .or_default()
-                .push(block_instance_from_object(object, block));
-        } else {
-            if fallback_object_count >= MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS {
-                if !warned_about_fallback_limit {
-                    log::warn!(
-                        "Skipping block fallback geometry after {MAX_FALLBACK_BLOCK_GEOMETRY_OBJECTS} objects to avoid an oversized expanded mesh"
-                    );
-                    warned_about_fallback_limit = true;
-                }
-                continue;
-            }
-            append_block_geometry_with_scratch(
-                &mut fallback_geometry,
-                object,
-                &mut scratch,
-                current_time_seconds,
-            );
-            fallback_object_count += 1;
-        }
+        let (object_ids, instances) = grouped_instances.entry(block.id.to_string()).or_default();
+        object_ids.push(object.id.clone());
+        instances.push(block_instance_from_object(
+            object,
+            block,
+            current_time_seconds,
+        ));
     }
 
     let batches = grouped_instances
         .into_iter()
-        .map(|(block_id, instances)| BlockInstanceBatch {
+        .map(|(block_id, (object_ids, instances))| BlockInstanceBatch {
             template: build_block_template_geometry(&block_id),
             block_id,
+            chunk_key: None,
+            aabb: None,
+            object_ids,
+            object_aabbs: vec![None; instances.len()],
             instances,
         })
         .collect();
 
     BlockInstanceBuildResult {
         batches,
-        fallback_geometry,
+        fallback_geometry: MeshGeometry::default(),
     }
 }
 
@@ -211,6 +214,23 @@ pub fn build_block_template_geometry(block_id: &str) -> MeshGeometry {
         texture_layers.bottom,
     );
     let mut vertices = Vec::new();
+
+    // Trigger visuals are authored in world space by the expanded path, so
+    // provide unit-space canonical templates for the retained instanced path.
+    // The instance transform supplies the authored pose and size.
+    match block.render.profile {
+        BlockRenderProfile::TransformTrigger => {
+            let canonical = LevelObject::new(block_id);
+            build_transform_trigger_block_vertices(&mut vertices, &canonical, &colors);
+            return MeshGeometry::from_vertices(vertices);
+        }
+        BlockRenderProfile::CameraTrigger => {
+            let canonical = LevelObject::new(block_id);
+            build_camera_trigger_block_vertices(&mut vertices, &canonical, &colors, None);
+            return MeshGeometry::from_vertices(vertices);
+        }
+        _ => {}
+    }
 
     if block.geometry.elements.is_empty() {
         append_prism_with_layers(
@@ -247,18 +267,15 @@ pub fn build_block_template_geometry(block_id: &str) -> MeshGeometry {
     MeshGeometry::from_vertices(vertices)
 }
 
-fn is_instanced_block_definition(block: &BlockDefinition) -> bool {
-    !matches!(
-        block.render.profile,
-        BlockRenderProfile::CameraTrigger | BlockRenderProfile::TransformTrigger
-    )
-}
-
 fn block_template_position(local: [f32; 3]) -> [f32; 3] {
     [local[0] / 16.0, local[1] / 16.0, local[2] / 16.0]
 }
 
-fn block_instance_from_object(object: &LevelObject, block: &BlockDefinition) -> BlockInstance {
+fn block_instance_from_object(
+    object: &LevelObject,
+    block: &BlockDefinition,
+    current_time_seconds: Option<f32>,
+) -> BlockInstance {
     let rotation = glam::Mat3::from_euler(
         glam::EulerRot::XYZ,
         object.rotation[0].to_radians(),
@@ -283,6 +300,18 @@ fn block_instance_from_object(object: &LevelObject, block: &BlockDefinition) -> 
         0.0
     };
     let animation_anchor = block_instance_animation_anchor(block, center);
+    let trigger_progress = if block.render.profile == BlockRenderProfile::CameraTrigger {
+        object
+            .trigger
+            .as_ref()
+            .and_then(|trigger| {
+                current_time_seconds
+                    .and_then(|time| camera_trigger_countdown_progress(trigger, time))
+            })
+            .unwrap_or(0.0)
+    } else {
+        0.0
+    };
 
     BlockInstance {
         model_rows: [
@@ -297,6 +326,7 @@ fn block_instance_from_object(object: &LevelObject, block: &BlockDefinition) -> 
             noise_factor,
         ],
         animation_anchor,
+        trigger_params: [trigger_progress, 0.0, 0.0, 0.0],
     }
 }
 
@@ -829,8 +859,9 @@ pub fn append_camera_trigger_visual_vertices(
     );
 
     for vertex in vertices {
+        let ring_marker = vertex.color_outline[3];
         vertex.set_render_profile(CAMERA_TRIGGER_PROFILE_TAG);
-        vertex.color_outline = [eye.x, eye.y, eye.z, 0.0];
+        vertex.color_outline = [eye.x, eye.y, eye.z, ring_marker];
     }
 }
 
@@ -857,6 +888,7 @@ fn append_camera_trigger_ring(
     }
 
     let segments = 24;
+    let ring_start = vertices.len();
     for segment in 0..segments {
         let angle_start = segment as f32 * std::f32::consts::TAU / segments as f32;
         let angle_end = (segment + 1) as f32 * std::f32::consts::TAU / segments as f32;
@@ -871,6 +903,11 @@ fn append_camera_trigger_ring(
             tube_radius,
             color,
         );
+    }
+    for vertex in &mut vertices[ring_start..] {
+        // The instanced shader uses this bit to apply the per-trigger
+        // countdown scale to the ring without rebuilding its geometry.
+        vertex.color_outline[3] = 1.0;
     }
 }
 

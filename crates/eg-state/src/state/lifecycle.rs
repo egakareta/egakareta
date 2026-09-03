@@ -9,9 +9,7 @@ use bevy_ecs::world::World;
 use eg_audio::service::{AudioPreloadResult, WaveformResult};
 use eg_blocks::BlockTextureAtlas;
 use eg_level::builtin_level_names;
-use eg_mesh::{
-    BlockInstance, Vertex, build_block_geometry, build_floor_vertices, build_grid_vertices,
-};
+use eg_mesh::{BlockInstance, Vertex, build_floor_vertices, build_grid_vertices};
 #[cfg(not(target_arch = "wasm32"))]
 use eg_platform::state_host::NativeWindow;
 use eg_platform::state_host::SurfaceHost;
@@ -1184,9 +1182,6 @@ impl AppInitialization {
         let (waveform_sender, waveform_receiver) = std::sync::mpsc::channel::<WaveformResult>();
         let waveform_load_channel = (waveform_sender, shared_receiver(waveform_receiver));
 
-        let block_geometry = build_block_geometry(&[]);
-        let block_mesh = MeshSlot::from_geometry(&device, "Block Vertex Buffer", &block_geometry);
-
         let (auth_sender, auth_receiver) = std::sync::mpsc::channel();
         let auth_receiver = std::sync::Arc::new(std::sync::Mutex::new(auth_receiver));
         let (level_import_sender, level_import_receiver) = std::sync::mpsc::channel();
@@ -1240,13 +1235,9 @@ impl AppInitialization {
                     trail: trail_mesh,
                     gem_shatter_effects: MeshSlot::Empty,
                     practice_checkpoints: MeshSlot::Empty,
-                    blocks: block_mesh,
                     blocks_chunked: eg_render::ChunkedBlockMeshSlot::default(),
                     blocks_instanced: InstancedMeshSlot::default(),
-                    blocks_static: MeshSlot::Empty,
-                    blocks_static_chunked: eg_render::ChunkedBlockMeshSlot::default(),
                     blocks_static_instanced: InstancedMeshSlot::default(),
-                    blocks_selected: MeshSlot::Empty,
                     editor_cursor: MeshSlot::Empty,
                     editor_hover_stencil: MeshSlot::Empty,
                     editor_hover_outline: MeshSlot::Empty,
@@ -1255,12 +1246,13 @@ impl AppInitialization {
                     editor_selection_outline_instances: Vec::new(),
                     editor_gizmo: MeshSlot::Empty,
                     tap_indicators: MeshSlot::Empty,
-                    transform_trigger_markers: MeshSlot::Empty,
+                    transform_trigger_markers: eg_render::RetainedMeshSlot::default(),
                     spawn_marker: MeshSlot::Empty,
-                    camera_trigger_markers: MeshSlot::Empty,
                     editor_preview_player: MeshSlot::Empty,
                     editor_hitbox_visualization: MeshSlot::Empty,
                     camera_arrow: MeshSlot::Empty,
+                    editor_block_mesh_generation: u64::MAX,
+                    transform_trigger_marker_generation: u64::MAX,
                 },
             ),
             auth: AuthStateRes {

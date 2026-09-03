@@ -69,6 +69,7 @@ struct InstanceInput {
     @location(12) model_row_2: vec4<f32>,
     @location(13) color_tint_and_noise: vec4<f32>,
     @location(14) animation_anchor: vec4<f32>,
+    @location(15) trigger_params: vec4<f32>,
 };
 
 // Apply idle spin/bob/pulse animation around a world-space anchor. Shared by the
@@ -160,8 +161,24 @@ fn vs_instanced(input: VertexInput, instance: InstanceInput) -> VertexOutput {
         dot(instance.model_row_2, local)
     );
 
-    let animated = animate_world_position(
+    let camera_trigger_profile = step(5.5, input.render_profile)
+        * (1.0 - step(6.5, input.render_profile));
+    let camera_trigger_ring = step(0.5, input.color_outline.w);
+    let ring_scale = max(0.33, 1.0 - instance.trigger_params.x * 0.67);
+    let local_center = vec4<f32>(0.5, 0.5, 0.5, 1.0);
+    let world_center = vec3<f32>(
+        dot(instance.model_row_0, local_center),
+        dot(instance.model_row_1, local_center),
+        dot(instance.model_row_2, local_center)
+    );
+    let adjusted_world_local = select(
         world_local,
+        world_center + (world_local - world_center) * ring_scale,
+        camera_trigger_profile * camera_trigger_ring > 0.5
+    );
+
+    let animated = animate_world_position(
+        adjusted_world_local,
         instance.animation_anchor,
         input.animation_params,
         input.animation_params2
@@ -178,7 +195,18 @@ fn vs_instanced(input: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.uv = input.uv;
     out.uv_norm = input.uv_norm;
     out.texture_layer = input.texture_layer;
-    out.color_outline = vec4<f32>(input.color_outline.rgb * tint, input.color_outline.a);
+    let outline_anchor_local = vec4<f32>(input.color_outline.xyz, 1.0);
+    let outline_anchor_world = vec3<f32>(
+        dot(instance.model_row_0, outline_anchor_local),
+        dot(instance.model_row_1, outline_anchor_local),
+        dot(instance.model_row_2, outline_anchor_local)
+    );
+    let outline_rgb = mix(
+        input.color_outline.rgb * tint,
+        outline_anchor_world,
+        camera_trigger_profile
+    );
+    out.color_outline = vec4<f32>(outline_rgb, input.color_outline.a);
     out.render_profile = input.render_profile;
     return out;
 }

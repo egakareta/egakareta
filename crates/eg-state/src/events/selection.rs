@@ -111,7 +111,17 @@ pub struct SelectionResources<'w, 's> {
         (&'static EditorObjectOrder, &'static eg_game::ObjectData),
         With<EditorAuthoredObject>,
     >,
-    existing_objects: Query<'w, 's, Entity, With<EditorAuthoredObject>>,
+    existing_objects: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static eg_game::ObjectId,
+            &'static eg_game::ObjectData,
+            &'static EditorObjectOrder,
+        ),
+        With<EditorAuthoredObject>,
+    >,
     commands: Commands<'w, 's>,
     objects: Local<'s, EditorObjectScratch>,
     input: ResMut<'w, EditorInputRes>,

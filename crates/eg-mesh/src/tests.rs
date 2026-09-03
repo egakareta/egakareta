@@ -10,12 +10,14 @@ mod mesh_tests {
     use eg_block_geometry::hitbox_cuboids;
     use eg_types::{
         CAMERA_TRIGGER_BLOCK_ID, CameraTrigger, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger,
     };
 
     use crate::{
         GizmoPart, Vertex,
         blocks::{
-            build_block_geometry, build_block_instance_batches, build_block_template_geometry,
+            build_block_geometry, build_block_instance_batches,
+            build_block_instance_batches_at_time, build_block_template_geometry,
             build_block_vertices,
         },
         builders::{
@@ -112,7 +114,7 @@ mod mesh_tests {
     }
 
     #[test]
-    fn block_instance_batches_split_instanced_blocks_from_trigger_fallbacks() {
+    fn block_instance_batches_keep_trigger_visuals_in_instanced_batches() {
         let objects = vec![
             LevelObject::new("core/stone"),
             LevelObject::new("core/wooden_fence"),
@@ -122,8 +124,8 @@ mod mesh_tests {
 
         let batches = build_block_instance_batches(&objects);
 
-        assert_eq!(batches.instance_count(), 2);
-        assert_eq!(batches.batches.len(), 2);
+        assert_eq!(batches.instance_count(), 4);
+        assert_eq!(batches.batches.len(), 4);
         assert!(
             batches
                 .batches
@@ -137,7 +139,34 @@ mod mesh_tests {
                 .any(|batch| batch.block_id == "core/wooden_fence"
                     && batch.template.vertex_count() == 3 * 36)
         );
-        assert!(batches.fallback_draw_count() > 0);
+        assert!(batches.fallback_geometry.is_empty());
+    }
+
+    #[test]
+    fn camera_trigger_instance_carries_countdown_progress() {
+        let object = LevelObject {
+            trigger: Some(TimedTrigger {
+                time_seconds: 1.0,
+                camera: Some(CameraTrigger {
+                    transition_interval_seconds: 1.0,
+                    ..CameraTrigger::default()
+                }),
+                ..TimedTrigger::default()
+            }),
+            ..LevelObject::new(CAMERA_TRIGGER_BLOCK_ID)
+        };
+
+        let batches = build_block_instance_batches_at_time(&[object], 0.5);
+        let instance = batches.batches[0].instances[0];
+
+        assert!((instance.trigger_params[0] - 0.5).abs() <= 1e-6);
+        assert!(
+            batches.batches[0]
+                .template
+                .vertices
+                .iter()
+                .any(|vertex| vertex.render_profile == 6.0 && vertex.color_outline[3] > 0.5)
+        );
     }
 
     #[test]
