@@ -102,6 +102,10 @@ pub enum RenderSet {
     Present,
 }
 
+pub(crate) fn configure_render_extract_sets(schedule: &mut Schedule) {
+    schedule.configure_sets((RenderSet::Extract, RenderSet::Present).chain());
+}
+
 /// The rendering extraction plugin.
 ///
 /// Registers the POD resources for an `App`. `AppBootstrap` inserts real heavy
@@ -2427,7 +2431,7 @@ pub fn add_state_render_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
-    use bevy_ecs::world::World;
+    use bevy_ecs::{prelude::Resource, world::World};
     use bevy_state::prelude::State;
     use eg_types::{AppPhase, EditorMode, LevelObject, PhysicalSize};
 
@@ -2436,6 +2440,50 @@ mod tests {
         EditorAuthoredObject, EditorCameraRes, EditorInputRes, SessionStateRes,
         render::resources::render_pod_resources_present,
     };
+
+    #[derive(Resource, Default)]
+    struct PresentEditorUpdateCount(usize);
+
+    fn capture_editor_update_count(
+        editor_blocks: Res<RenderEditorBlockMeshesRes>,
+        mut count: ResMut<PresentEditorUpdateCount>,
+    ) {
+        count.0 = editor_blocks.updates.len();
+    }
+
+    #[test]
+    fn render_extract_set_precedes_present_consumers() {
+        let mut app = crate::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .insert_resource(State::new(AppPhase::Editor));
+        crate::state::editor_objects::replace_editor_objects(
+            app.world_mut(),
+            vec![LevelObject {
+                id: "retained_block".to_string(),
+                ..LevelObject::new("core/stone")
+            }],
+        );
+        app.world_mut().init_resource::<PresentEditorUpdateCount>();
+
+        let mut schedule = Schedule::default();
+        configure_render_extract_sets(&mut schedule);
+        schedule.add_systems(capture_editor_update_count.in_set(RenderSet::Present));
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                extract_editor_block_meshes_system,
+            )
+                .chain()
+                .in_set(RenderSet::Extract),
+        );
+        schedule.run(app.world_mut());
+
+        assert_eq!(
+            app.world().resource::<PresentEditorUpdateCount>().0,
+            1,
+            "present must consume editor updates after extraction in the same frame"
+        );
+    }
 
     #[test]
     fn register_render_pod_resources_inserts_defaults() {

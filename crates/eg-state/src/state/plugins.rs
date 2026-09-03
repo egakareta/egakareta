@@ -412,6 +412,7 @@ pub fn register_state_schedule(world: &mut World) {
 
     let mut render_extract_schedule =
         bevy_ecs::schedule::Schedule::new(crate::state::RenderExtractSchedule);
+    crate::state::render::plugin::configure_render_extract_sets(&mut render_extract_schedule);
     render_extract_schedule.add_systems(
         (
             crate::state::editor_objects::observe_editor_object_changes_system,
@@ -435,7 +436,8 @@ pub fn register_state_schedule(world: &mut World) {
             crate::state::render::plugin::upload_render_uniforms_system
                 .after(crate::state::render::plugin::update_render_uniforms_system),
         )
-            .chain(),
+            .chain()
+            .in_set(crate::state::render::plugin::RenderSet::Extract),
     );
     render_extract_schedule.add_systems(
         crate::state::render::plugin::upload_extracted_render_meshes_system
