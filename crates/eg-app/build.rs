@@ -137,10 +137,6 @@ fn main() {
             wrangler_count += 1;
         }
     }
-    println!(
-        "cargo:warning=Baking {} keys from wrangler.jsonc",
-        wrangler_count
-    );
 
     let mut env_count = 0;
     match std::fs::read_to_string(&env_file) {
@@ -164,22 +160,23 @@ fn main() {
             println!("cargo:warning={} not found", env_file.display());
         }
     };
-    println!(
-        "cargo:warning=Baking {} keys from {}",
-        env_count,
-        env_file.display()
-    );
 
-    if levels_dir.is_dir() {
-        let level_count = std::fs::read_dir(levels_dir)
+    let level_count = if levels_dir.is_dir() {
+        std::fs::read_dir(levels_dir)
             .map(|entries| {
                 entries
                     .filter(|e| e.as_ref().map(|e| e.path().is_dir()).unwrap_or(false))
                     .count()
             })
-            .unwrap_or(0);
-        println!("cargo:warning=Using {} levels", level_count);
-    }
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    println!(
+        "cargo:warning={wrangler_count} wrangler.jsonc | {env_count} {} | {level_count} levels",
+        env_file.file_name().unwrap_or_default().to_string_lossy()
+    );
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
