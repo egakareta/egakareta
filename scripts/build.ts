@@ -298,7 +298,9 @@ function splitWasmForStaticHosting(wasmPath: string) {
     );
     fs.unlinkSync(wasmPath);
 
-    console.log(
-        `split ${WASM_FILENAME} (${wasmSize} bytes) into ${parts.length} static assets`,
-    );
+    if (process.argv.includes("--verbose")) {
+        console.log(
+            `split ${WASM_FILENAME} (${wasmSize} bytes) into ${parts.length} static assets`,
+        );
+    }
 }
