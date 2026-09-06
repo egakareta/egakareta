@@ -161,12 +161,6 @@ impl AudioBackend {
     pub fn ensure_device(&mut self) -> bool {
         if self.output.is_none() {
             let preferred = self.preferred_backend;
-            #[cfg(target_arch = "wasm32")]
-            let preferred = preferred.or_else(|| {
-                AudioOutput::available_backends()
-                    .contains(&NyaaBackend::AudioWorklet)
-                    .then_some(NyaaBackend::AudioWorklet)
-            });
 
             let output = if let Some(backend) = preferred {
                 match AudioOutput::try_new_with_backend(backend) {
