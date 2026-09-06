@@ -112,9 +112,13 @@ pub fn register_events(app: &mut App) {
 // -----------------------------------------------------------------------
 
 pub fn handle_turn_right(mut events: MessageReader<TurnRight>, mut resources: TurnRightResources) {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
     resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
     let before = resources.objects.objects.clone();
-    for _ in events.read() {
+    for _ in events {
         let phase = *resources.phase.get();
         let practice_game_over = phase == AppPhase::Playing
             && resources.clock.game_over
@@ -377,7 +381,7 @@ fn queue_runtime_audio_preload(
 fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     record_editor_history_for_placement(resources);
 
-    let default_size = BlockDefinition::get(&resources.config.0.selected_block_id)
+    let default_size = BlockDefinition::get_by_id(&resources.config.0.selected_block_id)
         .render
         .default_size;
     let placed = create_block_at_cursor(
@@ -410,6 +414,7 @@ fn record_editor_history_for_placement(resources: &mut TurnRightResources<'_, '_
     }
     resources.history.0.undo.push(EditorHistorySnapshot {
         objects: resources.objects.objects.clone(),
+        object_change: None,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

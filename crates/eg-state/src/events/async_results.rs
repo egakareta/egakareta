@@ -5,24 +5,16 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Async result events (Phase 6a).
-//!
 //! Platform services and background tasks write five `mpsc` channels
 //! (auth service, audio service, level importer). App-owned `StateSchedule`
 //! drains those channels and emits typed result messages into the World.
-//!
-//! Phase 6a introduced a Bevy `Message` per channel so a
-//! `PollChannelsSet` system can drain the receivers and emit
-//! per-message result events into the World. Phase 6b added handler
-//! systems that consume the messages and mutate App-world resources or
-//! enqueue typed requests for unavoidable external side effects.
 //!
 //! ## Why messages and not direct resource writes?
 //!
 //! - One reader per message type - distinct `Message<T>` types
 //!   give each handler its own `MessageReader<T>`, so multiple
 //!   readers of the same channel can be added without
-//!   cross-reader nondeterminism (see the Phase 3 plan notes).
+//!   cross-reader nondeterminism.
 //! - Testable in isolation - a test can write a synthetic
 //!   `AudioImportResult` into the `Messages<AudioImportResultEvent>`
 //!   buffer and assert the handler behavior without going through
@@ -30,12 +22,6 @@
 //! - Unlocks async-result consumers - `bevy_tasks`-based
 //!   systems can read the events without holding the channel
 //!   receiver (which is `!Sync`).
-//!
-//! REFACTOR POINT(full-bevy): the messages here migrate to
-//! `bevy_tasks` async event streams in the full-Bevy migration. The
-//! `mpsc` channels disappear entirely; background tasks write
-//! directly into `Messages<T>` (or `AssetEvent<T>` for asset
-//! loading).
 
 use bevy_ecs::prelude::*;
 use eg_audio::service::{AudioPreloadResult, WaveformResult};
@@ -75,7 +61,7 @@ impl AudioImportResultEvent {
 /// Result of an async waveform-load request.
 ///
 /// Note: `WaveformLoadMessage` does not implement `Clone`, so this
-/// event is **not** `Clone` — it's moved into the `Messages<>` buffer
+/// event is **not** `Clone` - it's moved into the `Messages<>` buffer
 /// by the poll system and consumed once by the handler system.
 #[allow(dead_code)]
 #[derive(Message, Debug)]

@@ -8,7 +8,7 @@
 //! ECS components for eg-game.
 //!
 //! These are the building blocks of the headless gameplay simulation. The
-//! `eg-game` crate stays free of wgpu/egui/I/O — it only operates on these
+//! `eg-game` crate stays free of wgpu/egui/I/O - it only operates on these
 //! components + the resources in [`crate::resources`].
 
 use bevy_ecs::prelude::*;
@@ -29,6 +29,20 @@ pub struct CachedBlockBehavior {
 impl CachedBlockBehavior {
     pub fn from_block_id(block_id: &str) -> Self {
         let def = eg_blocks::BlockDefinition::get(block_id);
+        Self::from_definition(def)
+    }
+
+    /// Fast path for callers that already hold a normalized [`eg_blocks::BlockId`].
+    ///
+    /// Avoids the `String` allocation inside [`eg_blocks::BlockId::new`]
+    /// performed by [`Self::from_block_id`]; hot loops over ~19k objects
+    /// must use this variant.
+    pub fn from_block_id_ref(block_id: &eg_blocks::BlockId) -> Self {
+        let def = eg_blocks::BlockDefinition::get_by_id(block_id);
+        Self::from_definition(def)
+    }
+
+    fn from_definition(def: &eg_blocks::BlockDefinition) -> Self {
         Self {
             collision: def.behavior.collision,
             speed_multiplier: def.behavior.speed_multiplier,
@@ -162,7 +176,7 @@ pub struct Selected;
 pub struct Hovered;
 
 // ---------------------------------------------------------------------------
-// Bundles — convenience for `world.spawn` call sites
+// Bundles - convenience for `world.spawn` call sites
 // ---------------------------------------------------------------------------
 
 /// Bundle to spawn a new player entity. The runtime state defaults to

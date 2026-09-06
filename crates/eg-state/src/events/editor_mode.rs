@@ -17,9 +17,9 @@ use glam::Vec2;
 use crate::state::{
     EditorAudioCacheRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
     EditorInputRes, EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    RenderUniformsRes, RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes,
-    collect_editor_object_data, load_waveform_for_level_resources,
+    EditorPickSpatialIndex, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+    EditorTriggerRes, RenderUniformsRes, RuntimeAudioPreloadRes, SessionStateRes,
+    WaveformLoadSenderRes, collect_editor_object_data, load_waveform_for_level_resources,
 };
 
 /// Switch the editor mode.
@@ -179,6 +179,7 @@ pub struct PickBlockAtResources<'w, 's> {
     history: ResMut<'w, EditorHistoryRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
     spawn: ResMut<'w, EditorSpawnRes>,
+    pick_spatial_index: Local<'s, EditorPickSpatialIndex>,
 }
 
 fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<'_, '_>) -> bool {
@@ -203,7 +204,7 @@ fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<
             selected_mask_cache: None,
             block_static_vertex_cache: Default::default(),
             block_static_vertex_cache_complete_len: None,
-            pick_spatial_index: Default::default(),
+            pick_spatial_index: &mut resources.pick_spatial_index,
         };
         editor
             .pick_from_screen(x, y, viewport_size)
@@ -214,7 +215,7 @@ fn pick_block_at_for_place(x: f64, y: f64, resources: &mut PickBlockAtResources<
         return false;
     };
 
-    if !eg_blocks::BlockDefinition::get(&block_id).placeable {
+    if !eg_blocks::BlockDefinition::get_by_id(&block_id).placeable {
         return false;
     }
 
@@ -266,7 +267,7 @@ fn pick_selected_block_for_place(
         return false;
     };
 
-    if !eg_blocks::BlockDefinition::get(&block_id).placeable {
+    if !eg_blocks::BlockDefinition::get_by_id(&block_id).placeable {
         return false;
     }
 

@@ -256,7 +256,7 @@ pub fn classify_voxel_fast_lane(object: &LevelObject) -> Result<(), VoxelFastLan
         return Err(VoxelFastLaneRejection::NonGridAligned);
     }
 
-    let block = BlockDefinition::get(&object.block_id);
+    let block = BlockDefinition::get_by_id(&object.block_id);
     if block.render.profile != BlockRenderProfile::Solid {
         return Err(VoxelFastLaneRejection::RenderProfile);
     }
@@ -672,7 +672,7 @@ fn material_key_for_object(
 }
 
 fn material_for_object(object: &LevelObject) -> VoxelMaterial {
-    let block = BlockDefinition::get(&object.block_id);
+    let block = BlockDefinition::get_by_id(&object.block_id);
     let texture_layers = BlockTextureLayers::get(&object.block_id);
     let mut colors = VoxelColors {
         top: block.render.color_top,

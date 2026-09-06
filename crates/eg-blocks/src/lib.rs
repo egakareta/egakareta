@@ -237,6 +237,15 @@ impl BlockDefinition {
     pub fn get(block_id: &str) -> &'static Self {
         block_definition_for_id(&BlockId::new(block_id))
     }
+
+    /// Resolves an already-normalized [`BlockId`] without allocating a new ID.
+    ///
+    /// Hot paths that already hold a `BlockId` (e.g. per-object render
+    /// extraction over ~19k objects) must use this instead of [`Self::get`]
+    /// to avoid one `String` allocation + normalization per object.
+    pub fn get_by_id(block_id: &BlockId) -> &'static Self {
+        block_definition_for_id(block_id)
+    }
 }
 
 fn block_definitions() -> &'static [BlockDefinition] {

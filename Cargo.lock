@@ -1411,6 +1411,7 @@ dependencies = [
  "criterion",
  "eg-blocks",
  "eg-game",
+ "eg-level",
  "eg-mesh",
  "eg-platform",
  "eg-render",

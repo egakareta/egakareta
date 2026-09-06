@@ -652,7 +652,7 @@ mod tests {
     #[test]
     fn rotated_block_hit_from_inside() {
         let obj = LevelObject::default();
-        // Origin inside the block, ray pointing +Z — exits at Z=1 with outward normal +Z.
+        // Origin inside the block, ray pointing +Z - exits at Z=1 with outward normal +Z.
         let (t, normal) = ray_intersect_rotated_block(Vec3::new(0.5, 0.5, 0.5), Vec3::Z, &obj)
             .expect("expected hit from inside");
         assert_abs_diff_eq!(t, 0.5);

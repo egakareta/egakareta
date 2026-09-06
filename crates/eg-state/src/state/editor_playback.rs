@@ -221,7 +221,7 @@ fn advance_simulation_preview(
 
 fn queue_block_effects(events: Vec<ConsumedObjectEvent>, runtime: &mut EditorRuntimeRes) {
     for event in events {
-        let block = eg_blocks::BlockDefinition::get(&event.object.block_id);
+        let block = eg_blocks::BlockDefinition::get_by_id(&event.object.block_id);
         let Some(effect) = block.animation.on_consumed else {
             continue;
         };

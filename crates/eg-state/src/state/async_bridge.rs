@@ -29,7 +29,7 @@
 //! The wrapper wraps the receiver in a `Mutex` (which is `Sync`)
 //! so the receiver can sit in the World and be accessed via
 //! `ResMut<T>` from a single system. The `Mutex` is uncontended in
-//! practice — only the `poll_channels_system` ever locks it, and
+//! practice - only the `poll_channels_system` ever locks it, and
 //! it runs at the top of the frame before any handler system.
 //!
 //! ## Phase 6b: result handler systems
@@ -118,30 +118,21 @@ pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 pub struct AuthChannelRes(pub SharedAuthReceiver);
 
 /// Bevy `Resource` wrapper around the audio-import `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>` (see
-/// [`AuthChannelRes`] for the rationale).
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct AudioImportChannelRes(pub SharedAudioImportReceiver);
 
 /// Bevy `Resource` wrapper around the waveform-load `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct WaveformLoadChannelRes(pub SharedWaveformReceiver);
 
 /// Bevy `Resource` wrapper around the audio-preload `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct AudioPreloadChannelRes(pub SharedAudioPreloadReceiver);
 
 /// Bevy `Resource` wrapper around the level-import `mpsc::Receiver`.
-///
-/// Phase 6b: shared `Arc<Mutex<Receiver<T>>>`.
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct LevelImportChannelRes(pub SharedLevelImportReceiver);
@@ -151,13 +142,6 @@ pub struct LevelImportChannelRes(pub SharedLevelImportReceiver);
 // ---------------------------------------------------------------------------
 
 /// System set that contains the per-frame channel poll systems.
-///
-/// Runs at the top of the frame so the result events are available
-/// to all handler systems that follow. The same set runs at the
-/// bottom of the frame too (in `apply_async_results_system`,
-/// Phase 6b) so the events have a chance to be consumed by the
-/// `CommandHandlerSet` / `EditorLogicSet` systems before the frame
-/// ends.
 ///
 /// The production order is `PollChannelsSet → CommandHandlerSet →
 /// ApplyAsyncResultsSet → Extract → Present`; render extraction reads the
@@ -174,9 +158,7 @@ pub struct PollChannelsSet;
 ///
 /// Drains each channel in a `while let Ok(...) = try_recv()` loop so
 /// a single frame consumes every message that's currently buffered.
-/// Production frames drain channels here. Phase 6a emitted the events;
-/// Phase 6b added handler systems, which now apply every result directly
-/// to App-world resources.
+/// Production frames drain channels here.
 #[allow(clippy::too_many_arguments)]
 pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
@@ -221,7 +203,7 @@ pub fn poll_channels_system(
 /// Drain a `Receiver<T>` and forward each message through `emit`.
 ///
 /// Stops on the first `Empty` error (no more messages buffered) and
-/// ignores `Disconnected` (the sender was dropped — typical at
+/// ignores `Disconnected` (the sender was dropped - typical at
 /// shutdown).
 fn drain_one<T, F>(receiver: &mut Receiver<T>, mut emit: F)
 where
@@ -351,10 +333,6 @@ pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     schedule.add_systems(poll_channels_system.in_set(PollChannelsSet));
 }
 
-// ---------------------------------------------------------------------------
-// Phase 6b: result handler systems
-// ---------------------------------------------------------------------------
-
 /// System set for the result handler systems. Runs after
 /// `PollChannelsSet` (the events must be emitted first) and after
 /// `CommandHandlerSet` (the per-message drain systems must finish
@@ -415,12 +393,6 @@ pub fn audio_import_handler_system(
 
 /// Consume `WaveformResultEvent`s and update App-owned waveform presentation,
 /// editor cache, persistent cache, and runtime preload resources directly.
-///
-/// Phase 6b note: `WaveformResultEvent` is not `Clone` (its
-/// payload is a non-`Clone` `WaveformLoadMessage`), so we can't
-/// use the standard `MessageReader<T>` + `for event in events.read()`
-/// pattern (which iterates over `&T`). Instead we take `&mut
-/// World` and `drain` the buffer to get owned `T` values.
 #[allow(dead_code)]
 pub fn waveform_handler_system(world: &mut World) {
     use bevy_ecs::message::Messages;

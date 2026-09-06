@@ -84,7 +84,7 @@ impl SpatialGrid {
         }
     }
 
-    /// Convenience: query and return a new `Vec`. Allocates — prefer
+    /// Convenience: query and return a new `Vec`. Allocates - prefer
     /// `query_aabb_into` in hot paths.
     pub fn query_aabb(&self, min_x: f32, max_x: f32, min_z: f32, max_z: f32) -> Vec<Entity> {
         let mut results = Vec::new();
@@ -92,7 +92,7 @@ impl SpatialGrid {
         results
     }
 
-    /// Point query — returns the entities whose AABB cell contains `(x, z)`.
+    /// Point query - returns the entities whose AABB cell contains `(x, z)`.
     /// Used by editor hit-tests.
     pub fn query_point(&self, x: f32, z: f32) -> &[Entity] {
         let gx = (x / GRID_CELL_SIZE).floor() as i32;

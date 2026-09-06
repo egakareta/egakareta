@@ -30,7 +30,7 @@ super::editor_context_methods! {
     }
 
     pub fn selected_block_default_size(&self) -> [f32; 3] {
-        BlockDefinition::get(&self.config.selected_block_id)
+        BlockDefinition::get_by_id(&self.config.selected_block_id)
             .render
             .default_size
     }
@@ -44,8 +44,8 @@ super::editor_context_methods! {
         )
             .with_generated_id(&self.objects);
 
-        self.record_history_state();
         let placed_index = self.objects.len();
+        self.record_history_state_for_placement(new_block.id.clone(), placed_index);
         self.objects.push(new_block);
         self.pick_spatial_index.invalidate();
         if place_mode == EditorPlaceMode::SelectPlaced {
@@ -125,8 +125,14 @@ mod tests {
         });
 
         let mut schedule = Schedule::default();
-        schedule
-            .add_systems(crate::state::render::plugin::extract_editor_selection_overlays_system);
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                crate::state::render::plugin::sync_editor_object_render_snapshot_system,
+                crate::state::render::plugin::extract_editor_selection_overlays_system,
+            )
+                .chain(),
+        );
         schedule.run(app.world_mut());
 
         let visual_vertices = build_block_geometry_for_object(&object).to_triangle_vertices();
@@ -184,6 +190,7 @@ mod tests {
         schedule.add_systems(
             (
                 crate::state::editor_objects::observe_editor_object_changes_system,
+                crate::state::render::plugin::sync_editor_object_render_snapshot_system,
                 crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
             )
                 .chain(),
@@ -279,7 +286,12 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems(
-            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                crate::state::render::plugin::sync_editor_object_render_snapshot_system,
+                crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            )
+                .chain(),
         );
         schedule.run(app.world_mut());
 
@@ -319,7 +331,12 @@ mod tests {
 
         let mut schedule = Schedule::default();
         schedule.add_systems(
-            crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                crate::state::render::plugin::sync_editor_object_render_snapshot_system,
+                crate::state::render::plugin::extract_editor_transform_trigger_marker_vertices_system,
+            )
+                .chain(),
         );
         schedule.run(app.world_mut());
 

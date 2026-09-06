@@ -7,7 +7,13 @@
 */
 //! Feature-gated helpers for external benchmark targets.
 
-use std::hint::black_box;
+use std::{
+    hint::black_box,
+    sync::{
+        OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use eg_game::{TimelineSimulationRuntime, trigger_transformed_objects_at_time};
 use eg_mesh::{
@@ -15,10 +21,126 @@ use eg_mesh::{
     build_block_instance_for_object, build_chunked_block_mesh, build_trail_vertices_with_alpha,
     build_transform_trigger_marker_vertices,
 };
-use eg_types::{
-    Direction, EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
-    TriggerTarget,
+use eg_state::state::{
+    EditorInputRes, EditorSimulationInputsRes, EditorTimelineRes, SessionStateRes,
+    collect_editor_objects_from_world, enqueue_platform_input, replace_editor_objects,
 };
+
+static STATE_SCHEDULE_DIAGNOSTIC_CALLS: AtomicUsize = AtomicUsize::new(0);
+use eg_types::{
+    AppPhase, Direction, EasingDirection, EditorMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+    TimedTrigger, TriggerTarget,
+};
+
+/// Warmed headless editor state for measuring a real placement frame.
+pub struct EditorPlacementBenchmarkState {
+    app: eg_state::state::test_support::TestApp,
+    expected_object_count: usize,
+}
+
+impl EditorPlacementBenchmarkState {
+    /// Builds and warms an editor scene with the requested authored object count.
+    pub fn new(object_count: usize) -> Self {
+        let mut app = eg_state::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .insert_resource(bevy_state::prelude::State::new(eg_types::AppPhase::Editor));
+        replace_editor_objects(app.world_mut(), benchmark_objects(object_count));
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = eg_types::EditorMode::Tapping;
+        app.world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .pointer_screen = Some([640.0, 360.0]);
+        enqueue_platform_input(
+            app.world_mut(),
+            eg_state::commands::InputEvent::PointerMoved { x: 640.0, y: 360.0 },
+        );
+        app.tick_state();
+        for _ in 0..1024 {
+            if app
+                .world()
+                .resource::<EditorTimelineRes>()
+                .0
+                .snapshot_cache_complete
+            {
+                break;
+            }
+            app.tick_state();
+        }
+        assert!(
+            app.world()
+                .resource::<EditorTimelineRes>()
+                .0
+                .snapshot_cache_complete
+        );
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = eg_types::EditorMode::Place;
+        enqueue_platform_input(
+            app.world_mut(),
+            eg_state::commands::InputEvent::PointerMoved { x: 640.0, y: 360.0 },
+        );
+        app.tick_state();
+        app.world_mut().clear_trackers();
+
+        Self {
+            app,
+            expected_object_count: object_count,
+        }
+    }
+
+    /// Places one block through the platform-input and editor schedules.
+    pub fn place_one(&mut self) -> BenchmarkWorkSummary {
+        enqueue_platform_input(
+            self.app.world_mut(),
+            eg_state::commands::InputEvent::MouseButton {
+                button: 0,
+                pressed: true,
+            },
+        );
+        self.app.tick_state();
+        BenchmarkWorkSummary {
+            object_count: self.expected_object_count + 1,
+            vertex_count: 0,
+            draw_count: 0,
+        }
+    }
+
+    /// Runs one warmed editor frame without new input.
+    pub fn idle_frame(&mut self) -> BenchmarkWorkSummary {
+        self.app.tick_state();
+        self.object_count_summary()
+    }
+
+    /// Runs only the state schedule for one warmed editor frame.
+    pub fn state_schedule_frame(&mut self) -> BenchmarkWorkSummary {
+        let before_revision = self
+            .app
+            .world()
+            .resource::<EditorSimulationInputsRes>()
+            .0
+            .object_revision;
+        assert!(self.app.run_state_schedule());
+        let after_revision = self
+            .app
+            .world()
+            .resource::<EditorSimulationInputsRes>()
+            .0
+            .object_revision;
+        if STATE_SCHEDULE_DIAGNOSTIC_CALLS.fetch_add(1, Ordering::Relaxed) < 3 {
+            eprintln!(
+                "state schedule objects={} input revision {} -> {}",
+                self.expected_object_count, before_revision, after_revision
+            );
+        }
+        self.object_count_summary()
+    }
+
+    fn object_count_summary(&mut self) -> BenchmarkWorkSummary {
+        BenchmarkWorkSummary {
+            object_count: self.expected_object_count,
+            vertex_count: 0,
+            draw_count: 0,
+        }
+    }
+}
 
 /// Summary of a benchmarked hot-path operation.
 #[derive(Clone, Copy, Debug)]
@@ -29,6 +151,472 @@ pub struct BenchmarkWorkSummary {
     pub vertex_count: usize,
     /// Number of draw items in the workload result.
     pub draw_count: usize,
+}
+
+/// Cached decode of the real `testing` level (`assets/levels/testing`).
+///
+/// The level holds ~19k authored objects with real-world block variety and no
+/// triggers, so benchmarks built on it measure full-scene costs (per-edit
+/// clones, reconciliation, extraction scans, timeline invalidation) instead
+/// of synthetic-grid costs.
+static TESTING_LEVEL_OBJECTS: OnceLock<Vec<LevelObject>> = OnceLock::new();
+
+/// Returns the testing level's authored objects, decoded once and shared.
+pub fn testing_level_objects() -> &'static [LevelObject] {
+    TESTING_LEVEL_OBJECTS.get_or_init(|| {
+        eg_level::load_builtin_level_metadata("testing")
+            .expect("testing level must exist in assets/levels/testing/metadata.egb")
+            .objects
+    })
+}
+
+/// Warmed headless editor state over the real testing level.
+///
+/// Each benchmark builds a fresh state per sample (via `iter_batched` setup)
+/// so every measured operation runs against the same ~19k-object scene with
+/// settled change detection. Per-sample setup (selection, mode, clipboard)
+/// happens in the unmeasured setup closure; only the message write plus the
+/// frame (`tick_state`, i.e. state schedule + render extraction) is measured.
+pub struct TestingLevelState {
+    app: eg_state::state::test_support::TestApp,
+    base_count: usize,
+    spin: u64,
+}
+
+impl Default for TestingLevelState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestingLevelState {
+    /// Loads the testing level into a fresh editor and settles caches.
+    pub fn new() -> Self {
+        let objects = testing_level_objects().to_vec();
+        let base_count = objects.len();
+        let mut app = eg_state::state::test_support::TestApp::minimal();
+        app.world_mut()
+            .insert_resource(bevy_state::prelude::State::new(AppPhase::Editor));
+        replace_editor_objects(app.world_mut(), objects);
+        app.world_mut()
+            .resource_mut::<SessionStateRes>()
+            .editor_level_name = Some("testing".to_string());
+        {
+            let mut input = app.world_mut().resource_mut::<EditorInputRes>();
+            input.0.mode = EditorMode::Place;
+            input.0.pointer_screen = Some([640.0, 360.0]);
+        }
+        for _ in 0..3 {
+            app.tick_state();
+        }
+        app.world_mut().clear_trackers();
+        Self {
+            app,
+            base_count,
+            spin: 0,
+        }
+    }
+
+    fn next_spin(&mut self) -> u64 {
+        let spin = self.spin;
+        self.spin = spin.wrapping_add(1);
+        spin
+    }
+
+    /// Number of authored objects in the untouched testing level.
+    pub fn base_count(&self) -> usize {
+        self.base_count
+    }
+
+    fn summary(&self, object_count: usize) -> BenchmarkWorkSummary {
+        BenchmarkWorkSummary {
+            object_count,
+            vertex_count: 0,
+            draw_count: 0,
+        }
+    }
+
+    /// Overwrites the block selection (unmeasured setup helper).
+    pub fn set_selection(&mut self, indices: &[usize]) {
+        let mut input = self.app.world_mut().resource_mut::<EditorInputRes>();
+        input.0.selected_block_index = indices.first().copied();
+        input.0.selected_block_indices = indices.to_vec();
+        input.0.hovered_block_index = indices.first().copied();
+    }
+
+    /// Reads one authored object by order index (for building update payloads).
+    pub fn object_at(&mut self, index: usize) -> LevelObject {
+        collect_editor_objects_from_world(self.app.world_mut())
+            .into_iter()
+            .nth(index)
+            .expect("testing level must contain the indexed object")
+    }
+
+    /// Finds the first authored object carrying a trigger.
+    pub fn first_trigger_object(&mut self) -> Option<(usize, LevelObject)> {
+        collect_editor_objects_from_world(self.app.world_mut())
+            .into_iter()
+            .enumerate()
+            .find(|(_, object)| object.trigger.is_some())
+    }
+
+    /// One idle editor frame with no new input.
+    pub fn idle_tick(&mut self) -> BenchmarkWorkSummary {
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Runs only the state schedule (message handlers, caches, playback).
+    pub fn tick_state_only(&mut self) -> BenchmarkWorkSummary {
+        self.app.run_state_schedule();
+        self.summary(self.base_count)
+    }
+
+    /// Runs only render extraction (mesh/overlay vertex building, no GPU).
+    pub fn tick_render_extract(&mut self) -> BenchmarkWorkSummary {
+        let _ = self
+            .app
+            .world_mut()
+            .try_run_schedule(eg_state::state::RenderExtractSchedule);
+        self.summary(self.base_count)
+    }
+
+    /// Mutable access to the underlying world for custom scenario setup.
+    pub fn world_mut(&mut self) -> &mut bevy_ecs::world::World {
+        self.app.world_mut()
+    }
+
+    /// One pointer-move (hover pick + cursor update) at screen coordinates.
+    pub fn hover_pick(&mut self, x: f64, y: f64) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::pointer::PointerMoved { x, y });
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Places one block via stamp-click (mode stays `Place` for repeatability).
+    pub fn stamp_place(&mut self, x: f64, y: f64) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .shift_held = true;
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::pointer::PrimaryClick { x, y });
+        self.app.tick_state();
+        self.summary(self.base_count + 1)
+    }
+
+    /// Places ten blocks from ten clicks processed in a single frame.
+    pub fn bulk_stamp_place_10(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .shift_held = true;
+        for i in 0..10 {
+            let x = 600.0 + f64::from(i % 5) * 20.0;
+            let y = 320.0 + f64::from(i / 5) * 20.0;
+            self.app
+                .world_mut()
+                .write_message(eg_state::events::pointer::PrimaryClick { x, y });
+        }
+        self.app.tick_state();
+        self.summary(self.base_count + 10)
+    }
+
+    /// Removes the currently selected blocks.
+    pub fn remove_selected(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::block::RemoveBlock);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Applies an edited object to the current selection.
+    pub fn update_selected(&mut self, updated: LevelObject) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::block::UpdateSelectedBlock(updated));
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Snaps the current selection to the grid.
+    pub fn snap_selection(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::selection::SnapSelectionToGrid);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Duplicates the current selection in place.
+    pub fn duplicate_selected(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::block::DuplicateBlock);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Copies the current selection into the clipboard (setup helper).
+    pub fn copy_selection(&mut self) {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::block::CopyBlock);
+        self.app.tick_state();
+    }
+
+    /// Pastes the clipboard at the cursor.
+    pub fn paste(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::block::PasteBlock);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Adds a transform trigger for the current selection.
+    pub fn add_transform_trigger(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::selection::AddTransformTrigger);
+        self.app.tick_state();
+        self.summary(self.base_count + 1)
+    }
+
+    /// Adds a camera trigger at the cursor.
+    pub fn add_camera_trigger(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::camera::AddCameraTrigger);
+        self.app.tick_state();
+        self.summary(self.base_count + 1)
+    }
+
+    /// Adds a tap at the current timeline time (caller sets `Tapping` mode).
+    pub fn add_tap(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::timeline::AddTap);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Seeks the timeline clock (cold snapshot cache unless warmed).
+    pub fn seek_timeline(&mut self, time_seconds: f32) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::timeline::SetTimelineTime(time_seconds));
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Toggles timeline playback (music start when stopped, stop when playing).
+    pub fn toggle_playback(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::timeline::ToggleTimelinePlayback);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Enters playtesting (phase transition plus seeded gameplay reset).
+    pub fn enter_playtest(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::timeline::Playtest);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Leaves a playtest via Escape (restores authored editor objects).
+    pub fn exit_playtest(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::misc::Escape);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Switches the editor tab/mode.
+    pub fn switch_mode(&mut self, mode: EditorMode) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::editor_mode::SetEditorMode(mode));
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Undoes the last history entry.
+    pub fn undo(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::history::Undo);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Redoes the last undone history entry.
+    pub fn redo(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::history::Redo);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Presses Escape in the editor (clears selection/drag state).
+    pub fn escape(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::misc::Escape);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Toggles hitbox visualization (on enables the full-scene rebuild).
+    pub fn toggle_hitbox(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::misc::ToggleHitboxVisualization);
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Drags the camera by a fixed delta.
+    pub fn camera_drag(&mut self, dx: f64, dy: f64) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::pointer::CameraDrag { dx, dy });
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Jitters the first `count` objects so a later snap has work to do.
+    pub fn jitter_first_objects(&mut self, count: usize, delta: f32) {
+        let mut objects = collect_editor_objects_from_world(self.app.world_mut());
+        for object in objects.iter_mut().take(count) {
+            object.position[0] += delta;
+            object.position[1] += 0.5 * delta;
+        }
+        replace_editor_objects(self.app.world_mut(), objects);
+        self.app.tick_state();
+        self.app.world_mut().clear_trackers();
+    }
+
+    /// Switches to `Tapping` mode without measuring (setup helper).
+    pub fn enter_tapping_mode(&mut self) {
+        let _ = self.switch_mode(EditorMode::Tapping);
+        self.app.world_mut().clear_trackers();
+    }
+
+    /// Hovers at cycling coordinates so consecutive frames re-run the pick.
+    pub fn hover_cycle(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let x = 600.0 + f64::from((spin % 5) as u32) * 20.0;
+        self.hover_pick(x, 340.0)
+    }
+
+    /// Moves the selected block between two absolute positions on alternate frames.
+    pub fn move_one_alternate(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let mut object = self.object_at(7);
+        object.position[0] = if spin.is_multiple_of(2) { 105.0 } else { 106.0 };
+        self.set_selection(&[7]);
+        self.update_selected(object)
+    }
+
+    /// Drags the current selection between two screen positions on alternate frames.
+    pub fn drag_selection_alternate(&mut self) -> BenchmarkWorkSummary {
+        self.app
+            .world_mut()
+            .resource_mut::<EditorInputRes>()
+            .0
+            .left_mouse_down = true;
+        let spin = self.next_spin();
+        let x = if spin.is_multiple_of(2) { 620.0 } else { 660.0 };
+        self.app
+            .world_mut()
+            .write_message(eg_state::events::pointer::PointerMoved { x, y: 340.0 });
+        self.app.tick_state();
+        self.summary(self.base_count)
+    }
+
+    /// Nudges the first trigger's fire time between two values on alternate frames.
+    pub fn trigger_nudge_alternate(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let (index, mut object) = self
+            .first_trigger_object()
+            .expect("a trigger must exist; create one in setup");
+        let trigger = object.trigger.as_mut().expect("trigger must exist");
+        trigger.time_seconds = if spin.is_multiple_of(2) { 1.0 } else { 2.0 };
+        trigger.duration_seconds = 2.5;
+        self.set_selection(&[index]);
+        self.update_selected(object)
+    }
+
+    /// Seeks between two timeline times on alternate frames (cold cache path).
+    pub fn scrub_alternate(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let target = if spin.is_multiple_of(2) { 4.0 } else { 12.0 };
+        self.seek_timeline(black_box(target))
+    }
+
+    /// Toggles the Place/Tapping tabs on alternate frames.
+    pub fn toggle_tabs_place_tapping(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let mode = if spin.is_multiple_of(2) {
+            EditorMode::Tapping
+        } else {
+            EditorMode::Place
+        };
+        self.switch_mode(mode)
+    }
+
+    /// Toggles the Place/Timing tabs on alternate frames.
+    pub fn toggle_tabs_place_timing(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        let mode = if spin.is_multiple_of(2) {
+            EditorMode::Timing
+        } else {
+            EditorMode::Place
+        };
+        self.switch_mode(mode)
+    }
+
+    /// Alternates undo/redo of one seeded placement (setup must place first).
+    pub fn undo_redo_roundtrip(&mut self) -> BenchmarkWorkSummary {
+        let spin = self.next_spin();
+        if spin.is_multiple_of(2) {
+            self.undo()
+        } else {
+            self.redo()
+        }
+    }
+
+    /// Re-selects 100 blocks and presses Escape in the same frame.
+    pub fn escape_with_fresh_selection(&mut self) -> BenchmarkWorkSummary {
+        self.set_selection(&(100..200).collect::<Vec<_>>());
+        self.escape()
+    }
+
+    /// Stamps one block for later undo/redo benchmarks (setup helper).
+    pub fn seed_one_placement(&mut self) {
+        let _ = self.stamp_place(640.0, 360.0);
+        self.app.world_mut().clear_trackers();
+    }
+
+    /// Creates one transform trigger for later benchmarks (setup helper).
+    pub fn seed_one_trigger(&mut self) {
+        self.set_selection(&(0..3).collect::<Vec<_>>());
+        let _ = self.add_transform_trigger();
+        self.app.world_mut().clear_trackers();
+    }
 }
 
 /// Builds a full block mesh for a synthetic editor level.

@@ -274,7 +274,7 @@ mod tests {
     }
 
     fn complete_snapshot_cache(app: &mut TestApp) {
-        for _ in 0..128 {
+        for _ in 0..512 {
             app.tick_state();
             let timeline = &app.world().resource::<EditorTimelineRes>().0;
             if timeline.snapshot_cache_complete && !timeline.snapshot_cache.is_empty() {
@@ -288,9 +288,13 @@ mod tests {
     fn timeline_cache_reacts_to_inputs_without_reacting_to_scrubbing() {
         let mut app = editor_app();
         with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.mode = EditorMode::Tapping;
             editor.timeline.clock.duration_seconds = 1.0;
             editor.timeline.preview.position = [0.5, 0.0, 0.5];
         });
+        // Mirror the mode into the App-world resource: the snapshot-cache
+        // system only builds while in Tapping mode.
+        app.world_mut().resource_mut::<EditorInputRes>().0.mode = EditorMode::Tapping;
         complete_snapshot_cache(&mut app);
 
         let cached_sample_count = app

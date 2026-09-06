@@ -608,16 +608,90 @@ pub fn apply_timed_triggers_to_objects_into(
 }
 
 pub fn next_level_object_id(objects: &[LevelObject]) -> String {
-    let mut existing = HashSet::new();
-    for object in objects {
+    let next_suffix = next_level_object_suffix_after(objects.iter().map(|object| &object.id));
+    if next_suffix < u64::MAX {
+        return format!("{OBJECT_ID_PREFIX}{next_suffix:06}");
+    }
+
+    let existing = objects
+        .iter()
+        .filter_map(|object| (!object.id.is_empty()).then_some(object.id.as_str()))
+        .collect::<HashSet<_>>();
+    let mut next_suffix = u64::MAX;
+    allocate_next_level_object_id(&existing, &mut next_suffix)
+}
+
+/// Allocates `count` fresh object IDs after the max `obj_######` suffix in
+/// `existing` in a single O(n+m) pass.
+///
+/// `regenerate_object_ids_for_clipboard`-style callers must use this instead
+/// of calling [`next_level_object_id`] per object (which rescans the whole
+/// scene each time: O(n*m), ~190k suffix parses for paste-10 on a 19k scene).
+/// Custom (non-`obj_` prefixed) IDs are collected into a `HashSet` once so
+/// sequential candidates skip collisions without rescanning.
+pub fn next_level_object_ids_batch(existing: &[LevelObject], count: usize) -> Vec<String> {
+    if count == 0 {
+        return Vec::new();
+    }
+    let mut max_suffix = 0_u64;
+    let mut has_overflow_risk = false;
+    let mut custom_ids: HashSet<&str> = HashSet::new();
+    for object in existing {
         if object.id.is_empty() {
             continue;
         }
-        existing.insert(object.id.as_str());
+        if let Some(suffix) = object.id.strip_prefix(OBJECT_ID_PREFIX)
+            && let Ok(value) = suffix.parse::<u64>()
+        {
+            max_suffix = max_suffix.max(value);
+        } else {
+            custom_ids.insert(object.id.as_str());
+            // A custom ID could collide with a future `obj_######` candidate
+            // only if it literally uses that prefix+numeric shape, which the
+            // branch above already handles. Track overflow separately.
+            if object.id.starts_with(OBJECT_ID_PREFIX) {
+                has_overflow_risk = true;
+            }
+        }
     }
-
-    let mut next_suffix = next_level_object_suffix_after(objects.iter().map(|object| &object.id));
-    allocate_next_level_object_id(&existing, &mut next_suffix)
+    let _ = has_overflow_risk;
+    let mut next_suffix = max_suffix.saturating_add(1);
+    let mut out: Vec<String> = Vec::with_capacity(count);
+    // Fast path: sequential suffixes are mutually distinct, so each candidate
+    // only needs to be checked against the custom-ID set (borrowed from
+    // `existing`, no allocation). This is O(n+m) total.
+    for _ in 0..count {
+        loop {
+            if next_suffix == u64::MAX {
+                // Degenerate fallback: fall back to the slow allocator over a
+                // snapshot of existing + already-allocated IDs.
+                let mut existing_set: HashSet<&str> = custom_ids.clone();
+                for object in existing {
+                    if !object.id.is_empty() {
+                        existing_set.insert(object.id.as_str());
+                    }
+                }
+                for id in &out {
+                    existing_set.insert(id.as_str());
+                }
+                let mut fallback_suffix = u64::MAX;
+                out.push(allocate_next_level_object_id(
+                    &existing_set,
+                    &mut fallback_suffix,
+                ));
+                next_suffix = fallback_suffix;
+                break;
+            }
+            let candidate = format!("{OBJECT_ID_PREFIX}{next_suffix:06}");
+            next_suffix = next_suffix.saturating_add(1);
+            if !custom_ids.contains(candidate.as_str()) {
+                out.push(candidate);
+                break;
+            }
+            // Extremely rare: a custom ID squats on our candidate; skip it.
+        }
+    }
+    out
 }
 
 pub fn normalize_level_object_ids(objects: &mut [LevelObject]) {
@@ -777,5 +851,21 @@ mod tests {
         let json = serde_json::to_string(&object).unwrap();
         let expected_json = r#"{"id":"obj_000001","position":[1.0,2.0,3.0]}"#;
         assert_eq!(json, expected_json);
+    }
+
+    #[test]
+    fn next_level_object_id_advances_past_numeric_suffixes() {
+        let objects = vec![
+            LevelObject {
+                id: "obj_000001".to_string(),
+                ..LevelObject::default()
+            },
+            LevelObject {
+                id: "custom-id".to_string(),
+                ..LevelObject::default()
+            },
+        ];
+
+        assert_eq!(next_level_object_id(&objects), "obj_000002");
     }
 }

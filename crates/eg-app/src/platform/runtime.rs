@@ -538,21 +538,6 @@ fn run_egui_ui_system(world: &mut World) {
     world.insert_non_send(EguiFrameOutputRes(full_output));
 }
 
-/// Runtime owns the winit-facing frame loop.
-///
-/// Phase 7: the runtime owns a
-/// `bevy_app::App` wired with the eg-state plugin graph (see
-/// [`setup_state_app`]). The winit redraw path now calls
-/// [`Runtime::run_app_frame`], which owns the App update and command
-/// drain before handing the frame back to the App-owned render presenter.
-///
-/// The App world is the production command/schedule driver. The egui context,
-/// renderer, menu textures, block-icon cache, and all state resources are
-/// installed directly by AppBootstrap. Tests use App-native TestApp
-/// fixtures, and Runtime owns only the App.
-///
-/// REFACTOR POINT(full-bevy): when full Bevy lands, the custom bootstrap and
-/// winit loop are replaced by Bevy plugins and the Bevy app runner.
 pub struct Runtime {
     pub app: App,
 }
@@ -830,15 +815,6 @@ mod tests {
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
     }
 
-    // ---- Phase 7 tests ----
-    //
-    // These pin the Phase 7-scaffold contract: `Runtime::new`
-    // builds a `bevy_app::App` with the eg-state plugin graph,
-    // and `run_app_frame` drives `app.update()` without
-    // panicking. Future sub-phases (7-1: schedule migration,
-    // 7-2: frame driver, 7-3: pipeline split) extend these
-    // tests with system-level assertions.
-
     /// `Runtime::new` builds an `App` whose `World` contains every
     /// resource that `StatePlugins` is responsible for registering.
     /// `State<AppPhase>` defaults to `AppPhase::Menu`; gameplay, editor,
@@ -919,11 +895,6 @@ mod tests {
         );
     }
 
-    /// `register_state_schedule` adds the per-frame
-    /// `StateSchedule` to the App's World via Bevy's
-    /// `World::add_schedule`. Pin the schedule is reachable from
-    /// the App so the future 7-1 sub-phase can move the
-    /// `State::tick_state` invocation here.
     #[test]
     fn runtime_app_registers_state_schedule() {
         let mut runtime = Runtime::new_test();
@@ -1194,12 +1165,6 @@ mod tests {
         assert!(auth.pending);
         assert_eq!(auth.message.as_deref(), Some("app"));
     }
-
-    // --- Phase 3.48 / Navigation request carve-out tests ---
-    //
-    // The gameplay messages route through direct App-world resources or
-    // dedicated typed requests consumed by StateSchedule. The end-to-end
-    // tests below exercise the full pipeline through `run_app_frame`.
 
     use eg_state::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, TurnRight as GameTurnRight,
@@ -2029,10 +1994,6 @@ mod tests {
         approx::assert_abs_diff_eq!(camera.editor_target_z, 4.0, epsilon = 1e-6);
     }
 
-    // --- Phase 3.7 / BPM carve-out tests ---
-    //
-    // BPM handlers mutate authoritative `EditorTimingRes` fields directly.
-
     use eg_state::events::bpm::{BpmTap, BpmTapReset};
 
     /// Writing a `BpmTap` message reaches the App world, mutates
@@ -2325,12 +2286,6 @@ mod tests {
         assert!(session.editor_show_metadata);
         assert_eq!(session.editor_sky_color, [0.25, 0.5, 0.75]);
     }
-    // ---- Phase 3.9 timing carve-out tests ----
-    //
-    // All 6 `events::timing::*` messages are carve-outs that mutate
-    // `EditorTimingRes.0.{timing_points, timing_selected_index}`
-    // directly. The runtime tests below pin the end-to-end path:
-    // message → App-world resource.
 
     use eg_state::events::timing::{
         AddTimingPoint, RemoveTimingPoint, SetTimingPointBpm, SetTimingPointTime,
@@ -2830,10 +2785,6 @@ mod tests {
         assert_eq!(timeline.taps.tap_times, vec![0.5, 1.5]);
         assert_eq!(timeline.taps.selected_index, Some(1));
     }
-    // ---- Phase 3.10 spawn carve-out tests ----
-    //
-    // All three spawn messages mutate authoritative App-world resources.
-    // The runtime tests below pin message handling against those resources.
 
     use eg_state::{
         events::spawn::{RotatePlacementPreview, RotateSpawnDirection, SetSpawnHere},
@@ -2942,9 +2893,6 @@ mod tests {
         assert_eq!(spawn.position, [5.0, 10.0, 15.0]);
         assert_eq!(spawn.direction, Direction::Right);
     }
-    // ---- Phase 3.11 App-owned camera and trigger-selection tests ----
-    //
-    // Camera and trigger messages mutate authoritative App-world resources.
 
     use eg_state::events::camera::{AdjustZoom, SetCameraOrientation, SetTriggerSelected};
 
@@ -3130,12 +3078,6 @@ mod tests {
         // runtime-level AddCameraTrigger/AddCameraFollowTrigger
         // coverage near the editor-object carve-outs above.
     }
-
-    // --- Phase 3.12 / Misc carve-out tests ---
-    //
-    // The `misc` event handlers write directly to App-world resources where
-    // ownership has moved. The end-to-end tests below exercise direct
-    // message-to-resource mutation.
 
     use eg_state::events::misc::{ToggleHitboxVisualization, TogglePlaceWindow};
 
@@ -3849,8 +3791,6 @@ mod tests {
         let mut runtime = Runtime::new_test();
         let _ = runtime.run_app_frame(egui::RawInput::default());
     }
-
-    // --- Phase 3.13 / Editor-mode carve-out tests ---
 
     use eg_state::events::editor_mode::SetEditorMode;
 

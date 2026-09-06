@@ -21,9 +21,10 @@ use crate::{
     events::navigation::TurnRight,
     state::{
         EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorRuntimeRes,
-        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, RenderConfigRes,
-        collect_editor_object_data, replace_editor_objects_commands,
+        EditorInteractionContext, EditorObjectOrder, EditorObjectRevision, EditorObjectsBorrow,
+        EditorPointerCache, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+        EditorTriggerRes, RenderConfigRes, collect_editor_object_data,
+        replace_editor_objects_commands, spawn_editor_object_commands,
     },
 };
 
@@ -93,7 +94,7 @@ pub struct PointerResources<'w, 's> {
         With<EditorAuthoredObject>,
     >,
     commands: Commands<'w, 's>,
-    objects: Local<'s, EditorObjectScratch>,
+    pointer_cache: ResMut<'w, EditorPointerCache>,
     camera: ResMut<'w, EditorCameraRes>,
     spawn: ResMut<'w, EditorSpawnRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
@@ -102,24 +103,32 @@ pub struct PointerResources<'w, 's> {
     runtime: ResMut<'w, EditorRuntimeRes>,
     history: ResMut<'w, EditorHistoryRes>,
     render: Res<'w, RenderConfigRes>,
+    revision: Res<'w, EditorObjectRevision>,
 }
 
-#[derive(Default)]
-struct EditorObjectScratch {
-    objects: Vec<LevelObject>,
+fn ensure_objects(resources: &mut PointerResources<'_, '_>) {
+    if resources.pointer_cache.initialized
+        && resources.pointer_cache.revision == resources.revision.0
+    {
+        return;
+    }
+    resources.pointer_cache.objects = collect_editor_object_data(&resources.authored_objects);
+    resources.pointer_cache.pick_spatial_index.invalidate();
+    resources.pointer_cache.revision = resources.revision.0;
+    resources.pointer_cache.initialized = true;
 }
 
 fn load_objects(resources: &mut PointerResources<'_, '_>) -> Vec<LevelObject> {
-    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
-    resources.objects.objects.clone()
+    ensure_objects(resources);
+    resources.pointer_cache.objects.clone()
 }
 
 fn commit_objects(resources: &mut PointerResources<'_, '_>, before: Vec<LevelObject>) {
-    if resources.objects.objects != before {
+    if resources.pointer_cache.objects != before {
         replace_editor_objects_commands(
             &mut resources.commands,
             &resources.existing_objects,
-            &resources.objects.objects,
+            &resources.pointer_cache.objects,
         );
     }
 }
@@ -134,10 +143,15 @@ fn viewport(resources: &PointerResources<'_, '_>) -> Vec2 {
 fn interaction_context<'a, 'w, 's>(
     resources: &'a mut PointerResources<'w, 's>,
 ) -> EditorInteractionContext<'a> {
+    let EditorPointerCache {
+        objects,
+        pick_spatial_index,
+        ..
+    } = &mut *resources.pointer_cache;
     EditorInteractionContext {
         input: &mut resources.input.0,
         config: &mut resources.config.0,
-        objects: EditorObjectsBorrow(&mut resources.objects.objects),
+        objects: EditorObjectsBorrow(objects),
         spawn: &mut resources.spawn.0,
         camera: &mut resources.camera.0,
         triggers: &mut resources.triggers.0,
@@ -148,7 +162,7 @@ fn interaction_context<'a, 'w, 's>(
         selected_mask_cache: None,
         block_static_vertex_cache: Default::default(),
         block_static_vertex_cache_complete_len: None,
-        pick_spatial_index: Default::default(),
+        pick_spatial_index,
     }
 }
 
@@ -226,8 +240,15 @@ pub fn handle_mouse_button(
     mut turn_right: MessageWriter<TurnRight>,
     mut primary_click: MessageWriter<PrimaryClick>,
 ) {
-    let before = load_objects(&mut resources);
-    for event in events.read() {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
+    let before = events
+        .iter()
+        .any(|event| !event.pressed && *resources.phase.get() == AppPhase::Editor)
+        .then(|| load_objects(&mut resources));
+    for event in events {
         match event.button {
             0 => {
                 resources.input.0.left_mouse_down = event.pressed;
@@ -272,7 +293,9 @@ pub fn handle_mouse_button(
             _ => {}
         }
     }
-    commit_objects(&mut resources, before);
+    if let Some(before) = before {
+        commit_objects(&mut resources, before);
+    }
 }
 
 pub fn handle_primary_click(
@@ -280,8 +303,12 @@ pub fn handle_primary_click(
     mut resources: PointerResources,
     mut turn_right: MessageWriter<TurnRight>,
 ) {
-    let before = load_objects(&mut resources);
-    for event in events.read() {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
+    let mut placed_objects = Vec::new();
+    for event in events {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         resources.input.0.left_mouse_down = true;
         if *resources.phase.get() != AppPhase::Editor {
@@ -290,6 +317,7 @@ pub fn handle_primary_click(
             }
             continue;
         }
+        ensure_objects(&mut resources);
 
         let viewport = viewport(&resources);
         if resources
@@ -321,6 +349,8 @@ pub fn handle_primary_click(
                     eg_types::EditorPlaceMode::SelectPlaced
                 };
                 editor.add_block_at_cursor(place_mode);
+                let placed_index = editor.objects.len() - 1;
+                placed_objects.push((placed_index, editor.objects[placed_index].clone()));
                 if place_mode == eg_types::EditorPlaceMode::SelectPlaced {
                     editor.input.mode = EditorMode::Scale;
                 }
@@ -352,15 +382,27 @@ pub fn handle_primary_click(
             }
         }
     }
-    commit_objects(&mut resources, before);
+    for (order, object) in placed_objects {
+        spawn_editor_object_commands(&mut resources.commands, order, object);
+    }
 }
 
 pub fn handle_pointer_moved(
     mut events: MessageReader<PointerMoved>,
     mut resources: PointerResources,
 ) {
-    let before = load_objects(&mut resources);
-    for event in events.read() {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
+    let before = if *resources.phase.get() == AppPhase::Editor {
+        ensure_objects(&mut resources);
+        (resources.input.0.left_mouse_down && !resources.input.0.right_dragging)
+            .then(|| resources.pointer_cache.objects.clone())
+    } else {
+        None
+    };
+    for event in events {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor {
             continue;
@@ -394,15 +436,23 @@ pub fn handle_pointer_moved(
             }
         }
     }
-    commit_objects(&mut resources, before);
+    if let Some(before) = before {
+        commit_objects(&mut resources, before);
+    }
 }
 
 pub fn handle_update_cursor_from_screen(
     mut events: MessageReader<UpdateCursorFromScreen>,
     mut resources: PointerResources,
 ) {
-    let before = load_objects(&mut resources);
-    for event in events.read() {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
+    if *resources.phase.get() == AppPhase::Editor {
+        ensure_objects(&mut resources);
+    }
+    for event in events {
         resources.input.0.pointer_screen = Some([event.x, event.y]);
         if *resources.phase.get() != AppPhase::Editor
             || resources.input.0.right_dragging
@@ -415,7 +465,6 @@ pub fn handle_update_cursor_from_screen(
         let mut editor = interaction_context(&mut resources);
         editor.update_cursor_from_screen_ext(event.x, event.y, viewport, phase);
     }
-    commit_objects(&mut resources, before);
 }
 
 pub fn handle_camera_drag(

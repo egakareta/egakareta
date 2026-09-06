@@ -11,21 +11,23 @@ use bevy_ecs::prelude::*;
 use bevy_state::prelude::State;
 use eg_editor_domain::{TapDivisionPreviewRange, derive_timing_division_tap_previews};
 use eg_game::TimelineSimulationRuntime;
-use eg_types::AppPhase;
+use eg_types::{AppPhase, EditorMode};
 #[cfg(test)]
 use eg_types::{LevelObject, SpawnMetadata};
 
 use super::{
     EditorRuntimeRes, EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes,
     EditorTimingRes,
+    editor_objects::EditorObjectRevision,
     editor_timeline::{EditorTimelineSnapshot, EditorTimelineState},
     state_resources::EditorSimulationInputs,
 };
 
-const MAX_SNAPSHOT_SAMPLES_PER_FRAME: usize = 32;
+const MAX_SNAPSHOT_SAMPLES_PER_FRAME: usize = 4;
 
 pub(crate) fn sync_editor_simulation_inputs_system(
     runtime: Res<EditorRuntimeRes>,
+    revision: Res<EditorObjectRevision>,
     timeline: Res<EditorTimelineRes>,
     spawn: Res<EditorSpawnRes>,
     timing: Res<EditorTimingRes>,
@@ -42,6 +44,27 @@ pub(crate) fn sync_editor_simulation_inputs_system(
         return;
     }
 
+    let object_changed = inputs.0.object_revision != revision.0;
+    let timeline_inputs_changed = inputs.0.spawn_position != spawn.0.position
+        || inputs.0.spawn_direction != spawn.0.direction
+        || inputs.0.tap_times != timeline.0.taps.tap_times
+        || inputs.0.duration_seconds != timeline.0.clock.duration_seconds
+        || inputs.0.snapshot_cache_step_seconds != timeline.0.snapshot_cache_step_seconds
+        || inputs.0.timing_points != timing.0.timing_points;
+    if !object_changed && !timeline_inputs_changed {
+        return;
+    }
+
+    if !object_changed {
+        inputs.0.spawn_position = spawn.0.position;
+        inputs.0.spawn_direction = spawn.0.direction;
+        inputs.0.tap_times = timeline.0.taps.tap_times.clone();
+        inputs.0.duration_seconds = timeline.0.clock.duration_seconds;
+        inputs.0.snapshot_cache_step_seconds = timeline.0.snapshot_cache_step_seconds;
+        inputs.0.timing_points = timing.0.timing_points.clone();
+        return;
+    }
+
     let objects = super::editor_objects::collect_editor_object_data(&authored_objects);
     let next_inputs = EditorSimulationInputs {
         spawn_position: spawn.0.position,
@@ -51,9 +74,13 @@ pub(crate) fn sync_editor_simulation_inputs_system(
         duration_seconds: timeline.0.clock.duration_seconds,
         snapshot_cache_step_seconds: timeline.0.snapshot_cache_step_seconds,
         timing_points: timing.0.timing_points.clone(),
+        object_revision: revision.0,
     };
 
-    if inputs.0 != next_inputs {
+    // A revision change means the authored set actually mutated, so the fresh
+    // collect necessarily differs: assign directly instead of comparing two
+    // 19k vectors first (the `!=` walk alone costs milliseconds per edit).
+    if object_changed || inputs.0 != next_inputs {
         inputs.0 = next_inputs;
     }
 }
@@ -68,10 +95,17 @@ pub(crate) fn reset_editor_timeline_derived_caches_system(
 }
 
 pub(crate) fn rebuild_editor_timeline_tap_preview_cache_system(
+    phase: Res<State<AppPhase>>,
+    input: Res<super::EditorInputRes>,
     inputs: Res<EditorSimulationInputsRes>,
     mut timeline: ResMut<EditorTimelineRes>,
+    mut was_tapping: Local<bool>,
 ) {
-    if !inputs.is_changed() {
+    let is_tapping = *phase.get() == AppPhase::Editor && input.0.mode == EditorMode::Tapping;
+    let entered_tapping = is_tapping && !*was_tapping;
+    *was_tapping = is_tapping;
+
+    if !is_tapping || (!inputs.is_changed() && !entered_tapping) {
         return;
     }
 
@@ -93,10 +127,11 @@ pub(crate) fn rebuild_editor_timeline_tap_preview_cache_system(
 /// Keep the App-owned timeline cache current before render extraction.
 pub(crate) fn rebuild_editor_timeline_snapshot_cache_system(
     phase: Res<State<AppPhase>>,
+    input: Res<super::EditorInputRes>,
     inputs: Res<EditorSimulationInputsRes>,
     mut timeline: ResMut<EditorTimelineRes>,
 ) {
-    if *phase.get() != AppPhase::Editor {
+    if *phase.get() != AppPhase::Editor || input.0.mode != EditorMode::Tapping {
         return;
     }
 
@@ -279,4 +314,56 @@ fn cached_trail_segment_lengths(timeline: &EditorTimelineState) -> Vec<usize> {
             end.saturating_sub((*start).min(point_count))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy_ecs::{schedule::Schedule, world::World};
+    use bevy_state::prelude::State;
+    use eg_types::{AppPhase, EditorMode, TimingPoint};
+
+    use super::rebuild_editor_timeline_tap_preview_cache_system;
+    use crate::state::{
+        EditorInputRes, EditorSimulationInputsRes, EditorTimelineRes,
+        state_resources::EditorSimulationInputs,
+    };
+
+    #[test]
+    fn timing_division_preview_rebuild_waits_until_tapping_mode() {
+        let mut world = World::new();
+        world.insert_resource(State::new(AppPhase::Editor));
+        world.insert_resource(EditorInputRes::default());
+        world.insert_resource(EditorSimulationInputsRes(EditorSimulationInputs {
+            duration_seconds: 0.25,
+            timing_points: vec![TimingPoint {
+                time_seconds: 0.0,
+                bpm: 600.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }));
+        world.insert_resource(EditorTimelineRes::default());
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(rebuild_editor_timeline_tap_preview_cache_system);
+
+        schedule.run(&mut world);
+        assert!(
+            world
+                .resource::<EditorTimelineRes>()
+                .0
+                .tap_division_preview_cache
+                .is_empty()
+        );
+
+        world.resource_mut::<EditorInputRes>().0.mode = EditorMode::Tapping;
+        schedule.run(&mut world);
+        assert!(
+            !world
+                .resource::<EditorTimelineRes>()
+                .0
+                .tap_division_preview_cache
+                .is_empty()
+        );
+    }
 }

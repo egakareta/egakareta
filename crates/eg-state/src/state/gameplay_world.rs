@@ -480,10 +480,14 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
 
     let gems_max = objects
         .iter()
-        .map(|object| CachedBlockBehavior::from_block_id(&object.block_id).collectible_gem_value())
+        .map(|object| {
+            CachedBlockBehavior::from_block_id_ref(&object.block_id).collectible_gem_value()
+        })
         .sum();
-    for (index, object) in objects.iter().enumerate() {
-        world.spawn(ObjectBundle {
+    let bundles = objects
+        .iter()
+        .enumerate()
+        .map(|(index, object)| ObjectBundle {
             object: Object,
             id: ObjectId(format!("__obj_{index}")),
             data: ObjectData(object.clone()),
@@ -492,9 +496,10 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
             size: Size(object.size),
             block_id: BlockId(object.block_id.clone()),
             color_tint: ColorTint(object.color_tint),
-            cached_behavior: CachedBlockBehavior::from_block_id(&object.block_id),
-        });
-    }
+            cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
+        })
+        .collect::<Vec<_>>();
+    let gameplay_entities = world.spawn_batch(bundles).collect::<Vec<_>>();
     world.spawn(PlayerBundle {
         player: Player,
         position: PlayerPosition(position),
@@ -534,9 +539,17 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
     world.resource_mut::<FrameDelta>().0 = 0.0;
     world.resource_mut::<Messages<PlayerDied>>().clear();
 
-    rebuild_spatial_index(world);
+    {
+        let mut spatial = world.resource_mut::<SpatialIndex>();
+        spatial.grid.clear();
+        debug_assert_eq!(gameplay_entities.len(), objects.len());
+        for (entity, object) in gameplay_entities.into_iter().zip(objects.iter()) {
+            spatial.grid.insert_object(entity, object);
+        }
+    }
 }
 
+#[allow(dead_code)]
 fn rebuild_spatial_index(world: &mut World) {
     let entries = {
         let mut query = world.query::<(Entity, &ObjectData)>();

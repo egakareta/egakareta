@@ -37,7 +37,7 @@ fn app_with_objects(objects: impl IntoIterator<Item = LevelObject>) -> TestApp {
             size: Size(object.size),
             block_id: BlockId(object.block_id.clone()),
             color_tint: ColorTint(object.color_tint),
-            cached_behavior: CachedBlockBehavior::from_block_id(&object.block_id),
+            cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
         });
     }
     rebuild_spatial_index(&mut app);
@@ -99,7 +99,7 @@ fn support_surface_y_at(app: &mut TestApp, x: f32, z: f32, max_y: f32) -> Option
         let Ok(object) = query.get(world, entity) else {
             continue;
         };
-        if !CachedBlockBehavior::from_block_id(&object.0.block_id).support_surface
+        if !CachedBlockBehavior::from_block_id_ref(&object.0.block_id).support_surface
             || !object_xz_contains(&object.0, x, z)
         {
             continue;

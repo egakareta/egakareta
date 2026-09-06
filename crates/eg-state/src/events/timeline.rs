@@ -64,6 +64,7 @@ pub struct TimelineSeekResources<'w, 's> {
     >,
     spawn: Res<'w, EditorSpawnRes>,
     simulation_inputs: Option<Res<'w, EditorSimulationInputsRes>>,
+    revision: Res<'w, crate::state::EditorObjectRevision>,
     camera: ResMut<'w, EditorCameraRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
 }
@@ -165,6 +166,8 @@ pub struct TimelinePlaybackResources<'w, 's> {
     >,
     spawn: Res<'w, EditorSpawnRes>,
     session: Res<'w, SessionStateRes>,
+    simulation_inputs: Option<Res<'w, crate::state::EditorSimulationInputsRes>>,
+    revision: Res<'w, crate::state::EditorObjectRevision>,
 }
 
 pub fn handle_toggle_timeline_playback(
@@ -213,7 +216,35 @@ pub(crate) fn stop_editor_timeline_playback(
 }
 
 fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_, '_>) {
-    let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+    // Reuse cached simulation inputs when the revision matches to avoid a
+    // second 19k `LevelObject` collect on every music-play (~305ms hotspot).
+    // Falls back to a fresh collect only when the cache is stale/missing.
+    let cached_usable = resources.simulation_inputs.as_ref().is_some_and(|inputs| {
+        inputs.0.object_revision == resources.revision.0
+            && inputs.0.spawn_position == resources.spawn.0.position
+            && inputs.0.spawn_direction == resources.spawn.0.direction
+            && inputs.0.tap_times == resources.timeline.0.taps.tap_times
+    });
+    // Own the objects only when the cache is unusable; otherwise borrow the
+    // cached vec for the runtime constructor (no extra 19k clone).
+    let owned_fallback: Option<Vec<eg_types::LevelObject>> = if cached_usable {
+        None
+    } else {
+        Some(crate::state::collect_editor_object_data(
+            &resources.authored_objects,
+        ))
+    };
+    let objects: &[eg_types::LevelObject] = if let Some(fallback) = owned_fallback.as_ref() {
+        fallback.as_slice()
+    } else {
+        resources
+            .simulation_inputs
+            .as_ref()
+            .expect("cached simulation inputs")
+            .0
+            .objects
+            .as_slice()
+    };
     let start_mode = resources.input.0.mode;
     resources.timeline.0.playback.playing = true;
     resources.timeline.0.playback.pending_seek_time_seconds = None;
@@ -228,13 +259,13 @@ fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_, 
             resources.spawn.0.direction,
             &resources.timeline.0.taps.tap_times,
             resources.timeline.0.clock.time_seconds,
-            &objects,
+            objects,
         )
     } else {
         let mut playback_runtime = TimelineSimulationRuntime::new(
             resources.spawn.0.position,
             resources.spawn.0.direction,
-            &objects,
+            objects,
             &resources.timeline.0.taps.tap_times,
         );
         playback_runtime.advance_to(resources.timeline.0.clock.time_seconds);
@@ -344,6 +375,13 @@ fn timeline_cache_matches_current_inputs(resources: &mut TimelineSeekResources<'
         return false;
     }
 
+    // Fast path: compare the monotonic object revision instead of collecting
+    // and comparing 19k `LevelObject`s per scrub. `sync_editor_simulation_inputs`
+    // keeps `inputs.object_revision` in lockstep with `EditorObjectRevision`.
+    if inputs.object_revision == resources.revision.0 {
+        return true;
+    }
+
     let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
     inputs.objects == objects
 }
@@ -359,13 +397,43 @@ fn seek_timeline_with_runtime(
         .take()
         .filter(|runtime| runtime.elapsed_seconds() <= time_seconds + 1e-6);
     if runtime.is_none() {
-        let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
-        runtime = Some(TimelineSimulationRuntime::new(
-            resources.spawn.0.position,
-            resources.spawn.0.direction,
-            &objects,
-            &resources.timeline.0.taps.tap_times,
-        ));
+        // Reuse the already-cached simulation inputs (19k objects) when the
+        // revision matches instead of collecting a second 19k clone.
+        let cached_usable = resources.simulation_inputs.as_ref().is_some_and(|inputs| {
+            inputs.0.object_revision == resources.revision.0
+                && inputs.0.spawn_position == resources.spawn.0.position
+                && inputs.0.spawn_direction == resources.spawn.0.direction
+                && inputs.0.tap_times == resources.timeline.0.taps.tap_times
+        });
+        if cached_usable {
+            // Copy the small spawn fields first so the subsequent borrows of
+            // `simulation_inputs` and `timeline` do not overlap mutably;
+            // all borrows here are shared.
+            let (spawn_position, spawn_direction) =
+                (resources.spawn.0.position, resources.spawn.0.direction);
+            // Scope the inputs borrow to the constructor call only.
+            let new_runtime = {
+                let inputs = resources
+                    .simulation_inputs
+                    .as_ref()
+                    .expect("cached simulation inputs");
+                TimelineSimulationRuntime::new(
+                    spawn_position,
+                    spawn_direction,
+                    &inputs.0.objects,
+                    &inputs.0.tap_times,
+                )
+            };
+            runtime = Some(new_runtime);
+        } else {
+            let objects = crate::state::collect_editor_object_data(&resources.authored_objects);
+            runtime = Some(TimelineSimulationRuntime::new(
+                resources.spawn.0.position,
+                resources.spawn.0.direction,
+                &objects,
+                &resources.timeline.0.taps.tap_times,
+            ));
+        }
     }
     let mut runtime = runtime.expect("timeline scrub runtime must be initialized");
     runtime.advance_to(time_seconds);
@@ -578,11 +646,14 @@ pub fn handle_playtest(mut events: MessageReader<Playtest>, mut resources: Playt
         resources.session.playtest_audio_start_seconds =
             Some(transition.playtest_audio_start_seconds);
         resources.session.playing_sky_color = transition.sky_color;
+        // Move (not clone) the original authored vec into the snapshot; the
+        // transition already owns its `to_vec` clone. Saves one 19k clone per
+        // playtest enter (~121ms hotspot).
+        resources.session.playtest_editor_objects = Some(objects);
+        // `transition.objects` fans out to two owners + the reset seed below.
+        // Clone once for the trigger base; `level_meta` and the seed share
+        // via a second clone + move (was two clones + move).
         resources.session.playing_trigger_base_objects = Some(transition.objects.clone());
-        // Snapshot the editor's authored blocks before gameplay reset despawns
-        // them. The playtest-exit handlers (Escape, ToggleEditor, level
-        // completion) use this snapshot to repopulate the editor.
-        resources.session.playtest_editor_objects = Some(objects.clone());
         resources.session.practice_mode_enabled = false;
         resources.session.practice_checkpoints.clear();
         resources.session.audio_stop_pending = true;

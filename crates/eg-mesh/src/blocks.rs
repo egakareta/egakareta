@@ -100,7 +100,7 @@ pub fn build_block_instance_for_object(
     object: &LevelObject,
     current_time_seconds: Option<f32>,
 ) -> BlockInstance {
-    let block = BlockDefinition::get(&object.block_id);
+    let block = BlockDefinition::get_by_id(&object.block_id);
     block_instance_from_object(object, block, current_time_seconds)
 }
 
@@ -167,7 +167,7 @@ pub fn build_block_instance_batches_from_refs_at_time(
     let mut grouped_instances = BTreeMap::<String, (Vec<String>, Vec<BlockInstance>)>::new();
 
     for object in objects {
-        let block = BlockDefinition::get(&object.block_id);
+        let block = BlockDefinition::get_by_id(&object.block_id);
         let (object_ids, instances) = grouped_instances.entry(block.id.to_string()).or_default();
         object_ids.push(object.id.clone());
         instances.push(block_instance_from_object(
@@ -565,7 +565,7 @@ fn append_block_geometry_inner(
     let z_min = obj.position[2];
     let z_max = obj.position[2] + obj.size[2];
 
-    let block = BlockDefinition::get(&obj.block_id);
+    let block = BlockDefinition::get_by_id(&obj.block_id);
     let texture_layers = BlockTextureLayers::get(&obj.block_id);
 
     let mut colors = BlockColors {

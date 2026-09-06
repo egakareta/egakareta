@@ -117,7 +117,7 @@ fn tick_state_runs_phase_transition_system() {
     );
 }
 
-// ── Phase 3 — command / event fragmentation tests ───────────────
+// ── Phase 3 - command / event fragmentation tests ───────────────
 #[test]
 fn test_app_tick_state_writes_command_messages_to_app_resources() {
     // SetEditorMode is handled through App-world resources.
@@ -248,6 +248,7 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
         .undo
         .push(crate::state::EditorHistorySnapshot {
             objects: vec![undo_object.clone()],
+            object_change: None,
             selected_block_index: Some(0),
             selected_block_indices: vec![0],
             cursor: [1.0, 0.0, 2.0],
@@ -282,13 +283,13 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
 
 #[test]
 fn test_app_tick_state_practice_mode_mutates_session_resource() {
-    // Phase 3.15: `GameSetPracticeMode` is a carve-out — the
+    // Phase 3.15: `GameSetPracticeMode` is a carve-out - the
     // handler writes `SessionStateRes.practice_mode_enabled`
     // directly instead of routing through legacy `State`. Pin the
     // resource update here; the change-guarded runtime sync (which
     // would invoke the legacy
     // `set_practice_mode_enabled` setter with the heavy side
-    // effects — clear checkpoints, restart level, resume game) is
+    // effects - clear checkpoints, restart level, resume game) is
     // exercised in `eg-app` runtime tests because it requires a
     // real `Runtime`.
     use crate::events::navigation::GameSetPracticeMode;

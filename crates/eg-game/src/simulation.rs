@@ -92,15 +92,20 @@ impl TimelineSimulationRuntime {
         puffin::profile_scope!("TimelineRuntimeBuild");
 
         let spawn_position = center_spawn_position(spawn_position);
-        let authored_objects = objects.to_vec();
         let mut world = World::new();
         initialize_gameplay_world(&mut world);
         let schedule = build_fixed_update_schedule();
 
         {
             let world = &mut world;
-            for (index, object) in authored_objects.iter().enumerate() {
-                world.spawn(ObjectBundle {
+            // Batch-spawn all objects in one archetype move instead of 19k
+            // individual spawns. Bundles are built directly from the input
+            // slice (no intermediate `to_vec` + clone); `initial_objects`
+            // below performs the single retained `to_vec`.
+            let bundles = objects
+                .iter()
+                .enumerate()
+                .map(|(index, object)| ObjectBundle {
                     object: Object,
                     id: ObjectId(format!("__obj_{index}")),
                     data: ObjectData(object.clone()),
@@ -109,9 +114,10 @@ impl TimelineSimulationRuntime {
                     size: Size(object.size),
                     block_id: BlockId(object.block_id.clone()),
                     color_tint: ColorTint(object.color_tint),
-                    cached_behavior: CachedBlockBehavior::from_block_id(&object.block_id),
-                });
-            }
+                    cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
+                })
+                .collect::<Vec<_>>();
+            let entities = world.spawn_batch(bundles).collect::<Vec<_>>();
 
             world.spawn(PlayerBundle {
                 player: Player,
@@ -130,15 +136,24 @@ impl TimelineSimulationRuntime {
             world.resource_mut::<GameClock>().started = true;
             {
                 let mut level = world.resource_mut::<LevelMeta>();
-                level.initial_objects = authored_objects.clone();
+                // Single retained copy (was `authored_objects.clone()` on top
+                // of the initial `to_vec`: 3x 19k clones total).
+                level.initial_objects = objects.to_vec();
                 level.spawn_position = spawn_position;
                 level.spawn_direction = spawn_direction;
             }
 
+            // Build the spatial index directly from spawned entities + the
+            // input slice instead of re-querying the world for 19k
+            // `ObjectData` clones via `SpatialIndex::rebuild`.
             let mut spatial = world
                 .remove_resource::<SpatialIndex>()
                 .expect("GamePlugin must install SpatialIndex");
-            spatial.rebuild(world);
+            spatial.grid.clear();
+            debug_assert_eq!(entities.len(), objects.len());
+            for (entity, object) in entities.into_iter().zip(objects.iter()) {
+                spatial.grid.insert_object(entity, object);
+            }
             world.insert_resource(spatial);
         }
 
@@ -161,7 +176,7 @@ impl TimelineSimulationRuntime {
                 is_grounded: true,
             },
             trail_segments: vec![vec![spawn_position]],
-            objects: authored_objects,
+            objects: objects.to_vec(),
             game_over: false,
             level_complete: false,
             tap_times: sorted_taps,
@@ -258,15 +273,27 @@ impl TimelineSimulationRuntime {
             self.elapsed_seconds = step_target;
             self.state.elapsed_seconds = step_target;
             self.apply_pending_taps(self.elapsed_seconds + TIME_EPSILON_SECONDS);
-            // A tap on the exact end of this step changes the player
-            // direction after the gameplay schedule has run. Snapshot after
-            // applying it so scrubbing at the boundary observes that turn.
-            self.sync_snapshot();
+            // Per-step sync is limited to the game-over flags (two resource
+            // reads). The full snapshot (player query + trail clone + 19k
+            // entity count) runs once after the loop: nothing between steps
+            // reads position/trail/objects (`apply_pending_taps` queries the
+            // world directly), so per-step full syncs were pure overhead
+            // (~2880 needless 19k counts for a 12s scrub).
+            let (game_over, level_complete) = {
+                let clock = self.world.resource::<GameClock>();
+                (clock.game_over, clock.level_complete)
+            };
+            self.game_over = game_over;
+            self.level_complete = level_complete;
 
             if self.game_over {
-                return;
+                break;
             }
         }
+        // A tap on the exact end of the final step changes the player
+        // direction after the gameplay schedule has run. Snapshot after
+        // applying it so scrubbing at the boundary observes that turn.
+        self.sync_snapshot();
     }
 
     pub fn elapsed_seconds(&self) -> f32 {
@@ -310,7 +337,7 @@ impl TimelineSimulationRuntime {
     }
 
     fn sync_snapshot(&mut self) {
-        let (clock, player, objects) = {
+        let (clock, player, object_count) = {
             let world = &mut self.world;
             let clock = {
                 let clock = world.resource::<GameClock>();
@@ -338,15 +365,12 @@ impl TimelineSimulationRuntime {
                     },
                 )
             };
-            let mut query = world.query::<(&ObjectId, &ObjectData)>();
-            let mut objects = query
-                .iter(world)
-                .map(|(id, data)| (id.0.clone(), data.0.clone()))
-                .collect::<Vec<_>>();
-            objects.sort_by(|(left, _), (right, _)| {
-                object_order_key(left).cmp(&object_order_key(right))
-            });
-            (clock, player, objects)
+            let object_count = {
+                let mut query = world
+                    .query_filtered::<bevy_ecs::prelude::Entity, bevy_ecs::prelude::With<Object>>();
+                query.iter(world).count()
+            };
+            (clock, player, object_count)
         };
 
         self.game_over = clock.1;
@@ -359,7 +383,18 @@ impl TimelineSimulationRuntime {
             self.state.is_grounded = grounded;
             self.trail_segments = trail;
         }
-        self.objects = objects.into_iter().map(|(_, object)| object).collect();
+        if object_count != self.objects.len() {
+            let world = &mut self.world;
+            let mut query = world.query::<(&ObjectId, &ObjectData)>();
+            let mut objects = query
+                .iter(world)
+                .map(|(id, data)| (id.0.clone(), data.0.clone()))
+                .collect::<Vec<_>>();
+            objects.sort_by(|(left, _), (right, _)| {
+                object_order_key(left).cmp(&object_order_key(right))
+            });
+            self.objects = objects.into_iter().map(|(_, object)| object).collect();
+        }
     }
 }
 pub fn simulate_timeline_state(

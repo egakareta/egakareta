@@ -12,16 +12,16 @@
 //! systems consume those resources directly.
 //!
 //! Plugin graph:
-//! - [`GameplayPlugin`] — wraps `eg_game::GamePlugin` + owns
+//! - [`GameplayPlugin`] - wraps `eg_game::GamePlugin` + owns
 //!   gameplay-related resources (`SessionStateRes`-style
 //!   fields that affect gameplay).
-//! - [`EditorPlugin`] — owns the `Editor*Res` family (input, config,
+//! - [`EditorPlugin`] - owns the `Editor*Res` family (input, config,
 //!   camera, triggers, timeline, timing, runtime, history, perf).
-//! - [`SessionPlugin`] — owns `SessionStateRes` (level/music/creator
+//! - [`SessionPlugin`] - owns `SessionStateRes` (level/music/creator
 //!   metadata, settings, practice mode).
-//! - [`MenuPlugin`] — owns `MenuStateRes`; top-level navigation uses Bevy's
+//! - [`MenuPlugin`] - owns `MenuStateRes`; top-level navigation uses Bevy's
 //!   `State<AppPhase>` resource.
-//! - [`StatePlugins`] — aggregator that registers all of the above in
+//! - [`StatePlugins`] - aggregator that registers all of the above in
 //!   dependency order.
 //!
 //! REFACTOR POINT(full-bevy): the full-Bevy migration promotes these
@@ -43,7 +43,7 @@ use super::{
     state_resources::{
         AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
         AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
+        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorPointerCache, EditorRuntimeRes,
         EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
         EditorTriggerRes, FrameTimeRes, GameplayResetRes, LevelExportServiceRes,
         LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest, PerfRes,
@@ -90,6 +90,7 @@ pub struct EditorPlugin;
 impl Plugin for EditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<EditorInputRes>()
+            .init_resource::<EditorPointerCache>()
             .init_resource::<EditorConfigRes>()
             .init_resource::<EditorCameraRes>()
             .init_resource::<EditorSpawnRes>()
@@ -183,7 +184,7 @@ impl Plugin for MenuPlugin {
 /// Aggregator plugin. Add this to an `App` to register every eg-state
 /// plugin in dependency order. Equivalent to a hand-written
 /// `app.add_plugins((TimePlugin, MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin))`
-/// — kept as a single plugin so the order is centralized and the full
+/// - kept as a single plugin so the order is centralized and the full
 /// eg-state `App` is built with one call.
 pub struct StatePlugins;
 
@@ -264,6 +265,7 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<BlockEffectsRes>();
     world.init_resource::<SessionStateRes>();
     world.init_resource::<EditorInputRes>();
+    world.init_resource::<EditorPointerCache>();
     world.init_resource::<EditorConfigRes>();
     world.init_resource::<EditorCameraRes>();
     world.init_resource::<EditorSpawnRes>();
@@ -416,6 +418,7 @@ pub fn register_state_schedule(world: &mut World) {
     render_extract_schedule.add_systems(
         (
             crate::state::editor_objects::observe_editor_object_changes_system,
+            crate::state::render::plugin::sync_editor_object_render_snapshot_system,
             crate::state::render::plugin::extract_trail_vertices_system,
             crate::state::render::plugin::extract_block_effect_vertices_system,
             crate::state::render::plugin::extract_practice_checkpoint_vertices_system,

@@ -30,7 +30,7 @@ use eg_types::{
 };
 
 use crate::state::{
-    PracticeCheckpoint,
+    EditorPickSpatialIndex, PracticeCheckpoint,
     editor_camera::EditorCameraState,
     editor_config_state::EditorConfigState,
     editor_timeline::EditorTimelineState,
@@ -273,6 +273,14 @@ pub struct BlockEffectsRes {
 #[derive(Resource, Default)]
 pub struct EditorInputRes(pub eg_types::EditorInputState);
 
+#[derive(Resource, Default)]
+pub(crate) struct EditorPointerCache {
+    pub(crate) objects: Vec<LevelObject>,
+    pub(crate) revision: u64,
+    pub(crate) initialized: bool,
+    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
+}
+
 /// `EditorConfigState` mirrored as a resource.
 #[derive(Resource, Default)]
 pub struct EditorConfigRes(pub EditorConfigState);
@@ -289,7 +297,7 @@ pub struct EditorTriggerRes(pub EditorTriggerState);
 #[derive(Resource, Default)]
 pub struct EditorTimelineRes(pub EditorTimelineState);
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct EditorSimulationInputs {
     pub spawn_position: [f32; 3],
     pub spawn_direction: Direction,
@@ -298,6 +306,22 @@ pub struct EditorSimulationInputs {
     pub duration_seconds: f32,
     pub snapshot_cache_step_seconds: f32,
     pub timing_points: Vec<TimingPoint>,
+    pub object_revision: u64,
+}
+
+impl Default for EditorSimulationInputs {
+    fn default() -> Self {
+        Self {
+            spawn_position: [0.0; 3],
+            spawn_direction: Direction::Forward,
+            objects: Vec::new(),
+            tap_times: Vec::new(),
+            duration_seconds: 0.0,
+            snapshot_cache_step_seconds: 0.0,
+            timing_points: Vec::new(),
+            object_revision: u64::MAX,
+        }
+    }
 }
 
 #[derive(Resource, Default)]

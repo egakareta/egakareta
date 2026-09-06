@@ -91,12 +91,9 @@ pub struct SpatialIndex {
 impl SpatialIndex {
     pub fn rebuild(&mut self, world: &mut World) {
         self.grid.clear();
-        let entries: Vec<(Entity, LevelObject)> = {
-            let mut query = world.query::<(Entity, &crate::components::ObjectData)>();
-            query.iter(world).map(|(e, d)| (e, d.0.clone())).collect()
-        };
-        for (entity, obj) in entries {
-            self.grid.insert_object(entity, &obj);
+        let mut query = world.query::<(Entity, &crate::components::ObjectData)>();
+        for (entity, data) in query.iter(world) {
+            self.grid.insert_object(entity, &data.0);
         }
     }
 }

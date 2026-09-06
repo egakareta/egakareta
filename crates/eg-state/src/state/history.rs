@@ -5,7 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use super::EditorHistorySnapshot;
+use eg_types::LevelObject;
+
+use super::{EditorHistoryObjectChange, EditorHistorySnapshot};
 
 #[derive(Default, Clone)]
 pub struct EditorHistoryState {
@@ -15,8 +17,17 @@ pub struct EditorHistoryState {
 
 super::editor_context_methods! {
     fn history_snapshot(&self) -> EditorHistorySnapshot {
+        self.history_snapshot_with_change(self.objects.clone(), None)
+    }
+
+    fn history_snapshot_with_change(
+        &self,
+        objects: Vec<LevelObject>,
+        object_change: Option<EditorHistoryObjectChange>,
+    ) -> EditorHistorySnapshot {
         EditorHistorySnapshot {
-            objects: self.objects.clone(),
+            objects,
+            object_change,
             selected_block_index: self.input.selected_block_index,
             selected_block_indices: self.input.selected_block_indices.clone(),
             cursor: self.input.cursor,
@@ -32,6 +43,23 @@ super::editor_context_methods! {
             timing_points: self.timing.timing_points.clone(),
             selected_trigger_index: self.triggers.selected_index,
         }
+    }
+
+    pub(crate) fn record_history_state_for_placement(
+        &mut self,
+        object_id: String,
+        index: usize,
+    ) {
+        const MAX_HISTORY: usize = 256;
+        if self.history.undo.len() >= MAX_HISTORY {
+            self.history.undo.remove(0);
+        }
+        let snapshot = self.history_snapshot_with_change(
+            Vec::new(),
+            Some(EditorHistoryObjectChange::RemovePlaced { object_id, index }),
+        );
+        self.history.undo.push(snapshot);
+        self.history.redo.clear();
     }
 
     pub(crate) fn record_history_state(&mut self) {
@@ -50,14 +78,14 @@ super::editor_context_methods! {
 mod tests {
     use bevy_state::prelude::State;
     use eg_types::{
-        AppPhase, EasingDirection, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID, TimedTrigger,
-        TriggerTarget,
+        AppPhase, EasingDirection, EditorPlaceMode, LevelObject, TRANSFORM_TRIGGER_BLOCK_ID,
+        TimedTrigger, TriggerTarget,
     };
 
     use crate::state::{
-        EditorClipboard, EditorHistoryRes, EditorInputRes, EditorTimelineRes, EditorTriggerRes,
-        collect_editor_objects_from_world, replace_editor_objects, test_support::TestApp,
-        with_editor_interaction_context,
+        EditorClipboard, EditorHistoryObjectChange, EditorHistoryRes, EditorInputRes,
+        EditorTimelineRes, EditorTriggerRes, collect_editor_objects_from_world,
+        replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
     };
 
     fn editor_app(objects: Vec<LevelObject>) -> TestApp {
@@ -115,7 +143,21 @@ mod tests {
 
         let history = &app.world().resource::<EditorHistoryRes>().0;
         assert_eq!(history.undo.len(), 256);
-        assert_eq!(history.undo[0].objects[0].position[0], 44.25);
+        // Delta history stores pre-mutation objects in `object_change`
+        // (RestoreMany) with an empty `objects` vec; full snapshots store
+        // them inline. Accept either representation.
+        let oldest_position = history.undo[0]
+            .object_change
+            .as_ref()
+            .and_then(|change| match change {
+                EditorHistoryObjectChange::RestoreMany { before } => {
+                    before.first().map(|(_, object)| object.position[0])
+                }
+                EditorHistoryObjectChange::RestoreOne { before, .. } => Some(before.position[0]),
+                _ => None,
+            })
+            .unwrap_or_else(|| history.undo[0].objects[0].position[0]);
+        assert_eq!(oldest_position, 44.25);
     }
 
     #[test]
@@ -144,6 +186,33 @@ mod tests {
         app.tick_state();
 
         assert!(app.world().resource::<EditorHistoryRes>().0.redo.is_empty());
+    }
+
+    #[test]
+    fn test_placement_undo_redo_uses_inverse_object_change() {
+        let mut app = editor_app(vec![test_block([0.0, 0.0, 0.0])]);
+        with_editor_interaction_context(app.world_mut(), |editor| {
+            editor.input.cursor = [4.0, 0.0, 4.0];
+            editor.add_block_at_cursor(EditorPlaceMode::Stamp);
+        });
+
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 2);
+        assert!(
+            app.world()
+                .resource::<EditorHistoryRes>()
+                .0
+                .undo
+                .last()
+                .is_some_and(|snapshot| snapshot.object_change.is_some())
+        );
+
+        app.world_mut().write_message(crate::events::history::Undo);
+        app.tick_state();
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
+
+        app.world_mut().write_message(crate::events::history::Redo);
+        app.tick_state();
+        assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 2);
     }
 
     #[test]

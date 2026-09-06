@@ -337,7 +337,7 @@ pub fn ground_gravity_system(
         let Ok(obj) = objects.get(entity) else {
             continue;
         };
-        let behavior = CachedBlockBehavior::from_block_id(&obj.0.block_id);
+        let behavior = CachedBlockBehavior::from_block_id_ref(&obj.0.block_id);
         if !behavior.support_surface {
             continue;
         }

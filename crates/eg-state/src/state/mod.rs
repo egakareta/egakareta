@@ -33,7 +33,7 @@ mod editor_config_state;
 mod editor_interaction;
 mod editor_objects;
 pub(crate) use editor_objects::{
-    EditorAuthoredObject, EditorObjectOrder, collect_editor_object_data,
+    EditorAuthoredObject, EditorObjectOrder, EditorObjectRevision, collect_editor_object_data,
     replace_editor_objects_commands, spawn_editor_object_commands,
 };
 pub use editor_objects::{collect_editor_objects_from_world, replace_editor_objects};
@@ -96,11 +96,11 @@ use bevy_ecs::system::SystemState;
 pub(crate) use editor_camera::{CameraViewSample, evaluate_camera_track_for_objects};
 pub use editor_camera::{EditorCameraState, editor_camera_preview_for_objects};
 pub use editor_config_state::EditorConfigState;
-use editor_interaction::EditorPickSpatialIndex;
 pub use editor_interaction::{
     EditorBlockDrag, EditorClipboard, EditorDragBlockStart, EditorGizmoDrag, EditorHistorySnapshot,
     EditorInteractionState, EditorPendingTapClick,
 };
+pub(crate) use editor_interaction::{EditorHistoryObjectChange, EditorPickSpatialIndex};
 #[cfg(test)]
 pub(crate) use editor_timeline::EditorTimelineSnapshot;
 pub use editor_timeline::EditorTimelineState;
@@ -134,6 +134,7 @@ pub use render::resources::{
     RenderUniformsRes,
 };
 pub use runtime::{BlockVisualEffect, EditorRuntimeState};
+pub(crate) use state_resources::EditorPointerCache;
 pub use state_resources::{
     AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
     AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
@@ -180,7 +181,7 @@ pub(crate) struct EditorInteractionContext<'a> {
     pub selected_mask_cache: Option<Vec<bool>>,
     pub block_static_vertex_cache: MeshGeometry,
     pub block_static_vertex_cache_complete_len: Option<usize>,
-    pub(crate) pick_spatial_index: EditorPickSpatialIndex,
+    pub(crate) pick_spatial_index: &'a mut EditorPickSpatialIndex,
 }
 
 #[cfg(test)]
@@ -215,6 +216,7 @@ pub(crate) fn with_editor_interaction_context<R>(
         ) = system_state
             .get_mut(world)
             .expect("editor test context resources must be registered");
+        let mut pick_spatial_index = EditorPickSpatialIndex::default();
         f(&mut EditorInteractionContext {
             input: &mut input.0,
             config: &mut config.0,
@@ -229,7 +231,7 @@ pub(crate) fn with_editor_interaction_context<R>(
             selected_mask_cache: None,
             block_static_vertex_cache: Default::default(),
             block_static_vertex_cache_complete_len: None,
-            pick_spatial_index: EditorPickSpatialIndex::default(),
+            pick_spatial_index: &mut pick_spatial_index,
         })
     };
     system_state.apply(world);

@@ -83,7 +83,7 @@ pub fn register_events(app: &mut App) {
 /// Move the editor camera
 /// along its current look vector by `delta * 2` units. The legacy
 /// setter is gated on `AppPhase::Editor`; the carve-out mirrors the
-/// math exactly (no phase check at this layer — the dispatch path
+/// math exactly (no phase check at this layer - the dispatch path
 /// is the one that should gate, and the resource is the source of
 /// truth at the sync point).
 pub fn handle_adjust_zoom(
@@ -159,8 +159,12 @@ pub fn handle_add_camera_trigger(
     mut events: MessageReader<AddCameraTrigger>,
     mut resources: CameraResources,
 ) {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
     let mut objects = collect_editor_object_data(&resources.authored_objects);
-    for _ in events.read() {
+    for _ in events {
         add_camera_trigger(&mut resources, &mut objects);
     }
 }
@@ -169,8 +173,12 @@ pub fn handle_add_camera_follow_trigger(
     mut events: MessageReader<AddCameraFollowTrigger>,
     mut resources: CameraResources,
 ) {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
     let mut objects = collect_editor_object_data(&resources.authored_objects);
-    for _ in events.read() {
+    for _ in events {
         add_camera_follow_trigger(&mut resources, &mut objects);
     }
 }
@@ -207,12 +215,23 @@ fn add_camera_trigger(
         return false;
     }
 
-    record_history_state(resources, objects);
-    let trigger_object = capture_current_camera_trigger(
+    let mut trigger_object = capture_current_camera_trigger(
         &resources.camera.0,
         resources.timeline.0.clock.time_seconds,
-    )
-    .with_generated_id(objects);
+    );
+    // Batch-style single ID allocation still scans once; deltas avoid the 19k
+    // history clone that dominated add-camera-trigger (~47ms).
+    trigger_object.id = eg_types::next_level_object_ids_batch(objects, 1)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| trigger_object.id.clone());
+    record_history_delta(
+        resources,
+        crate::state::EditorHistoryObjectChange::RemoveAdded {
+            object_ids: vec![trigger_object.id.clone()],
+            indices: vec![objects.len()],
+        },
+    );
     spawn_editor_object_commands(
         &mut resources.commands,
         objects.len(),
@@ -231,7 +250,6 @@ fn add_camera_follow_trigger(
         return false;
     }
 
-    record_history_state(resources, objects);
     let camera = CameraTrigger {
         mode: CameraMode::Follow,
         ..CameraTrigger::default()
@@ -245,8 +263,18 @@ fn add_camera_follow_trigger(
             ..TimedTrigger::default()
         }),
         ..LevelObject::default()
-    }
-    .with_generated_id(objects);
+    };
+    trigger_object.id = eg_types::next_level_object_ids_batch(objects, 1)
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+    record_history_delta(
+        resources,
+        crate::state::EditorHistoryObjectChange::RemoveAdded {
+            object_ids: vec![trigger_object.id.clone()],
+            indices: vec![objects.len()],
+        },
+    );
     if let Some(trigger) = trigger_object.trigger.clone() {
         let target_position =
             timeline_position_at_seconds(&resources.timeline.0, trigger.time_seconds);
@@ -336,22 +364,31 @@ fn sync_trigger_selection_from_objects(
         .filter(|index| *index < trigger_count);
 }
 
-fn record_history_state(resources: &mut CameraResources<'_, '_>, objects: &[LevelObject]) {
+fn push_history_snapshot(resources: &mut CameraResources<'_, '_>, snapshot: EditorHistorySnapshot) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
     }
-    let snapshot = history_snapshot_from_resources(resources, objects);
     resources.history.0.undo.push(snapshot);
     resources.history.0.redo.clear();
 }
 
-fn history_snapshot_from_resources(
+fn record_history_delta(
+    resources: &mut CameraResources<'_, '_>,
+    object_change: crate::state::EditorHistoryObjectChange,
+) {
+    let snapshot = history_snapshot_with_change(resources, Vec::new(), Some(object_change));
+    push_history_snapshot(resources, snapshot);
+}
+
+fn history_snapshot_with_change(
     resources: &CameraResources<'_, '_>,
-    objects: &[LevelObject],
+    objects: Vec<LevelObject>,
+    object_change: Option<crate::state::EditorHistoryObjectChange>,
 ) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
-        objects: objects.to_vec(),
+        objects,
+        object_change,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

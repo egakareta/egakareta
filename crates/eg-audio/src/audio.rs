@@ -185,6 +185,47 @@ pub struct WaveformDecodeSummary {
     pub peak_count: usize,
 }
 
+/// Process-wide cache holding the most recently decoded track PCM.
+///
+/// Fresh `AudioBackend` instances (one per headless test App, and after any
+/// backend re-initialization) otherwise pay a full compressed-to-PCM decode
+/// (~150ms for a 4MB mp3) on first play even when an identical backend just
+/// decoded the same bytes. A single most-recent slot mirrors the per-backend
+/// `decoded_cache` design: bounded memory (one track), no eviction policy to
+/// maintain, and repeat plays of the same track skip the decode.
+static SHARED_DECODED_PCM: std::sync::OnceLock<
+    std::sync::Mutex<Option<(String, rodio::buffer::SamplesBuffer)>>,
+> = std::sync::OnceLock::new();
+
+fn shared_decoded_pcm() -> &'static std::sync::Mutex<Option<(String, rodio::buffer::SamplesBuffer)>>
+{
+    SHARED_DECODED_PCM.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Decode `bytes` to PCM, reusing the shared cache when it already holds
+/// `source_key`. Returns the buffer plus whether it came from the shared
+/// cache (no decode performed - callers use this to keep decode accounting
+/// exact). Locking is scoped to a lookup or a single store; the expensive
+/// decode itself runs unlocked.
+fn decode_with_shared_cache(
+    source_key: &str,
+    bytes: &[u8],
+) -> Option<(rodio::buffer::SamplesBuffer, bool)> {
+    if let Some((key, buffer)) = shared_decoded_pcm()
+        .lock()
+        .expect("shared PCM cache mutex poisoned")
+        .as_ref()
+        && key == source_key
+    {
+        return Some((buffer.clone(), true));
+    }
+    let buffer = AudioBackend::decode_to_buffer(bytes)?;
+    *shared_decoded_pcm()
+        .lock()
+        .expect("shared PCM cache mutex poisoned") = Some((source_key.to_string(), buffer.clone()));
+    Some((buffer, false))
+}
+
 pub struct AudioBackend {
     output_device: Option<rodio::MixerDeviceSink>,
     device_tried: bool,
@@ -502,17 +543,20 @@ impl AudioBackend {
         }
         self.current_audio_source = None;
 
-        #[cfg(test)]
-        self.record_full_decode();
-
         log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
-        match Self::decode_to_buffer(bytes) {
-            Some(buffer) => {
+        match decode_with_shared_cache(&source_key, bytes) {
+            Some((buffer, _shared_hit)) => {
+                #[cfg(test)]
+                if !_shared_hit {
+                    self.record_full_decode();
+                }
                 log::trace!("RodioAudioBackend: decoding successful");
                 self.decoded_cache = Some((source_key.clone(), buffer.clone()));
                 self.play_buffer(source_key, buffer, start_seconds, true);
             }
             None => {
+                #[cfg(test)]
+                self.record_full_decode();
                 log::warn!("Failed to decode imported level music '{}'", source_key);
             }
         }
@@ -548,15 +592,19 @@ impl AudioBackend {
             "RodioAudioBackend: decoding {} bytes from asset",
             audio_bytes.len()
         );
-        #[cfg(test)]
-        self.record_full_decode();
-        match Self::decode_to_buffer(&audio_bytes) {
-            Some(buffer) => {
+        match decode_with_shared_cache(&source_key, &audio_bytes) {
+            Some((buffer, _shared_hit)) => {
+                #[cfg(test)]
+                if !_shared_hit {
+                    self.record_full_decode();
+                }
                 log::trace!("RodioAudioBackend: asset decoding successful");
                 self.decoded_cache = Some((source_key.clone(), buffer.clone()));
                 self.play_buffer(source_key, buffer, start_seconds, autoplay);
             }
             None => {
+                #[cfg(test)]
+                self.record_full_decode();
                 log::warn!("Failed to decode level music '{}'", audio_path);
             }
         }
@@ -596,7 +644,7 @@ impl AudioBackend {
 
     /// Check if the audio backend is currently playing any audio. Returns true if playback is active, false otherwise.
     ///
-    /// A paused or stopped player is not considered "playing" — only an
+    /// A paused or stopped player is not considered "playing" - only an
     /// actively decoding/rendering player reports true. This keeps callers
     /// like the gameplay-audio pause sync from thinking the music is still
     /// running after `stop()` and accidentally resuming it.
@@ -1083,7 +1131,7 @@ mod tests {
     ///
     /// The counter observes real full decodes performed by `replace_with_bytes`
     /// / `replace_with_asset`, and the control step proves it can still count a
-    /// genuine decode for an uncached source — so this cannot pass vacuously.
+    /// genuine decode for an uncached source - so this cannot pass vacuously.
     #[test]
     fn repeated_starts_of_same_track_decode_only_once() {
         let mut backend = AudioBackend::new();

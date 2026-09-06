@@ -213,6 +213,7 @@ fn record_history_state(resources: &mut SnapResources<'_, '_>, objects: &[eg_typ
     }
     resources.history.0.undo.push(EditorHistorySnapshot {
         objects: objects.to_vec(),
+        object_change: None,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

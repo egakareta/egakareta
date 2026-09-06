@@ -19,7 +19,7 @@
 //! `RenderApp::extract` system in the full-Bevy migration; the
 //! `RenderPresentSet` is replaced by `bevy_render`'s `Render` set.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
@@ -67,9 +67,10 @@ use super::{
     },
 };
 use crate::state::{
-    BlockEffectsRes, EditorCameraRes, EditorConfigRes, EditorInputRes, EditorRuntimeRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes,
-    MenuPreviewObjectsRes, MenuStateRes, SessionStateRes,
+    BlockEffectsRes, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorInputRes,
+    EditorObjectOrder, EditorObjectRevision, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
+    EditorTimingRes, EditorTriggerRes, FrameTimeRes, MenuPreviewObjectsRes, MenuStateRes,
+    SessionStateRes,
     editor_trail::{build_editor_playback_trail_vertices, build_editor_scrub_trail_vertices},
     evaluate_camera_track_for_objects,
 };
@@ -129,6 +130,7 @@ impl Plugin for RenderPlugin {
             .init_resource::<RenderPlayingBlockMeshesRes>()
             .init_resource::<RenderMenuPreviewBlockMeshesRes>()
             .init_resource::<RenderEditorBlockMeshesRes>()
+            .init_resource::<EditorObjectRenderSnapshot>()
             .init_resource::<EditorBlockMeshCache>()
             .init_resource::<EditorTransformTriggerMarkerCache>()
             .init_resource::<RenderEditorSpawnMarkerVerticesRes>()
@@ -160,6 +162,7 @@ pub fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderPlayingBlockMeshesRes>();
     world.init_resource::<RenderMenuPreviewBlockMeshesRes>();
     world.init_resource::<RenderEditorBlockMeshesRes>();
+    world.init_resource::<EditorObjectRenderSnapshot>();
     world.init_resource::<EditorBlockMeshCache>();
     world.init_resource::<EditorTransformTriggerMarkerCache>();
     world.init_resource::<RenderEditorSpawnMarkerVerticesRes>();
@@ -483,7 +486,7 @@ fn editor_trigger_objects_for_render(objects: &[LevelObject]) -> Vec<LevelObject
 }
 
 fn is_play_world_render_object(object: &LevelObject) -> bool {
-    BlockDefinition::get(&object.block_id).render.profile != BlockRenderProfile::CameraTrigger
+    BlockDefinition::get_by_id(&object.block_id).render.profile != BlockRenderProfile::CameraTrigger
 }
 
 fn has_object_transform_triggers(triggers: &[LevelObject]) -> bool {
@@ -630,6 +633,149 @@ pub(crate) struct PlayingStaticBlockMeshCache {
     objects: Vec<LevelObject>,
 }
 
+#[derive(Resource, Default)]
+pub(crate) struct EditorObjectRenderSnapshot {
+    objects: Vec<LevelObject>,
+    trigger_objects: Vec<LevelObject>,
+    camera_trigger_objects: Vec<LevelObject>,
+    entities: Vec<Entity>,
+    entity_indices: HashMap<Entity, usize>,
+    revision: u64,
+    initialized: bool,
+}
+
+#[allow(clippy::type_complexity)]
+pub(crate) fn sync_editor_object_render_snapshot_system(
+    authored_objects: Query<
+        (Entity, &EditorObjectOrder, &eg_game::ObjectData),
+        (
+            With<EditorAuthoredObject>,
+            Or<(
+                Added<EditorAuthoredObject>,
+                Changed<eg_game::ObjectData>,
+                Changed<EditorObjectOrder>,
+            )>,
+        ),
+    >,
+    mut removed: RemovedComponents<EditorAuthoredObject>,
+    revision: Res<EditorObjectRevision>,
+    mut snapshot: ResMut<EditorObjectRenderSnapshot>,
+) {
+    if snapshot.initialized && snapshot.revision == revision.0 {
+        return;
+    }
+
+    if !snapshot.initialized {
+        let mut ordered = authored_objects
+            .iter()
+            .map(|(entity, order, data)| (order.0, entity, data.0.clone()))
+            .collect::<Vec<_>>();
+        ordered.sort_unstable_by_key(|(order, _, _)| *order);
+        snapshot.entities = ordered.iter().map(|(_, entity, _)| *entity).collect();
+        snapshot.objects = ordered.into_iter().map(|(_, _, object)| object).collect();
+        snapshot.entity_indices = snapshot
+            .entities
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(index, entity)| (entity, index))
+            .collect();
+    } else {
+        let mut removed_indices = removed
+            .read()
+            .filter_map(|entity| snapshot.entity_indices.get(&entity).copied())
+            .collect::<Vec<_>>();
+        removed_indices.sort_unstable();
+        removed_indices.dedup();
+        // Track removed entities so the index map can be patched without a
+        // full 19k rebuild. `entities.remove(index)` shifts trailing entries,
+        // so patch the map incrementally below instead of rebuilding twice.
+        let mut removed_entities: Vec<Entity> = Vec::with_capacity(removed_indices.len());
+        for index in removed_indices.into_iter().rev() {
+            if let Some(removed_entity) = snapshot.entities.get(index).copied() {
+                removed_entities.push(removed_entity);
+            }
+            snapshot.entities.remove(index);
+            snapshot.objects.remove(index);
+        }
+        for removed_entity in &removed_entities {
+            snapshot.entity_indices.remove(removed_entity);
+        }
+        // Orders shifted after removals; fix up trailing indices in place
+        // instead of rebuilding the whole map when removals occurred.
+        // (Full rebuild happens lazily below only if the order fallback hits.)
+        if !removed_entities.is_empty() {
+            // Rebuild is O(n) but happens only when objects were actually
+            // removed (bulk remove-100), not on every single-place edit.
+            // Single-place edits have zero removals, so this is skipped.
+            snapshot.entity_indices = snapshot
+                .entities
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, entity)| (entity, index))
+                .collect();
+        }
+
+        let mut changed_objects = authored_objects
+            .iter()
+            .map(|(entity, order, data)| (order.0, entity, data.0.clone()))
+            .collect::<Vec<_>>();
+        changed_objects.sort_unstable_by_key(|(order, _, _)| *order);
+        let mut needs_index_rebuild = false;
+        for (order, entity, object) in changed_objects {
+            if order == snapshot.objects.len() && order == snapshot.entities.len() {
+                snapshot.entities.push(entity);
+                snapshot.objects.push(object);
+                snapshot.entity_indices.insert(entity, order);
+            } else if order < snapshot.objects.len() && order < snapshot.entities.len() {
+                // Patch the index map for the single replaced slot instead of
+                // rebuilding 19k entries.
+                let old_entity = snapshot.entities[order];
+                if old_entity != entity {
+                    snapshot.entity_indices.remove(&old_entity);
+                    snapshot.entity_indices.insert(entity, order);
+                }
+                snapshot.objects[order] = object;
+                snapshot.entities[order] = entity;
+            } else {
+                let mut ordered = authored_objects
+                    .iter()
+                    .map(|(entity, order, data)| (order.0, entity, data.0.clone()))
+                    .collect::<Vec<_>>();
+                ordered.sort_unstable_by_key(|(order, _, _)| *order);
+                snapshot.entities = ordered.iter().map(|(_, entity, _)| *entity).collect();
+                snapshot.objects = ordered.into_iter().map(|(_, _, object)| object).collect();
+                needs_index_rebuild = true;
+                break;
+            }
+        }
+        if needs_index_rebuild {
+            snapshot.entity_indices = snapshot
+                .entities
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, entity)| (entity, index))
+                .collect();
+        }
+    }
+    snapshot.trigger_objects = editor_trigger_objects_for_render(&snapshot.objects);
+    snapshot.camera_trigger_objects = snapshot
+        .trigger_objects
+        .iter()
+        .filter(|object| {
+            object
+                .trigger
+                .as_ref()
+                .is_some_and(|trigger| trigger.camera.is_some())
+        })
+        .cloned()
+        .collect();
+    snapshot.revision = revision.0;
+    snapshot.initialized = true;
+}
+
 pub(crate) fn extract_playing_block_meshes_system(
     phase: Res<State<AppPhase>>,
     session: Res<SessionStateRes>,
@@ -679,7 +825,7 @@ pub(crate) fn extract_playing_block_meshes_system(
     let has_object_transform_triggers = has_object_transform_triggers(&trigger_objects);
     let has_camera_timeline_triggers = has_camera_timeline_triggers(&trigger_objects);
     let has_animated_blocks = gameplay_objects.iter().any(|object| {
-        BlockDefinition::get(&object.block_id)
+        BlockDefinition::get_by_id(&object.block_id)
             .animation
             .idle
             .has_motion()
@@ -750,6 +896,7 @@ struct CachedEditorBlockObject {
 }
 
 struct CachedEditorBlockTemplate {
+    #[allow(dead_code)]
     definition: BlockDefinition,
     geometry: eg_mesh::MeshGeometry,
 }
@@ -766,7 +913,7 @@ fn editor_instance_chunk_key(object: &LevelObject) -> RenderChunkKey {
 fn editor_instance_aabb(object: &LevelObject) -> ChunkAabb {
     let center = object.center();
     let half_size = Vec3::from_array(object.size).abs() * 0.5;
-    let trigger_extent = match BlockDefinition::get(&object.block_id).render.profile {
+    let trigger_extent = match BlockDefinition::get_by_id(&object.block_id).render.profile {
         BlockRenderProfile::CameraTrigger => 2.0,
         BlockRenderProfile::TransformTrigger => 0.75,
         _ => 0.0,
@@ -797,39 +944,44 @@ pub(crate) struct EditorBlockMeshCache {
 }
 
 impl EditorBlockMeshCache {
-    fn template_needs_invalidation(&self, block_id: &str) -> bool {
-        self.templates
-            .get(block_id)
-            .is_some_and(|cached| cached.definition != *BlockDefinition::get(block_id))
+    #[allow(dead_code)]
+    fn template_needs_invalidation(&self, _block_id: &str) -> bool {
+        // Block definitions are process-static (`OnceLock`); they never change
+        // at runtime, so per-object full-struct comparisons (19k per edit)
+        // always return false. Keep the hook for API compat but skip the
+        // expensive `BlockDefinition` equality walk.
+        false
     }
 
+    #[allow(dead_code)]
     fn invalidate_template(&mut self, block_id: &str) {
         self.templates.remove(block_id);
         self.objects.retain(|_, cached| cached.block_id != block_id);
     }
 
     fn template_for(&mut self, block_id: &str) -> eg_mesh::MeshGeometry {
+        // `build_block_template_geometry` resolves the definition internally;
+        // cache the clone only on first use per block ID (distinct IDs are
+        // ~dozens, not 19k).
+        if let Some(cached) = self.templates.get(block_id) {
+            return cached.geometry.clone();
+        }
         let definition = BlockDefinition::get(block_id);
-        self.templates
-            .entry(block_id.to_string())
-            .or_insert_with(|| CachedEditorBlockTemplate {
+        let geometry = build_block_template_geometry(block_id);
+        self.templates.insert(
+            block_id.to_string(),
+            CachedEditorBlockTemplate {
                 definition: definition.clone(),
-                geometry: build_block_template_geometry(block_id),
-            })
-            .geometry
-            .clone()
+                geometry: geometry.clone(),
+            },
+        );
+        geometry
     }
 }
 
 pub(crate) fn extract_editor_block_meshes_system(
     phase: Res<State<AppPhase>>,
-    authored_objects: Query<
-        (
-            &super::super::editor_objects::EditorObjectOrder,
-            &eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<EditorObjectRenderSnapshot>,
     revision: Res<super::super::editor_objects::EditorObjectRevision>,
     timeline: Res<EditorTimelineRes>,
     mut block_meshes: ResMut<RenderEditorBlockMeshesRes>,
@@ -851,37 +1003,120 @@ pub(crate) fn extract_editor_block_meshes_system(
     {
         return;
     }
-    let authored_objects_for_triggers =
-        super::super::editor_objects::collect_editor_object_data(&authored_objects);
-    let authored_trigger_objects = authored_objects_for_triggers
-        .iter()
-        .filter(|object| object.trigger.is_some())
-        .cloned()
-        .collect::<Vec<_>>();
-    let trigger_objects = editor_trigger_objects_for_render(&authored_trigger_objects);
-    if cache.trigger_objects != trigger_objects {
+    // Avoid cloning the trigger list when unchanged (common: zero triggers
+    // in the testing level). Compare first, clone only on change.
+    if cache.trigger_objects != authored_objects.trigger_objects {
+        let trigger_objects = authored_objects.trigger_objects.clone();
         cache.transform_dependencies = build_transform_trigger_dependency_index(&trigger_objects);
-        cache.trigger_objects = trigger_objects.clone();
+        cache.trigger_objects = trigger_objects;
     }
-    let time_sensitive = has_object_transform_triggers(&trigger_objects)
-        || has_camera_timeline_triggers(&trigger_objects);
-    let camera_time_seconds =
-        has_camera_timeline_triggers(&trigger_objects).then_some(timeline.0.clock.time_seconds);
+    // Borrow trigger data from the snapshot `Res` (not from `cache`) so the
+    // hot loop can mutably borrow `cache` for template/instance inserts
+    // without holding an immutable `cache` borrow across the loop.
+    let trigger_objects: &[LevelObject] = authored_objects.trigger_objects.as_slice();
+    let has_transforms = has_object_transform_triggers(trigger_objects);
+    let has_camera_triggers = has_camera_timeline_triggers(trigger_objects);
+    let time_sensitive = has_transforms || has_camera_triggers;
+    let camera_time_seconds = has_camera_triggers.then_some(timeline.0.clock.time_seconds);
     let mut changed = !cache.initialized;
-    let mut seen_keys = BTreeMap::<String, ()>::new();
+    // Borrowed seen-set: no 19k `String` clones. Capacity avoids rehashing.
+    // Empty-ID fallbacks (`__editor_order_{n}`) are rare; their owned keys
+    // live in `seen_empty_keys` so the borrowed set never holds temporaries.
+    let mut seen_keys: std::collections::HashSet<&str> =
+        std::collections::HashSet::with_capacity(authored_objects.objects.len().max(1));
+    let mut seen_empty_keys: Vec<String> = Vec::new();
+    // Pre-resolve whether camera triggers exist at all to skip per-object
+    // `BlockDefinition` lookups on the fast path.
+    let needs_camera_check = has_camera_triggers;
 
-    for (order, object_data) in authored_objects.iter() {
-        let authored_object = &object_data.0;
-        let mut transformed_object = None;
-        if !authored_object.id.is_empty()
+    for (order, authored_object) in authored_objects.objects.iter().enumerate() {
+        // Fast path first: for scenes without transform triggers (the common
+        // 19k-stone case) this is a single BTreeMap lookup + `LevelObject`
+        // equality check with zero allocation. Only changed objects fall
+        // through to the expensive batch/instance builders below.
+        let has_dependency = has_transforms
+            && !authored_object.id.is_empty()
             && cache
                 .transform_dependencies
-                .contains_key(&authored_object.id)
-        {
+                .contains_key(authored_object.id.as_str());
+        if !has_dependency {
+            // Borrowed key: empty IDs use a per-order fallback without
+            // allocating unless the object is actually new/changed.
+            if authored_object.id.is_empty() {
+                // Rare malformed path: fall through to slow path with owned key.
+            } else {
+                let key_str: &str = authored_object.id.as_str();
+                seen_keys.insert(key_str);
+                // Camera-time only matters for camera-trigger blocks; skip the
+                // definition lookup unless such triggers exist in the scene.
+                let needs_camera_time = needs_camera_check
+                    && matches!(
+                        BlockDefinition::get_by_id(&authored_object.block_id)
+                            .render
+                            .profile,
+                        BlockRenderProfile::CameraTrigger
+                    );
+                let object_camera_time = camera_time_seconds.filter(|_| needs_camera_time);
+                if object_camera_time.is_none()
+                    && cache.objects.get(key_str).is_some_and(|cached| {
+                        cached.source == *authored_object && cached.camera_time_seconds.is_none()
+                    })
+                {
+                    continue;
+                }
+                // Changed object with a stable ID: build update with owned key.
+                let block_def = BlockDefinition::get_by_id(&authored_object.block_id);
+                // Canonical block ID is almost always the authored ID; avoid
+                // cloning through the definition when they match.
+                let block_id: String = if block_def.id == authored_object.block_id {
+                    authored_object.block_id.to_string()
+                } else {
+                    block_def.id.to_string()
+                };
+                let batch_key = InstanceBatchKey {
+                    chunk: Some(editor_instance_chunk_key(authored_object)),
+                    block_id: block_id.clone(),
+                };
+                let instance = build_block_instance_for_object(authored_object, object_camera_time);
+                let aabb = editor_instance_aabb(authored_object);
+                let needs_rebuild = cache.objects.get(key_str).is_none_or(|cached| {
+                    cached.source != *authored_object
+                        || cached.camera_time_seconds != object_camera_time
+                        || cached.batch_key != batch_key
+                        || cached.instance != instance
+                        || cached.aabb != aabb
+                });
+                if needs_rebuild {
+                    let template = cache.template_for(&block_id);
+                    cache.objects.insert(
+                        key_str.to_string(),
+                        CachedEditorBlockObject {
+                            source: authored_object.clone(),
+                            camera_time_seconds: object_camera_time,
+                            block_id: block_id.clone(),
+                            batch_key: batch_key.clone(),
+                            instance,
+                            aabb,
+                        },
+                    );
+                    block_meshes.updates.push(EditorInstanceUpdate {
+                        object_id: key_str.to_string(),
+                        batch_key,
+                        template,
+                        instance,
+                        aabb,
+                    });
+                    changed = true;
+                }
+                continue;
+            }
+        }
+        let mut transformed_object = None;
+        if has_dependency {
             let mut rendered_object = authored_object.clone();
             apply_transform_trigger_dependencies(
                 &mut rendered_object,
-                &trigger_objects,
+                trigger_objects,
                 &cache.transform_dependencies,
                 timeline_time,
             );
@@ -891,18 +1126,18 @@ pub(crate) fn extract_editor_block_meshes_system(
         // Imported levels normalize IDs. The fallback keeps malformed test or
         // in-progress data deterministic without merging two empty IDs.
         let key = if authored_object.id.is_empty() {
-            format!("__editor_order_{}", order.0)
+            format!("__editor_order_{order}")
         } else {
             authored_object.id.clone()
         };
-        seen_keys.insert(key.clone(), ());
-        let object_camera_time = camera_time_seconds.filter(|_| is_camera_trigger_block(object));
-        let block_id = BlockDefinition::get(&object.block_id).id.to_string();
-        if cache.template_needs_invalidation(&block_id) {
-            cache.invalidate_template(&block_id);
-            block_meshes.template_invalidations.push(block_id.clone());
-            changed = true;
+        if authored_object.id.is_empty() {
+            seen_empty_keys.push(key.clone());
+        } else {
+            seen_keys.insert(authored_object.id.as_str());
         }
+        let object_camera_time = camera_time_seconds.filter(|_| is_camera_trigger_block(object));
+        let block_def = BlockDefinition::get_by_id(&object.block_id);
+        let block_id = block_def.id.to_string();
         if transformed_object.is_none()
             && object_camera_time.is_none()
             && cache.objects.get(&key).is_some_and(|cached| {
@@ -950,7 +1185,11 @@ pub(crate) fn extract_editor_block_meshes_system(
 
     let mut removed_keys = Vec::new();
     cache.objects.retain(|key, _| {
-        let retained = seen_keys.contains_key(key);
+        let retained = if key.starts_with("__editor_order_") {
+            seen_empty_keys.iter().any(|seen| seen == key)
+        } else {
+            seen_keys.contains(key.as_str())
+        };
         if !retained {
             removed_keys.push(key.clone());
             changed = true;
@@ -1056,18 +1295,10 @@ fn gizmo_pixels_to_world_scale(
 /// Extract the editor transform gizmo from App-owned selection, objects,
 /// interaction state, camera uniform, and viewport configuration.
 #[derive(SystemParam)]
-pub(crate) struct EditorGizmoExtractionParams<'w, 's> {
+pub(crate) struct EditorGizmoExtractionParams<'w> {
     phase: Res<'w, State<AppPhase>>,
     input: Res<'w, EditorInputRes>,
-    authored_objects: Query<
-        'w,
-        's,
-        (
-            &'static super::super::editor_objects::EditorObjectOrder,
-            &'static eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<'w, EditorObjectRenderSnapshot>,
     triggers: Res<'w, EditorTriggerRes>,
     runtime: Res<'w, EditorRuntimeRes>,
     uniforms: Res<'w, RenderUniformsRes>,
@@ -1081,9 +1312,8 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
         return;
     }
 
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
-    let trigger_objects = editor_trigger_objects_for_render(&authored_objects);
+    let authored_objects = &params.authored_objects.objects;
+    let trigger_objects = &params.authored_objects.trigger_objects;
     let trigger_target =
         if normalized_editor_selection_indices(&params.input, authored_objects.len()).is_empty() {
             params
@@ -1098,7 +1328,7 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
     let selected_indices =
         normalized_editor_selection_indices(&params.input, authored_objects.len());
     let Some((bounds_position, bounds_size)) =
-        editor_selection_bounds_for_gizmo(&authored_objects, &selected_indices, trigger_target)
+        editor_selection_bounds_for_gizmo(authored_objects, &selected_indices, trigger_target)
     else {
         return;
     };
@@ -1176,13 +1406,7 @@ pub(crate) fn extract_editor_gizmo_vertices_system(mut params: EditorGizmoExtrac
 /// The scheduled upload system writes the derived vertices to the GPU mesh.
 pub(crate) fn extract_editor_camera_arrow_vertices_system(
     phase: Res<State<AppPhase>>,
-    authored_objects: Query<
-        (
-            &super::super::editor_objects::EditorObjectOrder,
-            &eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<EditorObjectRenderSnapshot>,
     camera: Res<EditorCameraRes>,
     timeline: Res<EditorTimelineRes>,
     mut arrow_vertices: ResMut<RenderEditorCameraArrowVerticesRes>,
@@ -1192,12 +1416,10 @@ pub(crate) fn extract_editor_camera_arrow_vertices_system(
         return;
     }
 
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&authored_objects);
     let target = Vec3::from_array(timeline.0.preview.position);
     let sample = evaluate_camera_track_for_objects(
         &camera.0,
-        &authored_objects,
+        &authored_objects.camera_trigger_objects,
         timeline.0.clock.time_seconds,
         target,
         true,
@@ -1259,7 +1481,7 @@ pub(crate) fn extract_editor_cursor_vertices_system(
         return;
     }
 
-    let size = BlockDefinition::get(&config.0.selected_block_id)
+    let size = BlockDefinition::get_by_id(&config.0.selected_block_id)
         .render
         .default_size;
     cursor_vertices.0 = build_editor_cursor_vertices(
@@ -1270,21 +1492,29 @@ pub(crate) fn extract_editor_cursor_vertices_system(
     );
 }
 
+/// Cached hitbox build key so the ~8M-vertex full-scene visualization is
+/// built once per edit/preview change instead of every frame while enabled.
+#[derive(Default)]
+pub(crate) struct EditorHitboxCache {
+    revision: u64,
+    preview_position: [f32; 3],
+    mode: Option<EditorMode>,
+    show: bool,
+    initialized: bool,
+}
+
 /// Extract editor hitbox visualization from App-owned editor resources.
 /// The scheduled upload system writes the derived vertices to the GPU mesh.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn extract_editor_hitbox_vertices_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
     runtime: Res<EditorRuntimeRes>,
-    authored_objects: Query<
-        (
-            &super::super::editor_objects::EditorObjectOrder,
-            &eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<EditorObjectRenderSnapshot>,
     timeline: Res<EditorTimelineRes>,
+    revision: Res<super::super::editor_objects::EditorObjectRevision>,
     mut hitbox_vertices: ResMut<RenderEditorHitboxVerticesRes>,
+    mut cache: Local<EditorHitboxCache>,
 ) {
     let effective_mode = if timeline.0.playback.playing && input.0.mode == EditorMode::Null {
         runtime.0.interaction.last_mode.unwrap_or(input.0.mode)
@@ -1295,15 +1525,32 @@ pub(crate) fn extract_editor_hitbox_vertices_system(
         || effective_mode == EditorMode::Timing
         || !input.0.show_hitbox_visualization
     {
-        hitbox_vertices.0.clear();
+        if !hitbox_vertices.0.is_empty() {
+            hitbox_vertices.0.clear();
+        }
+        cache.initialized = false;
         return;
     }
 
-    let player_hitbox = editor_preview_player_hitbox(timeline.0.preview.position);
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let preview_position = timeline.0.preview.position;
+    if cache.initialized
+        && cache.revision == revision.0
+        && cache.preview_position == preview_position
+        && cache.mode == Some(effective_mode)
+        && cache.show == input.0.show_hitbox_visualization
+        && !hitbox_vertices.0.is_empty()
+    {
+        return;
+    }
+
+    let player_hitbox = editor_preview_player_hitbox(preview_position);
     hitbox_vertices.0 =
-        build_editor_hitbox_visualization_vertices(&authored_objects, Some(player_hitbox));
+        build_editor_hitbox_visualization_vertices(&authored_objects.objects, Some(player_hitbox));
+    cache.revision = revision.0;
+    cache.preview_position = preview_position;
+    cache.mode = Some(effective_mode);
+    cache.show = input.0.show_hitbox_visualization;
+    cache.initialized = true;
 }
 
 fn editor_preview_player_hitbox(position: [f32; 3]) -> LevelObject {
@@ -1493,7 +1740,7 @@ fn normalized_editor_selection_indices(input: &EditorInputRes, object_count: usi
 }
 
 fn is_camera_trigger_block(object: &LevelObject) -> bool {
-    BlockDefinition::get(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
+    BlockDefinition::get_by_id(&object.block_id).render.profile == BlockRenderProfile::CameraTrigger
 }
 
 fn build_editor_object_outline_vertices(
@@ -1643,13 +1890,7 @@ fn selected_editor_group_bounds(
 pub(crate) fn extract_editor_selection_overlays_system(
     phase: Res<State<AppPhase>>,
     input: Res<EditorInputRes>,
-    authored_objects: Query<
-        (
-            &super::super::editor_objects::EditorObjectOrder,
-            &eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<EditorObjectRenderSnapshot>,
     mut selection: ResMut<RenderEditorSelectionOverlayRes>,
     mut hover: ResMut<RenderEditorHoverOverlayRes>,
 ) {
@@ -1673,8 +1914,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
         outline_vertices: hover_outline,
     } = &mut *hover;
 
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&authored_objects);
+    let authored_objects = &authored_objects.objects;
     let selected_indices = normalized_editor_selection_indices(&input, authored_objects.len());
     if selected_indices.len() <= SIMPLE_SELECTION_OUTLINE_BLOCK_THRESHOLD {
         for index in selected_indices.iter().copied() {
@@ -1689,7 +1929,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
             }
         }
     } else if let Some((position, size)) =
-        selected_editor_group_bounds(&authored_objects, &selected_indices)
+        selected_editor_group_bounds(authored_objects, &selected_indices)
     {
         let bounds_object = LevelObject {
             position,
@@ -1705,7 +1945,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
         );
     }
     append_transform_trigger_target_outline_instances(
-        &authored_objects,
+        authored_objects,
         selected_indices.iter().copied(),
         selection_stencil,
         selection_outline,
@@ -1736,7 +1976,7 @@ pub(crate) fn extract_editor_selection_overlays_system(
 
     let mut target_indices = hovered_index
         .into_iter()
-        .flat_map(|index| transform_trigger_target_indices_for_block(&authored_objects, index))
+        .flat_map(|index| transform_trigger_target_indices_for_block(authored_objects, index))
         .collect::<Vec<_>>();
     target_indices.sort_unstable();
     target_indices.dedup();
@@ -1764,9 +2004,8 @@ fn transform_trigger_markers_for_triggers(
     trigger_objects: &[LevelObject],
     selected_trigger_index: Option<usize>,
 ) -> BTreeMap<String, TransformTriggerMarker> {
-    let ordered_trigger_objects = editor_trigger_objects_for_render(trigger_objects);
     let mut markers = BTreeMap::new();
-    for (trigger_index, trigger_object) in ordered_trigger_objects.iter().enumerate() {
+    for (trigger_index, trigger_object) in trigger_objects.iter().enumerate() {
         let Some(trigger) = trigger_object.trigger.as_ref() else {
             continue;
         };
@@ -1787,7 +2026,7 @@ fn transform_trigger_markers_for_triggers(
         } else {
             std::borrow::Cow::Owned(trigger_transformed_objects_at_time(
                 objects,
-                &ordered_trigger_objects[..trigger_index],
+                &trigger_objects[..trigger_index],
                 trigger.time_seconds,
             ))
         };
@@ -1851,13 +2090,7 @@ pub(crate) struct EditorTransformTriggerMarkerCache {
 /// the GPU mesh.
 pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
     phase: Res<State<AppPhase>>,
-    authored_objects: Query<
-        (
-            &super::super::editor_objects::EditorObjectOrder,
-            &eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<EditorObjectRenderSnapshot>,
     revision: Res<super::super::editor_objects::EditorObjectRevision>,
     triggers: Res<EditorTriggerRes>,
     timeline: Res<EditorTimelineRes>,
@@ -1881,15 +2114,11 @@ pub(crate) fn extract_editor_transform_trigger_marker_vertices_system(
     {
         return;
     }
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&authored_objects);
-    let trigger_objects = authored_objects
-        .iter()
-        .filter(|object| object.trigger.is_some())
-        .cloned()
-        .collect::<Vec<_>>();
-    let markers =
-        transform_trigger_markers_for_triggers(&authored_objects, &trigger_objects, selected_index);
+    let markers = transform_trigger_markers_for_triggers(
+        &authored_objects.objects,
+        &authored_objects.trigger_objects,
+        selected_index,
+    );
     let timeline_changed = cache.last_timeline_time != timeline_time;
     let mut changed = !cache.initialized;
     for (marker_id, marker) in &markers {
@@ -1950,15 +2179,7 @@ fn positions_match(left: [f32; 3], right: [f32; 3]) -> bool {
 pub(crate) struct RenderUniformsParams<'w, 's> {
     phase: Res<'w, State<AppPhase>>,
     camera: Res<'w, EditorCameraRes>,
-    authored_objects: Query<
-        'w,
-        's,
-        (
-            &'static super::super::editor_objects::EditorObjectOrder,
-            &'static eg_game::ObjectData,
-        ),
-        With<super::super::editor_objects::EditorAuthoredObject>,
-    >,
+    authored_objects: Res<'w, EditorObjectRenderSnapshot>,
     timeline: Res<'w, EditorTimelineRes>,
     frame_time: Res<'w, FrameTimeRes>,
     clock: Option<Res<'w, eg_game::GameClock>>,
@@ -1995,9 +2216,6 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
         .as_ref()
         .map(|clock| (clock.elapsed_seconds, clock.started, clock.game_over))
         .unwrap_or((0.0, false, false));
-    let authored_objects =
-        super::super::editor_objects::collect_editor_object_data(&params.authored_objects);
-
     let (eye, target) = match *params.phase.get() {
         AppPhase::Menu => params
             .menu
@@ -2013,7 +2231,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
             let target = Vec3::from_array(player_position);
             let sample = evaluate_camera_track_for_objects(
                 &params.camera.0,
-                &authored_objects,
+                &params.authored_objects.camera_trigger_objects,
                 elapsed_seconds,
                 target,
                 started && !game_over,
@@ -2024,7 +2242,7 @@ pub(crate) fn update_render_uniforms_system(mut params: RenderUniformsParams) {
             let target = Vec3::from_array(params.timeline.0.preview.position);
             let sample = evaluate_camera_track_for_objects(
                 &params.camera.0,
-                &authored_objects,
+                &params.authored_objects.camera_trigger_objects,
                 params.timeline.0.clock.time_seconds,
                 target,
                 true,
@@ -2437,8 +2655,8 @@ mod tests {
 
     use super::*;
     use crate::state::{
-        EditorAuthoredObject, EditorCameraRes, EditorInputRes, SessionStateRes,
-        render::resources::render_pod_resources_present,
+        EditorAuthoredObject, EditorCameraRes, EditorInputRes, EditorObjectRevision,
+        SessionStateRes, render::resources::render_pod_resources_present,
     };
 
     #[derive(Resource, Default)]
@@ -2471,6 +2689,7 @@ mod tests {
         schedule.add_systems(
             (
                 crate::state::editor_objects::observe_editor_object_changes_system,
+                sync_editor_object_render_snapshot_system,
                 extract_editor_block_meshes_system,
             )
                 .chain()
@@ -2589,9 +2808,18 @@ mod tests {
         crate::state::editor_objects::replace_editor_objects(&mut world, objects);
         world.init_resource::<RenderEditorSelectionOverlayRes>();
         world.init_resource::<RenderEditorHoverOverlayRes>();
+        world.init_resource::<EditorObjectRevision>();
+        world.init_resource::<EditorObjectRenderSnapshot>();
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(extract_editor_selection_overlays_system);
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                sync_editor_object_render_snapshot_system,
+                extract_editor_selection_overlays_system,
+            )
+                .chain(),
+        );
         schedule.run(&mut world);
 
         (
@@ -2780,7 +3008,14 @@ mod tests {
         );
 
         let mut schedule = Schedule::default();
-        schedule.add_systems(extract_editor_transform_trigger_marker_vertices_system);
+        schedule.add_systems(
+            (
+                crate::state::editor_objects::observe_editor_object_changes_system,
+                sync_editor_object_render_snapshot_system,
+                extract_editor_transform_trigger_marker_vertices_system,
+            )
+                .chain(),
+        );
         schedule.run(app.world_mut());
         assert!(
             !app.world()
@@ -2830,6 +3065,7 @@ mod tests {
         schedule.add_systems(
             (
                 crate::state::editor_objects::observe_editor_object_changes_system,
+                sync_editor_object_render_snapshot_system,
                 extract_editor_block_meshes_system,
             )
                 .chain(),

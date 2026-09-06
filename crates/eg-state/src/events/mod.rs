@@ -23,20 +23,20 @@
 //!
 //! ## Why messages?
 //!
-//! - **One reader per message type** — distinct `Message<T>` types give
+//! - **One reader per message type** - distinct `Message<T>` types give
 //!   each handler its own `MessageReader<T>`, so multiple readers of
 //!   the same message can be added in any order without cross-reader
 //!   nondeterminism.
-//! - **ECS change detection** — authored object components are the source of
+//! - **ECS change detection** - authored object components are the source of
 //!   truth for render extraction; no manual renderer dirty bitfield is needed.
-//! - **UI / winit decoupling** — UI / winit code can write
+//! - **UI / winit decoupling** - UI / winit code can write
 //!   `Messages<T>::write(event)` from anywhere; no need to thread a
 //!   `&mut State` through every UI closure.
 //!
 //! ## Input-state carve-out
 //!
 //! Per the migration plan, the following 12 editor command variants are
-//! **not** commands — they are *input state*. Modifier/pan held state now
+//! **not** commands - they are *input state*. Modifier/pan held state now
 //! writes directly to `EditorInputRes`; pointer/camera drag messages now
 //! write directly to App-world editor input/camera resources during the
 //! compatibility window.
@@ -90,12 +90,6 @@ pub mod timing;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CommandHandlerSet;
 
-/// Register every eg-state message type on the given `App`.
-///
-/// The schedule itself is owned by `State` (Phase 2c / 7), so this
-/// helper does not add a `Schedule` — only the `Messages<T>` resources.
-/// Use [`add_command_systems`] to add the per-message command handlers
-/// to a `Schedule`.
 pub fn register_command_events(app: &mut App) {
     // Add the message resources so `Messages<T>` is available.
     navigation::register_events(app);
@@ -120,7 +114,7 @@ pub fn register_command_events(app: &mut App) {
 /// that work with a bare `World` (e.g. `State` constructs its `World`
 /// directly without going through an `App`). Initializes the
 /// `Messages<T>` resource for every event type; does **not** add a
-/// schedule — see `register_state_schedule` for the full
+/// schedule - see `register_state_schedule` for the full
 /// `World` setup.
 pub fn register_command_events_world(world: &mut World) {
     use bevy_ecs::message::Messages;
@@ -900,6 +894,8 @@ mod tests {
         world.init_resource::<crate::state::EditorTimingRes>();
         world.init_resource::<crate::state::EditorRuntimeRes>();
         world.init_resource::<crate::state::EditorHistoryRes>();
+        world.init_resource::<crate::state::EditorPointerCache>();
+        world.init_resource::<crate::state::EditorObjectRevision>();
         crate::state::replace_editor_objects(&mut world, Vec::new());
         world.init_resource::<crate::state::SessionStateRes>();
         world.init_resource::<eg_game::GameClock>();
@@ -1558,6 +1554,7 @@ mod tests {
             .undo
             .push(crate::state::EditorHistorySnapshot {
                 objects: vec![undo_object.clone()],
+                object_change: None,
                 selected_block_index: Some(0),
                 selected_block_indices: vec![0],
                 cursor: [3.0, 0.0, 4.0],
@@ -2260,7 +2257,7 @@ mod tests {
 
     /// Each `Messages<T>` is a `Default` + `Resource`, so registering the
     /// resource twice (e.g. by `register_command_events_world` on a world
-    /// that already has it) should not panic — `init_resource` returns
+    /// that already has it) should not panic - `init_resource` returns
     /// the existing resource in that case.
     #[test]
     fn register_command_events_world_is_idempotent() {
@@ -2998,7 +2995,7 @@ mod tests {
             ];
         }
 
-        // Move index 0 to time 5.0 — the new order should be 1.0, 5.0.
+        // Move index 0 to time 5.0 - the new order should be 1.0, 5.0.
         world.write_message(SetTimingPointTime {
             index: 0,
             time: 5.0,
@@ -3254,7 +3251,7 @@ mod tests {
 
         let camera = &world.resource::<EditorCameraRes>().0;
         // Yaw/pitch are NOT directly updated when a transition is
-        // requested — they interpolate over the transition.
+        // requested - they interpolate over the transition.
         assert!(camera.transition.is_some());
         approx::assert_abs_diff_eq!(
             camera.transition.as_ref().unwrap().elapsed,

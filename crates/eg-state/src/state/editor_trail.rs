@@ -41,6 +41,25 @@ fn recent_trail_segments<'a>(
     selected
 }
 
+fn build_editor_head_vertices(
+    position: [f32; 3],
+    direction: Direction,
+    game_over: bool,
+    alpha: f32,
+) -> Vec<Vertex> {
+    let head_length = 0.22;
+    let direction = match direction {
+        Direction::Forward => [0.0, 1.0],
+        Direction::Right => [1.0, 0.0],
+    };
+    let head_start = [
+        position[0] - direction[0] * head_length,
+        position[1],
+        position[2] - direction[1] * head_length,
+    ];
+    build_trail_vertices_with_alpha(&[head_start, position], game_over, alpha)
+}
+
 /// Build the translucent trail for active editor playback.
 pub(crate) fn build_editor_playback_trail_vertices(
     runtime: &TimelineSimulationRuntime,
@@ -89,19 +108,10 @@ pub(crate) fn build_editor_playback_trail_vertices(
         }
     }
 
-    if !is_grounded {
-        let head_length = 0.22;
-        let dir = match runtime.direction() {
-            Direction::Forward => [0.0, 1.0],
-            Direction::Right => [1.0, 0.0],
-        };
-        let head_start = [
-            player_pos[0] - dir[0] * head_length,
-            player_pos[1],
-            player_pos[2] - dir[1] * head_length,
-        ];
-        trail_vertices.extend(build_trail_vertices_with_alpha(
-            &[head_start, player_pos],
+    if !is_grounded || trail_vertices.is_empty() {
+        trail_vertices.extend(build_editor_head_vertices(
+            player_pos,
+            runtime.direction(),
             is_game_over,
             EDITOR_PLAYBACK_TRAIL_ALPHA,
         ));
@@ -120,7 +130,18 @@ pub(crate) fn build_editor_scrub_trail_vertices(
     const MAX_RENDERED_EDITOR_TRAIL_POINTS: usize = 1024;
 
     if timeline.snapshot_cache.is_empty() || !timeline.snapshot_cache_complete {
-        return Vec::new();
+        return timeline
+            .scrub_runtime
+            .as_ref()
+            .map(build_editor_playback_trail_vertices)
+            .unwrap_or_else(|| {
+                build_editor_head_vertices(
+                    timeline.preview.position,
+                    timeline.preview.direction,
+                    false,
+                    EDITOR_SCRUB_TRAIL_ALPHA,
+                )
+            });
     }
 
     let step_seconds = timeline.snapshot_cache_step_seconds.max(1.0 / 480.0);
@@ -163,19 +184,10 @@ pub(crate) fn build_editor_scrub_trail_vertices(
         }
     }
 
-    if !snapshot.is_grounded {
-        let head_length = 0.22;
-        let dir = match snapshot.direction {
-            Direction::Forward => [0.0, 1.0],
-            Direction::Right => [1.0, 0.0],
-        };
-        let head_start = [
-            snapshot.position[0] - dir[0] * head_length,
-            snapshot.position[1],
-            snapshot.position[2] - dir[1] * head_length,
-        ];
-        trail_vertices.extend(build_trail_vertices_with_alpha(
-            &[head_start, snapshot.position],
+    if !snapshot.is_grounded || trail_vertices.is_empty() {
+        trail_vertices.extend(build_editor_head_vertices(
+            snapshot.position,
+            snapshot.direction,
             snapshot.game_over,
             EDITOR_SCRUB_TRAIL_ALPHA,
         ));
@@ -237,10 +249,10 @@ mod tests {
     }
 
     #[test]
-    fn playback_trail_includes_airborne_head_segment() {
+    fn playback_trail_draws_head_at_spawn_and_while_airborne() {
         let grounded =
             TimelineSimulationRuntime::new([0.0, 0.0, 0.0], Direction::Forward, &[], &[]);
-        assert!(build_editor_playback_trail_vertices(&grounded).is_empty());
+        assert!(!build_editor_playback_trail_vertices(&grounded).is_empty());
 
         let support = [LevelObject {
             position: [0.0, 2.0, 0.0],
@@ -278,7 +290,18 @@ mod tests {
     }
 
     #[test]
-    fn fresh_cache_draws_grounded_scrub_trail() {
+    fn incomplete_cache_draws_preview_head() {
+        let mut timeline = EditorTimelineState::default();
+        timeline.preview.position = [3.0, 2.0, 1.0];
+        timeline.preview.direction = Direction::Right;
+
+        let vertices = build_editor_scrub_trail_vertices(&timeline, 0.0);
+
+        assert!(!vertices.is_empty());
+    }
+
+    #[test]
+    fn fresh_cache_draws_grounded_scrub_trail_at_spawn() {
         let mut timeline = EditorTimelineState::default();
         timeline.clock.duration_seconds = 2.0;
         timeline.snapshot_cache_complete = false;
@@ -288,7 +311,7 @@ mod tests {
         };
 
         rebuild_editor_timeline_snapshot_cache_if_needed(&mut timeline, &[], &spawn);
-        let vertices = build_editor_scrub_trail_vertices(&timeline, 0.5);
+        let vertices = build_editor_scrub_trail_vertices(&timeline, 0.0);
 
         assert!(!timeline.trail_point_cache.is_empty());
         assert!(!vertices.is_empty());

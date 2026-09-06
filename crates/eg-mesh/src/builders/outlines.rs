@@ -12,6 +12,9 @@ use glam::{EulerRot, Mat3, Vec3};
 
 use crate::{Vertex, shapes::append_prism, transforms::rotate_vertices_around_euler};
 
+/// 12 edge prisms × 36 vertices per cuboid.
+const HITBOX_VERTS_PER_CUBOID: usize = 432;
+
 fn euler_rotation_matrix(degrees: [f32; 3]) -> Mat3 {
     Mat3::from_euler(
         EulerRot::XYZ,
@@ -71,17 +74,19 @@ fn build_editor_outline_hull_vertices(
 
 fn append_hitbox_outline_vertices(
     vertices: &mut Vec<Vertex>,
-    object: &LevelObject,
+    position: [f32; 3],
+    size: [f32; 3],
+    rotation: [f32; 3],
     color: [f32; 4],
     thickness: f32,
 ) {
     let start = vertices.len();
-    let x_min = object.position[0];
-    let x_max = object.position[0] + object.size[0];
-    let y_min = object.position[1];
-    let y_max = object.position[1] + object.size[1];
-    let z_min = object.position[2];
-    let z_max = object.position[2] + object.size[2];
+    let x_min = position[0];
+    let x_max = position[0] + size[0];
+    let y_min = position[1];
+    let y_max = position[1] + size[1];
+    let z_min = position[2];
+    let z_max = position[2] + size[2];
     let half_thickness = (thickness * 0.5).max(0.001);
 
     for y in [y_min, y_max] {
@@ -121,42 +126,81 @@ fn append_hitbox_outline_vertices(
     }
 
     let center = [
-        object.position[0] + object.size[0] * 0.5,
-        object.position[1] + object.size[1] * 0.5,
-        object.position[2] + object.size[2] * 0.5,
+        position[0] + size[0] * 0.5,
+        position[1] + size[1] * 0.5,
+        position[2] + size[2] * 0.5,
     ];
-    rotate_vertices_around_euler(&mut vertices[start..], center, object.rotation);
+    rotate_vertices_around_euler(&mut vertices[start..], center, rotation);
+}
+
+fn hitbox_outline_color(collision: BlockCollision) -> Option<[f32; 4]> {
+    match collision {
+        BlockCollision::Solid | BlockCollision::Hazard => Some([1.0, 0.04, 0.06, 0.88]),
+        BlockCollision::Portal => Some([0.0, 0.82, 1.0, 0.88]),
+        BlockCollision::Collectible => Some([1.0, 0.86, 0.10, 0.9]),
+        BlockCollision::PassThrough => None,
+    }
 }
 
 pub fn build_editor_hitbox_visualization_vertices(
     objects: &[LevelObject],
     player_hitbox: Option<LevelObject>,
 ) -> Vec<Vertex> {
-    let mut vertices = Vec::with_capacity(objects.len().saturating_mul(432));
+    // NOTE: intentionally serial. The output is ~1GB for a 19k-object scene,
+    // so the build is memory-bandwidth bound: per-thread buffers plus a full
+    // merge memcpy add an extra gigabyte of traffic and regress (measured
+    // +48% vs serial). A parallel win would need direct indexed writes into
+    // one allocation (see block-geometry builders for the pattern cost).
+    let mut vertices = Vec::with_capacity(objects.len().saturating_mul(HITBOX_VERTS_PER_CUBOID));
 
     for object in objects {
-        let collision = BlockDefinition::get(&object.block_id).behavior.collision;
-        let outline_color = match collision {
-            BlockCollision::Solid | BlockCollision::Hazard => [1.0, 0.04, 0.06, 0.88],
-            BlockCollision::Portal => [0.0, 0.82, 1.0, 0.88],
-            BlockCollision::Collectible => [1.0, 0.86, 0.10, 0.9],
-            BlockCollision::PassThrough => continue,
+        let block = BlockDefinition::get_by_id(&object.block_id);
+        let Some(outline_color) = hitbox_outline_color(block.behavior.collision) else {
+            continue;
         };
 
-        let mut hitbox_object = object.clone();
+        // Fast path for full-cube blocks (stone, etc.): no custom hitboxes or
+        // visuals, so the hitbox is the object bounds. Avoids 19k `Vec`
+        // allocations + double `BlockDefinition` lookups inside
+        // `hitbox_cuboids` for the common case.
+        if block.geometry.hitboxes.is_empty() && block.geometry.elements.is_empty() {
+            append_hitbox_outline_vertices(
+                &mut vertices,
+                object.position,
+                object.size,
+                object.rotation,
+                outline_color,
+                0.035,
+            );
+            continue;
+        }
+
         for cuboid in hitbox_cuboids(object) {
-            hitbox_object.position = cuboid.min;
-            hitbox_object.size = [
+            let size = [
                 cuboid.max[0] - cuboid.min[0],
                 cuboid.max[1] - cuboid.min[1],
                 cuboid.max[2] - cuboid.min[2],
             ];
-            append_hitbox_outline_vertices(&mut vertices, &hitbox_object, outline_color, 0.035);
+            append_hitbox_outline_vertices(
+                &mut vertices,
+                cuboid.min,
+                size,
+                object.rotation,
+                outline_color,
+                0.035,
+            );
         }
     }
 
     if let Some(player) = player_hitbox {
-        append_hitbox_outline_vertices(&mut vertices, &player, [1.0, 1.0, 1.0, 0.78], 0.025);
+        append_hitbox_outline_vertices(
+            &mut vertices,
+            player.position,
+            player.size,
+            player.rotation,
+            [1.0, 1.0, 1.0, 0.78],
+            0.025,
+        );
     }
 
     vertices

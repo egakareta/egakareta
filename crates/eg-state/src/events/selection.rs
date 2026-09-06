@@ -55,12 +55,16 @@ pub fn handle_snap_selection_to_grid(
     mut events: MessageReader<SnapSelectionToGrid>,
     mut resources: SelectionResources,
 ) {
-    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
-    let before = resources.objects.objects.clone();
-    for _ in events.read() {
-        snap_selection_to_grid(&mut resources);
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
     }
-    if resources.objects.objects != before {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    let mut mutated = false;
+    for _ in events {
+        mutated |= snap_selection_to_grid(&mut resources);
+    }
+    if mutated {
         replace_editor_objects_commands(
             &mut resources.commands,
             &resources.existing_objects,
@@ -73,8 +77,12 @@ pub fn handle_focus_camera_target(
     mut events: MessageReader<FocusCameraTarget>,
     mut resources: SelectionResources,
 ) {
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
+    }
     resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
-    for _ in events.read() {
+    for _ in events {
         focus_camera_target(&mut resources);
     }
 }
@@ -83,12 +91,16 @@ pub fn handle_add_transform_trigger(
     mut events: MessageReader<AddTransformTrigger>,
     mut resources: SelectionResources,
 ) {
-    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
-    let before = resources.objects.objects.clone();
-    for _ in events.read() {
-        add_transform_trigger(&mut resources);
+    let events = events.read().copied().collect::<Vec<_>>();
+    if events.is_empty() {
+        return;
     }
-    if resources.objects.objects != before {
+    resources.objects.objects = collect_editor_object_data(&resources.authored_objects);
+    let mut mutated = false;
+    for _ in events {
+        mutated |= add_transform_trigger(&mut resources);
+    }
+    if mutated {
         replace_editor_objects_commands(
             &mut resources.commands,
             &resources.existing_objects,
@@ -195,7 +207,21 @@ fn snap_selected_blocks_to_grid(
         return false;
     }
 
-    record_history_state(resources);
+    // Delta history: capture only snapped objects (<=100 clones).
+    let before: Vec<(usize, LevelObject)> = selected_indices
+        .iter()
+        .filter_map(|index| {
+            resources
+                .objects
+                .objects
+                .get(*index)
+                .map(|object| (*index, object.clone()))
+        })
+        .collect();
+    record_history_delta(
+        resources,
+        crate::state::EditorHistoryObjectChange::RestoreMany { before },
+    );
     let mut changed = false;
     for index in selected_indices {
         if let Some(object) = resources.objects.objects.get_mut(*index) {
@@ -445,16 +471,54 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
         return false;
     }
 
-    record_history_state(resources);
-    resources.runtime.0.interaction.gizmo_drag = None;
-    resources.runtime.0.interaction.block_drag = None;
-    resources.session.editor_show_place_window = false;
     let time_seconds = resources.timeline.0.clock.time_seconds.max(0.0);
-
     let replaced_object_ids = selected_objects
         .iter()
         .map(|(object_id, _)| object_id.clone())
         .collect::<Vec<_>>();
+    // Capture pre-mutation trigger states that `remove_replaced...` will
+    // touch (triggers are few; avoids a 19k full-scene history clone).
+    let modified_before: Vec<(usize, LevelObject)> = resources
+        .objects
+        .objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| {
+            let Some(trigger) = object.trigger.as_ref() else {
+                return false;
+            };
+            if (trigger.time_seconds - time_seconds).abs()
+                > TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS
+                || !trigger.transform
+            {
+                return false;
+            }
+            let TriggerTarget::Objects { object_ids } = &trigger.target else {
+                return false;
+            };
+            object_ids
+                .iter()
+                .any(|object_id| replaced_object_ids.contains(object_id))
+        })
+        .map(|(index, object)| (index, object.clone()))
+        .collect();
+    // Batch-allocate fresh trigger IDs in one O(n) scan (not O(n*m)).
+    let fresh_ids =
+        eg_types::next_level_object_ids_batch(&resources.objects.objects, selected_objects.len());
+    let base_len = resources.objects.objects.len();
+    let added_indices: Vec<usize> = (base_len..base_len + selected_objects.len()).collect();
+    record_history_delta(
+        resources,
+        crate::state::EditorHistoryObjectChange::AddTriggers {
+            added_ids: fresh_ids.clone(),
+            added_indices: added_indices.clone(),
+            modified_before,
+        },
+    );
+    resources.runtime.0.interaction.gizmo_drag = None;
+    resources.runtime.0.interaction.block_drag = None;
+    resources.session.editor_show_place_window = false;
+
     remove_replaced_transform_trigger_targets(
         &mut resources.objects.objects,
         time_seconds,
@@ -463,9 +527,10 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
     sync_trigger_selection_from_objects(resources);
 
     let mut created_trigger_indices = Vec::with_capacity(selected_objects.len());
-    for (object_id, object) in selected_objects {
+    for ((object_id, object), fresh_id) in selected_objects.into_iter().zip(fresh_ids) {
         let object_index = resources.objects.objects.len();
         let trigger_object = LevelObject {
+            id: fresh_id,
             position: object.position,
             rotation: object.rotation,
             size: object.size,
@@ -481,8 +546,7 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
                 ..TimedTrigger::default()
             }),
             ..LevelObject::default()
-        }
-        .with_generated_id(&resources.objects.objects);
+        };
         resources.objects.objects.push(trigger_object);
         sync_trigger_selection_from_objects(resources);
         created_trigger_indices.push(object_index);
@@ -553,14 +617,55 @@ fn remove_replaced_transform_trigger_targets(
     }
 }
 
-fn record_history_state(resources: &mut SelectionResources<'_, '_>) {
+fn push_history_snapshot(
+    resources: &mut SelectionResources<'_, '_>,
+    snapshot: EditorHistorySnapshot,
+) {
     const MAX_HISTORY: usize = 256;
     if resources.history.0.undo.len() >= MAX_HISTORY {
         resources.history.0.undo.remove(0);
     }
-    let snapshot = history_snapshot_from_resources(resources);
     resources.history.0.undo.push(snapshot);
     resources.history.0.redo.clear();
+}
+
+fn record_history_delta(
+    resources: &mut SelectionResources<'_, '_>,
+    object_change: crate::state::EditorHistoryObjectChange,
+) {
+    let snapshot = history_snapshot_with_change(resources, Vec::new(), Some(object_change));
+    push_history_snapshot(resources, snapshot);
+}
+
+fn history_snapshot_with_change(
+    resources: &SelectionResources<'_, '_>,
+    objects: Vec<LevelObject>,
+    object_change: Option<crate::state::EditorHistoryObjectChange>,
+) -> EditorHistorySnapshot {
+    EditorHistorySnapshot {
+        objects,
+        object_change,
+        selected_block_index: resources.input.0.selected_block_index,
+        selected_block_indices: resources.input.0.selected_block_indices.clone(),
+        cursor: resources.input.0.cursor,
+        selected_block_id: resources.config.0.selected_block_id.clone(),
+        selected_block_rotation_degrees: resources.config.0.selected_block_rotation_degrees,
+        recent_block_ids: resources.config.0.recent_block_ids.clone(),
+        spawn: resources.spawn.0.clone(),
+        timeline_time_seconds: resources.timeline.0.clock.time_seconds,
+        timeline_duration_seconds: resources.timeline.0.clock.duration_seconds,
+        tap_times: resources.timeline.0.taps.tap_times.clone(),
+        tap_indicator_positions: resources.timeline.0.taps.tap_indicator_positions.clone(),
+        selected_tap_index: resources.timeline.0.taps.selected_index,
+        timing_points: resources.timing.0.timing_points.clone(),
+        selected_trigger_index: resources.trigger.0.selected_index,
+    }
+}
+
+#[allow(dead_code)]
+fn record_history_state(resources: &mut SelectionResources<'_, '_>) {
+    let snapshot = history_snapshot_from_resources(resources);
+    push_history_snapshot(resources, snapshot);
 }
 
 fn history_snapshot_from_resources(
@@ -568,6 +673,7 @@ fn history_snapshot_from_resources(
 ) -> EditorHistorySnapshot {
     EditorHistorySnapshot {
         objects: resources.objects.objects.clone(),
+        object_change: None,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,
