@@ -28,6 +28,7 @@ bevy_state = { workspace = true }
 eg-blocks = { workspace = true }
 eg-types = { workspace = true }
 eg-game = { workspace = true }
+eg-level = { workspace = true }
 eg-mesh = { workspace = true }
 eg-platform = { workspace = true }
 eg-render = { workspace = true }
@@ -61,9 +62,6 @@ wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 wasm-bindgen-rayon = { workspace = true }
 web-sys = { workspace = true }
-
-[package.metadata.wasm-pack.profile.profiling]
-wasm-opt = false
 
 [build-dependencies]
 serde = { workspace = true }
