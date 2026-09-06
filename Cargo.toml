@@ -42,7 +42,6 @@ bevy_egui = "0.42.0"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.1.0"
-cpal = { version = "0.17.3", features = ["wasm-bindgen", "audioworklet"] }
 criterion = { version = "0.8.2", default-features = false, features = [
     "plotters",
     "cargo_bench_support",
@@ -89,11 +88,10 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "rustls",
 ] }
 rfd = "0.17.2"
-rodio = { version = "0.22.2", default-features = false, features = [
+rodisnyaa = { git = "https://github.com/egakareta/rodisnyaa", rev = "ea45e4841848aaa23d0c28c000f1f0d6d22a5c6e", default-features = false, features = [
     "mp3",
-    "playback",
+    "nightly",
     "vorbis",
-    "wasm-bindgen",
     "wav",
 ] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -102,13 +100,6 @@ serde_json = "1.0.151"
 sha2 = "0.11.0"
 smart-default = "0.7.1"
 smart-is-default = "0.2.0"
-symphonia = { version = "0.6.1", default-features = false, features = [
-    "mp3",
-    "ogg",
-    "pcm",
-    "vorbis",
-    "wav",
-] }
 tempfile = "3.27.0"
 tokio = { version = "1.53.1", features = ["rt", "macros"] }
 wasm-bindgen = "0.2.127"

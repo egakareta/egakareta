@@ -7,60 +7,22 @@
 */
 #[cfg(target_arch = "wasm32")]
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{io::Cursor, str::FromStr};
+use std::{num::NonZeroUsize, sync::Arc};
 
-use rodio::Source;
+use rodisnyaa::{AudioBackend as NyaaBackend, AudioOutput, Nyaa, NyaaError, Waveform};
 use web_time::Duration;
 
 #[cfg(target_arch = "wasm32")]
 static RAYON_INIT_SCHEDULED_AFTER_AUDIO: AtomicBool = AtomicBool::new(false);
 
-fn host_label(host_id: cpal::HostId) -> String {
-    format!("{:?}", host_id)
+fn host_label(backend: NyaaBackend) -> String {
+    format!("{backend:?}")
 }
 
-fn parse_host_id_by_label(label: &str) -> Option<cpal::HostId> {
-    let trimmed = label.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("Default") {
-        return None;
-    }
-
-    if let Ok(host_id) = cpal::HostId::from_str(trimmed) {
-        return Some(host_id);
-    }
-
-    if let Some(host_id) = cpal::available_hosts()
+fn parse_host_id_by_label(label: &str) -> Option<NyaaBackend> {
+    AudioOutput::available_backends()
         .into_iter()
-        .find(|host_id| host_label(*host_id).eq_ignore_ascii_case(trimmed))
-    {
-        return Some(host_id);
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if host_label(cpal::HostId::AudioWorklet).eq_ignore_ascii_case(trimmed) {
-            return Some(cpal::HostId::AudioWorklet);
-        }
-    }
-
-    None
-}
-
-fn select_host(preferred_host: Option<cpal::HostId>) -> cpal::Host {
-    if let Some(host_id) = preferred_host
-        && let Ok(host) = cpal::host_from_id(host_id)
-    {
-        return host;
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Ok(host) = cpal::host_from_id(cpal::HostId::AudioWorklet) {
-            return host;
-        }
-    }
-
-    cpal::default_host()
+        .find(|backend| host_label(*backend).eq_ignore_ascii_case(label.trim()))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -107,21 +69,11 @@ fn schedule_rayon_after_audio_worklet() {
 
 pub fn available_host_labels() -> Vec<String> {
     let mut labels = vec!["Default".to_string()];
-
-    for host_id in cpal::available_hosts() {
-        labels.push(host_label(host_id));
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    {
-        if cpal::host_from_id(cpal::HostId::AudioWorklet).is_ok() {
-            let worklet = host_label(cpal::HostId::AudioWorklet);
-            if !labels.iter().any(|entry| entry == &worklet) {
-                labels.push(worklet);
-            }
-        }
-    }
-
+    labels.extend(
+        AudioOutput::available_backends()
+            .into_iter()
+            .map(host_label),
+    );
     labels.sort();
     labels.dedup();
     labels
@@ -129,665 +81,371 @@ pub fn available_host_labels() -> Vec<String> {
 
 pub fn canonical_backend_name(backend_name: &str) -> Option<String> {
     let trimmed = backend_name.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
     if trimmed.eq_ignore_ascii_case("Default") {
         return Some("Default".to_string());
     }
-
     parse_host_id_by_label(trimmed).map(host_label)
 }
 
 pub fn runtime_asset_source_key(level_name: &str, asset_path: &str) -> String {
-    format!("asset:{}/{}", level_name, asset_path)
+    format!("asset:{level_name}/{asset_path}")
 }
 
 fn runtime_bytes_source_key(asset_path: &str) -> String {
-    format!("bytes:{}", asset_path)
+    format!("bytes:{asset_path}")
 }
 
-fn accumulate_waveform_frame_peak(
-    peaks: &mut Vec<f32>,
-    window_peak: &mut f32,
-    window_count: &mut usize,
-    frame_peak: f32,
-    window_size: usize,
-) {
-    *window_peak = (*window_peak).max(frame_peak.abs());
-    *window_count += 1;
+fn playback_position(seconds: f32) -> Duration {
+    Duration::try_from_secs_f32(seconds.max(0.0)).unwrap_or_default()
+}
 
-    if *window_count >= window_size {
-        peaks.push(*window_peak);
-        *window_peak = 0.0;
-        *window_count = 0;
+#[derive(Clone)]
+enum AudioBytes {
+    Static(&'static [u8]),
+    Shared(Arc<[u8]>),
+}
+
+impl AudioBytes {
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Static(bytes) => bytes,
+            Self::Shared(bytes) => bytes,
+        }
+    }
+
+    fn duration(&self) -> Result<Option<Duration>, NyaaError> {
+        match self {
+            Self::Static(bytes) => Nyaa::duration_from_static_bytes(bytes),
+            Self::Shared(bytes) => Nyaa::duration_from_shared_bytes(bytes),
+        }
+    }
+
+    fn play(&self, nyaa: &mut Nyaa) -> Result<(), NyaaError> {
+        match self {
+            Self::Static(bytes) => nyaa.play_static_bytes(bytes),
+            Self::Shared(bytes) => nyaa.play_shared_bytes(bytes),
+        }
     }
 }
 
-fn accumulate_interleaved_samples(
-    samples: &[f32],
-    channel_count: usize,
-    peaks: &mut Vec<f32>,
-    window_peak: &mut f32,
-    window_count: &mut usize,
-    window_size: usize,
-) {
-    for frame in samples.chunks(channel_count.max(1)) {
-        let frame_peak = frame
-            .iter()
-            .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
-        accumulate_waveform_frame_peak(peaks, window_peak, window_count, frame_peak, window_size);
-    }
-}
-
-pub struct WaveformDecodeSummary {
-    pub sample_rate: u32,
-    pub peak_count: usize,
-}
-
-/// Process-wide cache holding the most recently decoded track PCM.
-///
-/// Fresh `AudioBackend` instances (one per headless test App, and after any
-/// backend re-initialization) otherwise pay a full compressed-to-PCM decode
-/// (~150ms for a 4MB mp3) on first play even when an identical backend just
-/// decoded the same bytes. A single most-recent slot mirrors the per-backend
-/// `decoded_cache` design: bounded memory (one track), no eviction policy to
-/// maintain, and repeat plays of the same track skip the decode.
-static SHARED_DECODED_PCM: std::sync::OnceLock<
-    std::sync::Mutex<Option<(String, rodio::buffer::SamplesBuffer)>>,
-> = std::sync::OnceLock::new();
-
-fn shared_decoded_pcm() -> &'static std::sync::Mutex<Option<(String, rodio::buffer::SamplesBuffer)>>
-{
-    SHARED_DECODED_PCM.get_or_init(|| std::sync::Mutex::new(None))
-}
-
-/// Decode `bytes` to PCM, reusing the shared cache when it already holds
-/// `source_key`. Returns the buffer plus whether it came from the shared
-/// cache (no decode performed - callers use this to keep decode accounting
-/// exact). Locking is scoped to a lookup or a single store; the expensive
-/// decode itself runs unlocked.
-fn decode_with_shared_cache(
-    source_key: &str,
-    bytes: &[u8],
-) -> Option<(rodio::buffer::SamplesBuffer, bool)> {
-    if let Some((key, buffer)) = shared_decoded_pcm()
-        .lock()
-        .expect("shared PCM cache mutex poisoned")
-        .as_ref()
-        && key == source_key
-    {
-        return Some((buffer.clone(), true));
-    }
-    let buffer = AudioBackend::decode_to_buffer(bytes)?;
-    *shared_decoded_pcm()
-        .lock()
-        .expect("shared PCM cache mutex poisoned") = Some((source_key.to_string(), buffer.clone()));
-    Some((buffer, false))
+#[derive(Clone)]
+struct CachedTrack {
+    source_key: String,
+    bytes: AudioBytes,
+    duration: Option<Duration>,
 }
 
 pub struct AudioBackend {
-    output_device: Option<rodio::MixerDeviceSink>,
-    device_tried: bool,
-    preferred_host: Option<cpal::HostId>,
-    current_player: Option<rodio::Player>,
+    output: Option<AudioOutput>,
+    nyaa: Option<Nyaa>,
+    preferred_backend: Option<NyaaBackend>,
     current_audio_source: Option<String>,
-    /// Cached, fully-decoded PCM for the current source keyed by its source key.
-    /// Reused across seeks so we never re-decode and never need a blocking seek.
-    decoded_cache: Option<(String, rodio::buffer::SamplesBuffer)>,
-    playback_started_at: Option<web_time::Instant>,
-    playback_start_offset_seconds: f32,
+    cached_track: Option<CachedTrack>,
     playback_speed: f32,
-    active_sfx: Vec<rodio::Player>,
-    backend_name: String,
-    /// Test-only observation of how many full compressed-to-PCM track decodes
-    /// this backend performed. Regression tests assert this stays low so a
-    /// reintroduced synchronous re-decode fails loudly.
-    #[cfg(test)]
-    full_decode_count: usize,
+    active_sfx: Vec<Nyaa>,
 }
 
 impl AudioBackend {
     pub fn new() -> Self {
-        let host_id = select_host(None).id();
-
         Self {
-            output_device: None,
-            device_tried: false,
-            preferred_host: None,
-            current_player: None,
+            output: None,
+            nyaa: None,
+            preferred_backend: None,
             current_audio_source: None,
-            decoded_cache: None,
-            playback_started_at: None,
-            playback_start_offset_seconds: 0.0,
+            cached_track: None,
             playback_speed: 1.0,
             active_sfx: Vec::new(),
-            backend_name: host_id.to_string(),
-            #[cfg(test)]
-            full_decode_count: 0,
         }
     }
 
-    /// Ensure that the audio output device is initialized and available.
-    /// Returns a reference to the device sink if available, or None if initialization failed.
-    pub fn ensure_device(&mut self) -> Option<&rodio::MixerDeviceSink> {
-        if self.output_device.is_some() {
-            return self.output_device.as_ref();
-        }
+    pub fn ensure_device(&mut self) -> bool {
+        if self.output.is_none() {
+            let preferred = self.preferred_backend;
+            #[cfg(target_arch = "wasm32")]
+            let preferred = preferred.or_else(|| {
+                AudioOutput::available_backends()
+                    .contains(&NyaaBackend::AudioWorklet)
+                    .then_some(NyaaBackend::AudioWorklet)
+            });
 
-        #[cfg(not(target_arch = "wasm32"))]
-        if self.device_tried {
-            return None;
-        }
-        self.device_tried = true;
-
-        log::info!("Initializing audio backend on demand");
-
-        use cpal::traits::HostTrait;
-        log::info!("Available hosts: {:?}", cpal::available_hosts());
-        let host = select_host(self.preferred_host);
-        let host_id = host.id();
-
-        log::info!("Selected audio host: {:?}", host_id);
-        self.backend_name = host_id.to_string();
-
-        self.output_device = match host.default_output_device() {
-            Some(device) => {
-                use cpal::traits::DeviceTrait;
-                if let Ok(name) = device.id() {
-                    log::info!("Audio device: {}", name);
-                    self.backend_name = format!("{:?} ({})", host_id, name);
-                }
-                match rodio::DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()) {
-                    Ok(sink) => {
-                        log::info!("Audio stream opened successfully");
-                        #[cfg(target_arch = "wasm32")]
-                        if host_id == cpal::HostId::AudioWorklet {
-                            schedule_rayon_after_audio_worklet();
-                        }
-                        Some(sink)
-                    }
-                    Err(err) => {
-                        log::warn!("Failed to open audio stream: {}", err);
-                        None
+            let output = if let Some(backend) = preferred {
+                match AudioOutput::try_new_with_backend(backend) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        log::warn!("Failed to open Nyaa audio output: {error}");
+                        return false;
                     }
                 }
-            }
-            None => {
-                log::warn!("No default audio output device found");
-                None
-            }
-        };
-
-        self.output_device.as_ref()
-    }
-
-    /// Pause the current playback, if any, and update playback_start_offset_seconds.
-    pub fn pause(&mut self) {
-        if let Some(started_at) = self.playback_started_at {
-            self.playback_start_offset_seconds +=
-                started_at.elapsed().as_secs_f32() * self.playback_speed;
-        }
-        if let Some(player) = &self.current_player {
-            player.pause();
-        }
-        self.playback_started_at = None;
-    }
-
-    /// Resume playback from the current position, if a player is available.
-    /// If no player is available, this will do nothing.
-    pub fn resume(&mut self) {
-        self.ensure_device();
-        if let Some(player) = &self.current_player {
-            player.set_speed(self.playback_speed);
-            player.play();
-            self.playback_started_at = Some(web_time::Instant::now());
-        } else {
-            #[cfg(test)]
-            if self.current_audio_source.is_some() {
-                self.playback_started_at = Some(web_time::Instant::now());
-            }
-        }
-    }
-
-    /// Decode compressed audio bytes into an in-memory PCM buffer.
-    ///
-    /// The decode happens once; the resulting [`rodio::buffer::SamplesBuffer`] is
-    /// cheap to clone and supports instant, non-blocking in-memory seeking. This
-    /// lets us reuse already-decoded audio when seeking instead of relying on
-    /// [`rodio::Player::try_seek`], which blocks the calling thread and therefore
-    /// cannot run on the WASM main thread.
-    fn decode_to_buffer(bytes: &[u8]) -> Option<rodio::buffer::SamplesBuffer> {
-        use rodio::Source;
-        let decoded = rodio::Decoder::new(Cursor::new(bytes.to_vec())).ok()?;
-        let channels = decoded.channels();
-        let sample_rate = decoded.sample_rate();
-        let samples: Vec<f32> = decoded.collect();
-        Some(rodio::buffer::SamplesBuffer::new(
-            channels,
-            sample_rate,
-            samples,
-        ))
-    }
-
-    /// Build a fresh player from an in-memory PCM buffer, seeking to `start_seconds`
-    /// before playback. Seeking is performed on the buffer itself (an in-memory
-    /// index jump), so this never blocks and works identically on native and WASM.
-    /// If autoplay is true, playback starts immediately; otherwise it is paused.
-    fn play_buffer(
-        &mut self,
-        source_key: String,
-        mut buffer: rodio::buffer::SamplesBuffer,
-        start_seconds: f32,
-        autoplay: bool,
-    ) {
-        if start_seconds > 0.001 {
-            log::trace!("RodioBackendInner: seeking buffer to {:.3}s", start_seconds);
-            let _ = buffer.try_seek(Duration::from_secs_f32(start_seconds));
+            } else {
+                AudioOutput::new()
+            };
+            self.nyaa = Some(Nyaa::new_with_output(output.clone()));
+            self.output = Some(output);
         }
 
-        let Some(device) = self.ensure_device() else {
-            #[cfg(test)]
-            {
-                self.current_audio_source = Some(source_key);
-                if autoplay {
-                    self.playback_started_at = Some(web_time::Instant::now());
-                    self.playback_start_offset_seconds = start_seconds;
-                } else {
-                    self.playback_started_at = None;
-                    self.playback_start_offset_seconds = 0.0;
-                }
-            }
-            return;
-        };
-
-        log::trace!("RodioBackendInner: creating new player");
-        let (player, output) = rodio::Player::new();
-        log::trace!("RodioBackendInner: adding output to mixer");
-        device.mixer().add(output);
-
-        log::trace!("RodioBackendInner: appending buffered source");
-        player.append(buffer);
-
-        player.set_speed(self.playback_speed);
-        if cfg!(test) {
-            player.set_volume(0.0);
-        }
-        if autoplay {
-            player.play();
-            self.playback_started_at = Some(web_time::Instant::now());
-            self.playback_start_offset_seconds = start_seconds;
-        } else {
-            player.pause();
-            self.playback_started_at = None;
-            self.playback_start_offset_seconds = 0.0;
-        }
-        self.current_player = Some(player);
-        self.current_audio_source = Some(source_key);
-    }
-
-    /// Set the preferred audio backend by name. If the name is valid and available, it will be set as the preferred backend.
-    /// Returns true if the backend was successfully set, false if the name was invalid or unavailable.
-    pub fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
-        let parsed = parse_host_id_by_label(backend_name);
-        if !backend_name.trim().is_empty()
-            && !backend_name.eq_ignore_ascii_case("Default")
-            && parsed.is_none()
-        {
+        let Some(nyaa) = self.nyaa.as_mut() else {
             return false;
-        }
-
-        if self.preferred_host == parsed {
-            return true;
-        }
-
-        self.preferred_host = parsed;
-        if let Some(player) = self.current_player.take() {
-            player.stop();
-        }
-        for player in self.active_sfx.drain(..) {
-            player.stop();
-        }
-        self.current_audio_source = None;
-        self.playback_started_at = None;
-        self.playback_start_offset_seconds = 0.0;
-        self.output_device = None;
-        self.device_tried = false;
-        self.backend_name = if let Some(host_id) = self.preferred_host {
-            host_label(host_id)
-        } else {
-            "Default".to_string()
         };
+        if !nyaa.has_audio_output() {
+            if let Err(error) = nyaa.retry_audio_output() {
+                log::warn!("Failed to initialize Nyaa audio output: {error}");
+                while nyaa.poll_event().is_some() {}
+                return false;
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        if nyaa.audio_backend() == Some(NyaaBackend::AudioWorklet) {
+            schedule_rayon_after_audio_worklet();
+        }
 
         true
     }
 
-    /// Stop the current playback and reset the playback state.
-    ///
-    /// Drops the active player so a later [`AudioBackend::resume`] (or any
-    /// code path that calls it) cannot silently un-pause the same player.
-    /// Pausing the rodio player alone is insufficient because Bevy's
-    /// gameplay-audio sync system calls `resume()` whenever the session
-    /// reports `game_paused = false`, which would otherwise undo a playtest
-    /// exit's stop and keep the playtest music playing in the editor.
-    ///
-    /// The decoded PCM cache is intentionally retained: a subsequent
-    /// [`AudioBackend::seek_and_play`] restart of the same source rebuilds a
-    /// player from it instantly instead of re-decoding the whole compressed
-    /// track on the calling thread.
-    pub fn stop(&mut self) {
-        if let Some(player) = self.current_player.take() {
-            player.stop();
+    pub fn set_preferred_backend_name(&mut self, backend_name: &str) -> bool {
+        let trimmed = backend_name.trim();
+        let parsed = parse_host_id_by_label(trimmed);
+        if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("Default") && parsed.is_none() {
+            return false;
         }
-        self.current_audio_source = None;
-        self.playback_started_at = None;
-        self.playback_start_offset_seconds = 0.0;
+        if self.preferred_backend == parsed {
+            return true;
+        }
+
+        self.stop();
+        self.active_sfx.clear();
+        self.nyaa = None;
+        self.output = None;
+        self.preferred_backend = parsed;
+        true
     }
 
-    /// Check if the current audio source can be reused based on the provided source key.
+    pub fn pause(&mut self) {
+        if let Some(nyaa) = &self.nyaa {
+            nyaa.pause();
+            while nyaa.poll_event().is_some() {}
+        }
+    }
+
+    pub fn resume(&mut self) {
+        if self.current_audio_source.is_some()
+            && let Some(nyaa) = &self.nyaa
+        {
+            nyaa.resume();
+            while nyaa.poll_event().is_some() {}
+        }
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(nyaa) = &mut self.nyaa {
+            nyaa.stop();
+            while nyaa.poll_event().is_some() {}
+        }
+        self.current_audio_source = None;
+    }
+
     pub fn can_reuse_source(&self, source_key: &str) -> bool {
         self.current_audio_source.as_deref() == Some(source_key)
     }
 
-    /// Check whether decoded PCM for `source_key` is available so playback can
-    /// restart without any full re-decode: either the source is actively
-    /// loaded or its decoded buffer survived a [`AudioBackend::stop`] call.
-    pub fn can_restart_without_decode(&self, source_key: &str) -> bool {
-        self.can_reuse_source(source_key)
-            || self
-                .decoded_cache
-                .as_ref()
-                .is_some_and(|(key, _)| key == source_key)
-    }
-
-    /// Seek to `start_seconds` and play, reusing already-decoded PCM when available.
-    ///
-    /// Reuse rebuilds a player from the cached in-memory buffer (an instant,
-    /// non-blocking seek) rather than calling [`rodio::Player::try_seek`], which
-    /// blocks the calling thread and is therefore unusable on the WASM main thread.
-    /// Returns `false` when no cached PCM matches the current source, signalling the
-    /// caller to decode it fresh.
-    pub fn seek_and_play(&mut self, start_seconds: f32) -> bool {
-        let source_key = self
-            .current_audio_source
-            .clone()
-            .or_else(|| self.decoded_cache.as_ref().map(|(key, _)| key.clone()));
-        if let Some(source_key) = source_key {
-            let cached = match &self.decoded_cache {
-                Some((key, buffer)) if key == &source_key => Some(buffer.clone()),
-                _ => None,
-            };
-            if let Some(buffer) = cached {
-                if let Some(player) = self.current_player.take() {
-                    player.stop();
-                }
-                self.play_buffer(source_key, buffer, start_seconds, true);
-                return true;
-            }
-        }
-
-        #[cfg(test)]
-        if self.current_audio_source.is_some() {
-            self.playback_started_at = Some(web_time::Instant::now());
-            self.playback_start_offset_seconds = start_seconds;
+    fn cache_track(&mut self, source_key: String, bytes: AudioBytes) -> bool {
+        if self.cached_track.as_ref().is_some_and(|track| {
+            track.source_key == source_key && track.bytes.as_slice() == bytes.as_slice()
+        }) {
             return true;
         }
 
-        false
-    }
-
-    /// Replace the current audio source with the provided bytes, starting at the specified time, and start playback immediately.
-    pub fn replace_with_bytes(&mut self, source_key: String, bytes: &[u8], start_seconds: f32) {
-        if let Some(player) = self.current_player.take() {
-            player.stop();
-        }
-        self.current_audio_source = None;
-
-        log::trace!("RodioAudioBackend: decoding {} bytes", bytes.len());
-        match decode_with_shared_cache(&source_key, bytes) {
-            Some((buffer, _shared_hit)) => {
-                #[cfg(test)]
-                if !_shared_hit {
-                    self.record_full_decode();
-                }
-                log::trace!("RodioAudioBackend: decoding successful");
-                self.decoded_cache = Some((source_key.clone(), buffer.clone()));
-                self.play_buffer(source_key, buffer, start_seconds, true);
+        self.stop();
+        self.cached_track = None;
+        match bytes.duration() {
+            Ok(duration) => {
+                self.cached_track = Some(CachedTrack {
+                    source_key,
+                    bytes,
+                    duration,
+                });
+                true
             }
-            None => {
-                #[cfg(test)]
-                self.record_full_decode();
-                log::warn!("Failed to decode imported level music '{}'", source_key);
+            Err(error) => {
+                log::warn!("Failed to load music '{source_key}' with Nyaa: {error}");
+                false
             }
         }
     }
 
-    /// Replace the current audio source with an asset from the specified level, starting at the specified time, and start playback immediately.
-    fn replace_with_asset(
-        &mut self,
-        source_key: String,
-        level_name: &str,
-        start_seconds: f32,
-        autoplay: bool,
-    ) {
-        {
-            if let Some(player) = self.current_player.take() {
-                player.stop();
-            }
-            self.current_audio_source = None;
-        }
-
-        let audio_path = format!("assets/levels/{}/{}", level_name, "audio.mp3");
-
-        log::trace!("RodioAudioBackend: loading asset {}", audio_path);
-        let audio_bytes = match eg_level::get_builtin_audio(level_name) {
-            Some(bytes) => bytes.to_vec(),
-            None => {
-                log::warn!("Failed to read level music '{}'", audio_path);
-                return;
-            }
+    pub fn seek_and_play(&mut self, start_seconds: f32) -> bool {
+        let Some(track) = self.cached_track.clone() else {
+            return false;
         };
+        let position = playback_position(start_seconds);
+        let position = track
+            .duration
+            .map_or(position, |duration| position.min(duration));
 
-        log::trace!(
-            "RodioAudioBackend: decoding {} bytes from asset",
-            audio_bytes.len()
-        );
-        match decode_with_shared_cache(&source_key, &audio_bytes) {
-            Some((buffer, _shared_hit)) => {
-                #[cfg(test)]
-                if !_shared_hit {
-                    self.record_full_decode();
-                }
-                log::trace!("RodioAudioBackend: asset decoding successful");
-                self.decoded_cache = Some((source_key.clone(), buffer.clone()));
-                self.play_buffer(source_key, buffer, start_seconds, autoplay);
+        if self.can_reuse_source(&track.source_key)
+            && let Some(nyaa) = self.nyaa.as_mut()
+            && !nyaa.is_empty()
+        {
+            if let Err(error) = nyaa.try_seek(position) {
+                log::warn!("Failed to seek music with Nyaa: {error}");
+                self.stop();
+                return false;
             }
-            None => {
-                #[cfg(test)]
-                self.record_full_decode();
-                log::warn!("Failed to decode level music '{}'", audio_path);
-            }
-        }
-    }
-
-    /// Record that a full compressed-to-PCM track decode is about to run.
-    #[cfg(test)]
-    fn record_full_decode(&mut self) {
-        self.full_decode_count += 1;
-    }
-
-    /// Number of full track decodes performed so far (test observation only).
-    #[cfg(test)]
-    fn full_decode_count(&self) -> usize {
-        self.full_decode_count
-    }
-
-    /// Get the current playback time in seconds, accounting for the playback speed and any offset. Returns None if no playback is active.
-    pub fn playback_time_seconds(&self) -> Option<f32> {
-        if let Some(player) = self.current_player.as_ref() {
-            if player.empty() {
-                return None;
-            }
-        } else {
-            #[cfg(not(test))]
-            {
-                return None;
-            }
+            nyaa.resume();
+            while nyaa.poll_event().is_some() {}
+            return true;
         }
 
-        let started_at = self.playback_started_at?;
-        Some(
-            self.playback_start_offset_seconds
-                + started_at.elapsed().as_secs_f32() * self.playback_speed,
-        )
-    }
-
-    /// Check if the audio backend is currently playing any audio. Returns true if playback is active, false otherwise.
-    ///
-    /// A paused or stopped player is not considered "playing" - only an
-    /// actively decoding/rendering player reports true. This keeps callers
-    /// like the gameplay-audio pause sync from thinking the music is still
-    /// running after `stop()` and accidentally resuming it.
-    pub fn is_playing(&self) -> bool {
-        if self.playback_started_at.is_none() {
+        self.stop();
+        if !self.ensure_device() {
             return false;
         }
-        if let Some(player) = self.current_player.as_ref() {
-            return !player.empty();
+        let Some(output) = &self.output else {
+            return false;
+        };
+        let mut nyaa = Nyaa::new_with_output(output.clone());
+        nyaa.set_speed(self.playback_speed);
+        if cfg!(test) {
+            nyaa.set_volume(0.0);
         }
-        #[cfg(test)]
-        {
-            true
+        let result = nyaa
+            .try_seek(position)
+            .and_then(|()| track.bytes.play(&mut nyaa));
+        if let Err(error) = result {
+            log::warn!(
+                "Failed to play music '{}' with Nyaa: {error}",
+                track.source_key
+            );
+            return false;
         }
-        #[cfg(not(test))]
-        {
-            false
+
+        while nyaa.poll_event().is_some() {}
+        self.nyaa = Some(nyaa);
+        self.current_audio_source = Some(track.source_key);
+        true
+    }
+
+    pub fn replace_with_bytes(&mut self, source_key: String, bytes: &[u8], start_seconds: f32) {
+        if self.cache_track(source_key, AudioBytes::Shared(Arc::from(bytes))) {
+            self.seek_and_play(start_seconds);
         }
     }
 
-    /// Set the playback speed for the current audio source. The speed is clamped between 0.25x and 2.0x. If playback is active, the current position is adjusted to account for the new speed.
+    pub fn playback_time_seconds(&self) -> Option<f32> {
+        self.is_playing()
+            .then(|| self.nyaa.as_ref().unwrap().position().as_secs_f32())
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.current_audio_source.is_some()
+            && self.nyaa.as_ref().is_some_and(|nyaa| {
+                let playing = nyaa.is_playing();
+                while nyaa.poll_event().is_some() {}
+                playing
+            })
+    }
+
     pub fn set_speed(&mut self, speed: f32) {
-        let clamped_speed = speed.clamp(0.25, 2.0);
-        if let Some(started_at) = self.playback_started_at {
-            let elapsed_real = started_at.elapsed().as_secs_f32();
-            self.playback_start_offset_seconds += elapsed_real * self.playback_speed;
-            self.playback_started_at = Some(web_time::Instant::now());
-        }
-        self.playback_speed = clamped_speed;
-        if let Some(player) = &self.current_player {
-            player.set_speed(clamped_speed);
+        self.playback_speed = if speed.is_finite() {
+            speed.clamp(0.25, 2.0)
+        } else {
+            1.0
+        };
+        if let Some(nyaa) = &mut self.nyaa {
+            nyaa.set_speed(self.playback_speed);
+            while nyaa.poll_event().is_some() {}
         }
     }
 
-    /// Play a sound effect from the provided asset bytes. The sound effect will be played immediately and will not affect the current music playback.
     pub fn play_sfx(&mut self, asset_bytes: &'static [u8]) {
-        self.active_sfx.retain(|player| !player.empty());
-
-        if let Ok(decoded) = rodio::Decoder::new(Cursor::new(asset_bytes))
-            && let Some(device) = self.ensure_device()
-        {
-            let (player, output) = rodio::Player::new();
-            if cfg!(test) {
-                player.set_volume(0.0);
-            }
-            device.mixer().add(output);
-            player.append(decoded);
-            player.play();
-            self.active_sfx.push(player);
+        self.active_sfx.retain(|nyaa| !nyaa.is_empty());
+        if !self.ensure_device() {
+            return;
+        }
+        let Some(output) = &self.output else {
+            return;
+        };
+        let mut nyaa = Nyaa::new_with_output(output.clone());
+        if cfg!(test) {
+            nyaa.set_volume(0.0);
+        }
+        match nyaa.play_static_bytes(asset_bytes) {
+            Ok(()) => self.active_sfx.push(nyaa),
+            Err(error) => log::warn!("Failed to play sound effect with Nyaa: {error}"),
         }
     }
 
-    /// Get the name of the currently selected audio backend. This may include the host and device name if available.
     pub fn backend_name(&self) -> String {
-        self.backend_name.clone()
-    }
-
-    /// Start playing audio from a specific source key at the given time.
-    /// If the source can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
-    fn start_with_source_key_at(&mut self, source_key: String, bytes: &[u8], start_seconds: f32) {
-        let start_seconds = start_seconds.max(0.0);
-        self.stop();
-
-        if self.can_restart_without_decode(&source_key) && self.seek_and_play(start_seconds) {
-            return;
+        if let Some(output) = &self.output {
+            let backend = output
+                .backend()
+                .map(host_label)
+                .unwrap_or_else(|| "Default".into());
+            return output.device().map_or_else(
+                || backend.clone(),
+                |device| format!("{backend} ({})", device.name()),
+            );
         }
-
-        self.replace_with_bytes(source_key, bytes, start_seconds);
+        self.preferred_backend
+            .map(host_label)
+            .unwrap_or_else(|| "Default".into())
     }
 
-    /// Start playing audio from the provided bytes at the specified time. This will replace the current audio source with the new one and start playback immediately.
     pub fn start_with_bytes_at(&mut self, bytes: &[u8], start_seconds: f32) {
-        self.start_with_source_key_at(runtime_bytes_source_key("audio.mp3"), bytes, start_seconds);
+        self.replace_with_bytes(runtime_bytes_source_key("audio.mp3"), bytes, start_seconds);
     }
 
-    /// Warm up the audio system with the provided bytes at the specified time. This will replace the current audio source with the new one but will not start playback.
-    pub fn warmup_with_bytes_at(&mut self, bytes: &[u8], start_seconds: f32) {
-        let source_key = runtime_bytes_source_key("audio.mp3");
-        let start_seconds = start_seconds.max(0.0);
+    pub fn warmup_with_bytes_at(&mut self, bytes: &[u8], _start_seconds: f32) {
         self.stop();
-
-        if self.can_restart_without_decode(&source_key) {
-            return;
-        }
-
-        self.replace_with_bytes(source_key, bytes, start_seconds);
+        self.cache_track(
+            runtime_bytes_source_key("audio.mp3"),
+            AudioBytes::Shared(Arc::from(bytes)),
+        );
     }
 
-    /// Start playing a preloaded asset at the specified time.
-    /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
     pub fn start_preloaded_asset_at(&mut self, level_name: &str, bytes: &[u8], start_seconds: f32) {
-        self.start_with_source_key_at(
+        self.replace_with_bytes(
             runtime_asset_source_key(level_name, "audio.mp3"),
             bytes,
             start_seconds,
         );
     }
 
-    /// Warm up a preloaded asset at the specified time. This will replace the current audio source with the new one but will not start playback.
-    /// If the asset can be reused, it will not replace the current source.
     pub fn warmup_preloaded_asset_at(
         &mut self,
         level_name: &str,
         bytes: &[u8],
-        start_seconds: f32,
+        _start_seconds: f32,
     ) {
-        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-        let start_seconds = start_seconds.max(0.0);
         self.stop();
-
-        if self.can_restart_without_decode(&source_key) {
-            return;
-        }
-
-        self.replace_with_bytes(source_key, bytes, start_seconds);
+        self.cache_track(
+            runtime_asset_source_key(level_name, "audio.mp3"),
+            AudioBytes::Shared(Arc::from(bytes)),
+        );
     }
 
-    /// Start playing a level asset at the specified time. This will replace the current audio source with the new one and start playback immediately.
-    /// If the asset can be reused, it will seek to the specified time and play; otherwise, it will replace the current source with the new one.
+    fn cache_asset(&mut self, level_name: &str) -> bool {
+        let Some(bytes) = eg_level::get_builtin_audio(level_name) else {
+            self.stop();
+            self.cached_track = None;
+            log::warn!("Failed to read level music for '{level_name}'");
+            return false;
+        };
+        self.cache_track(
+            runtime_asset_source_key(level_name, "audio.mp3"),
+            AudioBytes::Static(bytes),
+        )
+    }
+
     pub fn start_at(&mut self, level_name: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-        let start_seconds = start_seconds.max(0.0);
-        self.stop();
-
-        if self.can_restart_without_decode(&source_key) && self.seek_and_play(start_seconds) {
-            return;
+        if self.cache_asset(level_name) {
+            self.seek_and_play(start_seconds);
         }
-
-        self.replace_with_asset(source_key, level_name, start_seconds, true);
     }
 
-    /// Warm up a level asset at the specified time. This will replace the current audio source with the new one but will not start playback.
-    /// If the asset can be reused, it will not replace the current source.
-    pub fn warmup_at(&mut self, level_name: &str, start_seconds: f32) {
-        let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-        let start_seconds = start_seconds.max(0.0);
+    pub fn warmup_at(&mut self, level_name: &str, _start_seconds: f32) {
         self.stop();
-
-        if self.can_restart_without_decode(&source_key) {
-            return;
-        }
-
-        self.replace_with_asset(source_key, level_name, start_seconds, false);
+        self.cache_asset(level_name);
     }
 }
 
@@ -797,8 +455,11 @@ impl Default for AudioBackend {
     }
 }
 
-/// Decode audio bytes to a downsampled waveform suitable for display.
-/// Returns (peak_samples, sample_rate) where peak_samples contains one peak per window.
+pub struct WaveformDecodeSummary {
+    pub sample_rate: u32,
+    pub peak_count: usize,
+}
+
 #[cfg(test)]
 pub fn decode_audio_to_waveform(bytes: &[u8], window_size: usize) -> Option<(Vec<f32>, u32)> {
     let mut peaks = Vec::new();
@@ -806,7 +467,6 @@ pub fn decode_audio_to_waveform(bytes: &[u8], window_size: usize) -> Option<(Vec
         decode_audio_to_waveform_streaming(bytes, window_size, usize::MAX, |_, chunk, _| {
             peaks.extend(chunk);
         })?;
-
     Some((peaks, summary.sample_rate))
 }
 
@@ -819,104 +479,35 @@ pub fn decode_audio_to_waveform_streaming<F>(
 where
     F: FnMut(usize, Vec<f32>, u32),
 {
-    use symphonia::core::{
-        audio::sample::Sample,
-        codecs::audio::AudioDecoderOptions,
-        errors::Error as SymphoniaError,
-        formats::{FormatOptions, TrackType, probe::Hint},
-        io::MediaSourceStream,
-        meta::MetadataOptions,
-    };
-
-    let source = std::io::Cursor::new(bytes.to_vec());
-    let mss = MediaSourceStream::new(Box::new(source), Default::default());
-    log::info!("Decoding audio to waveform ({} bytes)", bytes.len());
-    let hint = Hint::new();
-
-    let fmt_opts: FormatOptions = Default::default();
-    let meta_opts: MetadataOptions = Default::default();
-    let dec_opts: AudioDecoderOptions = Default::default();
-
-    let mut format = symphonia::default::get_probe()
-        .probe(&hint, mss, fmt_opts, meta_opts)
-        .ok()?;
-
-    let track = format.default_track(TrackType::Audio)?;
-    let audio_params = track.codec_params.as_ref()?.audio()?;
-    let sample_rate = audio_params.sample_rate?;
-    let channel_count = audio_params
-        .channels
-        .as_ref()
-        .map(|channels| channels.count())
-        .unwrap_or(1)
-        .max(1);
-
-    let mut decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(audio_params, &dec_opts)
-        .ok()?;
-
-    let chunk_peak_count = chunk_peak_count.max(1);
-    let mut peaks: Vec<f32> = Vec::with_capacity(chunk_peak_count.min(4096));
+    let source = Nyaa::decoder_from_shared_bytes(Arc::from(bytes)).ok()?;
+    let window_size = NonZeroUsize::new(window_size.max(1))?;
+    let mut builder = Waveform::builder_from_source_with_base_frames(source, window_size);
+    let sample_rate = builder.sample_rate();
+    let frames_per_chunk = window_size
+        .get()
+        .saturating_mul(chunk_peak_count.clamp(1, 4096));
     let mut emitted_peak_count = 0usize;
-    let mut window_peak: f32 = 0.0;
-    let mut window_count: usize = 0;
-    let track_id = track.id;
-    let mut interleaved_samples: Vec<f32> = Vec::new();
 
     loop {
-        let packet = match format.next_packet() {
-            Ok(Some(packet)) => packet,
-            Ok(None) => break,
-            Err(SymphoniaError::IoError(_)) => break,
-            Err(SymphoniaError::ResetRequired) => return None,
-            Err(_) => break,
-        };
-
-        if packet.track_id != track_id {
-            continue;
-        }
-
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(SymphoniaError::DecodeError(_)) => continue,
-            Err(SymphoniaError::IoError(_)) => break,
-            Err(_) => return None,
-        };
-
-        interleaved_samples.resize(decoded.samples_interleaved(), f32::MID);
-        decoded.copy_to_slice_interleaved(&mut interleaved_samples);
-        accumulate_interleaved_samples(
-            &interleaved_samples,
-            channel_count,
-            &mut peaks,
-            &mut window_peak,
-            &mut window_count,
-            window_size,
-        );
-
-        if peaks.len() >= chunk_peak_count {
-            let chunk = std::mem::take(&mut peaks);
+        let finished = builder.advance_frames(frames_per_chunk);
+        let slice = builder.slice(Duration::ZERO..builder.decoded_duration(), usize::MAX);
+        let chunk: Vec<f32> = slice
+            .peaks()
+            .iter()
+            .skip(emitted_peak_count)
+            .take_while(|peak| peak.is_available())
+            .map(|peak| peak.amplitude())
+            .collect();
+        if !chunk.is_empty() {
             let chunk_len = chunk.len();
             on_chunk(emitted_peak_count, chunk, sample_rate);
             emitted_peak_count += chunk_len;
         }
+        if finished {
+            break;
+        }
     }
 
-    if window_count > 0 {
-        peaks.push(window_peak);
-    }
-
-    if !peaks.is_empty() {
-        let chunk = std::mem::take(&mut peaks);
-        let chunk_len = chunk.len();
-        on_chunk(emitted_peak_count, chunk, sample_rate);
-        emitted_peak_count += chunk_len;
-    }
-
-    log::info!(
-        "Audio waveform decoding complete ({} peaks)",
-        emitted_peak_count
-    );
     Some(WaveformDecodeSummary {
         sample_rate,
         peak_count: emitted_peak_count,
@@ -935,337 +526,248 @@ pub fn tiny_wav_bytes() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        accumulate_interleaved_samples, accumulate_waveform_frame_peak, available_host_labels,
-        decode_audio_to_waveform, decode_audio_to_waveform_streaming, host_label,
-        parse_host_id_by_label, select_host,
-    };
-    use crate::audio::AudioBackend;
+    use approx::assert_abs_diff_eq;
 
-    #[test]
-    fn parse_host_id_by_label_handles_default_and_case_insensitive_labels() {
-        assert_eq!(parse_host_id_by_label(""), None);
-        assert_eq!(parse_host_id_by_label("   "), None);
-        assert_eq!(parse_host_id_by_label("Default"), None);
-        assert_eq!(parse_host_id_by_label("default"), None);
+    use super::*;
 
-        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
-            let lower = host_label(host_id).to_lowercase();
-            assert_eq!(parse_host_id_by_label(&lower), Some(host_id));
-        }
-    }
-
-    #[test]
-    fn select_host_returns_default_or_requested_available_host() {
-        let selected_default = select_host(None).id();
-        assert_eq!(selected_default, cpal::default_host().id());
-
-        if let Some(host_id) = cpal::available_hosts().into_iter().next() {
-            let selected = select_host(Some(host_id)).id();
-            assert_eq!(selected, host_id);
-        }
-    }
-
-    #[test]
-    fn available_host_labels_are_sorted_unique_and_include_default() {
-        let labels = available_host_labels();
-        assert!(labels.iter().any(|label| label == "Default"));
-
-        let mut expected = labels.clone();
-        expected.sort();
-        expected.dedup();
-        assert_eq!(labels, expected);
-    }
-
-    #[test]
-    fn set_preferred_backend_name_rejects_unknown_label() {
-        let mut backend = AudioBackend::new();
-        let before = backend.backend_name();
-
-        assert!(!backend.set_preferred_backend_name("definitely-not-a-real-backend"));
-        assert_eq!(backend.backend_name(), before);
-    }
-
-    #[test]
-    fn set_preferred_backend_name_default_resets_runtime_state() {
-        let mut backend: AudioBackend = AudioBackend::new();
-        let Some(host_id) = cpal::available_hosts().into_iter().next() else {
-            return;
-        };
-
-        {
-            backend.current_audio_source = Some("bytes:test".to_string());
-            backend.playback_started_at = Some(web_time::Instant::now());
-            backend.playback_start_offset_seconds = 4.0;
-            backend.device_tried = true;
-        }
-
-        assert!(backend.set_preferred_backend_name(&host_label(host_id)));
-
-        assert_eq!(backend.current_audio_source, None);
-        assert_eq!(backend.playback_started_at, None);
-        assert_eq!(backend.playback_start_offset_seconds, 0.0);
-        assert!(!backend.device_tried);
-        assert_eq!(backend.backend_name, host_label(host_id));
-    }
-
-    #[test]
-    fn replace_with_bytes_invalid_payload_does_not_mark_source_reusable() {
-        let mut backend = AudioBackend::new();
-        backend.replace_with_bytes("bytes:bad".to_string(), &[1, 2, 3], 0.0);
-
-        assert!(!backend.can_reuse_source("bytes:bad"));
-        assert!(!backend.is_playing());
-    }
-
-    #[test]
-    fn replace_with_valid_bytes_tracks_and_reuses_playback_state() {
-        let mut backend = AudioBackend::new();
-        let wav = super::tiny_wav_bytes();
-
-        backend.replace_with_bytes("bytes:play".to_string(), &wav, 1.25);
-        assert!(backend.can_reuse_source("bytes:play"));
-        assert!(backend.is_playing());
-        assert!(backend.playback_time_seconds().is_some());
-
-        // Decoding a new key replaces the reusable source and caches its PCM.
-        backend.replace_with_bytes("bytes:warm".to_string(), &wav, 0.5);
-        assert!(backend.can_reuse_source("bytes:warm"));
-
-        // Stopping clears playback tracking deterministically.
-        backend.stop();
-        assert_eq!(backend.playback_time_seconds(), None);
-    }
-
-    #[test]
-    fn seek_and_play_reuses_cached_pcm_without_redecode() {
-        let mut backend = AudioBackend::new();
-        let wav = super::tiny_wav_bytes();
-
-        backend.replace_with_bytes("bytes:song".to_string(), &wav, 0.0);
-        assert!(backend.decoded_cache.is_some());
-        assert!(backend.can_reuse_source("bytes:song"));
-
-        // Same source key -> reuse the cached buffer (no re-decode, non-blocking seek).
-        assert!(backend.seek_and_play(0.25));
-        assert_eq!(
-            backend.decoded_cache.as_ref().map(|(key, _)| key.as_str()),
-            Some("bytes:song")
-        );
-        assert!(backend.can_reuse_source("bytes:song"));
-    }
-
-    #[test]
-    fn seek_and_play_uses_test_fallback_without_active_player() {
-        let mut backend = AudioBackend::new();
-        {
-            backend.current_audio_source = Some("bytes:reuse".to_string());
-            backend.current_player = None;
-        }
-
-        assert!(backend.seek_and_play(2.5));
-        assert!(backend.is_playing());
-        let playback_time = backend.playback_time_seconds().unwrap_or(0.0);
-        assert!(playback_time >= 2.5);
-    }
-
-    #[test]
-    fn stop_and_set_speed_manage_playback_tracking() {
-        use web_time::Duration;
-
-        let mut backend = AudioBackend::new();
-        {
-            backend.current_audio_source = Some("bytes:speed".to_string());
-            backend.playback_started_at =
-                Some(web_time::Instant::now() - Duration::from_millis(10));
-            backend.playback_start_offset_seconds = 1.0;
-            backend.playback_speed = 2.0;
-        }
-
-        backend.set_speed(0.5);
-        {
-            assert_eq!(backend.playback_speed, 0.5);
-            assert!(backend.playback_start_offset_seconds >= 1.0);
-        }
-
-        backend.stop();
-        assert!(!backend.is_playing());
-        assert_eq!(backend.playback_time_seconds(), None);
-    }
-
-    /// `stop()` must drop the active player so a later `resume()` call cannot
-    /// silently un-pause the same player. This is the playtest-exit contract
-    /// that the eg-state schedule relies on: when the playtest is exited,
-    /// `consume_audio_stop_request_system` calls `stop()`, and the subsequent
-    /// `sync_gameplay_audio_pause_system` `resume()` must not bring the
-    /// playtest music back.
-    #[test]
-    fn stop_drops_player_so_resume_is_a_noop() {
-        let mut backend = AudioBackend::new();
-        let wav = super::tiny_wav_bytes();
-
-        backend.replace_with_bytes("bytes:playtest".to_string(), &wav, 0.0);
-        assert!(backend.is_playing());
-        assert!(backend.current_player.is_some());
-
-        // Simulate the playtest-exit schedule: consume_audio_stop_request_system.
-        backend.stop();
-        assert!(!backend.is_playing());
-        assert!(backend.current_player.is_none());
-        assert_eq!(backend.playback_time_seconds(), None);
-
-        // Simulate the very next system in the same frame:
-        // sync_gameplay_audio_pause_system unconditionally calls resume()
-        // when game_paused is false. With the player dropped, this must
-        // leave the backend silent and not restart playback.
-        backend.resume();
-        assert!(!backend.is_playing());
-        assert!(backend.current_player.is_none());
-        assert_eq!(backend.playback_time_seconds(), None);
-    }
-
-    /// Regression: restarting the same track through the public transport API
-    /// (restart at a new position, stop → play) must reuse the already-decoded
-    /// PCM cache instead of re-decoding the entire compressed track on the
-    /// calling thread, which stalled each editor playback start for seconds.
-    ///
-    /// The counter observes real full decodes performed by `replace_with_bytes`
-    /// / `replace_with_asset`, and the control step proves it can still count a
-    /// genuine decode for an uncached source - so this cannot pass vacuously.
-    #[test]
-    fn repeated_starts_of_same_track_decode_only_once() {
-        let mut backend = AudioBackend::new();
-        let wav = super::tiny_wav_bytes();
-
-        backend.start_with_bytes_at(&wav, 0.0);
-        assert_eq!(backend.full_decode_count(), 1);
-        assert_eq!(backend.playback_start_offset_seconds, 0.0);
-
-        // Restart at another position: must seek the cached PCM, not re-decode.
-        backend.start_with_bytes_at(&wav, 4.0);
-        assert_eq!(backend.full_decode_count(), 1);
-        assert_eq!(backend.playback_start_offset_seconds, 4.0);
-
-        // Explicit stop then play again (editor stop/play cycle).
-        backend.stop();
-        backend.start_with_bytes_at(&wav, 2.0);
-        assert_eq!(backend.full_decode_count(), 1);
-        assert_eq!(backend.playback_start_offset_seconds, 2.0);
-
-        // Control: a genuinely different source decodes exactly once more.
-        backend.start_preloaded_asset_at("regression-level", &wav, 0.5);
-        assert_eq!(backend.full_decode_count(), 2);
-        assert_eq!(backend.playback_start_offset_seconds, 0.5);
-        assert!(backend.can_reuse_source("asset:regression-level/audio.mp3"));
-    }
-
-    #[test]
-    fn interleaved_stereo_accumulates_per_frame_not_per_channel() {
-        let interleaved = vec![
-            0.2, 0.7, // frame 0 -> 0.7
-            0.4, 0.1, // frame 1 -> 0.4
-            0.8, 0.3, // frame 2 -> 0.8
-            0.1, 0.9, // frame 3 -> 0.9
-        ];
-
-        let mut peaks = Vec::new();
-        let mut window_peak = 0.0;
-        let mut window_count = 0usize;
-
-        accumulate_interleaved_samples(
-            &interleaved,
-            2,
-            &mut peaks,
-            &mut window_peak,
-            &mut window_count,
-            2,
-        );
-
-        assert_eq!(peaks, vec![0.7, 0.9]);
-        assert_eq!(window_count, 0);
-        assert_eq!(window_peak, 0.0);
-    }
-
-    #[test]
-    fn carries_partial_window_across_chunks() {
-        let mut peaks = Vec::new();
-        let mut window_peak = 0.0;
-        let mut window_count = 0usize;
-
-        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.3, 3);
-        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.8, 3);
-
-        assert!(peaks.is_empty());
-        assert_eq!(window_count, 2);
-        assert_eq!(window_peak, 0.8);
-
-        accumulate_waveform_frame_peak(&mut peaks, &mut window_peak, &mut window_count, 0.5, 3);
-
-        assert_eq!(peaks, vec![0.8]);
-        assert_eq!(window_count, 0);
-        assert_eq!(window_peak, 0.0);
-    }
-
-    /// Build a minimal valid WAV file (16-bit mono PCM) from the given samples.
-    fn build_wav_mono_16bit(sample_rate: u32, samples: &[i16]) -> Vec<u8> {
+    fn build_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
         let data_bytes = samples.len() as u32 * 2;
         let mut wav = Vec::with_capacity(44 + data_bytes as usize);
-        // RIFF header
         wav.extend_from_slice(b"RIFF");
         wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
-        wav.extend_from_slice(b"WAVE");
-        // fmt sub-chunk
-        wav.extend_from_slice(b"fmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes()); // chunk size
-        wav.extend_from_slice(&1u16.to_le_bytes()); // PCM format
-        wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&channels.to_le_bytes());
         wav.extend_from_slice(&sample_rate.to_le_bytes());
-        let byte_rate = sample_rate * 2; // mono 16-bit
-        wav.extend_from_slice(&byte_rate.to_le_bytes());
-        wav.extend_from_slice(&2u16.to_le_bytes()); // block align
-        wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-        // data sub-chunk
+        wav.extend_from_slice(&(sample_rate * u32::from(channels) * 2).to_le_bytes());
+        wav.extend_from_slice(&(channels * 2).to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&data_bytes.to_le_bytes());
-        for &s in samples {
-            wav.extend_from_slice(&s.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
         }
         wav
     }
 
     #[test]
-    fn streaming_decoder_reports_chunks_from_peak_accumulation() {
-        // Use a small synthetic WAV instead of a 4 MB MP3 to keep the test fast
-        // while exercising the same streaming decode → chunk emission paths.
-        let sample_rate = 44100u32;
-        let num_samples = sample_rate as usize * 3; // 3 seconds
-        let samples: Vec<i16> = (0..num_samples)
-            .map(|i| {
-                let t = i as f64 / sample_rate as f64;
-                (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 16000.0
-            })
-            .map(|v| v as i16)
-            .collect();
-        let bytes = build_wav_mono_16bit(sample_rate, &samples);
+    fn backend_names_are_canonical_sorted_and_unique() {
+        assert_eq!(
+            canonical_backend_name(" default ").as_deref(),
+            Some("Default")
+        );
+        assert_eq!(canonical_backend_name(""), None);
+        assert_eq!(canonical_backend_name("not-a-backend"), None);
+        let labels = available_host_labels();
+        let mut expected = labels.clone();
+        expected.sort();
+        expected.dedup();
+        assert_eq!(labels, expected);
+        assert!(labels.iter().any(|label| label == "Default"));
+        for backend in AudioOutput::available_backends() {
+            assert_eq!(
+                parse_host_id_by_label(&host_label(backend).to_lowercase()),
+                Some(backend)
+            );
+        }
+    }
 
+    #[test]
+    fn output_is_lazy_and_unknown_backend_leaves_it_unchanged() {
+        let mut backend = AudioBackend::new();
+        assert!(!backend.set_preferred_backend_name("not-a-backend"));
+        assert_eq!(backend.backend_name(), "Default");
+        assert!(backend.output.is_none());
+        assert!(backend.nyaa.is_none());
+    }
+
+    #[test]
+    fn warmup_never_starts_playback_or_opens_output() {
+        let mut backend = AudioBackend::new();
+        backend.warmup_with_bytes_at(&tiny_wav_bytes(), 0.0);
+        assert!(backend.cached_track.is_some());
+        backend.resume();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+        assert!(backend.output.is_none());
+        backend.warmup_preloaded_asset_at("test", &tiny_wav_bytes(), 1.0);
+        assert!(!backend.is_playing());
+        assert_eq!(
+            backend.cached_track.as_ref().unwrap().source_key,
+            "asset:test/audio.mp3"
+        );
+    }
+
+    #[test]
+    fn repeated_warmups_retain_encoded_bytes_and_changed_content_replaces_them() {
+        let mut backend = AudioBackend::new();
+        let first = build_wav(8000, 1, &[0; 8000]);
+        backend.warmup_with_bytes_at(&first, 0.0);
+        let AudioBytes::Shared(cached) = backend.cached_track.as_ref().unwrap().bytes.clone()
+        else {
+            panic!("runtime bytes should be shared");
+        };
+        backend.warmup_with_bytes_at(&first, 0.5);
+        let AudioBytes::Shared(reused) = &backend.cached_track.as_ref().unwrap().bytes else {
+            panic!("runtime bytes should stay shared");
+        };
+        assert!(Arc::ptr_eq(&cached, reused));
+
+        let second = build_wav(8000, 1, &[0; 16000]);
+        backend.warmup_with_bytes_at(&second, 0.0);
+        assert_eq!(
+            backend.cached_track.as_ref().unwrap().duration,
+            Some(Duration::from_secs(2))
+        );
+        backend.replace_with_bytes("bytes:bad".into(), &[1, 2, 3], 0.0);
+        assert!(backend.cached_track.is_none());
+        assert!(!backend.can_reuse_source("bytes:bad"));
+        assert!(!backend.seek_and_play(0.0));
+    }
+
+    #[test]
+    fn transport_inputs_are_finite_and_clamped() {
+        let mut backend = AudioBackend::new();
+        for (input, expected) in [
+            (0.0, 0.25),
+            (3.0, 2.0),
+            (f32::NAN, 1.0),
+            (f32::INFINITY, 1.0),
+        ] {
+            backend.set_speed(input);
+            assert!(backend.playback_speed.is_finite());
+            assert_abs_diff_eq!(backend.playback_speed, expected, epsilon = f32::EPSILON);
+        }
+        assert_eq!(playback_position(-1.0), Duration::ZERO);
+        assert_eq!(playback_position(f32::NAN), Duration::ZERO);
+        assert_eq!(playback_position(f32::INFINITY), Duration::ZERO);
+        assert_eq!(playback_position(f32::MAX), Duration::ZERO);
+        assert_eq!(playback_position(1.25), Duration::from_millis(1250));
+    }
+
+    #[test]
+    fn nyaa_transport_seeks_pauses_stops_and_restarts() {
+        let mut backend = AudioBackend::new();
+        if !backend.ensure_device() {
+            eprintln!("Skipping output-dependent transport assertions: no audio output");
+            return;
+        }
+        let wav = build_wav(8000, 1, &[0; 80000]);
+        backend.set_speed(0.5);
+        backend.start_with_bytes_at(&wav, 1.25);
+        assert!(backend.is_playing());
+        assert!(backend.playback_time_seconds().unwrap() >= 1.25);
+        backend.pause();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+        assert!(backend.nyaa.as_ref().unwrap().is_paused());
+        backend.resume();
+        assert!(backend.is_playing());
+        assert!(backend.seek_and_play(2.5));
+        assert!(backend.playback_time_seconds().unwrap() >= 2.5);
+        backend.stop();
+        backend.resume();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+        assert!(backend.seek_and_play(0.5));
+        assert!(backend.is_playing());
+        assert!(backend.playback_time_seconds().unwrap() >= 0.5);
+        assert_abs_diff_eq!(
+            backend.nyaa.as_ref().unwrap().speed(),
+            0.5,
+            epsilon = f32::EPSILON
+        );
+
+        let embedded = eg_level::get_builtin_audio("Flowerfield").unwrap();
+        backend.play_sfx(embedded);
+        assert_eq!(backend.active_sfx.len(), 1);
+        backend.pause();
+        assert!(backend.active_sfx[0].is_playing());
+        assert!(!backend.is_playing());
+        let selected = backend.output.as_ref().unwrap().backend().unwrap();
+        assert!(backend.set_preferred_backend_name(&host_label(selected)));
+        assert!(backend.active_sfx.is_empty());
+        assert!(backend.output.is_none());
+        assert!(backend.cached_track.is_some());
+        assert!(backend.set_preferred_backend_name(" default "));
+        assert_eq!(backend.backend_name(), "Default");
+        assert!(backend.seek_and_play(0.0));
+
+        backend.start_at("Flowerfield", 10.0);
+        assert!(backend.is_playing());
+        assert!(backend.playback_time_seconds().unwrap() >= 10.0);
+        assert!(backend.seek_and_play(2.0));
+        assert!(backend.playback_time_seconds().unwrap() >= 2.0);
+        backend.replace_with_bytes("bytes:bad".into(), &[1, 2, 3], 0.0);
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+
+        backend.start_with_bytes_at(&tiny_wav_bytes(), 0.0);
+        backend.nyaa.as_ref().unwrap().wait_until_end();
+        assert!(!backend.is_playing());
+        assert_eq!(backend.playback_time_seconds(), None);
+        backend.resume();
+        assert!(!backend.is_playing());
+    }
+
+    #[test]
+    fn waveform_preserves_stereo_peaks_and_partial_windows() {
+        let wav = build_wav(8000, 2, &[8192, -16384, 4096, 8192, -24576, 16384]);
         let mut chunks = Vec::new();
-        let summary = decode_audio_to_waveform_streaming(&bytes, 256, 32, |start, peaks, _| {
+        let summary = decode_audio_to_waveform_streaming(&wav, 2, 1, |start, peaks, rate| {
+            assert_eq!(rate, 8000);
             chunks.push((start, peaks));
         })
-        .expect("synthetic wav should decode");
+        .unwrap();
+        assert_eq!(summary.peak_count, 2);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].0, 0);
+        assert_eq!(chunks[1].0, 1);
+        assert_abs_diff_eq!(chunks[0].1[0], 0.5, epsilon = 1e-6);
+        assert_abs_diff_eq!(chunks[1].1[0], 0.75, epsilon = 1e-6);
+    }
 
-        assert!(summary.sample_rate > 0);
-        assert!(summary.peak_count > 0);
-        assert!(!chunks.is_empty());
+    #[test]
+    fn streaming_decoder_reports_chunks_from_peak_accumulation() {
+        let wav = build_wav(44100, 1, &[8192; 132300]);
+        let mut chunks = Vec::new();
+        let summary = decode_audio_to_waveform_streaming(&wav, 256, 32, |start, peaks, _| {
+            chunks.push((start, peaks));
+        })
+        .unwrap();
+        assert_eq!(summary.sample_rate, 44100);
+        assert_eq!(summary.peak_count, 132300usize.div_ceil(256));
         assert_eq!(chunks[0].0, 0);
         for window in chunks.windows(2) {
             assert_eq!(window[0].0 + window[0].1.len(), window[1].0);
         }
-        let chunked_peak_count: usize = chunks.iter().map(|(_, peaks)| peaks.len()).sum();
-        assert_eq!(chunked_peak_count, summary.peak_count);
+        assert!(chunks.iter().all(|(_, peaks)| peaks.len() <= 32));
+        let collected = decode_audio_to_waveform(&wav, 256).unwrap();
+        assert_eq!(
+            collected.0,
+            chunks
+                .into_iter()
+                .flat_map(|(_, peaks)| peaks)
+                .collect::<Vec<_>>()
+        );
+    }
 
-        let collected = decode_audio_to_waveform(&bytes, 256).expect("collector should decode");
-        assert_eq!(collected.0.len(), summary.peak_count);
-        assert_eq!(collected.1, summary.sample_rate);
+    #[test]
+    fn builtin_mp3_waveform_contains_audio() {
+        let bytes = eg_level::get_builtin_audio("Flowerfield").unwrap();
+        let (peaks, sample_rate) = decode_audio_to_waveform(bytes, 256).unwrap();
+        assert!(sample_rate > 0);
+        assert!(peaks.len() > sample_rate as usize / 256);
+        assert!(peaks.iter().all(|peak| peak.is_finite()));
+        assert!(peaks.iter().any(|peak| *peak > 0.01));
+    }
+
+    #[test]
+    fn waveform_rejects_invalid_bytes_and_handles_zero_chunk_settings() {
+        assert!(decode_audio_to_waveform(&[1, 2, 3], 256).is_none());
+        let summary =
+            decode_audio_to_waveform_streaming(&tiny_wav_bytes(), 0, 0, |_, _, _| {}).unwrap();
+        assert_eq!(summary.peak_count, 1);
     }
 }

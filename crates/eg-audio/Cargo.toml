@@ -11,13 +11,14 @@ license = "AGPL-3.0-only"
 eg-level = { workspace = true }
 eg-platform = { workspace = true }
 eg-types = { workspace = true }
-cpal = { workspace = true }
 log = { workspace = true }
 rayon = { workspace = true }
-rodio = { workspace = true }
+rodisnyaa = { workspace = true }
 sha2 = { workspace = true }
-symphonia = { workspace = true }
 web-time = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { workspace = true }
