@@ -31,6 +31,7 @@ use eg_types::{
     essential_keybind_actions, format_key_chord,
 };
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
+use euphorium::WaveformView;
 use glam::{Mat3, Vec3};
 pub use menu::{
     MenuTextures, load_menu_textures, show_menu_favicon_ui, show_menu_play_ui, show_menu_topbar_ui,
@@ -1031,11 +1032,6 @@ pub struct EditorUiInputs<'a> {
     pub timing_selected_index: Option<usize>,
     pub waveform_zoom: f32,
     pub waveform_scroll: f32,
-    pub waveform_samples: &'a [f32],
-    pub waveform_sample_rate: u32,
-    pub waveform_window_size: usize,
-    pub waveform_loading: bool,
-    pub waveform_complete: bool,
     pub bpm_tap_result: Option<f32>,
     pub trigger_objects: &'a [LevelObject],
     pub trigger_selected_index: Option<usize>,
@@ -1047,6 +1043,7 @@ pub struct EditorUiInputs<'a> {
 pub fn show_editor_ui(
     ctx: &egui::Context,
     inputs: EditorUiInputs<'_>,
+    waveform_view: &mut WaveformView,
     commands: &mut impl UiCommandSink,
 ) -> Vec<[f32; 4]> {
     let EditorUiInputs {
@@ -1088,11 +1085,6 @@ pub fn show_editor_ui(
         timing_selected_index,
         waveform_zoom,
         waveform_scroll,
-        waveform_samples,
-        waveform_sample_rate,
-        waveform_window_size,
-        waveform_loading,
-        waveform_complete,
         bpm_tap_result,
         trigger_objects,
         trigger_selected_index,
@@ -1626,12 +1618,8 @@ pub fn show_editor_ui(
                                 timeline_duration_seconds,
                                 timing_points,
                                 waveform_zoom,
-                                waveform_samples,
-                                waveform_sample_rate,
-                                waveform_window_size,
-                                waveform_loading,
-                                waveform_complete,
                             },
+                            waveform_view,
                             commands,
                         );
                     });
@@ -2303,6 +2291,7 @@ mod tests {
             let app_settings = AppSettings::default();
             let music_metadata = MusicMetadata::default();
             let creator_metadata = eg_types::BasicLevelMetadata::default();
+            let mut waveform_view = euphorium::WaveformView::new();
             let _ = show_editor_ui(
                 ctx,
                 EditorUiInputs {
@@ -2359,16 +2348,12 @@ mod tests {
                     timing_selected_index: view.timing_selected_index,
                     waveform_zoom: view.waveform_zoom,
                     waveform_scroll: view.waveform_scroll,
-                    waveform_samples: &view.waveform_samples,
-                    waveform_sample_rate: view.waveform_sample_rate,
-                    waveform_window_size: view.waveform_window_size,
-                    waveform_loading: view.waveform_loading,
-                    waveform_complete: view.waveform_complete,
                     bpm_tap_result: view.bpm_tap_result,
                     trigger_objects: &view.trigger_objects,
                     trigger_selected_index: view.trigger_selected_index,
                     block_icon_texture_ids: &block_icon_texture_ids,
                 },
+                &mut waveform_view,
                 &mut commands,
             );
         });
@@ -2683,8 +2668,6 @@ mod test_utils {
         pub waveform_scroll: f32,
         pub waveform_samples: Vec<f32>,
         pub waveform_sample_rate: u32,
-        pub waveform_window_size: usize,
-        pub waveform_loading: bool,
         pub waveform_complete: bool,
         pub bpm_tap_result: Option<f32>,
         pub trigger_objects: Vec<LevelObject>,
@@ -2710,8 +2693,6 @@ mod test_utils {
             waveform_scroll: 0.0,
             waveform_samples: Vec::new(),
             waveform_sample_rate: 0,
-            waveform_window_size: 256,
-            waveform_loading: false,
             waveform_complete: false,
             bpm_tap_result: None,
             trigger_objects: vec![],

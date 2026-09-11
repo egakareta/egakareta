@@ -40,6 +40,8 @@ use eg_ui::{EditorUiInputs, SettingsSidebarInputs};
 use eg_ui::{MenuTextures, WorldUiCommandSink, combined_ui_scale_factor};
 #[cfg(not(test))]
 use egui_wgpu::ScreenDescriptor;
+#[cfg(not(test))]
+use euphorium::WaveformView;
 
 #[cfg(not(test))]
 use crate::load_menu_textures;
@@ -59,11 +61,58 @@ const SORA_TTF: &[u8] = include_bytes!(concat!(
 struct EguiFrameResources {
     egui_ctx: egui::Context,
     #[cfg(not(test))]
+    waveform_view: WaveformView,
+    #[cfg(not(test))]
+    waveform_source_key: Option<WaveformSourceKey>,
+    #[cfg(not(test))]
     menu_textures: MenuTextures,
     #[cfg(not(test))]
     block_icon_cache: BlockIconCache,
     #[cfg(test)]
     _presentation: (),
+}
+
+#[cfg(not(test))]
+#[derive(PartialEq, Eq)]
+struct WaveformSourceKey {
+    level_name: Option<String>,
+    custom_audio: Option<(usize, usize)>,
+}
+
+#[cfg(not(test))]
+fn sync_waveform_source(frame: &mut EguiFrameResources, session: &SessionStateRes) {
+    let level_name = session.editor_level_name.clone();
+    let custom_audio = session
+        .editor_custom_audio_bytes
+        .as_deref()
+        .map(|bytes| (bytes.as_ptr() as usize, bytes.len()));
+    let source_key = WaveformSourceKey {
+        level_name: level_name.clone(),
+        custom_audio,
+    };
+    if frame.waveform_source_key.as_ref() == Some(&source_key) {
+        return;
+    }
+
+    let result = if let Some(bytes) = session.editor_custom_audio_bytes.as_deref() {
+        frame.waveform_view.set_shared_bytes(bytes)
+    } else if let Some(level_name) = level_name.as_deref() {
+        match eg_level::get_builtin_audio(level_name) {
+            Some(bytes) => frame.waveform_view.set_static_bytes(bytes),
+            None => {
+                frame.waveform_view.clear();
+                Ok(())
+            }
+        }
+    } else {
+        frame.waveform_view.clear();
+        Ok(())
+    };
+    if let Err(error) = result {
+        log::warn!("Failed to load waveform source with Euphorium: {error}");
+        frame.waveform_view.clear();
+    }
+    frame.waveform_source_key = Some(source_key);
 }
 
 #[cfg(not(test))]
@@ -290,11 +339,6 @@ fn run_egui_ui_system(world: &mut World) {
         timing_selected_index,
         waveform_zoom,
         waveform_scroll,
-        waveform_samples,
-        waveform_sample_rate,
-        waveform_window_size,
-        waveform_loading,
-        waveform_complete,
         bpm_tap_result,
         trigger_objects,
         trigger_selected_index,
@@ -344,16 +388,12 @@ fn run_egui_ui_system(world: &mut World) {
             timing.timing_selected_index,
             timing.waveform_zoom,
             timing.waveform_scroll,
-            timing.waveform_samples.clone(),
-            timing.waveform_sample_rate,
-            timing.waveform_window_size,
-            timing.waveform_loading,
-            timing.waveform_complete,
             timing.bpm_tap_result,
             trigger_objects,
             trigger_selected_index,
         )
     };
+    sync_waveform_source(&mut frame, world.resource::<SessionStateRes>());
     let render_config = *world.resource::<RenderConfigRes>();
     let physical_size = egui::vec2(render_config.width as f32, render_config.height as f32);
     let ui_scale_factor = combined_ui_scale_factor(
@@ -433,16 +473,12 @@ fn run_egui_ui_system(world: &mut World) {
                         timing_selected_index,
                         waveform_zoom,
                         waveform_scroll,
-                        waveform_samples: &waveform_samples,
-                        waveform_sample_rate,
-                        waveform_window_size,
-                        waveform_loading,
-                        waveform_complete,
                         bpm_tap_result,
                         trigger_objects: &trigger_objects,
                         trigger_selected_index,
                         block_icon_texture_ids: &block_icon_texture_ids,
                     },
+                    &mut frame.waveform_view,
                     &mut command_sink,
                 );
                 ui_input_pixels_per_point = ctx.pixels_per_point();
@@ -604,6 +640,8 @@ impl Runtime {
             app.insert_non_send(RenderEguiRes::new(egui_renderer));
             app.insert_non_send(EguiFrameResources {
                 egui_ctx,
+                waveform_view: WaveformView::new(),
+                waveform_source_key: None,
                 menu_textures,
                 block_icon_cache: BlockIconCache::new(),
             });

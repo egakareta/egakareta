@@ -37,7 +37,7 @@ use bevy_state::{app::AppExtStates, prelude::State};
 use bevy_time::{Fixed, Time, TimePlugin};
 
 use super::{
-    AudioSceneParam, AudioSceneRes, StateSchedule, WaveformLoadSenderRes,
+    AudioSceneParam, AudioSceneRes, StateSchedule,
     render::plugin::RenderPlugin,
     state_resources::{
         AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
@@ -111,8 +111,7 @@ impl Plugin for EditorPlugin {
             .init_resource::<BuiltinLevelCatalogRes>()
             .init_resource::<LevelExportServiceRes>()
             .init_resource::<LevelImportSenderRes>()
-            .init_resource::<AudioImportSenderRes>()
-            .init_resource::<WaveformLoadSenderRes>();
+            .init_resource::<AudioImportSenderRes>();
         #[cfg(not(target_arch = "wasm32"))]
         app.init_resource::<AudioSceneRes>();
         #[cfg(target_arch = "wasm32")]
@@ -288,7 +287,6 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<AudioSceneRes>();
     #[cfg(target_arch = "wasm32")]
     world.init_non_send::<AudioSceneRes>();
-    world.init_resource::<WaveformLoadSenderRes>();
     super::input_bridge::register_platform_input_resources(world);
     // Bare worlds used by focused render fixtures still need the
     // default POD and placeholder mesh/surface resources.
@@ -306,8 +304,8 @@ pub fn register_state_resources(world: &mut World) {
 ///
 /// The schedule also contains the
 /// `poll_channels_system` from `state::async_bridge` that drains
-/// the five external `mpsc` receivers (auth, audio import,
-/// waveform, audio preload, level import) and emits the
+/// the three external `mpsc` receivers (auth, audio import,
+/// level import) and emits the
 /// corresponding async-result events into the World. The channel
 /// wrappers themselves are inserted lazily by
 /// install_async_channel_resources (when external platform services are installed).

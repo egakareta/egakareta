@@ -17,6 +17,7 @@ eg-blocks = { workspace = true }
 eg-state = { workspace = true }
 egui = { workspace = true }
 egui-phosphor = { workspace = true }
+euphorium = { workspace = true }
 glam = { workspace = true }
 puffin = { workspace = true }
 puffin_egui = { workspace = true }

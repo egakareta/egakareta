@@ -926,7 +926,6 @@ mod tests {
         world.init_resource::<crate::state::AudioSceneRes>();
         #[cfg(target_arch = "wasm32")]
         world.init_non_send::<crate::state::AudioSceneRes>();
-        world.init_resource::<crate::state::WaveformLoadSenderRes>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
             levels: vec![
@@ -2136,22 +2135,6 @@ mod tests {
             EditorMode::Tapping,
             "SetEditorMode handler must mutate EditorInputRes.mode"
         );
-    }
-
-    #[test]
-    fn entering_timing_mode_starts_waveform_loading() {
-        let mut world = build_event_world();
-        world
-            .resource_mut::<crate::state::SessionStateRes>()
-            .editor_level_name = Some("missing-test-audio".to_string());
-        world.resource_mut::<crate::state::EditorInputRes>().0.mode = EditorMode::Place;
-
-        world.write_message(SetEditorMode(EditorMode::Timing));
-        world.run_schedule(crate::state::StateSchedule);
-
-        let timing = &world.resource::<crate::state::EditorTimingRes>().0;
-        assert!(timing.waveform_loading);
-        assert!(!timing.waveform_complete);
     }
 
     #[test]
@@ -4203,15 +4186,11 @@ mod tests {
         let session = world.resource::<crate::state::SessionStateRes>();
         assert_eq!(session.editor_level_name.as_deref(), Some("Flowerfield"));
         assert!(session.audio_stop_pending);
-        // Loading a built-in level clears staged custom audio and kicks off a
-        // fresh background waveform decode.
+        // Loading a built-in level clears staged custom audio.
         assert!(session.editor_custom_audio_bytes.is_none());
         let mut authored =
             world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
         assert!(authored.iter(&world).next().is_some());
-        let timing = &world.resource::<crate::state::EditorTimingRes>().0;
-        assert!(timing.waveform_samples.is_empty());
-        assert!(timing.waveform_loading);
         assert_eq!(
             world
                 .resource::<crate::state::SessionStateRes>()

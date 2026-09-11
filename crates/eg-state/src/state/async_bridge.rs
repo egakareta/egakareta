@@ -7,17 +7,16 @@
 */
 //! Async platform-result ingestion (Phase 6a).
 //!
-//! Platform services and background tasks produce four `mpsc::Receiver`
+//! Platform services and background tasks produce three `mpsc::Receiver`
 //! streams (auth service, audio service, level importer). The App-owned
 //! `StateSchedule` drains those streams once per frame.
 //!
 //! Phase 6a introduced **Bevy resources** that wrap each receiver
-//! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
-//! `LevelImportChannelRes`) plus a
+//! (`AuthChannelRes`, `AudioImportChannelRes`, `LevelImportChannelRes`) plus a
 //! `PollChannelsSet` system set with a `poll_channels_system` that
 //! drains every receiver once per frame and emits the corresponding
-//! result event into the World (Phase 6a's four new
-//! [`async_results`](crate::events::async_results) message types).
+//! result event into the World using the [`async_results`](crate::events::async_results)
+//! message types.
 //!
 //! `StateSchedule` is the sole owner for these drains and the result
 //! handlers mutate App-world resources directly.
@@ -35,8 +34,8 @@
 //! ## Phase 6b: result handler systems
 //!
 //! Phase 6a established the `poll_channels_system` that drains the
-//! 4 receivers into 4 distinct result events. Phase 6b added one
-//! handler system per channel. All four handlers mutate App-world
+//! 3 receivers into 3 distinct result events. Phase 6b added one
+//! handler system per channel. All three handlers mutate App-world
 //! resources directly.
 //!
 //! ## Schedule graph (post Phase 6b)
@@ -49,7 +48,6 @@
 //!   ApplyAsyncResultsSet
 //!     auth_handler_system              // AuthServiceResultEvent
 //!     audio_import_handler_system      // AudioImportResultEvent
-//!     waveform_handler_system          // WaveformResultEvent → timing
 //!     level_import_handler_system      // LevelImportResultEvent → editor/session resources
 //! ```
 //!
@@ -69,14 +67,12 @@ use eg_platform::services::AuthServiceMessage;
 
 use crate::{
     events::async_results::{
-        AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent, WaveformResultEvent,
+        AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent,
     },
     state::{
         AudioSceneParam, AuthStateRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
-        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState, EditorTriggerRes,
-        SessionStateRes, WAVEFORM_WINDOW, WaveformLoadMessage, WaveformLoadSenderRes,
-        WaveformResult, replace_editor_objects, runtime_asset_source_key, start_waveform_loading,
-        warmup_music_with_bytes, with_audio_scene,
+        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
+        replace_editor_objects, warmup_music_with_bytes, with_audio_scene,
     },
 };
 
@@ -90,9 +86,6 @@ pub type SharedAuthReceiver = std::sync::Arc<Mutex<Receiver<AuthServiceMessage>>
 
 /// Shared `Arc<Mutex<Receiver<(String, Vec<u8>)>>>`.
 pub type SharedAudioImportReceiver = std::sync::Arc<Mutex<Receiver<(String, Vec<u8>)>>>;
-
-/// Shared `Arc<Mutex<Receiver<WaveformResult>>>`.
-pub type SharedWaveformReceiver = std::sync::Arc<Mutex<Receiver<WaveformResult>>>;
 
 /// Shared `Arc<Mutex<Receiver<Vec<u8>>>>`.
 pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
@@ -115,11 +108,6 @@ pub struct AuthChannelRes(pub SharedAuthReceiver);
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct AudioImportChannelRes(pub SharedAudioImportReceiver);
-
-/// Bevy `Resource` wrapper around the waveform-load `mpsc::Receiver`.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct WaveformLoadChannelRes(pub SharedWaveformReceiver);
 
 /// Bevy `Resource` wrapper around the level-import `mpsc::Receiver`.
 #[allow(dead_code)]
@@ -152,11 +140,9 @@ pub struct PollChannelsSet;
 pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
     audio_import: Option<Res<AudioImportChannelRes>>,
-    waveform: Option<Res<WaveformLoadChannelRes>>,
     level_import: Option<Res<LevelImportChannelRes>>,
     mut auth_writer: MessageWriter<AuthServiceResultEvent>,
     mut audio_import_writer: MessageWriter<AudioImportResultEvent>,
-    mut waveform_writer: MessageWriter<WaveformResultEvent>,
     mut level_import_writer: MessageWriter<LevelImportResultEvent>,
 ) {
     if let Some(res) = auth {
@@ -168,11 +154,6 @@ pub fn poll_channels_system(
         drain_mutex(&res.0, |msg| {
             let (filename, bytes) = msg;
             audio_import_writer.write(AudioImportResultEvent::new(filename, Some(bytes)));
-        });
-    }
-    if let Some(res) = waveform {
-        drain_mutex(&res.0, |msg| {
-            waveform_writer.write(WaveformResultEvent::from_result(msg));
         });
     }
     if let Some(res) = level_import {
@@ -230,7 +211,6 @@ pub fn install_async_channel_resources(
     world: &mut World,
     auth_receiver: Receiver<AuthServiceMessage>,
     audio_import_receiver: Receiver<(String, Vec<u8>)>,
-    waveform_receiver: Receiver<WaveformResult>,
     level_import_receiver: Receiver<Vec<u8>>,
 ) {
     use std::sync::Arc;
@@ -240,11 +220,6 @@ pub fn install_async_channel_resources(
     if !world.contains_resource::<AudioImportChannelRes>() {
         world.insert_resource(AudioImportChannelRes(Arc::new(Mutex::new(
             audio_import_receiver,
-        ))));
-    }
-    if !world.contains_resource::<WaveformLoadChannelRes>() {
-        world.insert_resource(WaveformLoadChannelRes(Arc::new(Mutex::new(
-            waveform_receiver,
         ))));
     }
     if !world.contains_resource::<LevelImportChannelRes>() {
@@ -263,7 +238,6 @@ pub fn install_async_channel_resources_arc(
     world: &mut World,
     auth_receiver: SharedAuthReceiver,
     audio_import_receiver: SharedAudioImportReceiver,
-    waveform_receiver: SharedWaveformReceiver,
     level_import_receiver: SharedLevelImportReceiver,
 ) {
     if !world.contains_resource::<AuthChannelRes>() {
@@ -271,9 +245,6 @@ pub fn install_async_channel_resources_arc(
     }
     if !world.contains_resource::<AudioImportChannelRes>() {
         world.insert_resource(AudioImportChannelRes(audio_import_receiver));
-    }
-    if !world.contains_resource::<WaveformLoadChannelRes>() {
-        world.insert_resource(WaveformLoadChannelRes(waveform_receiver));
     }
     if !world.contains_resource::<LevelImportChannelRes>() {
         world.insert_resource(LevelImportChannelRes(level_import_receiver));
@@ -289,7 +260,6 @@ pub fn register_async_channel_resources_world(world: &mut World) {
 
     world.init_resource::<Messages<AuthServiceResultEvent>>();
     world.init_resource::<Messages<AudioImportResultEvent>>();
-    world.init_resource::<Messages<WaveformResultEvent>>();
     world.init_resource::<Messages<LevelImportResultEvent>>();
 }
 
@@ -328,110 +298,20 @@ pub fn auth_handler_system(
     }
 }
 
-/// Consume `AudioImportResultEvent`s, stage the bytes as the editor level's
-/// custom audio, and start decoding through the App-owned sender.
+/// Consume `AudioImportResultEvent`s and stage the bytes as the editor
+/// level's custom audio.
 #[allow(dead_code)]
 pub fn audio_import_handler_system(
     mut events: MessageReader<AudioImportResultEvent>,
     mut session: ResMut<SessionStateRes>,
     audio: AudioSceneParam<'_>,
-    waveform_sender: Res<WaveformLoadSenderRes>,
-    mut timing: ResMut<EditorTimingRes>,
 ) {
     for event in events.read() {
         let Some(bytes) = event.bytes.clone() else {
             continue;
         };
-        let level_name = session
-            .editor_level_name
-            .clone()
-            .unwrap_or_else(|| "Untitled".to_string());
         session.editor_custom_audio_bytes = Some(bytes.clone());
         warmup_music_with_bytes(&audio.0, &bytes);
-        timing.0.waveform_samples.clear();
-        timing.0.waveform_sample_rate = 0;
-        timing.0.waveform_window_size = WAVEFORM_WINDOW;
-        timing.0.waveform_loading = true;
-        timing.0.waveform_complete = false;
-        start_waveform_loading(level_name, Some(bytes), waveform_sender.0.clone());
-    }
-}
-
-/// Consume `WaveformResultEvent`s and update App-owned waveform presentation.
-#[allow(dead_code)]
-pub fn waveform_handler_system(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    let current_level_name = world
-        .resource::<SessionStateRes>()
-        .editor_level_name
-        .clone()
-        .unwrap_or_else(|| "Untitled".to_string());
-    let current_source_key = runtime_asset_source_key(&current_level_name, "audio.mp3");
-    let drained: Vec<WaveformResultEvent> = {
-        let mut messages = world.resource_mut::<Messages<WaveformResultEvent>>();
-        messages.drain().collect()
-    };
-    for event in drained {
-        let source = event.source;
-        let level_name = event.level_name;
-        let message = event.message;
-        let source_key = runtime_asset_source_key(&level_name, &source);
-        if source_key == current_source_key {
-            apply_waveform_timing_message(&mut world.resource_mut::<EditorTimingRes>().0, &message);
-        }
-    }
-}
-
-fn apply_waveform_chunk(samples: &mut Vec<f32>, start_peak: usize, peaks: &[f32]) {
-    if samples.len() < start_peak {
-        samples.resize(start_peak, 0.0);
-    }
-    let end_peak = start_peak + peaks.len();
-    if samples.len() < end_peak {
-        samples.resize(end_peak, 0.0);
-    }
-    samples[start_peak..end_peak].copy_from_slice(peaks);
-}
-
-fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &WaveformLoadMessage) {
-    match message {
-        WaveformLoadMessage::Started { window_size } => {
-            timing.waveform_samples.clear();
-            timing.waveform_sample_rate = 0;
-            timing.waveform_window_size = *window_size;
-            timing.waveform_loading = true;
-            timing.waveform_complete = false;
-        }
-        WaveformLoadMessage::Chunk {
-            start_peak,
-            peaks,
-            sample_rate,
-            window_size,
-        } => {
-            apply_waveform_chunk(&mut timing.waveform_samples, *start_peak, peaks);
-            timing.waveform_sample_rate = *sample_rate;
-            timing.waveform_window_size = *window_size;
-            timing.waveform_loading = true;
-            timing.waveform_complete = false;
-        }
-        WaveformLoadMessage::Finished {
-            sample_rate,
-            window_size,
-            total_peaks,
-        } => {
-            timing.waveform_samples.truncate(*total_peaks);
-            timing.waveform_sample_rate = *sample_rate;
-            timing.waveform_window_size = *window_size;
-            timing.waveform_loading = false;
-            timing.waveform_complete = true;
-        }
-        WaveformLoadMessage::Failed => {
-            timing.waveform_samples.clear();
-            timing.waveform_sample_rate = 0;
-            timing.waveform_loading = false;
-            timing.waveform_complete = false;
-        }
     }
 }
 
@@ -534,7 +414,7 @@ pub(crate) fn apply_imported_level_to_world(
     level_name
 }
 
-/// Add the 4 result handler systems to a `Schedule`. Each system
+/// Add the 3 result handler systems to a `Schedule`. Each system
 /// is assigned to [`ApplyAsyncResultsSet`] so cross-set ordering
 /// can be expressed via `.in_set(ApplyAsyncResultsSet)` / `.before()`.
 #[allow(dead_code)]
@@ -543,7 +423,6 @@ pub fn add_apply_async_results_systems(schedule: &mut bevy_ecs::schedule::Schedu
         (
             auth_handler_system,
             audio_import_handler_system,
-            waveform_handler_system,
             level_import_handler_system,
         )
             .in_set(ApplyAsyncResultsSet),
@@ -598,7 +477,6 @@ mod tests {
         let world = build_world();
         assert!(world.contains_resource::<Messages<AuthServiceResultEvent>>());
         assert!(world.contains_resource::<Messages<AudioImportResultEvent>>());
-        assert!(world.contains_resource::<Messages<WaveformResultEvent>>());
         assert!(world.contains_resource::<Messages<LevelImportResultEvent>>());
     }
 
@@ -607,14 +485,12 @@ mod tests {
         let mut world = build_world();
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, li_rx);
 
         assert!(world.contains_resource::<AuthChannelRes>());
         assert!(world.contains_resource::<AudioImportChannelRes>());
-        assert!(world.contains_resource::<WaveformLoadChannelRes>());
         assert!(world.contains_resource::<LevelImportChannelRes>());
     }
 
@@ -627,19 +503,17 @@ mod tests {
         let mut world = build_world();
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, li_rx);
 
         // A second call with fresh receivers must not replace the
         // installed ones.
         let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, wf_rx2, li_rx2);
+        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, li_rx2);
 
         // The original receivers are still installed (we can verify
         // by checking the wrappers exist).
@@ -659,25 +533,21 @@ mod tests {
         let mut world = build_world();
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
         let auth_arc = std::sync::Arc::new(std::sync::Mutex::new(auth_rx));
         let ai_arc = std::sync::Arc::new(std::sync::Mutex::new(ai_rx));
-        let wf_arc = std::sync::Arc::new(std::sync::Mutex::new(wf_rx));
         let li_arc = std::sync::Arc::new(std::sync::Mutex::new(li_rx));
 
         install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::clone(&auth_arc),
             std::sync::Arc::clone(&ai_arc),
-            std::sync::Arc::clone(&wf_arc),
             std::sync::Arc::clone(&li_arc),
         );
 
         assert!(world.contains_resource::<AuthChannelRes>());
         assert!(world.contains_resource::<AudioImportChannelRes>());
-        assert!(world.contains_resource::<WaveformLoadChannelRes>());
         assert!(world.contains_resource::<LevelImportChannelRes>());
 
         // The Arc we passed in is the same one stored in the
@@ -694,14 +564,12 @@ mod tests {
         let mut world = build_world();
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
         install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(wf_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(li_rx)),
         );
 
@@ -709,14 +577,12 @@ mod tests {
         // no-op for already-installed resources.
         let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
-        let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
         install_async_channel_resources_arc(
             &mut world,
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(wf_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(li_rx2)),
         );
 
@@ -821,124 +687,6 @@ mod tests {
     }
 
     #[test]
-    fn waveform_handler_system_updates_current_app_timing_state() {
-        use crate::events::async_results::WaveformResultEvent;
-        let mut world = build_world();
-        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Level1".to_string());
-        world.write_message(WaveformResultEvent::from_result((
-            "audio.mp3".to_string(),
-            "Level1".to_string(),
-            WaveformLoadMessage::Started { window_size: 128 },
-        )));
-        world.write_message(WaveformResultEvent::from_result((
-            "audio.mp3".to_string(),
-            "Level1".to_string(),
-            WaveformLoadMessage::Chunk {
-                start_peak: 1,
-                peaks: vec![0.25, 0.75],
-                sample_rate: 44_100,
-                window_size: 128,
-            },
-        )));
-        world.write_message(WaveformResultEvent::from_result((
-            "audio.mp3".to_string(),
-            "Level1".to_string(),
-            WaveformLoadMessage::Finished {
-                sample_rate: 44_100,
-                window_size: 128,
-                total_peaks: 3,
-            },
-        )));
-
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
-        schedule.add_systems(waveform_handler_system);
-        schedule.run(&mut world);
-
-        let timing = &world.resource::<EditorTimingRes>().0;
-        assert_eq!(timing.waveform_samples, vec![0.0, 0.25, 0.75]);
-        assert_eq!(timing.waveform_sample_rate, 44_100);
-        assert_eq!(timing.waveform_window_size, 128);
-        assert!(!timing.waveform_loading);
-        assert!(timing.waveform_complete);
-    }
-
-    #[test]
-    fn waveform_channel_results_reach_timing_state_in_the_same_schedule() {
-        let mut world = build_world();
-        world.resource_mut::<SessionStateRes>().editor_level_name = Some("Level1".to_string());
-
-        let (sender, receiver) = mpsc::channel::<WaveformResult>();
-        world.insert_resource(WaveformLoadChannelRes(std::sync::Arc::new(Mutex::new(
-            receiver,
-        ))));
-        sender
-            .send((
-                "audio.mp3".to_string(),
-                "Level1".to_string(),
-                WaveformLoadMessage::Chunk {
-                    start_peak: 0,
-                    peaks: vec![0.2, 0.8],
-                    sample_rate: 44_100,
-                    window_size: 256,
-                },
-            ))
-            .expect("waveform channel remains connected");
-        sender
-            .send((
-                "audio.mp3".to_string(),
-                "Level1".to_string(),
-                WaveformLoadMessage::Finished {
-                    sample_rate: 44_100,
-                    window_size: 256,
-                    total_peaks: 2,
-                },
-            ))
-            .expect("waveform channel remains connected");
-
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
-        schedule.add_systems((poll_channels_system, waveform_handler_system).chain());
-        schedule.run(&mut world);
-
-        let timing = &world.resource::<EditorTimingRes>().0;
-        assert_eq!(timing.waveform_samples, vec![0.2, 0.8]);
-        assert_eq!(timing.waveform_sample_rate, 44_100);
-        assert!(timing.waveform_complete);
-        assert!(!timing.waveform_loading);
-    }
-
-    #[test]
-    fn waveform_handler_system_keeps_stale_results_out_of_app_timing_state() {
-        use crate::events::async_results::WaveformResultEvent;
-        let mut world = build_world();
-        world.resource_mut::<SessionStateRes>().editor_level_name =
-            Some("CurrentLevel".to_string());
-        {
-            let mut timing = world.resource_mut::<EditorTimingRes>();
-            timing.0.waveform_samples = vec![1.0];
-            timing.0.waveform_sample_rate = 22_050;
-            timing.0.waveform_complete = true;
-        }
-        world.write_message(WaveformResultEvent::from_result((
-            "audio.mp3".to_string(),
-            "OldLevel".to_string(),
-            WaveformLoadMessage::Finished {
-                sample_rate: 44_100,
-                window_size: 256,
-                total_peaks: 2,
-            },
-        )));
-
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
-        schedule.add_systems(waveform_handler_system);
-        schedule.run(&mut world);
-
-        let timing = &world.resource::<EditorTimingRes>().0;
-        assert_eq!(timing.waveform_samples, vec![1.0]);
-        assert_eq!(timing.waveform_sample_rate, 22_050);
-        assert!(timing.waveform_complete);
-    }
-
-    #[test]
     fn audio_import_handler_system_runs_with_cancellation() {
         // The audio-import handler should be a no-op when the
         // event's `bytes` is `None` (cancellation).
@@ -959,15 +707,9 @@ mod tests {
     }
 
     #[test]
-    fn audio_import_handler_system_resets_app_waveform_presentation() {
+    fn audio_import_handler_system_stages_custom_audio() {
         use crate::events::async_results::AudioImportResultEvent;
         let mut world = build_world();
-        {
-            let mut timing = world.resource_mut::<EditorTimingRes>();
-            timing.0.waveform_samples = vec![0.5];
-            timing.0.waveform_sample_rate = 44_100;
-            timing.0.waveform_complete = true;
-        }
         world.write_message(AudioImportResultEvent::new(
             "imported.mp3".to_string(),
             Some(vec![1, 2, 3, 4]),
@@ -976,13 +718,6 @@ mod tests {
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_import_handler_system);
         schedule.run(&mut world);
-
-        let timing = &world.resource::<EditorTimingRes>().0;
-        assert!(timing.waveform_samples.is_empty());
-        assert_eq!(timing.waveform_sample_rate, 0);
-        assert_eq!(timing.waveform_window_size, WAVEFORM_WINDOW);
-        assert!(timing.waveform_loading);
-        assert!(!timing.waveform_complete);
 
         assert_eq!(
             world

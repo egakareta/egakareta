@@ -15,12 +15,11 @@
 
 use std::sync::mpsc::{Receiver, Sender};
 
-use bevy_ecs::{prelude::Resource, world::World};
-use eg_platform::task::spawn_background;
+#[cfg(not(target_arch = "wasm32"))]
+use bevy_ecs::prelude::Resource;
+use bevy_ecs::world::World;
 use euphorium::{Output, SoundSource, Soundscape};
 use web_time::Duration;
-
-use super::EditorTimingState;
 
 // REFACTOR POINT(full-bevy): custom audio backend and channel resources become
 // Bevy audio resources and messages; direct platform polling goes away.
@@ -97,10 +96,6 @@ impl Default for AudioSceneRes {
         let _ = scene.set_volume(0.0);
         Self(scene)
     }
-}
-
-pub fn runtime_asset_source_key(level_name: &str, asset_path: &str) -> String {
-    format!("asset:{level_name}/{asset_path}")
 }
 
 fn host_label(backend: euphorium::Backend) -> String {
@@ -318,219 +313,19 @@ pub(crate) fn start_audio_source_at_seconds_for_resources(
     }
 }
 
-#[derive(Debug)]
-pub enum WaveformLoadMessage {
-    Started {
-        window_size: usize,
-    },
-    Chunk {
-        start_peak: usize,
-        peaks: Vec<f32>,
-        sample_rate: u32,
-        window_size: usize,
-    },
-    Finished {
-        sample_rate: u32,
-        window_size: usize,
-        total_peaks: usize,
-    },
-    Failed,
-}
-
-pub type WaveformResult = (String, String, WaveformLoadMessage);
-
-pub struct WaveformDecodeSummary {
-    pub sample_rate: u32,
-    pub peak_count: usize,
-}
-
-pub const WAVEFORM_WINDOW: usize = 256;
-const WAVEFORM_CHUNK_PEAKS: usize = 2048;
-
-pub fn decode_audio_to_waveform_streaming<F>(
-    bytes: &[u8],
-    window_size: usize,
-    chunk_peak_count: usize,
-    on_chunk: F,
-) -> Option<WaveformDecodeSummary>
-where
-    F: FnMut(usize, Vec<f32>, u32),
-{
-    euphorium::decode_audio_to_waveform_streaming(bytes, window_size, chunk_peak_count, on_chunk)
-        .ok()
-        .map(|summary| WaveformDecodeSummary {
-            sample_rate: summary.sample_rate,
-            peak_count: summary.peak_count,
-        })
-}
-
-#[cfg(test)]
-pub fn decode_audio_to_waveform(bytes: &[u8], window_size: usize) -> Option<(Vec<f32>, u32)> {
-    let mut peaks = Vec::new();
-    let summary =
-        decode_audio_to_waveform_streaming(bytes, window_size, usize::MAX, |_, chunk, _| {
-            peaks.extend(chunk);
-        })?;
-    Some((peaks, summary.sample_rate))
-}
-
-/// Minimal PCM WAV mono, 16-bit, 44.1kHz, one zero sample.
-/// Reserved for testing.
-#[cfg(test)]
-pub fn tiny_wav_bytes() -> Vec<u8> {
-    vec![
-        b'R', b'I', b'F', b'F', 38, 0, 0, 0, b'W', b'A', b'V', b'E', b'f', b'm', b't', b' ', 16, 0,
-        0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, b'd', b'a', b't', b'a', 2, 0,
-        0, 0, 0, 0,
-    ]
-}
-
-async fn load_level_audio_bytes(level_name: &str) -> Option<Vec<u8>> {
-    eg_level::get_builtin_audio(level_name).map(|bytes| bytes.to_vec())
-}
-
-fn decode_waveform_and_send(
-    source_for_send: String,
-    level_for_send: String,
-    bytes: Vec<u8>,
-    sender: Sender<WaveformResult>,
-) {
-    let _ = sender.send((
-        source_for_send.clone(),
-        level_for_send.clone(),
-        WaveformLoadMessage::Started {
-            window_size: WAVEFORM_WINDOW,
-        },
-    ));
-
-    let decoded = decode_audio_to_waveform_streaming(
-        &bytes,
-        WAVEFORM_WINDOW,
-        WAVEFORM_CHUNK_PEAKS,
-        |start_peak, peaks, sample_rate| {
-            let _ = sender.send((
-                source_for_send.clone(),
-                level_for_send.clone(),
-                WaveformLoadMessage::Chunk {
-                    start_peak,
-                    peaks,
-                    sample_rate,
-                    window_size: WAVEFORM_WINDOW,
-                },
-            ));
-        },
-    );
-
-    if let Some(summary) = decoded {
-        let _ = sender.send((
-            source_for_send,
-            level_for_send,
-            WaveformLoadMessage::Finished {
-                sample_rate: summary.sample_rate,
-                window_size: WAVEFORM_WINDOW,
-                total_peaks: summary.peak_count,
-            },
-        ));
-    } else {
-        let _ = sender.send((source_for_send, level_for_send, WaveformLoadMessage::Failed));
-    }
-}
-
-/// Starts asynchronous loading of waveform data for a music track.
-/// Native builds decode on Rayon; browser builds decode independently of the
-/// AudioWorklet-owned worker pool.
-///
-/// # Arguments
-/// * `level_name` - The level directory name containing the music file
-/// * `custom_bytes` - Optional custom audio bytes (e.g. freshly imported);
-///   falls back to the built-in track when absent
-/// * `sender` - Channel sender for the result
-pub fn start_waveform_loading(
-    level_name: String,
-    custom_bytes: Option<Vec<u8>>,
-    sender: Sender<WaveformResult>,
-) {
-    let source_for_send = "audio.mp3".to_string();
-    let level_for_send = level_name.clone();
-
-    spawn_background(async move {
-        let bytes = if let Some(bytes) = custom_bytes {
-            Some(bytes)
-        } else {
-            load_level_audio_bytes(&level_name).await
-        };
-
-        let Some(bytes) = bytes else {
-            let _ = sender.send((source_for_send, level_for_send, WaveformLoadMessage::Failed));
-            return;
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        rayon::spawn(move || {
-            decode_waveform_and_send(source_for_send, level_for_send, bytes, sender);
-        });
-
-        // AudioWorklet startup intentionally delays the Rayon worker pool. Do
-        // not make editor waveform loading depend on that pool: it is a
-        // presentation task and must still complete when browser threading is
-        // unavailable or the audio device has not yet been unlocked.
-        #[cfg(target_arch = "wasm32")]
-        decode_waveform_and_send(source_for_send, level_for_send, bytes, sender);
-    });
-}
-
 /// Receiver end of the audio-import channel. Production frames drain this
 /// through `StateSchedule`.
 pub type AudioImportChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<(String, Vec<u8>)>>>;
 
 pub(crate) type AudioImportChannel = (Sender<(String, Vec<u8>)>, AudioImportChannelReceiver);
 
-/// Receiver end of the waveform-load channel. Production frames drain this
-/// through `StateSchedule`.
-pub type WaveformLoadChannelReceiver = std::sync::Arc<std::sync::Mutex<Receiver<WaveformResult>>>;
-
-pub(crate) type WaveformLoadChannel = (Sender<WaveformResult>, WaveformLoadChannelReceiver);
-
-#[derive(Resource, Clone)]
-pub struct WaveformLoadSenderRes(pub Sender<WaveformResult>);
-
-impl Default for WaveformLoadSenderRes {
-    fn default() -> Self {
-        let (sender, _receiver) = std::sync::mpsc::channel();
-        Self(sender)
-    }
-}
-
-pub(crate) fn load_waveform_for_level_resources(
-    level_name: String,
-    custom_bytes: Option<Vec<u8>>,
-    timing: &mut EditorTimingState,
-    sender: Sender<WaveformResult>,
-) {
-    if timing.waveform_loading {
-        return;
-    }
-
-    timing.waveform_samples.clear();
-    timing.waveform_sample_rate = 0;
-    timing.waveform_window_size = WAVEFORM_WINDOW;
-    timing.waveform_loading = true;
-    timing.waveform_complete = false;
-
-    start_waveform_loading(level_name, custom_bytes, sender);
-}
-
 #[cfg(test)]
 mod tests {
-    use approx::assert_abs_diff_eq;
-
     use super::{
-        AppSound, AudioSceneRes, EditorTimingState, WaveformLoadMessage, available_host_labels,
-        canonical_backend_name, decode_audio_to_waveform, decode_audio_to_waveform_streaming,
-        decode_waveform_and_send, ensure_audio_output, load_waveform_for_level_resources,
-        music_is_playing, music_time_seconds, pause_music, play_sfx, resume_music,
-        set_preferred_backend_name, start_music_builtin, start_music_with_bytes, stop_music,
-        tiny_wav_bytes, warmup_music_builtin, warmup_music_with_bytes,
+        AppSound, AudioSceneRes, available_host_labels, canonical_backend_name,
+        ensure_audio_output, music_is_playing, music_time_seconds, pause_music, play_sfx,
+        resume_music, set_preferred_backend_name, start_music_builtin, start_music_with_bytes,
+        stop_music, warmup_music_builtin, warmup_music_with_bytes,
     };
 
     fn build_wav(sample_rate: u32, channels: u16, samples: &[i16]) -> Vec<u8> {
@@ -588,7 +383,8 @@ mod tests {
     #[test]
     fn warmup_never_starts_playback_or_opens_output() {
         let scene = AudioSceneRes::default();
-        warmup_music_with_bytes(&scene.0, &tiny_wav_bytes());
+        let wav = build_wav(44_100, 1, &[0]);
+        warmup_music_with_bytes(&scene.0, &wav);
         assert!(
             scene
                 .0
@@ -658,141 +454,5 @@ mod tests {
         assert!(!start_music_with_bytes(&scene.0, &[1, 2, 3], 0.0));
         assert!(!music_is_playing(&scene.0));
         assert_eq!(music_time_seconds(&scene.0), None);
-
-        assert!(start_music_with_bytes(&scene.0, &tiny_wav_bytes(), 0.0));
-        scene.0.sound(AppSound::Music).wait_until_end().unwrap();
-        assert!(!music_is_playing(&scene.0));
-        assert_eq!(music_time_seconds(&scene.0), None);
-        resume_music(&scene.0);
-        assert!(!music_is_playing(&scene.0));
-    }
-
-    #[test]
-    fn waveform_preserves_stereo_peaks_and_partial_windows() {
-        let wav = build_wav(8000, 2, &[8192, -16384, 4096, 8192, -24576, 16384]);
-        let mut chunks = Vec::new();
-        let summary = decode_audio_to_waveform_streaming(&wav, 2, 1, |start, peaks, rate| {
-            assert_eq!(rate, 8000);
-            chunks.push((start, peaks));
-        })
-        .unwrap();
-        assert_eq!(summary.peak_count, 2);
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].0, 0);
-        assert_eq!(chunks[1].0, 1);
-        assert_abs_diff_eq!(chunks[0].1[0], 0.5, epsilon = 1e-6);
-        assert_abs_diff_eq!(chunks[1].1[0], 0.75, epsilon = 1e-6);
-    }
-
-    #[test]
-    fn streaming_decoder_reports_chunks_from_peak_accumulation() {
-        let wav = build_wav(44100, 1, &[8192; 132300]);
-        let mut chunks = Vec::new();
-        let summary = decode_audio_to_waveform_streaming(&wav, 256, 32, |start, peaks, _| {
-            chunks.push((start, peaks));
-        })
-        .unwrap();
-        assert_eq!(summary.sample_rate, 44100);
-        assert_eq!(summary.peak_count, 132300usize.div_ceil(256));
-        assert_eq!(chunks[0].0, 0);
-        for window in chunks.windows(2) {
-            assert_eq!(window[0].0 + window[0].1.len(), window[1].0);
-        }
-        assert!(chunks.iter().all(|(_, peaks)| peaks.len() <= 32));
-        let collected = decode_audio_to_waveform(&wav, 256).unwrap();
-        assert_eq!(
-            collected.0,
-            chunks
-                .into_iter()
-                .flat_map(|(_, peaks)| peaks)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn builtin_mp3_waveform_contains_audio() {
-        let bytes = eg_level::get_builtin_audio("Flowerfield").unwrap();
-        let (peaks, sample_rate) = decode_audio_to_waveform(bytes, 256).unwrap();
-        assert!(sample_rate > 0);
-        assert!(peaks.len() > sample_rate as usize / 256);
-        assert!(peaks.iter().all(|peak| peak.is_finite()));
-        assert!(peaks.iter().any(|peak| *peak > 0.01));
-    }
-
-    #[test]
-    fn waveform_rejects_invalid_bytes_and_handles_zero_chunk_settings() {
-        assert!(decode_audio_to_waveform(&[1, 2, 3], 256).is_none());
-        let summary =
-            decode_audio_to_waveform_streaming(&tiny_wav_bytes(), 0, 0, |_, _, _| {}).unwrap();
-        assert_eq!(summary.peak_count, 1);
-    }
-
-    #[test]
-    fn waveform_decode_task_always_emits_a_terminal_message() {
-        use std::sync::mpsc;
-
-        use web_time::Duration;
-
-        let (sender, receiver) = mpsc::channel();
-        decode_waveform_and_send(
-            "audio.mp3".to_string(),
-            "Regression".to_string(),
-            tiny_wav_bytes(),
-            sender,
-        );
-
-        assert!(matches!(
-            receiver
-                .recv_timeout(Duration::from_secs(1))
-                .expect("decoder emits its start message")
-                .2,
-            WaveformLoadMessage::Started { .. }
-        ));
-
-        let mut terminal = None;
-        while let Ok((_, _, message)) = receiver.recv_timeout(Duration::from_secs(1)) {
-            if matches!(
-                message,
-                WaveformLoadMessage::Finished { .. } | WaveformLoadMessage::Failed
-            ) {
-                terminal = Some(message);
-                break;
-            }
-        }
-        assert!(matches!(
-            terminal,
-            Some(WaveformLoadMessage::Finished { .. })
-        ));
-    }
-
-    #[test]
-    fn waveform_load_marks_loading_and_short_circuits_inflight_requests() {
-        let mut timing = EditorTimingState {
-            waveform_samples: vec![1.0, 2.0],
-            waveform_sample_rate: 11_025,
-            ..EditorTimingState::default()
-        };
-
-        load_waveform_for_level_resources(
-            "Test Level".to_string(),
-            None,
-            &mut timing,
-            std::sync::mpsc::channel().0,
-        );
-
-        assert!(timing.waveform_samples.is_empty());
-        assert_eq!(timing.waveform_sample_rate, 0);
-        assert!(timing.waveform_loading);
-        assert!(!timing.waveform_complete);
-
-        // A second request while loading is in flight leaves timing alone.
-        timing.waveform_samples = vec![7.0];
-        load_waveform_for_level_resources(
-            "Test Level".to_string(),
-            None,
-            &mut timing,
-            std::sync::mpsc::channel().0,
-        );
-        assert_eq!(timing.waveform_samples, vec![7.0]);
     }
 }

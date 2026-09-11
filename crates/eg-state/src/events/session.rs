@@ -38,15 +38,14 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::State;
 use eg_types::{
-    AppPhase, AppSettings, BasicLevelMetadata, EditorMode, EditorStateParams,
-    LevelPreviewCameraMetadata, MusicMetadata, SettingsSection,
+    AppPhase, AppSettings, BasicLevelMetadata, EditorStateParams, LevelPreviewCameraMetadata,
+    MusicMetadata, SettingsSection,
 };
 
 use crate::state::{
-    AudioImportSenderRes, AudioSceneParam, BuiltinLevelCatalogRes, EditorCameraRes, EditorInputRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, LevelExportServiceRes,
-    LevelImportSenderRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
-    load_waveform_for_level_resources, set_preferred_backend_name,
+    AudioImportSenderRes, AudioSceneParam, BuiltinLevelCatalogRes, EditorCameraRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
+    SessionStateRes, apply_imported_level_to_world, set_preferred_backend_name,
 };
 
 /// Load a level from a builtin resource name.
@@ -193,21 +192,7 @@ pub fn handle_load_level(world: &mut World) {
             session.editor_custom_audio_bytes = None;
             session.audio_stop_pending = true;
         }
-
-        if world.resource::<EditorInputRes>().0.mode == EditorMode::Timing {
-            load_waveform_for_level(world, event.0);
-        }
     }
-}
-
-fn load_waveform_for_level(world: &mut World, level_name: String) {
-    let custom_bytes = world
-        .resource::<SessionStateRes>()
-        .editor_custom_audio_bytes
-        .clone();
-    let sender = world.resource::<WaveformLoadSenderRes>().0.clone();
-    let mut timing = world.resource_mut::<EditorTimingRes>();
-    load_waveform_for_level_resources(level_name, custom_bytes, &mut timing.0, sender);
 }
 
 pub fn handle_rename_level(

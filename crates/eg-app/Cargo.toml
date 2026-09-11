@@ -39,6 +39,7 @@ log = { workspace = true }
 egui = { workspace = true }
 egui-wgpu = { workspace = true }
 egui-phosphor = { workspace = true }
+euphorium = { workspace = true }
 tokio = { workspace = true }
 puffin = { workspace = true }
 winit = { workspace = true }

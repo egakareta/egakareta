@@ -24,9 +24,8 @@ use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use super::{
-    AudioImportChannel, AudioSceneRes, AuthStateRes, EditorConfigState, WaveformLoadChannel,
-    WaveformResult, available_host_labels, canonical_backend_name,
-    editor_objects::replace_editor_objects, runtime::EditorRuntimeState,
+    AudioImportChannel, AudioSceneRes, AuthStateRes, EditorConfigState, available_host_labels,
+    canonical_backend_name, editor_objects::replace_editor_objects, runtime::EditorRuntimeState,
     set_preferred_backend_name,
 };
 
@@ -239,7 +238,6 @@ struct AppInitialization {
     editor_history: super::EditorHistoryState,
     audio_runtime: AudioSceneRes,
     audio_import_channel: AudioImportChannel,
-    waveform_load_channel: WaveformLoadChannel,
     session: super::SessionStateRes,
     level_import_channel: (
         std::sync::mpsc::Sender<Vec<u8>>,
@@ -325,7 +323,6 @@ impl AppBootstrap {
             editor_history,
             audio_runtime,
             audio_import_channel,
-            waveform_load_channel,
             session,
             level_import_channel,
             menu,
@@ -337,7 +334,6 @@ impl AppBootstrap {
             world,
             std::sync::Arc::clone(&auth_receiver),
             std::sync::Arc::clone(&audio_import_channel.1),
-            std::sync::Arc::clone(&waveform_load_channel.1),
             std::sync::Arc::clone(&level_import_channel.1),
         );
         world.insert_resource(super::LevelImportSenderRes::new(
@@ -350,10 +346,6 @@ impl AppBootstrap {
         world.insert_resource(audio_runtime);
         #[cfg(target_arch = "wasm32")]
         world.insert_non_send(audio_runtime);
-        world.insert_resource(super::WaveformLoadSenderRes(
-            waveform_load_channel.0.clone(),
-        ));
-
         let (render_gpu, render_meshes, render_surface_host) = render_resources.into_parts();
         world.insert_resource(super::RenderConfigRes::from_gpu(&render_gpu));
         world.insert_non_send(super::RenderUniformUploadRes::from_gpu(&render_gpu));
@@ -1158,9 +1150,6 @@ impl AppInitialization {
         let (audio_import_sender, audio_import_receiver) =
             std::sync::mpsc::channel::<(String, Vec<u8>)>();
         let audio_import_channel = (audio_import_sender, shared_receiver(audio_import_receiver));
-        let (waveform_sender, waveform_receiver) = std::sync::mpsc::channel::<WaveformResult>();
-        let waveform_load_channel = (waveform_sender, shared_receiver(waveform_receiver));
-
         let (auth_sender, auth_receiver) = std::sync::mpsc::channel();
         let auth_receiver = std::sync::Arc::new(std::sync::Mutex::new(auth_receiver));
         let (level_import_sender, level_import_receiver) = std::sync::mpsc::channel();
@@ -1248,7 +1237,6 @@ impl AppInitialization {
             menu,
             audio_runtime,
             audio_import_channel,
-            waveform_load_channel,
             session: super::SessionStateRes {
                 editor_level_name: None,
                 editor_music_metadata: MusicMetadata {

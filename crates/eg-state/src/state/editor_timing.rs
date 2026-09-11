@@ -9,8 +9,6 @@
 use eg_types::TimingPoint;
 use smart_default::SmartDefault;
 
-use super::audio_state::WAVEFORM_WINDOW;
-
 #[derive(SmartDefault, Clone)]
 pub struct EditorTimingState {
     pub timing_points: Vec<TimingPoint>,
@@ -18,12 +16,6 @@ pub struct EditorTimingState {
     pub revision: u64,
     #[default = 1.0]
     pub playback_speed: f32,
-    pub waveform_samples: Vec<f32>,
-    pub waveform_sample_rate: u32,
-    #[default(WAVEFORM_WINDOW)]
-    pub waveform_window_size: usize,
-    pub waveform_loading: bool,
-    pub waveform_complete: bool,
     pub timing_selected_index: Option<usize>,
     #[default = 1.0]
     pub waveform_zoom: f32,

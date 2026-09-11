@@ -7,6 +7,7 @@
 */
 use eg_state::{commands::AppCommand, state::editor_command::EditorCommand};
 use eg_types::{AppSettings, EditorMode};
+use euphorium::WaveformView;
 
 use crate::UiCommandSink;
 
@@ -39,11 +40,6 @@ pub(crate) struct WaveformPanelInputs<'a> {
     pub timeline_duration_seconds: f32,
     pub timing_points: &'a [eg_types::TimingPoint],
     pub waveform_zoom: f32,
-    pub waveform_samples: &'a [f32],
-    pub waveform_sample_rate: u32,
-    pub waveform_window_size: usize,
-    pub waveform_loading: bool,
-    pub waveform_complete: bool,
 }
 
 pub(crate) fn show_shadowed_label(
@@ -78,6 +74,15 @@ fn timeline_visible_duration(duration_seconds: f32, zoom: f32) -> f32 {
     let duration = duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
     let zoom = zoom.clamp(0.1, 10.0);
     (DEFAULT_TIMELINE_WINDOW_SECONDS / zoom).clamp(MIN_TIMELINE_DURATION_SECONDS, duration)
+}
+
+fn centered_waveform_range(
+    timeline_time_seconds: f32,
+    visible_duration_seconds: f32,
+) -> std::ops::Range<f64> {
+    let visible_duration = f64::from(visible_duration_seconds);
+    let view_start = f64::from(timeline_time_seconds) - visible_duration * 0.5;
+    view_start..view_start + visible_duration
 }
 
 pub(crate) fn timeline_metrics(duration_seconds: f32) -> f32 {
@@ -536,20 +541,15 @@ pub(crate) fn show_timeline_bar(
 pub(crate) fn show_waveform_panel(
     ui: &mut egui::Ui,
     inputs: &WaveformPanelInputs<'_>,
+    waveform_view: &mut WaveformView,
     commands: &mut impl UiCommandSink,
 ) {
     let timeline_time_seconds = inputs.timeline_time_seconds;
     let timeline_duration_seconds = inputs.timeline_duration_seconds;
     let timing_points = inputs.timing_points;
     let waveform_zoom = inputs.waveform_zoom;
-    let waveform_samples = inputs.waveform_samples;
-    let waveform_sample_rate = inputs.waveform_sample_rate;
-    let waveform_window_size = inputs.waveform_window_size;
-    let waveform_loading = inputs.waveform_loading;
-    let waveform_complete = inputs.waveform_complete;
     puffin::profile_scope!("UiWaveformPanel");
     let duration_seconds = timeline_duration_seconds.max(MIN_TIMELINE_DURATION_SECONDS);
-    let sample_rate = waveform_sample_rate;
     let zoom = waveform_zoom;
 
     let available_size = ui.available_size();
@@ -559,64 +559,79 @@ pub(crate) fn show_waveform_panel(
     // Background
     painter.rect_filled(rect, 0.0, egui::Color32::from_rgb(15, 20, 28));
 
-    // Visible time window (centered on playhead to prevent drift)
-    let visible_duration = timeline_visible_duration(duration_seconds, zoom);
-    let view_start = timeline_time_seconds - visible_duration * 0.5;
-    let view_end = view_start + visible_duration;
+    // Euphorium owns incremental decoding and multiresolution peaks. Keep the
+    // viewport centered on the playhead, including at the track boundaries,
+    // to preserve the editor's fixed-cursor behavior.
+    let requested_visible_duration = timeline_visible_duration(duration_seconds, zoom);
+    waveform_view.set_visible_secs(requested_visible_duration as f64);
+    let poll = waveform_view
+        .poll_visible(timeline_time_seconds as f64)
+        .ok();
+    if poll.as_ref().is_some_and(|poll| !poll.finished) {
+        ui.ctx().request_repaint();
+    }
+    let visible = centered_waveform_range(timeline_time_seconds, requested_visible_duration);
+    let visible_duration = (visible.end - visible.start).max(f64::EPSILON) as f32;
+    let view_start = visible.start as f32;
+    let view_end = visible.end as f32;
 
-    if !waveform_samples.is_empty() && sample_rate > 0 {
-        puffin::profile_scope!("UiWaveformDrawSamples");
-        // Waveform drawing
-        let waveform_window = waveform_window_size.max(1);
-        let samples_per_second = sample_rate as f32 / waveform_window as f32;
-        let pixels_per_second = rect.width() / visible_duration;
+    if waveform_view.is_available() {
+        puffin::profile_scope!("UiWaveformDrawPeaks");
+        let max_peaks = (rect.width().ceil() as usize).saturating_mul(2).max(1);
+        let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 255);
+        let waveform_color_past = egui::Color32::from_rgba_premultiplied(80, 140, 235, 255);
+        let center_y = rect.center().y;
+        let half_height = rect.height() * 0.4;
+        let mut drew_peak = false;
 
-        let start_sample = (view_start * samples_per_second).floor().max(0.0) as usize;
-        let end_sample = (view_end * samples_per_second).ceil().max(0.0) as usize;
-        let end_sample = end_sample.min(waveform_samples.len());
-
-        if end_sample > start_sample {
-            let waveform_color = egui::Color32::from_rgba_premultiplied(100, 160, 255, 255);
-            let waveform_color_past = egui::Color32::from_rgba_premultiplied(80, 140, 235, 255);
-            let center_y = rect.center().y;
-            let half_height = rect.height() * 0.4;
-
-            let pixel_per_sample = pixels_per_second / samples_per_second;
-
-            for (idx, &amplitude) in waveform_samples[start_sample..end_sample]
-                .iter()
-                .enumerate()
-            {
-                let sample_idx = start_sample + idx;
-                let sample_time = sample_idx as f32 / samples_per_second;
-                let x = rect.left() + (sample_time - view_start) * pixels_per_second;
-
-                let amplitude = amplitude.clamp(0.0, 1.0);
-                let bar_height = amplitude * half_height;
-
-                if bar_height > 0.5 {
-                    let color = if sample_time > duration_seconds {
-                        waveform_color_past
-                    } else {
-                        waveform_color
-                    };
-                    painter.line_segment(
-                        [
-                            egui::pos2(x, center_y - bar_height),
-                            egui::pos2(x, center_y + bar_height),
-                        ],
-                        egui::Stroke::new(pixel_per_sample.max(1.0), color),
-                    );
+        if let Some(slice) = waveform_view.slice(visible.clone(), max_peaks) {
+            for (index, peak) in slice.peaks().iter().enumerate() {
+                if !peak.is_available() {
+                    continue;
                 }
+                let Some(peak_range) = slice.peak_range(index) else {
+                    continue;
+                };
+                let start_time = peak_range.start.as_secs_f64();
+                let end_time = peak_range.end.as_secs_f64();
+                let x = rect.left()
+                    + ((start_time + end_time) * 0.5 - visible.start) as f32 / visible_duration
+                        * rect.width();
+                let y_top = center_y - peak.max.clamp(-1.0, 1.0) * half_height;
+                let y_bottom = center_y - peak.min.clamp(-1.0, 1.0) * half_height;
+                let pixel_width = ((end_time - start_time) / f64::from(visible_duration)
+                    * f64::from(rect.width()))
+                .max(1.0) as f32;
+                let color = if end_time <= f64::from(timeline_time_seconds) {
+                    waveform_color_past
+                } else {
+                    waveform_color
+                };
+                painter.line_segment(
+                    [egui::pos2(x, y_top), egui::pos2(x, y_bottom)],
+                    egui::Stroke::new(pixel_width, color),
+                );
+                drew_peak = true;
             }
         }
+        if !drew_peak {
+            painter.text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if waveform_view.is_finished() {
+                    "Waveform decoded with no visible peaks."
+                } else {
+                    "Loading waveform..."
+                },
+                egui::FontId::proportional(16.0),
+                egui::Color32::from_gray(120),
+            );
+        }
     } else {
-        let message = if waveform_loading {
-            "Loading waveform..."
-        } else if waveform_complete {
-            "Waveform decoded with no visible peaks."
-        } else {
+        let message = if waveform_view.is_finished() {
             "No waveform data. Import audio to view waveform."
+        } else {
+            "Loading waveform..."
         };
         painter.text(
             rect.center(),
@@ -793,6 +808,27 @@ mod tests {
         view
     }
 
+    fn mono_wav_bytes(sample_rate: u32, samples: &[i16]) -> Vec<u8> {
+        let data_bytes = samples.len() as u32 * 2;
+        let mut wav = Vec::with_capacity(44 + data_bytes as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_bytes.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        wav
+    }
+
     #[test]
     fn test_timeline_visible_duration() {
         // Default zoom 1.0 should give default window
@@ -817,6 +853,20 @@ mod tests {
             2.0,
             epsilon = 0.001
         );
+    }
+
+    #[test]
+    fn waveform_range_keeps_playhead_centered_at_track_boundaries() {
+        for timeline_time_seconds in [0.0, 30.0, 60.0] {
+            let range = centered_waveform_range(timeline_time_seconds, 20.0);
+            let center = (range.start + range.end) * 0.5;
+            assert!((center - f64::from(timeline_time_seconds)).abs() < 1e-9);
+        }
+
+        let start_range = centered_waveform_range(0.0, 20.0);
+        let end_range = centered_waveform_range(60.0, 20.0);
+        assert!(start_range.start < 0.0);
+        assert!(end_range.end > 60.0);
     }
 
     #[test]
@@ -1228,12 +1278,8 @@ mod tests {
                         timeline_duration_seconds: view.timeline_duration_seconds,
                         timing_points: &view.timing_points,
                         waveform_zoom: view.waveform_zoom,
-                        waveform_samples: &view.waveform_samples,
-                        waveform_sample_rate: view.waveform_sample_rate,
-                        waveform_window_size: view.waveform_window_size,
-                        waveform_loading: view.waveform_loading,
-                        waveform_complete: view.waveform_complete,
                     },
+                    &mut euphorium::WaveformView::new(),
                     &mut commands,
                 );
             });
@@ -1266,19 +1312,13 @@ mod tests {
                 time_signature_denominator: 4,
             },
         ];
-        let waveform_samples: Vec<f32> = (0..4096)
-            .map(|idx| {
-                let phase = idx as f32 * 0.01;
-                ((phase.sin() + 1.0) * 0.5).clamp(0.0, 1.0)
-            })
-            .collect();
         let view = make_view(
             &app_settings,
             &music_metadata,
             &timing_points,
             &[],
             &[],
-            &waveform_samples,
+            &[],
             TimelineViewOptions {
                 timeline_time_seconds: 10.0,
                 timeline_duration_seconds: 60.0,
@@ -1290,6 +1330,10 @@ mod tests {
         );
 
         let mut commands = Vec::<AppCommand>::new();
+        let mut waveform_view = euphorium::WaveformView::new();
+        waveform_view
+            .set_shared_bytes(mono_wav_bytes(8_000, &[16_384; 8_000]))
+            .expect("test WAV should load");
         let ctx = egui::Context::default();
         let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show(root_ui, |ui| {
@@ -1300,12 +1344,8 @@ mod tests {
                         timeline_duration_seconds: view.timeline_duration_seconds,
                         timing_points: &view.timing_points,
                         waveform_zoom: view.waveform_zoom,
-                        waveform_samples: &view.waveform_samples,
-                        waveform_sample_rate: view.waveform_sample_rate,
-                        waveform_window_size: view.waveform_window_size,
-                        waveform_loading: view.waveform_loading,
-                        waveform_complete: view.waveform_complete,
                     },
+                    &mut waveform_view,
                     &mut commands,
                 );
             });

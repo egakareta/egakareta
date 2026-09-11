@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Platform services and background tasks write five `mpsc` channels
+//! Platform services and background tasks write three `mpsc` channels
 //! (auth service, audio service, level importer). App-owned `StateSchedule`
 //! drains those channels and emits typed result messages into the World.
 //!
@@ -24,8 +24,6 @@
 //!   receiver (which is `!Sync`).
 
 use bevy_ecs::prelude::*;
-
-use crate::state::{WaveformLoadMessage, WaveformResult};
 
 /// Result of an async auth service call.
 #[allow(dead_code)]
@@ -56,33 +54,6 @@ impl AudioImportResultEvent {
     /// Construct a new event.
     pub fn new(filename: String, bytes: Option<Vec<u8>>) -> Self {
         Self { filename, bytes }
-    }
-}
-
-/// Result of an async waveform-load request.
-///
-/// Note: `WaveformLoadMessage` does not implement `Clone`, so this
-/// event is **not** `Clone` - it's moved into the `Messages<>` buffer
-/// by the poll system and consumed once by the handler system.
-#[allow(dead_code)]
-#[derive(Message, Debug)]
-pub struct WaveformResultEvent {
-    /// Source identifier.
-    pub source: String,
-    /// Level name.
-    pub level_name: String,
-    /// The waveform load message.
-    pub message: WaveformLoadMessage,
-}
-
-impl WaveformResultEvent {
-    /// Construct from a WaveformResult (consumes the result).
-    pub fn from_result(result: WaveformResult) -> Self {
-        Self {
-            source: result.0,
-            level_name: result.1,
-            message: result.2,
-        }
     }
 }
 
@@ -140,21 +111,6 @@ mod tests {
     fn audio_import_result_event_supports_cancellation() {
         let event = AudioImportResultEvent::new("level1.ogg".to_string(), None);
         assert!(event.bytes.is_none());
-    }
-
-    #[test]
-    fn waveform_result_event_from_result_preserves_payload() {
-        use crate::state::WaveformLoadMessage;
-
-        let result: WaveformResult = (
-            "audio.mp3".to_string(),
-            "Level1".to_string(),
-            WaveformLoadMessage::Failed,
-        );
-        let event = WaveformResultEvent::from_result(result);
-        assert_eq!(event.source, "audio.mp3");
-        assert_eq!(event.level_name, "Level1");
-        assert!(matches!(event.message, WaveformLoadMessage::Failed));
     }
 
     #[test]
