@@ -157,13 +157,18 @@ async function createDist() {
     // Remove old pkg folder if it exists, then move the new one from target
     try {
         fs.rmSync(path.join(distPath, "pkg"), { recursive: true, force: true });
-    } catch (err) {}
+    } catch (err) {
+        console.warn(`Failed to remove old pkg folder: ${err}`);
+    }
     try {
         fs.renameSync(
             path.join(rootDir, "target", "pkg"),
             path.join(distPath, "pkg"),
         );
-    } catch (err) {}
+    } catch (err) {
+        console.error(`Failed to move pkg folder: ${err}`);
+        return;
+    }
 
     // Copy assets folder to dist
     const assetsSrcPath = path.join(rootDir, "assets");
