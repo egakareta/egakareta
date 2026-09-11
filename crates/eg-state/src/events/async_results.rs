@@ -24,7 +24,8 @@
 //!   receiver (which is `!Sync`).
 
 use bevy_ecs::prelude::*;
-use eg_audio::service::{AudioPreloadResult, WaveformResult};
+
+use crate::state::{WaveformLoadMessage, WaveformResult};
 
 /// Result of an async auth service call.
 #[allow(dead_code)]
@@ -71,7 +72,7 @@ pub struct WaveformResultEvent {
     /// Level name.
     pub level_name: String,
     /// The waveform load message.
-    pub message: eg_audio::service::WaveformLoadMessage,
+    pub message: WaveformLoadMessage,
 }
 
 impl WaveformResultEvent {
@@ -81,26 +82,6 @@ impl WaveformResultEvent {
             source: result.0,
             level_name: result.1,
             message: result.2,
-        }
-    }
-}
-
-/// Result of an async audio preload request.
-#[allow(dead_code)]
-#[derive(Message, Debug, Clone)]
-pub struct AudioPreloadResultEvent {
-    /// Source key.
-    pub source_key: String,
-    /// Preloaded bytes on success.
-    pub bytes: Option<Vec<u8>>,
-}
-
-impl AudioPreloadResultEvent {
-    /// Construct from an AudioPreloadResult.
-    pub fn from_result(result: &AudioPreloadResult) -> Self {
-        Self {
-            source_key: result.0.clone(),
-            bytes: result.1.clone(),
         }
     }
 }
@@ -163,33 +144,17 @@ mod tests {
 
     #[test]
     fn waveform_result_event_from_result_preserves_payload() {
+        use crate::state::WaveformLoadMessage;
+
         let result: WaveformResult = (
             "audio.mp3".to_string(),
             "Level1".to_string(),
-            eg_audio::service::WaveformLoadMessage::Failed { bytes: None },
+            WaveformLoadMessage::Failed,
         );
         let event = WaveformResultEvent::from_result(result);
         assert_eq!(event.source, "audio.mp3");
         assert_eq!(event.level_name, "Level1");
-        assert!(matches!(
-            event.message,
-            eg_audio::service::WaveformLoadMessage::Failed { .. }
-        ));
-    }
-
-    #[test]
-    fn audio_preload_result_event_from_result_preserves_payload() {
-        let result: AudioPreloadResult = ("Level1:audio.mp3".to_string(), Some(vec![9, 9, 9]));
-        let event = AudioPreloadResultEvent::from_result(&result);
-        assert_eq!(event.source_key, "Level1:audio.mp3");
-        assert_eq!(event.bytes, Some(vec![9, 9, 9]));
-    }
-
-    #[test]
-    fn audio_preload_result_event_supports_failure() {
-        let result: AudioPreloadResult = ("Level1:audio.mp3".to_string(), None);
-        let event = AudioPreloadResultEvent::from_result(&result);
-        assert!(event.bytes.is_none());
+        assert!(matches!(event.message, WaveformLoadMessage::Failed));
     }
 
     #[test]

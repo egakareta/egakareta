@@ -23,7 +23,6 @@
 use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::{NextState, State};
-use eg_audio::audio::runtime_asset_source_key;
 use eg_blocks::BlockDefinition;
 use eg_editor_domain::create_block_at_cursor;
 use eg_game::{
@@ -34,12 +33,12 @@ use eg_game::{
 use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
 use crate::state::{
-    AudioBackendRes, BuiltinLevelCatalogRes, EditorAudioCacheRes, EditorAuthoredObject,
-    EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectOrder,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    GameplayResetRes, GameplayResetSeed, MenuStateRes, PracticeCheckpoint, RuntimeAudioPreloadRes,
-    RuntimeAudioPreloadSenderRes, SessionStateRes, apply_imported_level_to_world,
-    collect_editor_object_data, replace_editor_objects_commands, with_audio_backend,
+    AudioSceneRes, BuiltinLevelCatalogRes, EditorAuthoredObject, EditorConfigRes, EditorHistoryRes,
+    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, GameplayResetRes, GameplayResetSeed,
+    MenuStateRes, PracticeCheckpoint, SessionStateRes, apply_imported_level_to_world,
+    collect_editor_object_data, replace_editor_objects_commands, start_music_builtin,
+    start_music_with_bytes, stop_music, warmup_music_builtin, with_audio_scene,
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -178,12 +177,9 @@ pub struct TurnRightResources<'w, 's> {
     catalog: Res<'w, BuiltinLevelCatalogRes>,
     gameplay_reset: ResMut<'w, GameplayResetRes>,
     #[cfg(not(target_arch = "wasm32"))]
-    audio: Res<'w, AudioBackendRes>,
+    audio: Res<'w, AudioSceneRes>,
     #[cfg(target_arch = "wasm32")]
-    audio: NonSend<'w, AudioBackendRes>,
-    editor_audio: Res<'w, EditorAudioCacheRes>,
-    runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
-    runtime_preload_sender: Res<'w, RuntimeAudioPreloadSenderRes>,
+    audio: NonSend<'w, AudioSceneRes>,
     clock: ResMut<'w, GameClock>,
     level_meta: ResMut<'w, LevelMeta>,
     pending_turns: ResMut<'w, PendingTurnInputs>,
@@ -224,40 +220,28 @@ fn start_gameplay_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
     let start_seconds = resources.clock.elapsed_seconds;
     resources.clock.started = true;
 
-    let (level_name, start_seconds, use_editor_audio) = if resources.session.playtesting_editor {
-        (
-            resources
-                .session
-                .editor_level_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string()),
-            resources
-                .session
-                .playtest_audio_start_seconds
-                .unwrap_or(start_seconds),
-            true,
-        )
-    } else if let Some(level_name) = resources.session.playing_level_name.clone() {
-        (level_name, start_seconds, false)
-    } else {
+    if resources.session.playtesting_editor {
+        let level_name = resources
+            .session
+            .editor_level_name
+            .clone()
+            .unwrap_or_else(|| "Untitled".to_string());
+        let start_seconds = resources
+            .session
+            .playtest_audio_start_seconds
+            .unwrap_or(start_seconds);
+        if let Some(bytes) = resources.session.editor_custom_audio_bytes.clone() {
+            start_music_with_bytes(&resources.audio.0, &bytes, start_seconds);
+        } else {
+            start_music_builtin(&resources.audio.0, &level_name, start_seconds);
+        }
+        return;
+    }
+
+    let Some(level_name) = resources.session.playing_level_name.clone() else {
         return;
     };
-
-    if use_editor_audio
-        && let Some(bytes) = resources.editor_audio.bytes_for_level_audio(&level_name)
-    {
-        resources.audio.start_with_bytes_at(&bytes, start_seconds);
-        return;
-    }
-
-    let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
-    if let Some(bytes) = resources.runtime_preload.bytes(&source_key) {
-        resources
-            .audio
-            .start_preloaded_asset_at(&level_name, &bytes, start_seconds);
-    } else {
-        resources.audio.start_at(&level_name, start_seconds);
-    }
+    start_music_builtin(&resources.audio.0, &level_name, start_seconds);
 }
 
 fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_, '_>) -> bool {
@@ -266,7 +250,7 @@ fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_, '_>) 
     };
 
     let gameplay = checkpoint.gameplay;
-    resources.audio.stop();
+    stop_music(&resources.audio.0);
     resources.pending_turns.taps.clear();
     resources.session.playing_trigger_base_objects = checkpoint.trigger_base_objects;
     resources
@@ -287,7 +271,7 @@ fn respawn_from_practice_checkpoint(resources: &mut TurnRightResources<'_, '_>) 
 }
 
 fn restart_practice_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
-    resources.audio.stop();
+    stop_music(&resources.audio.0);
     resources.pending_turns.taps.clear();
     resources.session.practice_checkpoints.clear();
     resources
@@ -338,12 +322,7 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
 
     resources.objects.objects = objects.clone();
     resources.trigger.0.selected_index = None;
-    queue_runtime_audio_preload(
-        &resources.runtime_preload,
-        &resources.runtime_preload_sender,
-        &level_name,
-    );
-    resources.audio.warmup_at(&level_name, 0.0);
+    warmup_music_builtin(&resources.audio.0, &level_name);
     resources
         .gameplay_reset
         .request_with_seed(GameplayResetSeed {
@@ -358,24 +337,6 @@ fn start_gameplay_from_menu(resources: &mut TurnRightResources<'_, '_>) {
             progress: None,
             preserve_practice_state: false,
         });
-}
-
-fn queue_runtime_audio_preload(
-    cache: &RuntimeAudioPreloadRes,
-    sender: &RuntimeAudioPreloadSenderRes,
-    level_name: &str,
-) {
-    let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-    if cache.contains_preloaded(&source_key) || cache.contains_preloading(&source_key) {
-        return;
-    }
-    cache.mark_preloading(source_key.clone());
-
-    #[cfg(test)]
-    let _ = sender;
-
-    #[cfg(not(test))]
-    eg_audio::service::start_audio_preload(source_key, level_name.to_owned(), sender.0.clone());
 }
 
 fn place_editor_block_from_turn_right(resources: &mut TurnRightResources<'_, '_>) {
@@ -588,27 +549,7 @@ fn enter_editor_from_menu(world: &mut World) {
         menu.0.preview_level_index = None;
     }
 
-    preload_editor_audio(world, &level_name);
-    with_audio_backend(world, |audio| audio.warmup_at(&level_name, 0.0));
-}
-
-fn preload_editor_audio(world: &World, level_name: &str) {
-    let source_key = runtime_asset_source_key(level_name, "audio.mp3");
-    let cache = world.resource::<RuntimeAudioPreloadRes>().clone();
-    if cache.contains_preloaded(&source_key) || cache.contains_preloading(&source_key) {
-        return;
-    }
-    cache.mark_preloading(source_key.clone());
-
-    #[cfg(not(test))]
-    eg_audio::service::start_audio_preload(
-        source_key,
-        level_name.to_owned(),
-        world
-            .resource::<crate::state::RuntimeAudioPreloadSenderRes>()
-            .0
-            .clone(),
-    );
+    with_audio_scene(world, |audio| warmup_music_builtin(&audio.0, &level_name));
 }
 
 pub fn handle_game_resume(

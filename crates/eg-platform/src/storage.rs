@@ -5,13 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use std::collections::HashMap;
-
-use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
+use eg_types::{AppSettings, AuthSession};
 use opfs::{DirectoryHandle as _, FileHandle as _};
 
 const AUDIO_DIR_NAME: &str = "audio";
-const WAVEFORM_DIR_NAME: &str = "waveforms";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const AUTH_SESSION_FILE_NAME: &str = "auth_session.json";
 
@@ -21,71 +18,10 @@ pub async fn save_audio(filename: &str, data: &[u8]) -> Result<(), String> {
     opfs_write_file(&audio_dir, filename, data).await
 }
 
-/// Load all audio files from persistent storage, returning a map of filenames to their byte contents.
-pub async fn load_all_audio() -> HashMap<String, Vec<u8>> {
-    use futures::StreamExt;
-    use opfs::{DirectoryEntry, DirectoryHandle as _, FileHandle as _};
-
-    let mut audio_map = HashMap::new();
-    let Ok(audio_dir) = opfs_subdir(AUDIO_DIR_NAME).await else {
-        return audio_map;
-    };
-    let Ok(entries) = audio_dir
-        .entries()
-        .await
-        .map_err(|err| format!("Failed to get directory entries: {:?}", err))
-    else {
-        return audio_map;
-    };
-
-    futures::pin_mut!(entries);
-    while let Some(entry) = entries.next().await {
-        let Ok((filename, DirectoryEntry::File(file))) = entry else {
-            continue;
-        };
-        if let Ok(bytes) = file
-            .read()
-            .await
-            .map_err(|err| format!("Failed to read file: {:?}", err))
-        {
-            audio_map.insert(filename, bytes);
-        }
-    }
-
-    audio_map
-}
-
 /// Read the specified music file from persistent storage, returning None if it doesn't exist.
 pub async fn read_editor_music_bytes(music_source: &str) -> Result<Option<Vec<u8>>, String> {
     let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
     opfs_read_file(&audio_dir, music_source).await
-}
-
-/// Save the given waveform cache entry to persistent storage with the specified cache key.
-pub async fn save_waveform(
-    cache_key: &str,
-    entry: &PersistentWaveformCacheEntry,
-) -> Result<(), String> {
-    let encoded = encode_waveform_entry(entry)?;
-    let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await?;
-    opfs_write_file(&waveform_dir, &format!("{cache_key}.cbor"), &encoded).await
-}
-
-/// Load the waveform cache entry from persistent storage with the specified cache key.
-pub async fn load_waveform(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-    let waveform_dir = opfs_subdir(WAVEFORM_DIR_NAME).await.ok()?;
-    let bytes = opfs_read_file(&waveform_dir, &format!("{cache_key}.cbor"))
-        .await
-        .ok()??;
-    decode_waveform_entry(&bytes).ok()
-}
-
-fn encode_waveform_entry(entry: &PersistentWaveformCacheEntry) -> Result<Vec<u8>, String> {
-    serde_cbor::to_vec(entry).map_err(|error| format!("Waveform cache encode failed: {error}"))
-}
-
-fn decode_waveform_entry(bytes: &[u8]) -> Result<PersistentWaveformCacheEntry, String> {
-    serde_cbor::from_slice(bytes).map_err(|error| format!("Waveform cache decode failed: {error}"))
 }
 
 /// Load the app settings from persistent storage, returning default settings if not found.
@@ -272,9 +208,6 @@ mod tests {
         opfs_subdir(AUDIO_DIR_NAME)
             .await
             .expect("audio directory should resolve");
-        opfs_subdir(WAVEFORM_DIR_NAME)
-            .await
-            .expect("waveform directory should resolve");
     }
 
     #[tokio::test]
@@ -345,19 +278,10 @@ mod tests {
         let _env = TestEnv::new();
 
         let data1 = b"audio1-content";
-        let data2 = b"audio2-content";
 
         save_audio("test1.ogg", data1)
             .await
             .expect("failed to save audio 1");
-        save_audio("test2.ogg", data2)
-            .await
-            .expect("failed to save audio 2");
-
-        let all = load_all_audio().await;
-        assert_eq!(all.len(), 2);
-        assert_eq!(all.get("test1.ogg").unwrap(), data1);
-        assert_eq!(all.get("test2.ogg").unwrap(), data2);
 
         let read = read_editor_music_bytes("test1.ogg")
             .await
@@ -382,21 +306,5 @@ mod tests {
         save_audio("user.ogg", data).await.unwrap();
         let read = read_editor_music_bytes("user.ogg").await.unwrap();
         assert_eq!(read, Some(data.to_vec()));
-    }
-
-    #[tokio::test]
-    async fn test_waveform_cache_roundtrip() {
-        let _env = TestEnv::new();
-        let entry = PersistentWaveformCacheEntry::new(vec![0.1, 0.5, 1.0], 44_100, 256);
-
-        save_waveform("waveform-v1-window-256-sha256-test", &entry)
-            .await
-            .expect("failed to save waveform cache");
-
-        let loaded = load_waveform("waveform-v1-window-256-sha256-test")
-            .await
-            .expect("failed to load waveform cache");
-        assert_eq!(loaded, entry);
-        assert!(load_waveform("missing-waveform").await.is_none());
     }
 }

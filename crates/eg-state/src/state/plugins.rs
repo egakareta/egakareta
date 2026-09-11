@@ -37,8 +37,7 @@ use bevy_state::{app::AppExtStates, prelude::State};
 use bevy_time::{Fixed, Time, TimePlugin};
 
 use super::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
-    RuntimeAudioPreloadSenderRes, StateSchedule, WaveformLoadSenderRes,
+    AudioSceneParam, AudioSceneRes, StateSchedule, WaveformLoadSenderRes,
     render::plugin::RenderPlugin,
     state_resources::{
         AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
@@ -113,14 +112,11 @@ impl Plugin for EditorPlugin {
             .init_resource::<LevelExportServiceRes>()
             .init_resource::<LevelImportSenderRes>()
             .init_resource::<AudioImportSenderRes>()
-            .init_resource::<EditorAudioCacheRes>()
-            .init_resource::<RuntimeAudioPreloadRes>()
-            .init_resource::<RuntimeAudioPreloadSenderRes>()
             .init_resource::<WaveformLoadSenderRes>();
         #[cfg(not(target_arch = "wasm32"))]
-        app.init_resource::<AudioBackendRes>();
+        app.init_resource::<AudioSceneRes>();
         #[cfg(target_arch = "wasm32")]
-        app.init_non_send::<AudioBackendRes>();
+        app.init_non_send::<AudioSceneRes>();
         super::input_bridge::register_platform_input_resources(app.world_mut());
     }
 }
@@ -132,7 +128,7 @@ pub struct SessionPlugin;
 fn sync_gameplay_audio_pause_system(
     phase: Res<State<eg_types::AppPhase>>,
     session: Res<SessionStateRes>,
-    audio: AudioBackendSystemParam<'_>,
+    audio: AudioSceneParam<'_>,
     mut pending_turn_inputs: ResMut<eg_game::PendingTurnInputs>,
 ) {
     if !session.is_changed()
@@ -143,18 +139,18 @@ fn sync_gameplay_audio_pause_system(
     }
     if session.game_paused {
         pending_turn_inputs.taps.clear();
-        audio.pause();
+        super::audio_state::pause_music(&audio.0);
     } else {
-        audio.resume();
+        super::audio_state::resume_music(&audio.0);
     }
 }
 
 fn consume_audio_stop_request_system(
     mut session: ResMut<SessionStateRes>,
-    audio: AudioBackendSystemParam<'_>,
+    audio: AudioSceneParam<'_>,
 ) {
     if session.audio_stop_pending {
-        audio.stop();
+        super::audio_state::stop_music(&audio.0);
         session.audio_stop_pending = false;
     }
 }
@@ -185,7 +181,7 @@ impl Plugin for MenuPlugin {
 /// plugin in dependency order. Equivalent to a hand-written
 /// `app.add_plugins((TimePlugin, MenuPlugin, SessionPlugin, EditorPlugin, GameplayPlugin))`
 /// - kept as a single plugin so the order is centralized and the full
-/// eg-state `App` is built with one call.
+///   eg-state `App` is built with one call.
 pub struct StatePlugins;
 
 impl Plugin for StatePlugins {
@@ -289,12 +285,9 @@ pub fn register_state_resources(world: &mut World) {
     world.init_resource::<LevelImportSenderRes>();
     world.init_resource::<AudioImportSenderRes>();
     #[cfg(not(target_arch = "wasm32"))]
-    world.init_resource::<AudioBackendRes>();
+    world.init_resource::<AudioSceneRes>();
     #[cfg(target_arch = "wasm32")]
-    world.init_non_send::<AudioBackendRes>();
-    world.init_resource::<EditorAudioCacheRes>();
-    world.init_resource::<RuntimeAudioPreloadRes>();
-    world.init_resource::<RuntimeAudioPreloadSenderRes>();
+    world.init_non_send::<AudioSceneRes>();
     world.init_resource::<WaveformLoadSenderRes>();
     super::input_bridge::register_platform_input_resources(world);
     // Bare worlds used by focused render fixtures still need the

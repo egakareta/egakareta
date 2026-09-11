@@ -7,16 +7,16 @@
 */
 //! Async platform-result ingestion (Phase 6a).
 //!
-//! Platform services and background tasks produce five `mpsc::Receiver`
+//! Platform services and background tasks produce four `mpsc::Receiver`
 //! streams (auth service, audio service, level importer). The App-owned
 //! `StateSchedule` drains those streams once per frame.
 //!
 //! Phase 6a introduced **Bevy resources** that wrap each receiver
 //! (`AuthChannelRes`, `AudioImportChannelRes`, `WaveformLoadChannelRes`,
-//! `AudioPreloadChannelRes`, `LevelImportChannelRes`) plus a
+//! `LevelImportChannelRes`) plus a
 //! `PollChannelsSet` system set with a `poll_channels_system` that
 //! drains every receiver once per frame and emits the corresponding
-//! result event into the World (Phase 6a's five new
+//! result event into the World (Phase 6a's four new
 //! [`async_results`](crate::events::async_results) message types).
 //!
 //! `StateSchedule` is the sole owner for these drains and the result
@@ -35,11 +35,9 @@
 //! ## Phase 6b: result handler systems
 //!
 //! Phase 6a established the `poll_channels_system` that drains the
-//! 5 receivers into 5 distinct result events. Phase 6b added one
-//! handler system per channel. All five handlers mutate App-world
-//! resources directly. Shared editor and runtime audio-cache resources
-//! let platform-facing audio code read the same authoritative cache without
-//! introducing a second state owner.
+//! 4 receivers into 4 distinct result events. Phase 6b added one
+//! handler system per channel. All four handlers mutate App-world
+//! resources directly.
 //!
 //! ## Schedule graph (post Phase 6b)
 //!
@@ -51,8 +49,7 @@
 //!   ApplyAsyncResultsSet
 //!     auth_handler_system              // AuthServiceResultEvent
 //!     audio_import_handler_system      // AudioImportResultEvent
-//!     waveform_handler_system          // WaveformResultEvent → timing + audio caches
-//!     audio_preload_handler_system     // AudioPreloadResultEvent
+//!     waveform_handler_system          // WaveformResultEvent → timing
 //!     level_import_handler_system      // LevelImportResultEvent → editor/session resources
 //! ```
 //!
@@ -68,18 +65,18 @@ use std::sync::{
 };
 
 use bevy_ecs::{prelude::*, schedule::SystemSet};
-use eg_audio::service::{AudioPreloadResult, WaveformLoadMessage, WaveformResult};
 use eg_platform::services::AuthServiceMessage;
 
 use crate::{
     events::async_results::{
-        AudioImportResultEvent, AudioPreloadResultEvent, AuthServiceResultEvent,
-        LevelImportResultEvent, WaveformResultEvent,
+        AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent, WaveformResultEvent,
     },
     state::{
-        AuthStateRes, EditorAudioCacheRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
+        AudioSceneParam, AuthStateRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
         EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTimingState, EditorTriggerRes,
-        RuntimeAudioPreloadRes, SessionStateRes, WaveformLoadSenderRes, replace_editor_objects,
+        SessionStateRes, WAVEFORM_WINDOW, WaveformLoadMessage, WaveformLoadSenderRes,
+        WaveformResult, replace_editor_objects, runtime_asset_source_key, start_waveform_loading,
+        warmup_music_with_bytes, with_audio_scene,
     },
 };
 
@@ -96,9 +93,6 @@ pub type SharedAudioImportReceiver = std::sync::Arc<Mutex<Receiver<(String, Vec<
 
 /// Shared `Arc<Mutex<Receiver<WaveformResult>>>`.
 pub type SharedWaveformReceiver = std::sync::Arc<Mutex<Receiver<WaveformResult>>>;
-
-/// Shared `Arc<Mutex<Receiver<AudioPreloadResult>>>`.
-pub type SharedAudioPreloadReceiver = std::sync::Arc<Mutex<Receiver<AudioPreloadResult>>>;
 
 /// Shared `Arc<Mutex<Receiver<Vec<u8>>>>`.
 pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
@@ -126,11 +120,6 @@ pub struct AudioImportChannelRes(pub SharedAudioImportReceiver);
 #[allow(dead_code)]
 #[derive(Resource)]
 pub struct WaveformLoadChannelRes(pub SharedWaveformReceiver);
-
-/// Bevy `Resource` wrapper around the audio-preload `mpsc::Receiver`.
-#[allow(dead_code)]
-#[derive(Resource)]
-pub struct AudioPreloadChannelRes(pub SharedAudioPreloadReceiver);
 
 /// Bevy `Resource` wrapper around the level-import `mpsc::Receiver`.
 #[allow(dead_code)]
@@ -164,12 +153,10 @@ pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
     audio_import: Option<Res<AudioImportChannelRes>>,
     waveform: Option<Res<WaveformLoadChannelRes>>,
-    audio_preload: Option<Res<AudioPreloadChannelRes>>,
     level_import: Option<Res<LevelImportChannelRes>>,
     mut auth_writer: MessageWriter<AuthServiceResultEvent>,
     mut audio_import_writer: MessageWriter<AudioImportResultEvent>,
     mut waveform_writer: MessageWriter<WaveformResultEvent>,
-    mut audio_preload_writer: MessageWriter<AudioPreloadResultEvent>,
     mut level_import_writer: MessageWriter<LevelImportResultEvent>,
 ) {
     if let Some(res) = auth {
@@ -186,11 +173,6 @@ pub fn poll_channels_system(
     if let Some(res) = waveform {
         drain_mutex(&res.0, |msg| {
             waveform_writer.write(WaveformResultEvent::from_result(msg));
-        });
-    }
-    if let Some(res) = audio_preload {
-        drain_mutex(&res.0, |msg| {
-            audio_preload_writer.write(AudioPreloadResultEvent::from_result(&msg));
         });
     }
     if let Some(res) = level_import {
@@ -249,7 +231,6 @@ pub fn install_async_channel_resources(
     auth_receiver: Receiver<AuthServiceMessage>,
     audio_import_receiver: Receiver<(String, Vec<u8>)>,
     waveform_receiver: Receiver<WaveformResult>,
-    audio_preload_receiver: Receiver<AudioPreloadResult>,
     level_import_receiver: Receiver<Vec<u8>>,
 ) {
     use std::sync::Arc;
@@ -264,11 +245,6 @@ pub fn install_async_channel_resources(
     if !world.contains_resource::<WaveformLoadChannelRes>() {
         world.insert_resource(WaveformLoadChannelRes(Arc::new(Mutex::new(
             waveform_receiver,
-        ))));
-    }
-    if !world.contains_resource::<AudioPreloadChannelRes>() {
-        world.insert_resource(AudioPreloadChannelRes(Arc::new(Mutex::new(
-            audio_preload_receiver,
         ))));
     }
     if !world.contains_resource::<LevelImportChannelRes>() {
@@ -288,7 +264,6 @@ pub fn install_async_channel_resources_arc(
     auth_receiver: SharedAuthReceiver,
     audio_import_receiver: SharedAudioImportReceiver,
     waveform_receiver: SharedWaveformReceiver,
-    audio_preload_receiver: SharedAudioPreloadReceiver,
     level_import_receiver: SharedLevelImportReceiver,
 ) {
     if !world.contains_resource::<AuthChannelRes>() {
@@ -299,9 +274,6 @@ pub fn install_async_channel_resources_arc(
     }
     if !world.contains_resource::<WaveformLoadChannelRes>() {
         world.insert_resource(WaveformLoadChannelRes(waveform_receiver));
-    }
-    if !world.contains_resource::<AudioPreloadChannelRes>() {
-        world.insert_resource(AudioPreloadChannelRes(audio_preload_receiver));
     }
     if !world.contains_resource::<LevelImportChannelRes>() {
         world.insert_resource(LevelImportChannelRes(level_import_receiver));
@@ -318,7 +290,6 @@ pub fn register_async_channel_resources_world(world: &mut World) {
     world.init_resource::<Messages<AuthServiceResultEvent>>();
     world.init_resource::<Messages<AudioImportResultEvent>>();
     world.init_resource::<Messages<WaveformResultEvent>>();
-    world.init_resource::<Messages<AudioPreloadResultEvent>>();
     world.init_resource::<Messages<LevelImportResultEvent>>();
 }
 
@@ -357,13 +328,13 @@ pub fn auth_handler_system(
     }
 }
 
-/// Consume `AudioImportResultEvent`s, update the App-owned editor audio cache,
-/// reset waveform presentation, and start decoding through the App-owned sender.
+/// Consume `AudioImportResultEvent`s, stage the bytes as the editor level's
+/// custom audio, and start decoding through the App-owned sender.
 #[allow(dead_code)]
 pub fn audio_import_handler_system(
     mut events: MessageReader<AudioImportResultEvent>,
-    session: Res<SessionStateRes>,
-    cache: Res<EditorAudioCacheRes>,
+    mut session: ResMut<SessionStateRes>,
+    audio: AudioSceneParam<'_>,
     waveform_sender: Res<WaveformLoadSenderRes>,
     mut timing: ResMut<EditorTimingRes>,
 ) {
@@ -375,28 +346,21 @@ pub fn audio_import_handler_system(
             .editor_level_name
             .clone()
             .unwrap_or_else(|| "Untitled".to_string());
-        let source_key = cache.insert_level_audio(&level_name, bytes.clone());
-        cache.remove_waveform(&source_key);
-        cache.set_loading_source(Some(source_key));
+        session.editor_custom_audio_bytes = Some(bytes.clone());
+        warmup_music_with_bytes(&audio.0, &bytes);
         timing.0.waveform_samples.clear();
         timing.0.waveform_sample_rate = 0;
-        timing.0.waveform_window_size = eg_audio::service::WAVEFORM_WINDOW;
+        timing.0.waveform_window_size = WAVEFORM_WINDOW;
         timing.0.waveform_loading = true;
         timing.0.waveform_complete = false;
-        eg_audio::service::start_waveform_loading(
-            level_name,
-            Some(bytes),
-            waveform_sender.0.clone(),
-        );
+        start_waveform_loading(level_name, Some(bytes), waveform_sender.0.clone());
     }
 }
 
-/// Consume `WaveformResultEvent`s and update App-owned waveform presentation,
-/// editor cache, persistent cache, and runtime preload resources directly.
+/// Consume `WaveformResultEvent`s and update App-owned waveform presentation.
 #[allow(dead_code)]
 pub fn waveform_handler_system(world: &mut World) {
     use bevy_ecs::message::Messages;
-    use eg_audio::audio::runtime_asset_source_key;
 
     let current_level_name = world
         .resource::<SessionStateRes>()
@@ -404,8 +368,6 @@ pub fn waveform_handler_system(world: &mut World) {
         .clone()
         .unwrap_or_else(|| "Untitled".to_string());
     let current_source_key = runtime_asset_source_key(&current_level_name, "audio.mp3");
-    let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
-    let runtime_preload = world.resource::<RuntimeAudioPreloadRes>().clone();
     let drained: Vec<WaveformResultEvent> = {
         let mut messages = world.resource_mut::<Messages<WaveformResultEvent>>();
         messages.drain().collect()
@@ -418,7 +380,6 @@ pub fn waveform_handler_system(world: &mut World) {
         if source_key == current_source_key {
             apply_waveform_timing_message(&mut world.resource_mut::<EditorTimingRes>().0, &message);
         }
-        apply_waveform_cache_message(&editor_cache, &runtime_preload, source, level_name, message);
     }
 }
 
@@ -454,23 +415,10 @@ fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &Wavef
             timing.waveform_loading = true;
             timing.waveform_complete = false;
         }
-        WaveformLoadMessage::Cached {
-            samples,
-            sample_rate,
-            window_size,
-            ..
-        } => {
-            timing.waveform_samples = samples.clone();
-            timing.waveform_sample_rate = *sample_rate;
-            timing.waveform_window_size = *window_size;
-            timing.waveform_loading = false;
-            timing.waveform_complete = true;
-        }
         WaveformLoadMessage::Finished {
             sample_rate,
             window_size,
             total_peaks,
-            ..
         } => {
             timing.waveform_samples.truncate(*total_peaks);
             timing.waveform_sample_rate = *sample_rate;
@@ -478,7 +426,7 @@ fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &Wavef
             timing.waveform_loading = false;
             timing.waveform_complete = true;
         }
-        WaveformLoadMessage::Failed { .. } => {
+        WaveformLoadMessage::Failed => {
             timing.waveform_samples.clear();
             timing.waveform_sample_rate = 0;
             timing.waveform_loading = false;
@@ -487,105 +435,9 @@ fn apply_waveform_timing_message(timing: &mut EditorTimingState, message: &Wavef
     }
 }
 
-fn apply_waveform_cache_message(
-    editor_cache: &EditorAudioCacheRes,
-    runtime_preload: &RuntimeAudioPreloadRes,
-    source: String,
-    level_name: String,
-    message: WaveformLoadMessage,
-) {
-    use eg_audio::{audio::runtime_asset_source_key, service::WaveformCacheEntry};
-
-    let source_key = runtime_asset_source_key(&level_name, &source);
-    match message {
-        WaveformLoadMessage::Started { window_size } => {
-            editor_cache.insert_waveform(
-                source_key.clone(),
-                WaveformCacheEntry {
-                    window_size,
-                    ..WaveformCacheEntry::default()
-                },
-            );
-        }
-        WaveformLoadMessage::Chunk {
-            start_peak,
-            peaks,
-            sample_rate,
-            window_size,
-        } => {
-            editor_cache.with_mut(|cache| {
-                let entry = cache.waveform_mut_or_default(source_key.clone());
-                entry.sample_rate = sample_rate;
-                entry.window_size = window_size;
-                entry.complete = false;
-                apply_waveform_chunk(&mut entry.samples, start_peak, &peaks);
-            });
-        }
-        WaveformLoadMessage::Cached {
-            samples,
-            sample_rate,
-            window_size,
-            bytes,
-        } => {
-            let entry = WaveformCacheEntry {
-                samples,
-                sample_rate,
-                window_size,
-                complete: true,
-            };
-            editor_cache.insert_waveform(source_key.clone(), entry);
-            editor_cache.clear_loading_source_if(&source_key);
-            if let Some(bytes) = bytes {
-                runtime_preload.insert_preloaded(source_key.clone(), bytes);
-            }
-        }
-        WaveformLoadMessage::Finished {
-            sample_rate,
-            window_size,
-            total_peaks,
-            cache_key,
-            bytes,
-        } => {
-            let entry = editor_cache.with_mut(|cache| {
-                let entry = cache.waveform_mut_or_default(source_key.clone());
-                entry.sample_rate = sample_rate;
-                entry.window_size = window_size;
-                entry.complete = true;
-                entry.samples.truncate(total_peaks);
-                entry.clone()
-            });
-            if let Some(cache_key) = cache_key {
-                use crate::state::audio_state::persist_waveform_cache_entry;
-                persist_waveform_cache_entry(cache_key, &entry);
-            }
-            if let Some(bytes) = bytes {
-                runtime_preload.insert_preloaded(source_key.clone(), bytes);
-            }
-            editor_cache.clear_loading_source_if(&source_key);
-        }
-        WaveformLoadMessage::Failed { bytes } => {
-            editor_cache.remove_waveform(&source_key);
-            if let Some(bytes) = bytes {
-                runtime_preload.insert_preloaded(source_key.clone(), bytes);
-            }
-            editor_cache.clear_loading_source_if(&source_key);
-        }
-    }
-}
-
-/// Consume `AudioPreloadResultEvent`s into the shared App-owned preload cache.
-#[allow(dead_code)]
-pub fn audio_preload_handler_system(
-    mut events: MessageReader<AudioPreloadResultEvent>,
-    preload: Res<RuntimeAudioPreloadRes>,
-) {
-    for event in events.read() {
-        preload.apply_result(event.source_key.clone(), event.bytes.clone());
-    }
-}
-
 /// Consume `LevelImportResultEvent`s and replace the App-owned editor session.
-/// Bundled `.egz` audio bytes are inserted into the shared editor cache directly.
+/// Bundled `.egz` audio bytes become the level's custom audio and are staged
+/// into the music sound directly.
 #[allow(dead_code)]
 pub fn level_import_handler_system(world: &mut World) {
     use bevy_ecs::message::Messages;
@@ -608,11 +460,14 @@ pub fn level_import_handler_system(world: &mut World) {
             },
         };
 
-        let level_name = apply_imported_level_to_world(world, metadata);
+        let _level_name = apply_imported_level_to_world(world, metadata);
         if let Some(bytes) = audio_bytes {
             world
-                .resource::<EditorAudioCacheRes>()
-                .insert_level_audio(&level_name, bytes);
+                .resource_mut::<SessionStateRes>()
+                .editor_custom_audio_bytes = Some(bytes.clone());
+            with_audio_scene(world, |audio| {
+                warmup_music_with_bytes(&audio.0, &bytes);
+            });
         }
     }
 }
@@ -679,7 +534,7 @@ pub(crate) fn apply_imported_level_to_world(
     level_name
 }
 
-/// Add the 5 result handler systems to a `Schedule`. Each system
+/// Add the 4 result handler systems to a `Schedule`. Each system
 /// is assigned to [`ApplyAsyncResultsSet`] so cross-set ordering
 /// can be expressed via `.in_set(ApplyAsyncResultsSet)` / `.before()`.
 #[allow(dead_code)]
@@ -689,7 +544,6 @@ pub fn add_apply_async_results_systems(schedule: &mut bevy_ecs::schedule::Schedu
             auth_handler_system,
             audio_import_handler_system,
             waveform_handler_system,
-            audio_preload_handler_system,
             level_import_handler_system,
         )
             .in_set(ApplyAsyncResultsSet),
@@ -745,7 +599,6 @@ mod tests {
         assert!(world.contains_resource::<Messages<AuthServiceResultEvent>>());
         assert!(world.contains_resource::<Messages<AudioImportResultEvent>>());
         assert!(world.contains_resource::<Messages<WaveformResultEvent>>());
-        assert!(world.contains_resource::<Messages<AudioPreloadResultEvent>>());
         assert!(world.contains_resource::<Messages<LevelImportResultEvent>>());
     }
 
@@ -755,15 +608,13 @@ mod tests {
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, li_rx);
 
         assert!(world.contains_resource::<AuthChannelRes>());
         assert!(world.contains_resource::<AudioImportChannelRes>());
         assert!(world.contains_resource::<WaveformLoadChannelRes>());
-        assert!(world.contains_resource::<AudioPreloadChannelRes>());
         assert!(world.contains_resource::<LevelImportChannelRes>());
     }
 
@@ -777,20 +628,18 @@ mod tests {
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, ap_rx, li_rx);
+        install_async_channel_resources(&mut world, auth_rx, ai_rx, wf_rx, li_rx);
 
         // A second call with fresh receivers must not replace the
         // installed ones.
         let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
-        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, wf_rx2, ap_rx2, li_rx2);
+        install_async_channel_resources(&mut world, auth_rx2, ai_rx2, wf_rx2, li_rx2);
 
         // The original receivers are still installed (we can verify
         // by checking the wrappers exist).
@@ -811,13 +660,11 @@ mod tests {
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
         let auth_arc = std::sync::Arc::new(std::sync::Mutex::new(auth_rx));
         let ai_arc = std::sync::Arc::new(std::sync::Mutex::new(ai_rx));
         let wf_arc = std::sync::Arc::new(std::sync::Mutex::new(wf_rx));
-        let ap_arc = std::sync::Arc::new(std::sync::Mutex::new(ap_rx));
         let li_arc = std::sync::Arc::new(std::sync::Mutex::new(li_rx));
 
         install_async_channel_resources_arc(
@@ -825,14 +672,12 @@ mod tests {
             std::sync::Arc::clone(&auth_arc),
             std::sync::Arc::clone(&ai_arc),
             std::sync::Arc::clone(&wf_arc),
-            std::sync::Arc::clone(&ap_arc),
             std::sync::Arc::clone(&li_arc),
         );
 
         assert!(world.contains_resource::<AuthChannelRes>());
         assert!(world.contains_resource::<AudioImportChannelRes>());
         assert!(world.contains_resource::<WaveformLoadChannelRes>());
-        assert!(world.contains_resource::<AudioPreloadChannelRes>());
         assert!(world.contains_resource::<LevelImportChannelRes>());
 
         // The Arc we passed in is the same one stored in the
@@ -850,7 +695,6 @@ mod tests {
         let (_auth_tx, auth_rx) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx, ai_rx) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx, wf_rx) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx, ap_rx) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx, li_rx) = mpsc::channel::<Vec<u8>>();
 
         install_async_channel_resources_arc(
@@ -858,7 +702,6 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(wf_rx)),
-            std::sync::Arc::new(std::sync::Mutex::new(ap_rx)),
             std::sync::Arc::new(std::sync::Mutex::new(li_rx)),
         );
 
@@ -867,7 +710,6 @@ mod tests {
         let (_auth_tx2, auth_rx2) = mpsc::channel::<AuthServiceMessage>();
         let (_ai_tx2, ai_rx2) = mpsc::channel::<(String, Vec<u8>)>();
         let (_wf_tx2, wf_rx2) = mpsc::channel::<WaveformResult>();
-        let (_ap_tx2, ap_rx2) = mpsc::channel::<AudioPreloadResult>();
         let (_li_tx2, li_rx2) = mpsc::channel::<Vec<u8>>();
 
         install_async_channel_resources_arc(
@@ -875,7 +717,6 @@ mod tests {
             std::sync::Arc::new(std::sync::Mutex::new(auth_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(ai_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(wf_rx2)),
-            std::sync::Arc::new(std::sync::Mutex::new(ap_rx2)),
             std::sync::Arc::new(std::sync::Mutex::new(li_rx2)),
         );
 
@@ -909,54 +750,6 @@ mod tests {
         let auth = world.resource::<AuthStateRes>();
         assert!(!auth.pending);
         assert!(auth.session.is_none());
-    }
-
-    #[test]
-    fn audio_preload_handler_system_inserts_bytes() {
-        // Write an `AudioPreloadResultEvent` into the buffer, run
-        // the handler, drain the slot, and verify the State's
-        // `preloaded_audio` map contains the entry.
-        use crate::events::async_results::AudioPreloadResultEvent;
-        let mut world = build_world();
-        world.write_message(AudioPreloadResultEvent::from_result(&(
-            "Level1:audio.mp3".to_string(),
-            Some(vec![1, 2, 3, 4]),
-        )));
-
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
-        schedule.add_systems(audio_preload_handler_system);
-        schedule.run(&mut world);
-
-        let source_key = "Level1:audio.mp3".to_string();
-        assert!(
-            world
-                .resource::<RuntimeAudioPreloadRes>()
-                .contains_preloaded(&source_key)
-        );
-    }
-
-    #[test]
-    fn audio_preload_handler_system_handles_failure() {
-        // Same as above but the result is `None` (failure). The
-        // handler should not panic and should not insert
-        // anything.
-        use crate::events::async_results::AudioPreloadResultEvent;
-        let mut world = build_world();
-        world.write_message(AudioPreloadResultEvent::from_result(&(
-            "Level1:audio.mp3".to_string(),
-            None,
-        )));
-
-        let mut schedule = bevy_ecs::schedule::Schedule::default();
-        schedule.add_systems(audio_preload_handler_system);
-        schedule.run(&mut world);
-
-        let source_key = "Level1:audio.mp3".to_string();
-        assert!(
-            !world
-                .resource::<RuntimeAudioPreloadRes>()
-                .contains_preloaded(&source_key)
-        );
     }
 
     #[test]
@@ -1054,8 +847,6 @@ mod tests {
                 sample_rate: 44_100,
                 window_size: 128,
                 total_peaks: 3,
-                cache_key: None,
-                bytes: None,
             },
         )));
 
@@ -1069,14 +860,6 @@ mod tests {
         assert_eq!(timing.waveform_window_size, 128);
         assert!(!timing.waveform_loading);
         assert!(timing.waveform_complete);
-
-        let source_key = eg_audio::audio::runtime_asset_source_key("Level1", "audio.mp3");
-        assert!(
-            world
-                .resource::<EditorAudioCacheRes>()
-                .waveform(&source_key)
-                .is_some_and(|entry| entry.complete)
-        );
     }
 
     #[test]
@@ -1092,11 +875,22 @@ mod tests {
             .send((
                 "audio.mp3".to_string(),
                 "Level1".to_string(),
-                WaveformLoadMessage::Cached {
-                    samples: vec![0.2, 0.8],
+                WaveformLoadMessage::Chunk {
+                    start_peak: 0,
+                    peaks: vec![0.2, 0.8],
                     sample_rate: 44_100,
                     window_size: 256,
-                    bytes: None,
+                },
+            ))
+            .expect("waveform channel remains connected");
+        sender
+            .send((
+                "audio.mp3".to_string(),
+                "Level1".to_string(),
+                WaveformLoadMessage::Finished {
+                    sample_rate: 44_100,
+                    window_size: 256,
+                    total_peaks: 2,
                 },
             ))
             .expect("waveform channel remains connected");
@@ -1127,11 +921,10 @@ mod tests {
         world.write_message(WaveformResultEvent::from_result((
             "audio.mp3".to_string(),
             "OldLevel".to_string(),
-            WaveformLoadMessage::Cached {
-                samples: vec![0.25, 0.75],
+            WaveformLoadMessage::Finished {
                 sample_rate: 44_100,
                 window_size: 256,
-                bytes: None,
+                total_peaks: 2,
             },
         )));
 
@@ -1143,13 +936,6 @@ mod tests {
         assert_eq!(timing.waveform_samples, vec![1.0]);
         assert_eq!(timing.waveform_sample_rate, 22_050);
         assert!(timing.waveform_complete);
-
-        let source_key = eg_audio::audio::runtime_asset_source_key("OldLevel", "audio.mp3");
-        assert!(
-            world
-                .resource::<EditorAudioCacheRes>()
-                .contains_waveform(&source_key)
-        );
     }
 
     #[test]
@@ -1166,8 +952,8 @@ mod tests {
 
         assert!(
             world
-                .resource::<EditorAudioCacheRes>()
-                .bytes_for_source("level1.ogg")
+                .resource::<SessionStateRes>()
+                .editor_custom_audio_bytes
                 .is_none()
         );
     }
@@ -1194,18 +980,14 @@ mod tests {
         let timing = &world.resource::<EditorTimingRes>().0;
         assert!(timing.waveform_samples.is_empty());
         assert_eq!(timing.waveform_sample_rate, 0);
-        assert_eq!(
-            timing.waveform_window_size,
-            eg_audio::service::WAVEFORM_WINDOW
-        );
+        assert_eq!(timing.waveform_window_size, WAVEFORM_WINDOW);
         assert!(timing.waveform_loading);
         assert!(!timing.waveform_complete);
 
-        let source_key = eg_audio::audio::runtime_asset_source_key("Untitled", "audio.mp3");
         assert_eq!(
             world
-                .resource::<EditorAudioCacheRes>()
-                .bytes_for_source(&source_key),
+                .resource::<SessionStateRes>()
+                .editor_custom_audio_bytes,
             Some(vec![1, 2, 3, 4])
         );
     }

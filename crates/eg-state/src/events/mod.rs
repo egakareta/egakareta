@@ -923,12 +923,9 @@ mod tests {
         world.init_resource::<crate::state::LevelImportSenderRes>();
         world.init_resource::<crate::state::AudioImportSenderRes>();
         #[cfg(not(target_arch = "wasm32"))]
-        world.init_resource::<crate::state::AudioBackendRes>();
+        world.init_resource::<crate::state::AudioSceneRes>();
         #[cfg(target_arch = "wasm32")]
-        world.init_non_send::<crate::state::AudioBackendRes>();
-        world.init_resource::<crate::state::EditorAudioCacheRes>();
-        world.init_resource::<crate::state::RuntimeAudioPreloadRes>();
-        world.init_resource::<crate::state::RuntimeAudioPreloadSenderRes>();
+        world.init_non_send::<crate::state::AudioSceneRes>();
         world.init_resource::<crate::state::WaveformLoadSenderRes>();
         world.insert_resource(crate::state::MenuStateRes::new(MenuState {
             selected_level: 0,
@@ -4196,21 +4193,8 @@ mod tests {
             .resource_mut::<crate::state::SessionStateRes>()
             .app_settings
             .audio_backend = "stale".to_string();
-        let source_key = eg_audio::audio::runtime_asset_source_key("Flowerfield", "audio.mp3");
-        let audio_cache = world.resource::<crate::state::EditorAudioCacheRes>();
-        audio_cache.insert_level_audio("Flowerfield", vec![1, 2, 3, 4]);
-        audio_cache.insert_waveform(
-            source_key,
-            eg_audio::service::WaveformCacheEntry {
-                samples: vec![0.25, 0.75],
-                sample_rate: 44_100,
-                window_size: eg_audio::service::WAVEFORM_WINDOW,
-                complete: true,
-            },
-        );
 
         world.write_message(LoadLevel("Flowerfield".to_string()));
-        world.write_message(ExportLevel);
         world.write_message(SetAudioBackend("Default".to_string()));
         world.write_message(CompleteImport);
         world.write_message(TriggerAudioImport);
@@ -4219,20 +4203,15 @@ mod tests {
         let session = world.resource::<crate::state::SessionStateRes>();
         assert_eq!(session.editor_level_name.as_deref(), Some("Flowerfield"));
         assert!(session.audio_stop_pending);
+        // Loading a built-in level clears staged custom audio and kicks off a
+        // fresh background waveform decode.
+        assert!(session.editor_custom_audio_bytes.is_none());
         let mut authored =
             world.query_filtered::<Entity, With<crate::state::EditorAuthoredObject>>();
         assert!(authored.iter(&world).next().is_some());
         let timing = &world.resource::<crate::state::EditorTimingRes>().0;
-        assert_eq!(timing.waveform_samples, vec![0.25, 0.75]);
-        assert!(timing.waveform_complete);
-        let export = world.resource::<crate::state::LevelExportServiceRes>();
-        let (filename, bytes) = export.last_request().expect("export should be launched");
-        assert_eq!(filename, "Flowerfield.egz");
-        let (exported, audio) =
-            eg_level::read_metadata_from_egz(bytes).expect("decode exported level");
-        assert_eq!(exported.basic.name, "Flowerfield");
-        assert_eq!(exported.objects.len(), 1);
-        assert_eq!(audio, Some(vec![1, 2, 3, 4]));
+        assert!(timing.waveform_samples.is_empty());
+        assert!(timing.waveform_loading);
         assert_eq!(
             world
                 .resource::<crate::state::SessionStateRes>()
@@ -4252,6 +4231,23 @@ mod tests {
                 .trigger_count(),
             1
         );
+
+        // Custom audio staged after the load (as an import would) is what the
+        // export bundles.
+        world
+            .resource_mut::<crate::state::SessionStateRes>()
+            .editor_custom_audio_bytes = Some(vec![1, 2, 3, 4]);
+        world.write_message(ExportLevel);
+        world.run_schedule(crate::state::StateSchedule);
+
+        let export = world.resource::<crate::state::LevelExportServiceRes>();
+        let (filename, bytes) = export.last_request().expect("export should be launched");
+        assert_eq!(filename, "Flowerfield.egz");
+        let (exported, audio) =
+            eg_level::read_metadata_from_egz(bytes).expect("decode exported level");
+        assert_eq!(exported.basic.name, "Flowerfield");
+        assert_eq!(exported.objects.len(), 1);
+        assert_eq!(audio, Some(vec![1, 2, 3, 4]));
     }
 
     // --- App-owned navigation tests ---

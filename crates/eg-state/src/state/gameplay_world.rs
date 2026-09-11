@@ -16,7 +16,6 @@
 use bevy_ecs::{message::Messages, prelude::*};
 use bevy_state::prelude::State;
 use bevy_time::{Fixed, Time};
-use eg_audio::audio::runtime_asset_source_key;
 use eg_game::{
     BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, FrameDelta, GameClock, LevelMeta,
     Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player, PlayerBundle,
@@ -26,14 +25,9 @@ use eg_game::{
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{
-    EditorSpawnRes, EditorTimelineRes, GameplayResetRes, GameplayResetSeed, MenuStateRes,
-    RuntimeAudioPreloadRes, SessionStateRes, with_audio_backend,
+    AppSound, EditorSpawnRes, EditorTimelineRes, GameplayResetRes, GameplayResetSeed, MenuStateRes,
+    SessionStateRes, play_sfx, stop_music, warmup_music_builtin, with_audio_scene,
 };
-
-const DEAD_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/dead.mp3"
-));
 
 /// Keeps headless fixtures deterministic while production uses `FixedUpdate`.
 #[derive(Resource, Default)]
@@ -229,7 +223,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
         .next()
         .is_some();
     if should_play_death_sfx {
-        with_audio_backend(world, |audio| audio.play_sfx(DEAD_SFX));
+        with_audio_scene(world, |audio| play_sfx(&audio.0, AppSound::Death));
     }
 
     if practice_mode_enabled && !playtesting_editor {
@@ -273,7 +267,7 @@ pub fn apply_game_over_transition_system(world: &mut World) {
             }
         };
 
-        with_audio_backend(world, |audio| audio.stop());
+        with_audio_scene(world, |audio| stop_music(&audio.0));
         world.resource_mut::<PendingTurnInputs>().taps.clear();
         {
             let mut session = world.resource_mut::<SessionStateRes>();
@@ -293,11 +287,11 @@ pub fn apply_game_over_transition_system(world: &mut World) {
     if !playtesting_editor {
         persist_level_progress(world, progress);
     }
-    with_audio_backend(world, |audio| audio.stop());
+    with_audio_scene(world, |audio| stop_music(&audio.0));
     world.resource_mut::<PendingTurnInputs>().taps.clear();
 }
 
-fn warmup_gameplay_audio(world: &World, start_seconds: f32) {
+fn warmup_gameplay_audio(world: &World, _start_seconds: f32) {
     let Some(level_name) = world
         .resource::<SessionStateRes>()
         .playing_level_name
@@ -306,17 +300,9 @@ fn warmup_gameplay_audio(world: &World, start_seconds: f32) {
     else {
         return;
     };
-    let source_key = runtime_asset_source_key(&level_name, "audio.mp3");
-    if let Some(bytes) = world
-        .resource::<RuntimeAudioPreloadRes>()
-        .bytes(&source_key)
-    {
-        with_audio_backend(world, |audio| {
-            audio.warmup_preloaded_asset_at(&level_name, &bytes, start_seconds);
-        });
-    } else {
-        with_audio_backend(world, |audio| audio.warmup_at(&level_name, start_seconds));
-    }
+    with_audio_scene(world, |audio| {
+        warmup_music_builtin(&audio.0, &level_name);
+    });
 }
 
 fn persist_level_progress(world: &mut World, progress: PlayerLevelProgress) {

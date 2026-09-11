@@ -6,7 +6,6 @@
 
 */
 use bevy_ecs::world::World;
-use eg_audio::service::{AudioPreloadResult, WaveformResult};
 use eg_blocks::BlockTextureAtlas;
 use eg_level::builtin_level_names;
 use eg_mesh::{BlockInstance, Vertex, build_floor_vertices, build_grid_vertices};
@@ -25,9 +24,10 @@ use glam::Mat4;
 use wgpu::util::DeviceExt;
 
 use super::{
-    AudioBackendRes, AudioImportChannel, AudioPreloadChannel, AuthStateRes, EditorAudioCacheRes,
-    EditorConfigState, RuntimeAudioPreloadRes, WaveformLoadChannel,
+    AudioImportChannel, AudioSceneRes, AuthStateRes, EditorConfigState, WaveformLoadChannel,
+    WaveformResult, available_host_labels, canonical_backend_name,
     editor_objects::replace_editor_objects, runtime::EditorRuntimeState,
+    set_preferred_backend_name,
 };
 
 const GRID_HALF_EXTENT: f32 = 2048.0;
@@ -237,10 +237,7 @@ struct AppInitialization {
     editor_runtime: EditorRuntimeState,
     editor_timing: super::EditorTimingState,
     editor_history: super::EditorHistoryState,
-    audio_runtime: AudioBackendRes,
-    runtime_preload: RuntimeAudioPreloadRes,
-    runtime_preload_channel: AudioPreloadChannel,
-    editor_audio_cache: EditorAudioCacheRes,
+    audio_runtime: AudioSceneRes,
     audio_import_channel: AudioImportChannel,
     waveform_load_channel: WaveformLoadChannel,
     session: super::SessionStateRes,
@@ -327,9 +324,6 @@ impl AppBootstrap {
             editor_timing,
             editor_history,
             audio_runtime,
-            runtime_preload,
-            runtime_preload_channel,
-            editor_audio_cache,
             audio_import_channel,
             waveform_load_channel,
             session,
@@ -344,7 +338,6 @@ impl AppBootstrap {
             std::sync::Arc::clone(&auth_receiver),
             std::sync::Arc::clone(&audio_import_channel.1),
             std::sync::Arc::clone(&waveform_load_channel.1),
-            std::sync::Arc::clone(&runtime_preload_channel.1),
             std::sync::Arc::clone(&level_import_channel.1),
         );
         world.insert_resource(super::LevelImportSenderRes::new(
@@ -352,11 +345,6 @@ impl AppBootstrap {
         ));
         world.insert_resource(super::AudioImportSenderRes::new(
             audio_import_channel.0.clone(),
-        ));
-        world.insert_resource(editor_audio_cache);
-        world.insert_resource(runtime_preload);
-        world.insert_resource(super::RuntimeAudioPreloadSenderRes(
-            runtime_preload_channel.0.clone(),
         ));
         #[cfg(not(target_arch = "wasm32"))]
         world.insert_resource(audio_runtime);
@@ -1143,7 +1131,7 @@ impl AppInitialization {
 
         let mut audio_backend_locked = false;
         if let Some(audio_backend) = audio_backend_override {
-            if let Some(audio_backend) = eg_audio::audio::canonical_backend_name(&audio_backend) {
+            if let Some(audio_backend) = canonical_backend_name(&audio_backend) {
                 audio_backend_locked = true;
                 app_settings.audio_backend = audio_backend;
             } else {
@@ -1163,19 +1151,10 @@ impl AppInitialization {
             }
         };
 
-        let local_audio_cache = if cfg!(test) {
-            std::collections::HashMap::new()
-        } else {
-            eg_platform::io::load_all_local_audio().await
-        };
         let available_graphics_backends = discover_graphics_backends();
-        let available_audio_backends = eg_audio::audio::available_host_labels();
-        let audio_runtime = AudioBackendRes::default();
-        let _ = audio_runtime.set_preferred_backend_name(&app_settings.audio_backend);
-        let runtime_preload = RuntimeAudioPreloadRes::default();
-        let (preload_sender, preload_receiver) = std::sync::mpsc::channel::<AudioPreloadResult>();
-        let runtime_preload_channel = (preload_sender, shared_receiver(preload_receiver));
-        let editor_audio_cache = EditorAudioCacheRes::from_local_files(local_audio_cache);
+        let available_audio_backends = available_host_labels();
+        let audio_runtime = AudioSceneRes::default();
+        let _ = set_preferred_backend_name(&audio_runtime.0, &app_settings.audio_backend);
         let (audio_import_sender, audio_import_receiver) =
             std::sync::mpsc::channel::<(String, Vec<u8>)>();
         let audio_import_channel = (audio_import_sender, shared_receiver(audio_import_receiver));
@@ -1268,9 +1247,6 @@ impl AppInitialization {
             phase: AppPhase::Menu,
             menu,
             audio_runtime,
-            runtime_preload,
-            runtime_preload_channel,
-            editor_audio_cache,
             audio_import_channel,
             waveform_load_channel,
             session: super::SessionStateRes {
@@ -1294,6 +1270,7 @@ impl AppInitialization {
                 available_audio_backends,
                 app_settings: app_settings.clone(),
                 playing_level_name: None,
+                editor_custom_audio_bytes: None,
                 playtesting_editor: false,
                 game_paused: false,
                 playtest_audio_start_seconds: None,

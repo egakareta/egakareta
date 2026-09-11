@@ -13,10 +13,8 @@ mod app;
 mod auth;
 mod level;
 mod settings;
-mod waveform;
 
 pub use app::*;
 pub use auth::*;
 pub use level::*;
 pub use settings::*;
-pub use waveform::*;

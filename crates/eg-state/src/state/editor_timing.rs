@@ -6,9 +6,10 @@
 
 */
 
-use eg_audio::service::WAVEFORM_WINDOW;
 use eg_types::TimingPoint;
 use smart_default::SmartDefault;
+
+use super::audio_state::WAVEFORM_WINDOW;
 
 #[derive(SmartDefault, Clone)]
 pub struct EditorTimingState {

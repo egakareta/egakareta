@@ -81,13 +81,16 @@ use std::ops::{Deref, DerefMut};
 
 pub(crate) use async_bridge::apply_imported_level_to_world;
 pub use audio_state::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, RuntimeAudioPreloadRes,
-    RuntimeAudioPreloadSenderRes, WaveformLoadSenderRes,
+    AppSound, AudioSceneParam, AudioSceneRes, WAVEFORM_WINDOW, WaveformLoadMessage,
+    WaveformLoadSenderRes, WaveformResult, available_host_labels, canonical_backend_name,
+    decode_audio_to_waveform_streaming, ensure_audio_output, music_is_playing, music_time_seconds,
+    pause_music, play_sfx, resume_music, runtime_asset_source_key, set_preferred_backend_name,
+    start_music_builtin, start_music_with_bytes, start_waveform_loading, stop_music,
+    warmup_music_builtin, warmup_music_with_bytes,
 };
 pub(crate) use audio_state::{
-    AudioImportChannel, AudioPreloadChannel, WaveformLoadChannel,
-    load_waveform_for_level_resources, start_audio_source_at_seconds_for_resources,
-    with_audio_backend,
+    AudioImportChannel, WaveformLoadChannel, load_waveform_for_level_resources,
+    start_audio_source_at_seconds_for_resources, with_audio_scene,
 };
 #[cfg(test)]
 use bevy_ecs::prelude::ResMut;

@@ -28,8 +28,8 @@ use eg_state::state::RenderSurfaceHostRes;
 #[cfg(test)]
 use eg_state::state::test_support::TestApp;
 use eg_state::state::{
-    AppBootstrap, AudioBackendRes, EditorInputRes, RenderConfigRes, SessionStateRes,
-    enqueue_platform_input, register_state_schedule, setup_state_app,
+    AppBootstrap, AudioSceneRes, EditorInputRes, RenderConfigRes, SessionStateRes,
+    enqueue_platform_input, ensure_audio_output, register_state_schedule, setup_state_app,
 };
 #[cfg(not(test))]
 use eg_types::AppSettings;
@@ -637,15 +637,9 @@ impl Runtime {
     }
     pub fn ensure_audio_device(&self) {
         #[cfg(not(target_arch = "wasm32"))]
-        self.app
-            .world()
-            .resource::<AudioBackendRes>()
-            .ensure_device();
+        ensure_audio_output(&self.app.world().resource::<AudioSceneRes>().0);
         #[cfg(target_arch = "wasm32")]
-        self.app
-            .world()
-            .non_send::<AudioBackendRes>()
-            .ensure_device();
+        ensure_audio_output(&self.app.world().non_send::<AudioSceneRes>().0);
     }
 
     /// Return the cursor policy from the authoritative App-world session.

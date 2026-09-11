@@ -156,10 +156,6 @@ Blocks can define inline `animation` metadata for reusable idle motion and event
     - `serde_default_float!(default_bar: f32 = 1.0)` — for float epsilon comparison
     - `serde_default_array!(default_pos: [f32; 3] = [0.0, 0.0, 0.0])` — for float arrays
 
-### Test Data
-
-- For level export/import tests, set a tiny test music source and populate `local_audio_cache` to avoid expensive built-in audio read/compression.
-
 ### Platform-Specific Tests
 
 - Use `#[cfg(not(target_arch = "wasm32"))]` on tests that need filesystem access, native audio, or other platform-specific features.

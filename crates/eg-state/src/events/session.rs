@@ -43,10 +43,10 @@ use eg_types::{
 };
 
 use crate::state::{
-    AudioBackendSystemParam, AudioImportSenderRes, BuiltinLevelCatalogRes, EditorAudioCacheRes,
-    EditorCameraRes, EditorInputRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-    LevelExportServiceRes, LevelImportSenderRes, RuntimeAudioPreloadRes, SessionStateRes,
-    WaveformLoadSenderRes, apply_imported_level_to_world, load_waveform_for_level_resources,
+    AudioImportSenderRes, AudioSceneParam, BuiltinLevelCatalogRes, EditorCameraRes, EditorInputRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, LevelExportServiceRes,
+    LevelImportSenderRes, SessionStateRes, WaveformLoadSenderRes, apply_imported_level_to_world,
+    load_waveform_for_level_resources, set_preferred_backend_name,
 };
 
 /// Load a level from a builtin resource name.
@@ -190,6 +190,7 @@ pub fn handle_load_level(world: &mut World) {
         {
             let mut session = world.resource_mut::<SessionStateRes>();
             session.editor_level_name = Some(event.0.clone());
+            session.editor_custom_audio_bytes = None;
             session.audio_stop_pending = true;
         }
 
@@ -200,17 +201,13 @@ pub fn handle_load_level(world: &mut World) {
 }
 
 fn load_waveform_for_level(world: &mut World, level_name: String) {
-    let editor_cache = world.resource::<EditorAudioCacheRes>().clone();
-    let runtime_preload = world.resource::<RuntimeAudioPreloadRes>().clone();
+    let custom_bytes = world
+        .resource::<SessionStateRes>()
+        .editor_custom_audio_bytes
+        .clone();
     let sender = world.resource::<WaveformLoadSenderRes>().0.clone();
     let mut timing = world.resource_mut::<EditorTimingRes>();
-    load_waveform_for_level_resources(
-        level_name,
-        &editor_cache,
-        &runtime_preload,
-        &mut timing.0,
-        sender,
-    );
+    load_waveform_for_level_resources(level_name, custom_bytes, &mut timing.0, sender);
 }
 
 pub fn handle_rename_level(
@@ -233,7 +230,6 @@ pub fn handle_export_level(
     spawn: Res<EditorSpawnRes>,
     timeline: Res<EditorTimelineRes>,
     timing: Res<EditorTimingRes>,
-    audio_cache: Res<EditorAudioCacheRes>,
     mut export_service: ResMut<LevelExportServiceRes>,
 ) {
     for _ in events.read() {
@@ -254,8 +250,9 @@ pub fn handle_export_level(
             menu_preview_camera: session.editor_menu_preview_camera.clone(),
             objects,
         });
-        let audio_bytes = audio_cache
-            .bytes_for_level_audio(&metadata.basic.name)
+        let audio_bytes = session
+            .editor_custom_audio_bytes
+            .clone()
             .or_else(|| eg_platform::io::read_editor_music_bytes("audio.mp3"));
 
         match eg_level::build_level_export(&metadata, audio_bytes) {
@@ -323,13 +320,13 @@ pub fn handle_set_graphics_backend(
 
 pub fn handle_set_audio_backend(
     mut events: MessageReader<SetAudioBackend>,
-    backend: AudioBackendSystemParam<'_>,
+    backend: AudioSceneParam<'_>,
     mut session: ResMut<SessionStateRes>,
 ) {
     let mut changed = false;
     for event in events.read() {
         if session.audio_backend_locked
-            || !backend.set_preferred_backend_name(&event.0)
+            || !set_preferred_backend_name(&backend.0, &event.0)
             || session.app_settings.audio_backend == event.0
         {
             continue;

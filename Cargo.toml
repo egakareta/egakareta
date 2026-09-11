@@ -4,7 +4,6 @@
 [workspace]
 members = [
     "crates/eg-app",
-    "crates/eg-audio",
     "crates/eg-types",
     "crates/eg-block-geometry",
     "crates/eg-blocks",
@@ -46,7 +45,6 @@ criterion = { version = "0.8.2", default-features = false, features = [
     "plotters",
     "cargo_bench_support",
 ] }
-eg-audio = { path = "crates/eg-audio" }
 eg-block-geometry = { path = "crates/eg-block-geometry" }
 eg-blocks = { path = "crates/eg-blocks" }
 eg-codec = { path = "crates/eg-codec" }
@@ -88,7 +86,7 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "rustls",
 ] }
 rfd = "0.17.2"
-rodisnyaa = { git = "https://github.com/egakareta/rodisnyaa", rev = "ea45e4841848aaa23d0c28c000f1f0d6d22a5c6e", default-features = false, features = [
+euphorium = { version = "0.3.0", default-features = false, features = [
     "mp3",
     "nightly",
     "vorbis",

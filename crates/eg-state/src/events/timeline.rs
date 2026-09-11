@@ -43,10 +43,9 @@ use eg_game::{LevelMeta, TimelineSimulationRuntime};
 use eg_types::{AppPhase, Direction, EditorMode};
 
 use crate::state::{
-    AudioBackendSystemParam, EditorAudioCacheRes, EditorCameraRes, EditorInputRes,
-    EditorRuntimeRes, EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, GameplayResetRes, GameplayResetSeed, RuntimeAudioPreloadRes, SessionStateRes,
-    start_audio_source_at_seconds_for_resources,
+    AudioSceneParam, EditorCameraRes, EditorInputRes, EditorRuntimeRes, EditorSimulationInputsRes,
+    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
+    SessionStateRes, start_audio_source_at_seconds_for_resources, stop_music,
 };
 
 #[derive(SystemParam)]
@@ -152,9 +151,7 @@ pub struct TimelinePlaybackResources<'w, 's> {
     input: ResMut<'w, EditorInputRes>,
     runtime: ResMut<'w, EditorRuntimeRes>,
     timeline: ResMut<'w, EditorTimelineRes>,
-    audio: AudioBackendSystemParam<'w>,
-    editor_audio: Res<'w, EditorAudioCacheRes>,
-    runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
+    audio: AudioSceneParam<'w>,
     authored_objects: Query<
         'w,
         's,
@@ -185,7 +182,7 @@ pub fn handle_toggle_timeline_playback(
                 &mut resources.runtime,
                 &mut resources.timeline,
             ) {
-                resources.audio.stop();
+                stop_music(&resources.audio.0);
             }
         } else {
             start_editor_timeline_playback(&mut resources);
@@ -280,13 +277,10 @@ fn start_editor_timeline_playback(resources: &mut TimelinePlaybackResources<'_, 
         .as_deref()
         .unwrap_or("Untitled");
     start_audio_source_at_seconds_for_resources(
-        true,
-        false,
         level_name,
         start_seconds,
         &resources.audio,
-        &resources.editor_audio,
-        &resources.runtime_preload,
+        resources.session.editor_custom_audio_bytes.as_deref(),
     );
 }
 

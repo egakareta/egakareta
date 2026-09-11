@@ -12,12 +12,9 @@
 //! platform-specific side effects (file pickers, clipboard, storage, auth) on a
 //! per-function basis without going through wrapper layers.
 
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-};
+use std::sync::{Mutex, OnceLock};
 
-use eg_types::{AppSettings, AuthSession, PersistentWaveformCacheEntry};
+use eg_types::{AppSettings, AuthSession};
 use futures::lock::Mutex as AsyncMutex;
 
 #[derive(Clone, Default)]
@@ -25,10 +22,7 @@ pub struct PlatformHooks {
     pub pick_audio_result: Option<Option<(String, Vec<u8>)>>,
     pub pick_level_result: Option<Option<Vec<u8>>>,
     pub save_audio_result: Option<Result<(), String>>,
-    pub load_audio_result: Option<HashMap<String, Vec<u8>>>,
     pub read_editor_music_result: Option<Option<Vec<u8>>>,
-    pub save_waveform_result: Option<Result<(), String>>,
-    pub load_waveform_result: Option<Option<PersistentWaveformCacheEntry>>,
     pub load_settings_result: Option<Result<AppSettings, String>>,
     pub save_settings_result: Option<Result<(), String>>,
     pub auth_sign_in_result: Option<Result<AuthSession, String>>,
@@ -79,20 +73,8 @@ pub fn save_audio_result() -> Option<Result<(), String>> {
     with_hooks_mut(|hooks| hooks.save_audio_result.clone())
 }
 
-pub fn load_audio_result() -> Option<HashMap<String, Vec<u8>>> {
-    with_hooks_mut(|hooks| hooks.load_audio_result.clone())
-}
-
 pub fn read_editor_music_result() -> Option<Option<Vec<u8>>> {
     with_hooks_mut(|hooks| hooks.read_editor_music_result.clone())
-}
-
-pub fn save_waveform_result() -> Option<Result<(), String>> {
-    with_hooks_mut(|hooks| hooks.save_waveform_result.clone())
-}
-
-pub fn load_waveform_result() -> Option<Option<PersistentWaveformCacheEntry>> {
-    with_hooks_mut(|hooks| hooks.load_waveform_result.clone())
 }
 
 pub fn load_settings_result() -> Option<Result<AppSettings, String>> {

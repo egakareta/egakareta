@@ -154,6 +154,10 @@ pub struct SessionStateRes {
     pub available_audio_backends: Vec<String>,
     pub app_settings: AppSettings,
     pub playing_level_name: Option<String>,
+    /// Custom audio bytes for the open editor level, from the audio picker or
+    /// a bundled `.egz` import. Takes precedence over the built-in track for
+    /// playback, waveform decoding, and export. Cleared on level load.
+    pub editor_custom_audio_bytes: Option<Vec<u8>>,
     pub playtesting_editor: bool,
     pub game_paused: bool,
     pub playtest_audio_start_seconds: Option<f32>,

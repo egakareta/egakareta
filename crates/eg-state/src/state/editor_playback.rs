@@ -15,21 +15,15 @@ use eg_game::{ConsumedObjectEvent, TimelineSimulationRuntime};
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
 use super::{
-    AudioBackendRes, AudioBackendSystemParam, EditorAudioCacheRes, EditorInputRes,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, FrameTimeRes,
-    RuntimeAudioPreloadRes, SessionStateRes,
-    audio_state::start_audio_source_at_seconds_for_resources, editor_timeline::EditorTimelineState,
+    AppSound, AudioSceneParam, AudioSceneRes, EditorInputRes, EditorRuntimeRes, EditorSpawnRes,
+    EditorTimelineRes, EditorTimingRes, FrameTimeRes, SessionStateRes,
+    audio_state::{
+        music_is_playing, music_time_seconds, play_sfx,
+        start_audio_source_at_seconds_for_resources, stop_music,
+    },
+    editor_timeline::EditorTimelineState,
     runtime::BlockVisualEffect,
 };
-
-const METRONOME_MAJOR_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/metronome_major.mp3"
-));
-const METRONOME_MINOR_SFX: &[u8] = include_bytes!(concat!(
-    env!("EGAKARETA_WORKSPACE_ROOT"),
-    "/assets/metronome_minor.mp3"
-));
 
 /// Advance editor playback from App-owned clock/audio state. Render extraction
 /// observes the resulting timeline, authored entities, and effect resources.
@@ -51,9 +45,7 @@ pub(crate) struct EditorTimelinePlaybackParams<'w, 's> {
     timeline: ResMut<'w, EditorTimelineRes>,
     timing: Res<'w, EditorTimingRes>,
     runtime_state: ResMut<'w, EditorRuntimeRes>,
-    audio: AudioBackendSystemParam<'w>,
-    editor_audio: Res<'w, EditorAudioCacheRes>,
-    runtime_preload: Res<'w, RuntimeAudioPreloadRes>,
+    audio: AudioSceneParam<'w>,
     session: Res<'w, SessionStateRes>,
 }
 
@@ -70,7 +62,7 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
     if let Some(target_time) =
         take_ready_pending_seek(&mut params.timeline.0, params.frame_time.delta_seconds)
     {
-        params.audio.stop();
+        stop_music(&params.audio.0);
         let start_seconds = rebuild_playback_runtime(
             mode,
             target_time,
@@ -78,19 +70,11 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
             &params.spawn.0,
             &mut params.timeline,
         );
-        start_editor_audio(
-            &params.session,
-            start_seconds,
-            &params.audio,
-            &params.editor_audio,
-            &params.runtime_preload,
-        );
+        start_editor_audio(&params.session, start_seconds, &params.audio);
     }
 
-    let audio_time = params
-        .audio
-        .playback_time_seconds()
-        .unwrap_or(params.timeline.0.clock.time_seconds);
+    let audio_time =
+        music_time_seconds(&params.audio.0).unwrap_or(params.timeline.0.clock.time_seconds);
     let clamped_time = audio_time
         .max(0.0)
         .min(params.timeline.0.clock.duration_seconds);
@@ -120,7 +104,9 @@ pub(crate) fn update_editor_timeline_playback_system(mut params: EditorTimelineP
         }
     }
 
-    if clamped_time >= params.timeline.0.clock.duration_seconds || !params.audio.is_playing() {
+    if clamped_time >= params.timeline.0.clock.duration_seconds
+        || !music_is_playing(&params.audio.0)
+    {
         stop_editor_playback(
             &mut params.input,
             &mut params.runtime_state,
@@ -244,7 +230,7 @@ fn play_metronome_for_crossed_beat(
     old_time: f32,
     new_time: f32,
     timing_points: &[eg_types::TimingPoint],
-    audio: &AudioBackendRes,
+    audio: &AudioSceneRes,
 ) {
     if new_time <= old_time {
         return;
@@ -273,29 +259,23 @@ fn play_metronome_for_crossed_beat(
     }
 
     let is_downbeat = new_beat % (timing_point.time_signature_numerator.max(1) as i64) == 0;
-    audio.play_sfx(if is_downbeat {
-        METRONOME_MAJOR_SFX
-    } else {
-        METRONOME_MINOR_SFX
-    });
+    play_sfx(
+        &audio.0,
+        if is_downbeat {
+            AppSound::MetronomeMajor
+        } else {
+            AppSound::MetronomeMinor
+        },
+    );
 }
 
-fn start_editor_audio(
-    session: &SessionStateRes,
-    start_seconds: f32,
-    audio: &AudioBackendRes,
-    editor_audio: &EditorAudioCacheRes,
-    runtime_preload: &RuntimeAudioPreloadRes,
-) {
+fn start_editor_audio(session: &SessionStateRes, start_seconds: f32, audio: &AudioSceneRes) {
     let level_name = session.editor_level_name.as_deref().unwrap_or("Untitled");
     start_audio_source_at_seconds_for_resources(
-        true,
-        false,
         level_name,
         start_seconds,
         audio,
-        editor_audio,
-        runtime_preload,
+        session.editor_custom_audio_bytes.as_deref(),
     );
 }
 
@@ -303,7 +283,7 @@ fn stop_editor_playback(
     input: &mut EditorInputRes,
     runtime: &mut EditorRuntimeRes,
     timeline: &mut EditorTimelineRes,
-    audio: &AudioBackendRes,
+    audio: &AudioSceneRes,
 ) {
     timeline.0.playback.playing = false;
     timeline.0.playback.runtime = None;
@@ -315,7 +295,7 @@ fn stop_editor_playback(
         .last_mode
         .take()
         .unwrap_or(EditorMode::Place);
-    audio.stop();
+    stop_music(&audio.0);
 }
 #[cfg(test)]
 mod tests {

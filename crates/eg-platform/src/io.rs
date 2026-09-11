@@ -6,7 +6,7 @@
 
 */
 
-use eg_types::{AppSettings, PersistentWaveformCacheEntry};
+use eg_types::AppSettings;
 
 use crate::storage;
 
@@ -88,15 +88,6 @@ pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), St
     storage::save_audio(filename, data).await
 }
 
-pub async fn load_all_local_audio() -> std::collections::HashMap<String, Vec<u8>> {
-    #[cfg(test)]
-    if let Some(result) = crate::test_hooks::load_audio_result() {
-        return result;
-    }
-
-    storage::load_all_audio().await
-}
-
 pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
     #[cfg(test)]
     if let Some(result) = crate::test_hooks::read_editor_music_result() {
@@ -107,27 +98,6 @@ pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
     pollster::block_on(storage::read_editor_music_bytes(music_source))
         .ok()
         .flatten()
-}
-
-pub async fn save_waveform_to_storage(
-    cache_key: &str,
-    entry: &PersistentWaveformCacheEntry,
-) -> Result<(), String> {
-    #[cfg(test)]
-    if let Some(result) = crate::test_hooks::save_waveform_result() {
-        return result;
-    }
-
-    storage::save_waveform(cache_key, entry).await
-}
-
-pub async fn load_waveform_from_storage(cache_key: &str) -> Option<PersistentWaveformCacheEntry> {
-    #[cfg(test)]
-    if let Some(result) = crate::test_hooks::load_waveform_result() {
-        return result;
-    }
-
-    storage::load_waveform(cache_key).await
 }
 
 pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
@@ -150,14 +120,13 @@ pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs};
+    use std::fs;
 
-    use eg_types::{AppSettings, PersistentWaveformCacheEntry};
+    use eg_types::AppSettings;
 
     use super::{
-        load_all_local_audio, load_app_settings_from_storage, load_waveform_from_storage,
-        save_app_settings_to_storage, save_audio_to_storage, save_level_export,
-        save_waveform_to_storage,
+        load_app_settings_from_storage, save_app_settings_to_storage, save_audio_to_storage,
+        save_level_export,
     };
     use crate::{test_hooks, test_hooks::shared_test_lock};
 
@@ -222,37 +191,6 @@ mod tests {
 
         let result = save_audio_to_storage("music.ogg", b"audio-bytes").await;
         assert_eq!(result, Err("disk full".to_string()));
-    }
-
-    #[tokio::test]
-    async fn load_all_local_audio_returns_storage_layer_payload() {
-        let _lock = shared_test_lock().lock().await;
-        let _reset_guard = HookResetGuard::new();
-        let mut expected_audio = HashMap::new();
-        expected_audio.insert("track.ogg".to_string(), vec![1, 2, 3, 4]);
-        test_hooks::with_hooks_mut(|hooks| {
-            hooks.load_audio_result = Some(expected_audio.clone());
-        });
-
-        let loaded = load_all_local_audio().await;
-        assert_eq!(loaded, expected_audio);
-    }
-
-    #[tokio::test]
-    async fn waveform_storage_helpers_delegate_to_storage_layer() {
-        let _lock = shared_test_lock().lock().await;
-        let _reset_guard = HookResetGuard::new();
-        let entry = PersistentWaveformCacheEntry::new(vec![0.2, 0.4], 48_000, 256);
-        test_hooks::with_hooks_mut(|hooks| {
-            hooks.save_waveform_result = Some(Ok(()));
-            hooks.load_waveform_result = Some(Some(entry.clone()));
-        });
-
-        let save_result = save_waveform_to_storage("cache-key", &entry).await;
-        assert!(save_result.is_ok(), "waveform save should delegate success");
-
-        let loaded = load_waveform_from_storage("cache-key").await;
-        assert_eq!(loaded, Some(entry));
     }
 
     #[tokio::test]
