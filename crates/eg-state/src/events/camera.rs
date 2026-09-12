@@ -7,11 +7,7 @@
 */
 //! Camera / zoom / trigger selection events.
 //!
-//! All 5 messages in this module are **carve-outs** (same
-//! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`,
-//! `events::session`, and `events::spawn`): the per-message handlers in
-//! this file mutate App-world resources directly instead of staging a
-//! the editor command bridge.
+//! The per-message handlers in this file mutate App-world resources directly:
 //!
 //! - `AdjustZoom` / `SetCameraOrientation` mutate the authoritative
 //!   `EditorCameraRes.0` camera and transition state directly.
@@ -77,15 +73,13 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Carve-out dispatch systems
+// Dispatch systems
 // -----------------------------------------------------------------------
 
-/// Move the editor camera
-/// along its current look vector by `delta * 2` units. The legacy
-/// setter is gated on `AppPhase::Editor`; the carve-out mirrors the
-/// math exactly (no phase check at this layer - the dispatch path
-/// is the one that should gate, and the resource is the source of
-/// truth at the sync point).
+/// Move the editor camera along its current look vector by `delta * 2` units.
+/// Applies the zoom math directly to `EditorCameraRes`; phase gating happens
+/// in the dispatch path, and the resource is the source of truth at the sync
+/// point.
 pub fn handle_adjust_zoom(
     mut events: MessageReader<AdjustZoom>,
     mut camera: ResMut<EditorCameraRes>,

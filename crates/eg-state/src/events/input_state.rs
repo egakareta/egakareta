@@ -8,9 +8,7 @@
 //! Held-state input events (Shift / Ctrl / Alt / WASD panning).
 //!
 //! These represent `EditorInput` state, not commands. The handlers write
-//! directly to the mirrored `EditorInputRes` resource so the App-world
-//! input-state path no longer needs to route these through legacy editor
-//! dispatch.
+//! directly to the `EditorInputRes` resource.
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;

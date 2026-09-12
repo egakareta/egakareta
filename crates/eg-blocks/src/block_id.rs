@@ -73,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_legacy_bare_block_ids_to_core_namespace() {
+    fn normalizes_bare_block_ids_to_core_namespace() {
         assert_eq!(BlockId::new(" Stone "), BlockId::new("core/stone"));
     }
 

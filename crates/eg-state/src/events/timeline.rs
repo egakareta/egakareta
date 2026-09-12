@@ -7,9 +7,7 @@
 */
 //! Timeline / playback / tap events.
 //!
-//! Phase 3.16 carves out the pure timeline-setting messages that only
-//! mutate App-world resource fields and already have matching legacy
-//! setters/getters:
+//! Pure timeline-setting messages that mutate App-world resource fields:
 //! - `ShiftTimeline` and `SetTimelineTime` write
 //!   `EditorTimelineRes.0.clock.time_seconds`
 //! - `SetTimelineDuration` writes
@@ -345,8 +343,8 @@ fn seek_timeline(resources: &mut TimelineSeekResources<'_, '_>, time_seconds: f3
     resources.timeline.0.preview.position = position;
     resources.timeline.0.preview.direction = direction;
 
-    // Ctrl deliberately keeps the editor view fixed while scrubbing. The
-    // default follows the simulated snake, matching the pre-ECS editor.
+    // Ctrl keeps the editor view fixed while scrubbing; by default the
+    // camera follows the simulated snake position.
     if !resources.input.0.ctrl_held {
         resources.camera.0.editor_pan = [position[0] + 0.5, position[2] + 0.5];
         resources.camera.0.editor_target_z = position[1];

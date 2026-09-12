@@ -8,8 +8,7 @@
 //! Pointer / drag / cursor input messages.
 //!
 //! These represent editor input state, not commands. The handlers write
-//! directly to mirrored App-world resources so pointer routing no longer
-//! needs to stage legacy editor commands during the compatibility window.
+//! directly to App-world input/camera resources.
 
 use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};

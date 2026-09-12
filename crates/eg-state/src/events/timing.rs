@@ -7,13 +7,11 @@
 */
 //! Timing point events.
 //!
-//! All 6 messages in this module are **carve-outs** (same pattern as
-//! `events::snap`, `events::editor_mode::handle_set_block_id`, and
-//! `events::session`): the per-message handlers in this file mutate
-//! `EditorTimingRes.0` directly instead of staging a legacy
-//! `EditorCommand`.
+//! All 6 messages in this module write `EditorTimingRes.0` directly (same
+//! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`, and
+//! `events::session`).
 //!
-//! The carve-out covers `timing_points` and `timing_selected_index`.
+//! This covers `timing_points` and `timing_selected_index`.
 //! The bpm-tap fields are carved out in `events::bpm` and share the same
 //! authoritative `EditorTimingRes` resource.
 
@@ -69,7 +67,7 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems (all carve-outs: write directly to EditorTimingRes)
+// Dispatch systems (write directly to EditorTimingRes)
 // -----------------------------------------------------------------------
 
 /// Insert a new timing point, re-sort the list by time, and bump the revision.

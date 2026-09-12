@@ -51,8 +51,7 @@ use super::{
 /// Wraps a [`bevy_app::App`] built with [`setup_state_app`] + the
 /// per-frame [`StateSchedule`]. Provides ergonomic accessors for the
 /// underlying [`World`] + [`App`] so tests can assert on resources,
-/// events, and queries without constructing a monolithic compatibility
-/// object.
+/// events, and queries directly.
 ///
 /// Construct via [`TestApp::minimal`] (no GPU) or [`TestApp::with_app`]
 /// (custom pre-wired [`App`]).

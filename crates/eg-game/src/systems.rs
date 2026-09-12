@@ -332,8 +332,8 @@ pub fn ground_gravity_system(
         .grid
         .query_aabb_into(s_min_x, s_max_x, s_min_z, s_max_z, &mut candidates);
 
-    // Legacy behavior: default support surface to y=0 when no objects
-    // provide one. Tests rely on this for empty levels.
+    // Default support surface is y=0 when no objects provide one, so empty
+    // levels still ground the player.
     let mut top_surface: Option<f32> = Some(0.0);
     for entity in candidates {
         let Ok((behavior, hitboxes)) = objects.get(entity) else {

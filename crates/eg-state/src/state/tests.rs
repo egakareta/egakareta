@@ -127,11 +127,8 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
-    // Write a SetEditorMode(Place) message. Phase 3.13 carved
-    // this out: the handler mutates `EditorInputRes.0.mode`
-    // directly instead of staging a legacy
-    // `EditorCommand::SetMode`. Pin the carve-out behavior: the
-    // resource is updated and no editor command is staged.
+    // Write a SetEditorMode(Place) message. The handler mutates
+    // `EditorInputRes.0.mode` directly.
     app.world_mut()
         .write_message(SetEditorMode(EditorMode::Place));
 
@@ -229,8 +226,7 @@ fn test_app_tick_state_writes_pointer_state_directly() {
 
 #[test]
 fn test_app_tick_state_applies_undo_to_app_resources() {
-    // Verify that the editor Undo message is handled in App-world resources
-    // instead of relying on legacy dispatch.
+    // Verify that the editor Undo message is handled in App-world resources.
     use crate::events::history::Undo;
 
     let mut app = crate::state::test_support::TestApp::minimal();
@@ -283,15 +279,10 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
 
 #[test]
 fn test_app_tick_state_practice_mode_mutates_session_resource() {
-    // Phase 3.15: `GameSetPracticeMode` is a carve-out - the
-    // handler writes `SessionStateRes.practice_mode_enabled`
-    // directly instead of routing through legacy `State`. Pin the
-    // resource update here; the change-guarded runtime sync (which
-    // would invoke the legacy
-    // `set_practice_mode_enabled` setter with the heavy side
-    // effects - clear checkpoints, restart level, resume game) is
-    // exercised in `eg-app` runtime tests because it requires a
-    // real `Runtime`.
+    // `GameSetPracticeMode` handler writes
+    // `SessionStateRes.practice_mode_enabled` directly. The change-guarded
+    // runtime sync (clear checkpoints, restart level, resume game) is
+    // exercised in `eg-app` runtime tests because it requires a real `Runtime`.
     use crate::events::navigation::GameSetPracticeMode;
 
     let mut app = crate::state::test_support::TestApp::minimal();
@@ -363,10 +354,8 @@ fn tick_state_poll_channels_emits_audio_import_result_event() {
 
     // Create a fresh channel whose receiver sits in the Bevy
     // world resource (and whose sender we control from the test).
-    // Phase 6a's `poll_channels_system` drains this resource once
-    // per frame and emits the corresponding result event. The
-    // legacy `State::audio.state.editor.audio_import_channel.1`
-    // is left alone (Phase 6b will share the receiver via Arc).
+    // The `poll_channels_system` drains this resource once per frame and
+    // emits the corresponding result event.
     let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
     app.world_mut()
         .insert_resource(AudioImportChannelRes(std::sync::Arc::new(

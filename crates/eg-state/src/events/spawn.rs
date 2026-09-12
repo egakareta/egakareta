@@ -7,11 +7,10 @@
 */
 //! Spawn / placement preview events.
 //!
-//! All 3 messages in this module are **carve-outs** (same pattern as
-//! `events::snap`, `events::editor_mode::handle_set_block_id`, and
+//! All 3 messages in this module write App-world resources directly (same
+//! pattern as `events::snap`, `events::editor_mode::handle_set_block_id`, and
 //! `events::session`): the per-message handlers in this file mutate
-//! App-world resources directly instead of staging a legacy
-//! `EditorCommand`.
+//! App-world resources directly.
 //!
 //! - `SetSpawnHere` / `RotateSpawnDirection` mutate the authoritative
 //!   `EditorSpawnRes.0` spawn position and direction directly.
@@ -44,13 +43,12 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Dispatch systems (all carve-outs: write directly to App-world resources)
+// Dispatch systems (write directly to App-world resources)
 // -----------------------------------------------------------------------
 
 /// Set the spawn position to the current editor cursor (read from
-/// `EditorInputRes.0.cursor`). Mirrors the `SetSpawnHere` legacy
-/// dispatch path (`force_editor_cursor_from_pointer` +
-/// `editor_set_spawn_here`).
+/// `EditorInputRes.0.cursor`). Forces the editor cursor from the pointer,
+/// then copies it into the spawn position.
 pub fn handle_set_spawn_here(
     mut events: MessageReader<SetSpawnHere>,
     mut spawn: ResMut<EditorSpawnRes>,

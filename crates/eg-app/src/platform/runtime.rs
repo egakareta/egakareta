@@ -1122,10 +1122,8 @@ mod tests {
     }
 
     /// `AuthSubmitSignIn` is App-world owned: the handler writes
-    /// `AuthSubmitSignInRequest.pending = true`, `StateSchedule`
-    /// consumes the request into `AuthStateRes`, and Runtime mirrors
-    /// that resource back to legacy `State` without a dedicated auth
-    /// request sync.
+    /// `AuthSubmitSignInRequest.pending = true` and `StateSchedule`
+    /// consumes the request into `AuthStateRes`.
     #[test]
     fn runtime_carve_out_auth_submit_sign_in_consumes_request() {
         use eg_state::events::auth::AuthSubmitSignIn;
@@ -1361,7 +1359,7 @@ mod tests {
     }
 
     /// Real gameplay restart is applied by the App-world gameplay reset
-    /// system and does not fall back to Runtime's legacy request consumer.
+    /// system.
     #[test]
     fn runtime_direct_game_restart_resets_app_gameplay() {
         let mut runtime = runtime_in_playing(false, false);
@@ -2028,10 +2026,8 @@ mod tests {
 
     use eg_state::events::bpm::{BpmTap, BpmTapReset};
 
-    /// Writing a `BpmTap` message reaches the App world, mutates
-    /// `EditorTimingRes.0.bpm_tap_times`, and the per-frame sync
-    /// propagates the value to the legacy `State.editor.timing`
-    /// fields.
+    /// Writing a `BpmTap` message reaches the App world and mutates
+    /// `EditorTimingRes.0.bpm_tap_times`.
     #[test]
     fn runtime_carve_out_bpm_tap_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
@@ -2083,8 +2079,7 @@ mod tests {
         );
     }
 
-    /// `BpmTapReset` is a carve-out: writing the message clears the
-    /// App-owned resource's tap history.
+    /// Writing `BpmTapReset` clears the App-owned resource's tap history.
     #[test]
     fn runtime_carve_out_bpm_tap_reset_mutates_app_resources() {
         let mut runtime = Runtime::new_test();
@@ -3098,17 +3093,14 @@ mod tests {
         );
     }
 
-    /// `AddCameraTrigger` and `AddCameraFollowTrigger` are now
-    /// handlers mutate authored editor entities directly instead of
-    /// staging legacy commands. The runtime test near the editor-object
-    /// handlers pins the end-to-end
-    /// path into the legacy `State` object store while that store
-    /// still owns presentation side effects.
+    /// `AddCameraTrigger` and `AddCameraFollowTrigger` handlers mutate
+    /// authored editor entities directly. This test pins the end-to-end
+    /// camera-trigger path.
     #[test]
     fn runtime_add_camera_trigger_carve_out_note() {
         // This placeholder remains as a compact pointer to the
         // runtime-level AddCameraTrigger/AddCameraFollowTrigger
-        // coverage near the editor-object carve-outs above.
+        // coverage near the editor-object tests above.
     }
 
     use eg_state::events::misc::{ToggleHitboxVisualization, TogglePlaceWindow};
@@ -3140,8 +3132,7 @@ mod tests {
         );
     }
 
-    /// A no-message frame must preserve App-owned input instead of
-    /// refreshing it from the legacy compatibility shell.
+    /// A no-message frame must preserve App-owned input.
     #[test]
     fn runtime_no_op_frame_preserves_app_hitbox_visualization() {
         let mut runtime = Runtime::new_test();
@@ -3629,8 +3620,7 @@ mod tests {
         );
     }
 
-    /// `Escape` in the menu is an App-owned no-op and does not use a legacy
-    /// Runtime request consumer.
+    /// `Escape` in the menu is an App-owned no-op.
     #[test]
     fn runtime_escape_in_menu_is_app_owned_noop() {
         use eg_state::events::misc::Escape;

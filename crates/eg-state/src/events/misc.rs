@@ -59,8 +59,7 @@ pub fn handle_toggle_hitbox_visualization(
 }
 
 // `TogglePerfOverlay` owns both the App-world value and puffin's global
-// collection switch. Legacy `State` perf fields are not synchronized back
-// from this handler.
+// collection switch.
 pub fn handle_toggle_perf_overlay(
     mut events: MessageReader<TogglePerfOverlay>,
     mut perf: ResMut<PerfRes>,

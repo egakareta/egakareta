@@ -119,8 +119,8 @@ pub fn canonical_backend_name(backend_name: &str) -> Option<String> {
 }
 
 /// Remembers a backend preference by its user-facing label, replacing the
-/// scene output. `"Default"` (and `""`) clear the preference. Unlike the old
-/// wrapper, active playback keeps its source and position across the switch.
+/// scene output. `"Default"` (and `""`) clear the preference. Active playback
+/// keeps its source and position across the switch.
 pub fn set_preferred_backend_name(scene: &Soundscape<AppSound>, backend_name: &str) -> bool {
     let trimmed = backend_name.trim();
     if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("Default") {

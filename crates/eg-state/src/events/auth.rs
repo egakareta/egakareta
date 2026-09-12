@@ -5,8 +5,9 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Auth + clipboard + surface-resize events. One per `AppCommand` variant
-//! under `AppCommand::Auth` in the legacy enum.
+//! Auth + clipboard + surface-resize events. One message per auth,
+//! clipboard, and surface-resize intent (`AuthSubmitSignIn`, `AuthSignOut`,
+//! `AuthOpenSignup`, `CopyLatestPerfFrame`, `ResizeSurface`).
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;

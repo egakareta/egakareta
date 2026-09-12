@@ -10,9 +10,8 @@
 //! These handlers mutate App-world timing resources directly (same pattern as
 //! `events::snap` and `events::editor_mode::handle_set_block_id`).
 //! The handlers mutate `EditorTimingRes.0.bpm_tap_times` and
-//! `EditorTimingRes.0.bpm_tap_result` directly, doing the same
-//! calculation as the legacy `State::editor_bpm_tap` /
-//! `editor_bpm_tap_reset` paths.
+//! `EditorTimingRes.0.bpm_tap_result` directly, computing the running BPM
+//! from consecutive tap intervals.
 //!
 use bevy_app::App;
 use bevy_ecs::prelude::*;
@@ -32,14 +31,12 @@ pub fn register_events(app: &mut App) {
 }
 
 // -----------------------------------------------------------------------
-// Carve-out dispatch systems: handlers mutate `EditorTimingRes` directly
+// Dispatch systems: handlers mutate `EditorTimingRes` directly
 // so the App world is the authoritative store for the bpm-tap state.
 // The bpm-tap calculation runs in the App world: the handler reads
 // wall-clock time, appends to the tap-times list, recomputes the
 // running BPM (60 / average diff), and truncates the list to the
-// last 16 taps. This is the same logic as
-// `State::editor_bpm_tap` / `State::editor_bpm_tap_reset`, kept in
-// lockstep to avoid two divergent implementations.
+// last 16 taps.
 // -----------------------------------------------------------------------
 
 /// Maximum number of bpm tap times retained for the running average.

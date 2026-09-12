@@ -5,8 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Navigation / phase messages corresponding to the navigation and phase
-//! intents formerly grouped under `AppCommand`.
+//! Navigation / phase messages for menu, editor, and gameplay transitions.
 //!
 //! `NextLevel`/`PrevLevel` in the menu, `GameResume`, and
 //! `GameSetPracticeMode` write App-world resources or typed requests directly
@@ -580,7 +579,7 @@ pub fn handle_game_restart_level(
 
 /// `GameSetPracticeMode` mutates the App-owned practice session directly.
 /// Disabling real gameplay practice mode also queues the existing
-/// App-world gameplay reset, matching the legacy restart behavior.
+/// App-world gameplay reset, restarting the level.
 pub fn handle_game_set_practice_mode(
     mut events: MessageReader<GameSetPracticeMode>,
     phase: Res<State<AppPhase>>,
@@ -621,9 +620,9 @@ pub struct PracticeCheckpointResources<'w, 's> {
     session: ResMut<'w, SessionStateRes>,
 }
 
-// `GameSetPracticeCheckpoint` is an App-world gameplay carve-out. The
-// handler captures the current player/object ECS state directly and builds
-// an independent checkpoint snapshot for App-owned practice state.
+// `GameSetPracticeCheckpoint` captures the current player/object ECS state
+// directly and builds an independent checkpoint snapshot for App-owned
+// practice state.
 pub fn handle_game_set_practice_checkpoint(
     mut events: MessageReader<GameSetPracticeCheckpoint>,
     mut resources: PracticeCheckpointResources,

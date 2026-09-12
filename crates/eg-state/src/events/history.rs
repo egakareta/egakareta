@@ -31,10 +31,8 @@ pub struct Redo;
 /// Marker Message emitted by direct-manipulation UI (gizmo drag, marquee,
 /// block drag) to request a pre-mutation history snapshot.
 ///
-/// Undo/redo history stacks now live in `EditorHistoryRes`, but
-/// pre-mutation snapshot recording still belongs to the legacy mutation paths.
-/// In a later phase this Message drives a `PreCommandHistorySet` system that
-/// snapshots `ObjectBundle` data before any mutating handler runs.
+/// History stacks live in `EditorHistoryRes`. This message records an undo
+/// snapshot of `ObjectBundle` data before a mutating handler runs.
 #[derive(Message, Debug, Clone, Default)]
 pub struct HistorySnapshot {
     /// Free-form label for the snapshot (e.g. "gizmo_drag_release").
@@ -89,9 +87,8 @@ pub fn handle_undo(
         let Some(snapshot) = resources.history.0.undo.pop() else {
             continue;
         };
-        // Single collect reused for the redo inverse AND the apply: the
-        // legacy path collected twice and cloned the full 19k scene for the
-        // opposite stack entry.
+        // Single collect reused for the redo inverse AND the apply, so
+        // undo/redo pays for exactly one scene collect.
         let current_objects = collect_editor_object_data(&resources.authored_objects);
         let opposite = snapshot
             .object_change
@@ -432,8 +429,8 @@ fn apply_history_snapshot_to_resources(
     resources: &mut HistoryResources<'_, '_>,
     collected: Option<Vec<LevelObject>>,
 ) {
-    // Lazily collect only for deltas that need the live scene; the legacy
-    // full-snapshot path moves its stored vec with zero collect.
+    // Lazily collect only for deltas that need the live scene; full
+    // snapshots move their stored vec with zero collect.
     let mut collected = collected;
     let mut live = |resources: &HistoryResources<'_, '_>| {
         collected

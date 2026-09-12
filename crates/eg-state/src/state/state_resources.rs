@@ -7,11 +7,11 @@
 */
 //! ECS resource definitions for eg-state.
 //!
-//! These resources are the App-world state boundary for the per-subsystem
-//! values that historically lived in the hand-rolled state machine. App
-//! bootstrap inserts the resources directly, and migrated production systems
-//! own the live values. Platform services remain behind explicit resource
-//! boundaries where they require external channels or handles.
+//! These resources are the App-world state boundary for per-subsystem editor,
+//! session, gameplay, and platform values. App bootstrap inserts the resources
+//! directly, and production systems own the live values. Platform services
+//! remain behind explicit resource boundaries where they require external
+//! channels or handles.
 //!
 //! Naming convention: `<Domain>Res` for top-level domain resources, and
 //! `<Domain><Noun>Res` for grouped sub-state.

@@ -7,10 +7,8 @@
 */
 //! Bevy `Message` taxonomy for the eg-state `App`.
 //!
-//! The message taxonomy replaces the monolithic `AppCommand` /
-//! `EditorCommand` dispatch path with one semantic Bevy `Message` type per
-//! domain. Handlers mutate App-world resources directly or write typed request
-//! resources for external services.
+//! One semantic Bevy `Message` type per domain. Handlers mutate App-world
+//! resources directly or write typed request resources for external services.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
@@ -33,13 +31,12 @@
 //!   `Messages<T>::write(event)` from anywhere; no need to thread a
 //!   `&mut State` through every UI closure.
 //!
-//! ## Input-state carve-out
+//! ## Input-state messages
 //!
-//! Per the migration plan, the following 12 editor command variants are
-//! **not** commands - they are *input state*. Modifier/pan held state now
-//! writes directly to `EditorInputRes`; pointer/camera drag messages now
-//! write directly to App-world editor input/camera resources during the
-//! compatibility window.
+//! The following 12 editor message variants are *input state*.
+//! Modifier/pan held state writes directly to `EditorInputRes`;
+//! pointer/camera drag messages write directly to App-world editor
+//! input/camera resources.
 //!
 //! - `SetShiftHeld` / `SetCtrlHeld` / `SetAltHeld` (direct resource writes)
 //! - `SetPan{Up,Down,Left,Right}Held` (direct resource writes)
@@ -239,10 +236,10 @@ pub fn register_command_events_world(world: &mut World) {
     world.init_resource::<Messages<pointer::CameraDrag>>();
 }
 
-/// Write a legacy app command into the Bevy message bus.
+/// Write an app command into the Bevy message bus.
 ///
-/// UI and compatibility callers use this as the single command-ingress
-/// adapter while the public UI surface still returns `AppCommand` values.
+/// UI callers use this as the single command-ingress adapter while the public
+/// UI surface still returns `AppCommand` values.
 pub fn write_app_command_message(world: &mut World, command: AppCommand) {
     match command {
         AppCommand::TurnRight => {
@@ -294,7 +291,7 @@ pub fn write_app_command_message(world: &mut World, command: AppCommand) {
     }
 }
 
-/// Write multiple legacy app commands into the Bevy message bus.
+/// Write multiple app commands into the Bevy message bus.
 pub fn write_app_command_messages(
     world: &mut World,
     commands: impl IntoIterator<Item = AppCommand>,
@@ -304,7 +301,7 @@ pub fn write_app_command_messages(
     }
 }
 
-/// Write a legacy editor command into the Bevy message bus.
+/// Write an editor command into the Bevy message bus.
 pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
     match command {
         EditorCommand::SetMode(mode) => {
@@ -779,7 +776,7 @@ pub fn add_command_systems(schedule: &mut Schedule) {
                 .in_set(CommandHandlerSet),
         )
         // Input state (modifier / pan held). These write directly to
-        // EditorInputRes instead of staging legacy commands.
+        // EditorInputRes.
         .add_systems(
             (
                 input_state::handle_set_shift_held,
@@ -869,22 +866,19 @@ mod tests {
         let mut world = bevy_ecs::world::World::new();
         // All per-message drain systems run in the same schedule, so the
         // helper must register every resource any of them reads. The
-        // carve-out handlers (input_state, pointer) reach for
-        // `EditorInputRes`, `EditorCameraRes`, and `State<AppPhase>`; the
-        // `snap` carve-out reaches for `EditorConfigRes`; the `history`
-        // carve-out queries authored entities plus the editor mirrors; the `timeline`
-        // carve-out reaches for `EditorTimelineRes` + `EditorRuntimeRes`; the `bpm`
-        // carve-out reaches for `EditorTimingRes`; the `session`
-        // carve-out (SetShowMetadata, ToggleSettings, ...) reaches for
-        // `SessionStateRes`; the `timing` carve-out reaches for
-        // `EditorTimingRes`; the `spawn` carve-out reaches for
-        // `EditorInputRes` (cursor) + `EditorSpawnRes` +
-        // `EditorConfigRes`; the `PickBlockAt` carve-out reaches for
-        // `RenderUniformsRes` viewport size; the `camera` carve-out reaches for
-        // `EditorCameraRes` + `EditorTriggerRes`; the resize carve-out
-        // reaches for `RenderResizeRequest`; the perf-frame copy carve-out
-        // reaches for `PerfFrameCopyRequest`. The rest of the schedule only
-        // reads message buffers and App-world resources.
+        // input_state/pointer handlers reach for `EditorInputRes`,
+        // `EditorCameraRes`, and `State<AppPhase>`; `snap` reaches for
+        // `EditorConfigRes`; `history` queries authored entities plus the
+        // editor resources; `timeline` reaches for `EditorTimelineRes` +
+        // `EditorRuntimeRes`; `bpm` reaches for `EditorTimingRes`; `session`
+        // (SetShowMetadata, ToggleSettings, ...) reaches for
+        // `SessionStateRes`; `timing` reaches for `EditorTimingRes`; `spawn`
+        // reaches for `EditorInputRes` (cursor) + `EditorSpawnRes` +
+        // `EditorConfigRes`; `PickBlockAt` reaches for `RenderUniformsRes`
+        // viewport size; `camera` reaches for `EditorCameraRes` +
+        // `EditorTriggerRes`; resize reaches for `RenderResizeRequest`;
+        // perf-frame copy reaches for `PerfFrameCopyRequest`. The rest of the
+        // schedule only reads message buffers and App-world resources.
         world.init_resource::<crate::state::EditorInputRes>();
         world.init_resource::<crate::state::EditorCameraRes>();
         world.init_resource::<crate::state::EditorConfigRes>();
@@ -1277,9 +1271,8 @@ mod tests {
         );
     }
 
-    /// `AuthSubmitSignIn` is a carve-out: the handler writes
-    /// `AuthSubmitSignInRequest.pending = true`. Pin the request
-    /// is set and no legacy command is staged.
+    /// `AuthSubmitSignIn` handler writes
+    /// `AuthSubmitSignInRequest.pending = true`. Asserts the request is set.
     #[test]
     fn carve_out_auth_submit_sign_in_writes_request() {
         let mut world = build_event_world();
@@ -1294,9 +1287,8 @@ mod tests {
         );
     }
 
-    /// `AuthSignOut` is a carve-out: the handler writes
-    /// `AuthSignOutRequest.pending = true`. Pin the request is set
-    /// and no legacy command is staged.
+    /// `AuthSignOut` handler writes `AuthSignOutRequest.pending = true`.
+    /// Asserts the request is set.
     #[test]
     fn carve_out_auth_sign_out_writes_request() {
         let mut world = build_event_world();
@@ -1309,9 +1301,8 @@ mod tests {
         );
     }
 
-    /// `AuthOpenSignup` is a carve-out: the handler writes
-    /// `AuthOpenSignupRequest.pending = true`. Pin the request is
-    /// set and no legacy command is staged.
+    /// `AuthOpenSignup` handler writes `AuthOpenSignupRequest.pending = true`.
+    /// Asserts the request is set.
     #[test]
     fn carve_out_auth_open_signup_writes_request() {
         let mut world = build_event_world();
@@ -1326,12 +1317,10 @@ mod tests {
         );
     }
 
-    // --- Phase 3.48 / Navigation request carve-out tests ---
+    // --- Navigation request tests ---
     //
-    // The navigation handlers mutate App resources directly where the
-    // lifecycle side effects have moved; remaining menu/playtest branches
-    // still write dedicated request resources instead of staging
-    // `AppCommand`s through the legacy command bridge.
+    // The navigation handlers mutate App resources directly; remaining
+    // menu/playtest branches write dedicated request resources.
 
     use crate::events::navigation::{
         GameQuitToMenu, GameRemovePracticeCheckpoint, GameRestartLevel, GameSetPracticeCheckpoint,
@@ -1514,7 +1503,7 @@ mod tests {
     }
 
     #[test]
-    fn history_snapshot_drains_without_legacy_command_bridge() {
+    fn history_snapshot_drains() {
         let mut world = build_event_world();
         world.write_message(HistorySnapshot {
             label: "drag_release".to_string(),
@@ -2124,8 +2113,7 @@ mod tests {
 
     #[test]
     fn schedule_drains_set_editor_mode_into_editor_command() {
-        // `SetEditorMode` is a Phase 3.13 carve-out: the handler
-        // mutates `EditorInputRes.0.mode` directly.
+        // `SetEditorMode` handler mutates `EditorInputRes.0.mode` directly.
         let mut world = build_event_world();
         world.write_message(SetEditorMode(EditorMode::Tapping));
         world.run_schedule(crate::state::StateSchedule);
@@ -2204,7 +2192,7 @@ mod tests {
         );
     }
     #[test]
-    fn multiple_turn_right_messages_are_handled_without_legacy_request() {
+    fn multiple_turn_right_messages_are_handled() {
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(TurnRight);
@@ -2222,7 +2210,7 @@ mod tests {
     #[test]
     fn mixed_message_types_write_direct_resources() {
         // Menu `TurnRight` and `SetSnapToGrid` both resolve in App-world
-        // handlers without staging a legacy command.
+        // handlers.
         let mut world = build_event_world();
         world.write_message(TurnRight);
         world.write_message(SetSnapToGrid(true));
@@ -2247,19 +2235,17 @@ mod tests {
         assert!(world.contains_resource::<Messages<TurnRight>>());
     }
 
-    // --- Carve-out pattern: handlers that mutate App-world resources
-    // directly. Pin the contract: the message reaches the schedule
-    // and the handler mutates the resource.
+    // --- Direct-resource pattern: handlers that mutate App-world resources
+    // directly. Contract: the message reaches the schedule and the handler
+    // mutates the resource.
 
     use crate::{
         events::input_state::{SetPanRightHeld, SetShiftHeld},
         state::EditorInputRes,
     };
 
-    /// `SetShiftHeld` is a carve-out: the handler writes the held state
-    /// directly to `EditorInputRes` instead of staging a legacy
-    /// `EditorCommand`. Pin the resource is updated and no legacy
-    /// command is queued.
+    /// `SetShiftHeld` handler writes the held state directly to
+    /// `EditorInputRes`. Asserts the resource is updated.
     #[test]
     fn carve_out_set_shift_held_mutates_editor_input_resource() {
         let mut world = build_event_world();
@@ -2275,13 +2261,12 @@ mod tests {
             world.resource::<EditorInputRes>().0.shift_held,
             "SetShiftHeld handler must mutate EditorInputRes"
         );
-        // Carve-out: the message must not be staged as a legacy command.
     }
 
-    /// Repeated messages of the same carve-out type should leave the
-    /// resource in the last-written state. This catches accidental
-    /// reset-to-default logic and confirms Bevy's `MessageReader` reads
-    /// the full buffer (not just the first event).
+    /// Repeated messages of the same type should leave the resource in the
+    /// last-written state. This catches accidental reset-to-default logic
+    /// and confirms Bevy's `MessageReader` reads the full buffer (not just
+    /// the first event).
     #[test]
     fn carve_out_last_written_state_wins() {
         let mut world = build_event_world();
@@ -2295,12 +2280,10 @@ mod tests {
         assert!(world.resource::<EditorInputRes>().0.pan_right_held);
     }
 
-    /// `SetBlockId` is a carve-out: the handler writes the selected
-    /// block id directly to `EditorConfigRes.0.selected_block_id`
-    /// instead of staging a legacy `EditorCommand::SetBlockId`. Pin
-    /// the resource is updated and no legacy command is queued. The
-    /// legacy `State` sync (and the recent-blocks side effect) is
-    /// exercised end-to-end in `eg-app` runtime tests.
+    /// `SetBlockId` handler writes the selected block id directly to
+    /// `EditorConfigRes.0.selected_block_id`. Asserts the resource is
+    /// updated. The recent-blocks side effect is exercised end-to-end in
+    /// `eg-app` runtime tests.
     #[test]
     fn carve_out_set_block_id_mutates_editor_config_resource() {
         use crate::events::editor_mode::SetBlockId;
@@ -2327,17 +2310,16 @@ mod tests {
         );
     }
 
-    // --- BPM carve-out pattern ---
+    // --- BPM message pattern ---
 
     use crate::{
         events::bpm::{BpmTap, BpmTapReset},
         state::EditorTimingRes,
     };
 
-    /// `BpmTap` is a carve-out: the handler reads wall-clock time,
-    /// appends to `EditorTimingRes.0.bpm_tap_times`, recomputes the
-    /// running BPM, and writes the resource directly. Pin the
-    /// resource is updated and no legacy command is queued.
+    /// `BpmTap` handler reads wall-clock time, appends to
+    /// `EditorTimingRes.0.bpm_tap_times`, recomputes the running BPM, and
+    /// writes the resource directly. Asserts the resource is updated.
     #[test]
     fn carve_out_bpm_tap_mutates_editor_timing_resource() {
         let mut world = build_event_world();
@@ -2374,11 +2356,10 @@ mod tests {
                 .is_none(),
             "BpmTap with a single tap must not produce a result"
         );
-        // Carve-out: the message must not be staged as a legacy command.
     }
 
-    /// `BpmTapReset` is a carve-out: the handler clears the
-    /// tap-history list and result on the resource directly.
+    /// `BpmTapReset` handler clears the tap-history list and result on the
+    /// resource directly.
     #[test]
     fn carve_out_bpm_tap_reset_clears_editor_timing_resource() {
         let mut world = build_event_world();
@@ -2411,15 +2392,13 @@ mod tests {
         );
     }
 
-    // --- Session carve-out pattern ---
+    // --- Session message pattern ---
     //
     // `RenameLevel`, `SetShowMetadata`, `SetShowSettings`, `ToggleSettings`,
     // `SetSettingsSection`, `SetGraphicsBackend`, `SetUiScaleMultiplier`,
     // `UpdateMusic`, `UpdateCreatorMetadata`, `UpdateSkyColor`,
     // `SetKeybindCapture`, the keybind mapping messages, and the
-    // menu-preview camera messages are carve-outs: their handlers
-    // mutate `SessionStateRes` directly. Pin the resource is updated
-    // and no legacy command is queued.
+    // menu-preview camera messages mutate `SessionStateRes` directly.
 
     use eg_types::{
         BasicLevelMetadata, KeyChord, KeybindBinding, LevelPreviewCameraMetadata, MusicMetadata,
@@ -2842,12 +2821,10 @@ mod tests {
         );
     }
 
-    // --- Timing carve-out pattern ---
+    // --- Timing message pattern ---
     //
-    // All 6 `events::timing::*` messages are carve-outs: their handlers
-    // mutate `EditorTimingRes.0.{timing_points,timing_selected_index}`
-    // directly. Pin the resource is updated and no legacy command is
-    // queued.
+    // All 6 `events::timing::*` handlers mutate
+    // `EditorTimingRes.0.{timing_points,timing_selected_index}` directly.
 
     use crate::events::timing::{
         AddTimingPoint, RemoveTimingPoint, SetTimingPointBpm, SetTimingPointTime,
@@ -2855,9 +2832,7 @@ mod tests {
     };
 
     /// `AddTimingPoint` appends to the list and sorts ascending by
-    /// `time_seconds`.
-    /// Pin the list grows, the revision bumps, and no legacy command
-    /// is staged.
+    /// `time_seconds`. Asserts the list grows and the revision bumps.
     #[test]
     fn carve_out_add_timing_point_mutates_editor_timing_resource() {
         let mut world = build_event_world();
@@ -2892,8 +2867,8 @@ mod tests {
     }
 
     /// `RemoveTimingPoint` removes the entry at the given index (or
-    /// no-ops if out of range) and bumps the revision. Pin the list
-    /// shrinks and no legacy command is staged.
+    /// no-ops if out of range) and bumps the revision. Asserts the list
+    /// shrinks.
     #[test]
     fn carve_out_remove_timing_point_mutates_editor_timing_resource() {
         let mut world = build_event_world();
@@ -3063,13 +3038,12 @@ mod tests {
         );
     }
 
-    // --- Spawn carve-out pattern ---
+    // --- Spawn message pattern ---
     //
-    // All 3 `events::spawn::*` messages are carve-outs: their handlers
-    // mutate `EditorSpawnRes.0` (SetSpawnHere, RotateSpawnDirection)
-    // or `EditorConfigRes.0.selected_block_rotation_degrees[1]`
-    // (RotatePlacementPreview) directly. Pin the resource is
-    // updated and no legacy command is queued.
+    // All 3 `events::spawn::*` handlers mutate `EditorSpawnRes.0`
+    // (SetSpawnHere, RotateSpawnDirection) or
+    // `EditorConfigRes.0.selected_block_rotation_degrees[1]`
+    // (RotatePlacementPreview) directly.
 
     use eg_types::Direction;
 
@@ -3080,7 +3054,7 @@ mod tests {
 
     /// `SetSpawnHere` mutates `EditorSpawnRes.0.position` to the
     /// current editor cursor (read from `EditorInputRes.0.cursor`).
-    /// Pin the resource is updated and no legacy command is staged.
+    /// Asserts the resource is updated.
     #[test]
     fn carve_out_set_spawn_here_mutates_editor_spawn_resource() {
         let mut world = build_event_world();
@@ -3153,11 +3127,11 @@ mod tests {
         }
     }
 
-    // --- Camera + TriggerSelected carve-out pattern ---
+    // --- Camera + TriggerSelected message pattern ---
     //
-    // All 5 `events::camera::*` messages are carve-outs: their handlers
-    // mutate `EditorCameraRes.0`, `EditorTriggerRes.0.selected_index`, or
-    // authored object entities directly instead of staging legacy editor commands.
+    // All 5 `events::camera::*` handlers mutate `EditorCameraRes.0`,
+    // `EditorTriggerRes.0.selected_index`, or authored object entities
+    // directly.
 
     use crate::{
         events::camera::{
@@ -3168,8 +3142,8 @@ mod tests {
     };
 
     /// `AdjustZoom(delta)` moves the editor camera along its look
-    /// vector by `delta * 2` units. Pin the resource pan /
-    /// target_z update and no legacy command is staged.
+    /// vector by `delta * 2` units. Asserts the resource pan / target_z
+    /// update.
     #[test]
     fn carve_out_adjust_zoom_mutates_editor_camera_resource() {
         let mut world = build_event_world();
@@ -3191,8 +3165,7 @@ mod tests {
 
     /// `SetCameraOrientation` (no transition) sets the yaw +
     /// pitch directly, clamping pitch to `[-89.9°, 89.9°]` and
-    /// clearing any active transition. Pin the resource update
-    /// and no legacy command is staged.
+    /// clearing any active transition.
     #[test]
     fn carve_out_set_camera_orientation_mutates_editor_camera_resource() {
         let mut world = build_event_world();
@@ -3245,9 +3218,7 @@ mod tests {
         );
     }
 
-    /// `SetTriggerSelected` mutates
-    /// `EditorTriggerRes.0.selected_index`. Pin the resource
-    /// update and no legacy command is staged.
+    /// `SetTriggerSelected` writes `EditorTriggerRes.0.selected_index`.
     #[test]
     fn carve_out_set_trigger_selected_mutates_editor_trigger_resource() {
         let mut world = build_event_world();
@@ -3266,8 +3237,7 @@ mod tests {
     }
 
     /// `AddCameraTrigger` captures the App-world editor camera pose as a
-    /// static camera trigger object, records App-world history, and avoids
-    /// staging a legacy command.
+    /// static camera trigger object and records App-world history.
     #[test]
     fn add_camera_trigger_spawns_authored_entity() {
         let mut world = build_event_world();
@@ -3386,7 +3356,7 @@ mod tests {
         );
     }
 
-    // --- Phase 3.12 / Misc carve-out tests ---
+    // --- Misc message tests ---
     //
     // The `misc` event handlers for `ToggleHitboxVisualization`,
     // `TogglePerfOverlay`, `TogglePlaceWindow`, and `Escape` write
@@ -3396,10 +3366,8 @@ mod tests {
         Escape, ToggleHitboxVisualization, TogglePerfOverlay, TogglePlaceWindow,
     };
 
-    /// `ToggleHitboxVisualization` is a carve-out: the handler
-    /// mutates `EditorInputRes.0.show_hitbox_visualization`
-    /// directly. Pin the resource is updated and no legacy
-    /// command is queued.
+    /// `ToggleHitboxVisualization` handler toggles
+    /// `EditorInputRes.0.show_hitbox_visualization`.
     #[test]
     fn carve_out_toggle_hitbox_visualization_mutates_editor_input_resource() {
         let mut world = build_event_world();
@@ -3435,9 +3403,7 @@ mod tests {
         );
     }
 
-    /// `TogglePerfOverlay` is a carve-out: the handler mutates
-    /// `PerfRes.0.overlay_enabled` directly. Pin the resource is
-    /// updated and no legacy command is queued.
+    /// `TogglePerfOverlay` handler toggles `PerfRes.0.overlay_enabled`.
     #[test]
     fn carve_out_toggle_perf_overlay_mutates_perf_resource() {
         let mut world = build_event_world();
@@ -3460,9 +3426,8 @@ mod tests {
         assert!(!world.resource::<crate::state::PerfRes>().0.overlay_enabled);
     }
 
-    /// `TogglePlaceWindow` is a carve-out: the handler mutates
-    /// `SessionStateRes.editor_show_place_window` directly. Pin
-    /// the resource is updated and no legacy command is queued.
+    /// `TogglePlaceWindow` handler toggles
+    /// `SessionStateRes.editor_show_place_window`.
     #[test]
     fn carve_out_toggle_place_window_mutates_session_state_resource() {
         let mut world = build_event_world();
@@ -3494,8 +3459,7 @@ mod tests {
         );
     }
 
-    /// `Escape` in the menu is an App-owned no-op and does not stage a
-    /// legacy command or request.
+    /// `Escape` in the menu is an App-owned no-op.
     #[test]
     fn escape_in_menu_is_app_owned_noop() {
         let mut world = build_event_world();
@@ -3673,7 +3637,7 @@ mod tests {
     }
 
     /// Editor Escape at the timeline origin transitions directly to the
-    /// App-owned menu phase instead of requesting the legacy state machine.
+    /// App-owned menu phase.
     #[test]
     fn carve_out_escape_at_editor_origin_returns_to_menu_directly() {
         let mut world = build_event_world();
@@ -3689,13 +3653,11 @@ mod tests {
         );
     }
 
-    // --- Phase 3.13 / Editor-mode carve-out test ---
+    // --- Editor-mode message test ---
     //
-    // The handler writes the authoritative `EditorInputRes.0.mode`
-    // directly; no legacy command or Runtime mirror participates.
-    /// `SetEditorMode` is a carve-out: the handler mutates
-    /// `EditorInputRes.0.mode` directly. Pin the resource is
-    /// updated and no legacy command is queued.
+    // The handler writes the authoritative `EditorInputRes.0.mode` directly.
+    /// `SetEditorMode` handler writes `EditorInputRes.0.mode` directly.
+    /// Asserts the resource is updated.
     #[test]
     fn carve_out_set_editor_mode_mutates_editor_input_resource() {
         let mut world = build_event_world();
@@ -3722,12 +3684,10 @@ mod tests {
         );
     }
 
-    /// `SelectRecentBlock` is a carve-out: the handler reads
-    /// `EditorConfigRes.0.recent_block_ids` (filtered to placeable
-    /// blocks), writes the indexed entry to
+    /// `SelectRecentBlock` handler reads `EditorConfigRes.0.recent_block_ids`
+    /// (filtered to placeable blocks), writes the indexed entry to
     /// `EditorConfigRes.0.selected_block_id` and sets
-    /// `EditorInputRes.0.mode = Place` directly. Pin the resources
-    /// are updated and no legacy command is queued.
+    /// `EditorInputRes.0.mode = Place` directly.
     #[test]
     fn carve_out_select_recent_block_mutates_resources() {
         use crate::events::editor_mode::SelectRecentBlock;
@@ -3749,7 +3709,7 @@ mod tests {
             .0
             .selected_block_id = eg_blocks::BlockId::default();
 
-        // Out-of-range index: no-op, no legacy command staged.
+        // Out-of-range index is a no-op.
         world.write_message(SelectRecentBlock(10));
         world.run_schedule(crate::state::StateSchedule);
         assert_eq!(
@@ -3798,10 +3758,9 @@ mod tests {
         );
     }
 
-    /// `PickSelectedBlock` is a carve-out: the handler reads the
-    /// selected authored entity through `EditorInputRes`,
-    /// writes the selected block id into `EditorConfigRes`, and enters
-    /// Place mode without staging `EditorCommand::PickSelectedBlock`.
+    /// `PickSelectedBlock` handler reads the selected authored entity through
+    /// `EditorInputRes`, writes the selected block id into `EditorConfigRes`,
+    /// and enters Place mode.
     #[test]
     fn carve_out_pick_selected_block_mutates_resources() {
         use crate::events::editor_mode::PickSelectedBlock;
@@ -3847,10 +3806,9 @@ mod tests {
         );
     }
 
-    /// During editor timeline playback, legacy `PickSelectedBlock`
-    /// changes the effective mode by writing `last_mode = Place` while
-    /// the visible mode remains `Null`. The App-world handler preserves
-    /// that contract so stopping playback restores Place mode.
+    /// During editor timeline playback, `PickSelectedBlock` changes the
+    /// effective mode by writing `last_mode = Place` while the visible mode
+    /// remains `Null`, so stopping playback restores Place mode.
     #[test]
     fn carve_out_pick_selected_block_sets_playback_effective_mode() {
         use crate::events::editor_mode::PickSelectedBlock;
@@ -3901,10 +3859,9 @@ mod tests {
         );
     }
 
-    /// `PickBlockAt` is a carve-out: the handler reuses the existing
-    /// editor screen picker against App-world resources, writes the
-    /// picked block id into `EditorConfigRes`, enters Place mode, and
-    /// does not stage `EditorCommand::PickBlockAt`.
+    /// `PickBlockAt` handler reuses the existing editor screen picker against
+    /// App-world resources, writes the picked block id into `EditorConfigRes`,
+    /// and enters Place mode.
     #[test]
     fn carve_out_pick_block_at_mutates_resources() {
         use glam::{Vec2, Vec3};
@@ -4243,10 +4200,8 @@ mod tests {
         },
     };
 
-    /// `GameResume` is a carve-out: the handler writes the pause
-    /// flag directly to `SessionStateRes.game_paused` instead of
-    /// staging a legacy `AppCommand::GameResume`. Pin the resource is
-    /// updated and no legacy command is queued.
+    /// `GameResume` handler writes the pause flag directly to
+    /// `SessionStateRes.game_paused`.
     #[test]
     fn carve_out_game_resume_mutates_session_resource() {
         let mut world = build_event_world();
@@ -4265,11 +4220,8 @@ mod tests {
         );
     }
 
-    /// `GameSetPracticeMode(enabled)` is a carve-out: the
-    /// handler writes the bool directly to
-    /// `SessionStateRes.practice_mode_enabled` instead of
-    /// staging a legacy `AppCommand::GameSetPracticeMode`. Pin
-    /// the resource is updated and no legacy command is queued.
+    /// `GameSetPracticeMode(enabled)` handler writes the bool directly to
+    /// `SessionStateRes.practice_mode_enabled`.
     #[test]
     fn carve_out_game_set_practice_mode_mutates_session_resource() {
         let mut world = build_event_world();
@@ -4297,13 +4249,10 @@ mod tests {
             !world.resource::<SessionStateRes>().practice_mode_enabled,
             "GameSetPracticeMode(false) handler must mutate SessionStateRes.practice_mode_enabled"
         );
-
-        // No legacy command is staged for either write.
     }
 
-    /// `NextLevel` and `PrevLevel` are carve-outs: in `Menu` they mutate
-    /// `MenuStateRes.selected_level` directly instead of staging legacy
-    /// commands.
+    /// `NextLevel` and `PrevLevel` in `Menu` mutate
+    /// `MenuStateRes.selected_level` directly.
     #[test]
     fn carve_out_menu_next_prev_level_mutates_menu_resource() {
         let mut world = build_event_world();
@@ -4415,7 +4364,7 @@ mod tests {
     }
 
     #[test]
-    fn carve_out_next_prev_level_missing_menu_resource_does_not_stage_legacy_command() {
+    fn next_prev_level_missing_menu_resource_is_noop() {
         let mut world = build_event_world();
         set_test_phase(&mut world, AppPhase::Menu);
         world.remove_resource::<crate::state::MenuStateRes>();

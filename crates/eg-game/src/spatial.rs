@@ -13,8 +13,9 @@ use eg_types::LevelObject;
 
 pub const GRID_CELL_SIZE: f32 = 4.0;
 
-/// Spatial grid keyed by `Entity` (Bevy entity id). Replaces the
-/// `HashMap<(i32, i32), Vec<usize>>` from the pre-ECS version.
+/// Spatial acceleration grid for gameplay queries (support scan, overlap tests).
+/// Quantizes XZ space into `GRID_CELL_SIZE` cells and stores, per cell, the
+/// entities whose hitboxes overlap it.
 #[derive(Default)]
 pub struct SpatialGrid {
     cells: HashMap<(i32, i32), Vec<Entity>>,

@@ -79,12 +79,12 @@ pub fn handle_set_block_id(
     }
 }
 
-// `SelectRecentBlock` is a carve-out: the handler reads the
-// `recent_block_ids` list from `EditorConfigRes`, picks the indexed
-// (placeable) entry, and writes the result directly to
-// `EditorConfigRes.0.selected_block_id` + `EditorInputRes.0.mode`.
-// The placeable filter matches the legacy behavior. Selecting a different
-// entry promotes it to the front of the App-owned recent-block list.
+// `SelectRecentBlock` reads the `recent_block_ids` list from
+// `EditorConfigRes`, picks the indexed (placeable) entry, and writes the
+// result directly to `EditorConfigRes.0.selected_block_id` +
+// `EditorInputRes.0.mode`. Only blocks with `placeable == true` are indexed.
+// Selecting a different entry promotes it to the front of the App-owned
+// recent-block list.
 pub fn handle_select_recent_block(
     mut events: MessageReader<SelectRecentBlock>,
     mut config: ResMut<EditorConfigRes>,
