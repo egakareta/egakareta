@@ -11,9 +11,10 @@ use eg_types::{Direction, LevelObject};
 
 use super::{
     components::{
-        BlockId, CachedBlockBehavior, ColorTint, Grounded, Object, ObjectBundle, ObjectData,
-        ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
-        Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
+        BlockId, CachedBlockBehavior, CachedBlockHitboxes, ColorTint, Grounded, Object,
+        ObjectBundle, ObjectData, ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition,
+        PlayerSpeed, Position, Rotation, Size, SpawnDirection, SpawnPosition, Trail,
+        VerticalVelocity,
     },
     events::{ConsumedObjectEvent, PlayerDied},
     physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains},
@@ -38,6 +39,7 @@ fn app_with_objects(objects: impl IntoIterator<Item = LevelObject>) -> TestApp {
             block_id: BlockId(object.block_id.clone()),
             color_tint: ColorTint(object.color_tint),
             cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
+            cached_hitboxes: CachedBlockHitboxes::from_object(&object),
         });
     }
     rebuild_spatial_index(&mut app);

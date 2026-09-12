@@ -91,9 +91,18 @@ pub struct SpatialIndex {
 impl SpatialIndex {
     pub fn rebuild(&mut self, world: &mut World) {
         self.grid.clear();
-        let mut query = world.query::<(Entity, &crate::components::ObjectData)>();
-        for (entity, data) in query.iter(world) {
-            self.grid.insert_object(entity, &data.0);
+        let mut query = world.query::<(
+            Entity,
+            &crate::components::ObjectData,
+            Option<&crate::components::CachedBlockHitboxes>,
+        )>();
+        for (entity, data, hitboxes) in query.iter(world) {
+            if let Some(hitboxes) = hitboxes {
+                self.grid
+                    .insert_object_with_cached_hitboxes(entity, hitboxes);
+            } else {
+                self.grid.insert_object(entity, &data.0);
+            }
         }
     }
 }

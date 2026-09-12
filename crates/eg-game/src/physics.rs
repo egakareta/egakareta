@@ -55,6 +55,16 @@ pub fn aabb_overlaps_cuboid_xz(
     cuboid: eg_block_geometry::WorldCuboid,
 ) -> bool {
     let polygon = rotated_cuboid_xz_polygon(obj, cuboid);
+    aabb_overlaps_polygon_xz(min_x, max_x, min_z, max_z, &polygon)
+}
+
+pub fn aabb_overlaps_polygon_xz(
+    min_x: f32,
+    max_x: f32,
+    min_z: f32,
+    max_z: f32,
+    polygon: &[glam::Vec2],
+) -> bool {
     if polygon.len() < 3 {
         return false;
     }
@@ -66,13 +76,14 @@ pub fn aabb_overlaps_cuboid_xz(
         Vec2::new(min_x, max_z),
     ];
 
-    polygons_overlap_xz(&polygon, &rect)
+    polygons_overlap_xz(polygon, &rect)
 }
 
 fn polygons_overlap_xz(polygon: &[Vec2], rect: &[Vec2; 4]) -> bool {
-    let mut axes: Vec<Vec2> = Vec::with_capacity(polygon.len() + 2);
-    axes.push(Vec2::X);
-    axes.push(Vec2::Y);
+    let mut axes = [Vec2::ZERO; 10];
+    axes[0] = Vec2::X;
+    axes[1] = Vec2::Y;
+    let mut axis_count = 2;
     for i in 0..polygon.len() {
         let a = polygon[i];
         let b = polygon[(i + 1) % polygon.len()];
@@ -81,10 +92,11 @@ fn polygons_overlap_xz(polygon: &[Vec2], rect: &[Vec2; 4]) -> bool {
             continue;
         }
         let normal = Vec2::new(-edge.y, edge.x).normalize();
-        axes.push(normal);
+        axes[axis_count] = normal;
+        axis_count += 1;
     }
 
-    for axis in axes {
+    for axis in axes[..axis_count].iter().copied() {
         let (poly_min, poly_max) = project_points(axis, polygon);
         let (rect_min, rect_max) = project_points(axis, rect.as_slice());
         if poly_max < rect_min || rect_max < poly_min {

@@ -12,17 +12,15 @@
 use std::collections::HashMap;
 
 use bevy_ecs::{prelude::*, schedule::SystemSet};
-use eg_block_geometry::hitbox_cuboids;
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
 use crate::{
     components::{
-        CachedBlockBehavior, Grounded, ObjectData, PlayerDirection, PlayerPosition, PlayerSpeed,
-        Trail, VerticalVelocity,
+        CachedBlockBehavior, CachedBlockHitboxes, Grounded, ObjectData, PlayerDirection,
+        PlayerPosition, PlayerSpeed, Trail, VerticalVelocity,
     },
     events::{ConsumedObjectEvent, PlayerDied},
-    physics::aabb_overlaps_cuboid_xz,
     resources::{
         FrameDelta, GameClock, GameRuntimeTuning, PendingTurnInputs, PlayerProgress, SpatialIndex,
         TimedTurnInput, TurnInputKind,
@@ -166,7 +164,7 @@ pub fn collision_query_system(
     clock: Res<GameClock>,
     tuning: Res<GameRuntimeTuning>,
     players: Query<&PlayerPosition>,
-    objects: Query<(&ObjectData, &CachedBlockBehavior)>,
+    objects: Query<(&CachedBlockBehavior, &CachedBlockHitboxes)>,
     mut collision_outcome: ResMut<CollisionOutcome>,
 ) {
     collision_outcome.clear();
@@ -199,14 +197,18 @@ pub fn collision_query_system(
 
     puffin::profile_scope!("GameCollisionScan");
     for entity in candidates {
-        let Ok((obj, behavior)) = objects.get(entity) else {
+        let Ok((behavior, hitboxes)) = objects.get(entity) else {
             continue;
         };
-        let overlaps_hitbox = hitbox_cuboids(&obj.0).into_iter().any(|cuboid| {
-            crate::physics::aabb_overlaps_cuboid_xz(
-                s_min_x, s_max_x, s_min_z, s_max_z, &obj.0, cuboid,
-            ) && s_max_y > cuboid.min[1]
-                && s_min_y < cuboid.max[1]
+        let overlaps_hitbox = hitboxes.iter().any(|hitbox| {
+            crate::physics::aabb_overlaps_polygon_xz(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                hitbox.polygon(),
+            ) && s_max_y > hitbox.cuboid.min[1]
+                && s_min_y < hitbox.cuboid.max[1]
         });
         if !overlaps_hitbox {
             continue;
@@ -303,7 +305,7 @@ pub fn ground_gravity_system(
     spatial: Res<SpatialIndex>,
     mut death_events: MessageWriter<PlayerDied>,
     mut players: Query<(&mut PlayerPosition, &mut VerticalVelocity, &mut Grounded)>,
-    objects: Query<&ObjectData>,
+    objects: Query<(&CachedBlockBehavior, &CachedBlockHitboxes)>,
 ) {
     if !clock.started || clock.game_over || clock.level_complete {
         return;
@@ -334,22 +336,27 @@ pub fn ground_gravity_system(
     // provide one. Tests rely on this for empty levels.
     let mut top_surface: Option<f32> = Some(0.0);
     for entity in candidates {
-        let Ok(obj) = objects.get(entity) else {
+        let Ok((behavior, hitboxes)) = objects.get(entity) else {
             continue;
         };
-        let behavior = CachedBlockBehavior::from_block_id_ref(&obj.0.block_id);
         if !behavior.support_surface {
             continue;
         }
-        for cuboid in hitbox_cuboids(&obj.0) {
+        for hitbox in hitboxes.iter() {
             // Broad-phase (spatial grid) found the entity, but it still needs
             // to actually overlap the player's XZ footprint. Without this
             // filter, supports in the same cell as the player but past the
             // player in x/z incorrectly ground them.
-            if !aabb_overlaps_cuboid_xz(s_min_x, s_max_x, s_min_z, s_max_z, &obj.0, cuboid) {
+            if !crate::physics::aabb_overlaps_polygon_xz(
+                s_min_x,
+                s_max_x,
+                s_min_z,
+                s_max_z,
+                hitbox.polygon(),
+            ) {
                 continue;
             }
-            let top_y = cuboid.max[1];
+            let top_y = hitbox.cuboid.max[1];
             if top_y <= pos.0[1] + snap {
                 if let Some(t) = top_surface {
                     if top_y > t {

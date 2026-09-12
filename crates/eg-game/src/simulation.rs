@@ -10,9 +10,10 @@ use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
 use crate::{
     components::{
-        BlockId, CachedBlockBehavior, ColorTint, Grounded, Object, ObjectBundle, ObjectData,
-        ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition, PlayerSpeed, Position,
-        Rotation, Size, SpawnDirection, SpawnPosition, Trail, VerticalVelocity,
+        BlockId, CachedBlockBehavior, CachedBlockHitboxes, ColorTint, Grounded, Object,
+        ObjectBundle, ObjectData, ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition,
+        PlayerSpeed, Position, Rotation, Size, SpawnDirection, SpawnPosition, Trail,
+        VerticalVelocity,
     },
     events::ConsumedObjectEvent,
     physics::BASE_PLAYER_SPEED,
@@ -115,6 +116,7 @@ impl TimelineSimulationRuntime {
                     block_id: BlockId(object.block_id.clone()),
                     color_tint: ColorTint(object.color_tint),
                     cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
+                    cached_hitboxes: CachedBlockHitboxes::from_object(object),
                 })
                 .collect::<Vec<_>>();
             let entities = world.spawn_batch(bundles).collect::<Vec<_>>();
@@ -151,8 +153,13 @@ impl TimelineSimulationRuntime {
                 .expect("GamePlugin must install SpatialIndex");
             spatial.grid.clear();
             debug_assert_eq!(entities.len(), objects.len());
-            for (entity, object) in entities.into_iter().zip(objects.iter()) {
-                spatial.grid.insert_object(entity, object);
+            for entity in entities {
+                let hitboxes = world
+                    .get::<CachedBlockHitboxes>(entity)
+                    .expect("timeline object must have cached hitboxes");
+                spatial
+                    .grid
+                    .insert_object_with_cached_hitboxes(entity, hitboxes);
             }
             world.insert_resource(spatial);
         }

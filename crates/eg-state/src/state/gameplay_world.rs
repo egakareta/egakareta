@@ -483,6 +483,7 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
             block_id: BlockId(object.block_id.clone()),
             color_tint: ColorTint(object.color_tint),
             cached_behavior: CachedBlockBehavior::from_block_id_ref(&object.block_id),
+            cached_hitboxes: eg_game::CachedBlockHitboxes::from_object(object),
         })
         .collect::<Vec<_>>();
     let gameplay_entities = world.spawn_batch(bundles).collect::<Vec<_>>();
@@ -526,12 +527,20 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
     world.resource_mut::<Messages<PlayerDied>>().clear();
 
     {
-        let mut spatial = world.resource_mut::<SpatialIndex>();
+        let mut spatial = world
+            .remove_resource::<SpatialIndex>()
+            .expect("gameplay plugin should register SpatialIndex");
         spatial.grid.clear();
         debug_assert_eq!(gameplay_entities.len(), objects.len());
-        for (entity, object) in gameplay_entities.into_iter().zip(objects.iter()) {
-            spatial.grid.insert_object(entity, object);
+        for entity in gameplay_entities {
+            let hitboxes = world
+                .get::<eg_game::CachedBlockHitboxes>(entity)
+                .expect("gameplay object must have cached hitboxes");
+            spatial
+                .grid
+                .insert_object_with_cached_hitboxes(entity, hitboxes);
         }
+        world.insert_resource(spatial);
     }
 }
 

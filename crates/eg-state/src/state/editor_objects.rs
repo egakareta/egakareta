@@ -17,8 +17,8 @@ use std::collections::{HashMap, hash_map::Entry};
 
 use bevy_ecs::prelude::*;
 use eg_game::{
-    BlockId, CachedBlockBehavior, ColorTint, Object, ObjectBundle, ObjectData, ObjectId, Position,
-    Rotation, Size,
+    BlockId, CachedBlockBehavior, CachedBlockHitboxes, ColorTint, Object, ObjectBundle, ObjectData,
+    ObjectId, Position, Rotation, Size,
 };
 use eg_types::LevelObject;
 
@@ -61,6 +61,7 @@ pub(crate) fn observe_editor_object_changes_system(
 
 fn authored_object_bundle(order: usize, object: LevelObject) -> impl Bundle {
     let cached_behavior = CachedBlockBehavior::from_block_id_ref(&object.block_id);
+    let cached_hitboxes = CachedBlockHitboxes::from_object(&object);
     (
         ObjectBundle {
             object: Object,
@@ -72,6 +73,7 @@ fn authored_object_bundle(order: usize, object: LevelObject) -> impl Bundle {
             block_id: BlockId(object.block_id.clone()),
             color_tint: ColorTint(object.color_tint),
             cached_behavior,
+            cached_hitboxes,
         },
         EditorAuthoredObject,
         EditorObjectOrder(order),
@@ -143,6 +145,7 @@ pub(crate) fn replace_editor_objects_commands(
                 BlockId(object.block_id.clone()),
                 ColorTint(object.color_tint),
                 CachedBlockBehavior::from_block_id_ref(&object.block_id),
+                CachedBlockHitboxes::from_object(object),
             ));
         }
         if current_order.0 != order {
@@ -215,6 +218,7 @@ pub fn replace_editor_objects(world: &mut World, objects: Vec<LevelObject>) {
             .is_none_or(|current| current.0 != object);
         if needs_data_update {
             let cached = CachedBlockBehavior::from_block_id_ref(&object.block_id);
+            let cached_hitboxes = CachedBlockHitboxes::from_object(&object);
             let mut entity_mut = world.entity_mut(entity);
             entity_mut.insert((
                 ObjectData(object.clone()),
@@ -224,6 +228,7 @@ pub fn replace_editor_objects(world: &mut World, objects: Vec<LevelObject>) {
                 BlockId(object.block_id.clone()),
                 ColorTint(object.color_tint),
                 cached,
+                cached_hitboxes,
             ));
         }
         if current_order != order {

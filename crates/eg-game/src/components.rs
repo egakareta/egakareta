@@ -12,8 +12,10 @@
 //! components + the resources in [`crate::resources`].
 
 use bevy_ecs::prelude::*;
+use eg_block_geometry::{WorldCuboid, hitbox_cuboids};
 use eg_blocks::BlockCollision;
 use eg_types::{Direction, LevelObject};
+use glam::Vec2;
 
 /// Pre-resolved block behavior cached alongside each object to avoid
 /// repeated HashMap lookups during per-frame collision/support scans.
@@ -58,6 +60,54 @@ impl CachedBlockBehavior {
         } else {
             0
         }
+    }
+}
+
+/// A transformed hitbox and its projected XZ polygon.
+pub struct CachedBlockHitbox {
+    pub cuboid: WorldCuboid,
+    polygon: [Vec2; 8],
+    polygon_len: usize,
+}
+
+impl CachedBlockHitbox {
+    pub fn polygon(&self) -> &[Vec2] {
+        &self.polygon[..self.polygon_len]
+    }
+}
+
+/// Transformed hitboxes retained alongside immutable object data.
+///
+/// Timeline scrubs can run thousands of fixed ticks in one frame. Rebuilding
+/// the same world-space hitboxes for every collision/support query made that
+/// replay allocate and transform geometry on every tick.
+#[derive(Component)]
+pub struct CachedBlockHitboxes {
+    hitboxes: Vec<CachedBlockHitbox>,
+}
+
+impl CachedBlockHitboxes {
+    pub fn from_object(object: &LevelObject) -> Self {
+        let hitboxes = hitbox_cuboids(object)
+            .into_iter()
+            .map(|cuboid| {
+                let polygon = eg_block_geometry::rotated_cuboid_xz_polygon(object, cuboid);
+                debug_assert!(polygon.len() <= 8);
+                let polygon_len = polygon.len().min(8);
+                let mut cached_polygon = [Vec2::ZERO; 8];
+                cached_polygon[..polygon_len].copy_from_slice(&polygon[..polygon_len]);
+                CachedBlockHitbox {
+                    cuboid,
+                    polygon: cached_polygon,
+                    polygon_len,
+                }
+            })
+            .collect();
+        Self { hitboxes }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CachedBlockHitbox> {
+        self.hitboxes.iter()
     }
 }
 
@@ -207,4 +257,5 @@ pub struct ObjectBundle {
     pub block_id: BlockId,
     pub color_tint: ColorTint,
     pub cached_behavior: CachedBlockBehavior,
+    pub cached_hitboxes: CachedBlockHitboxes,
 }
