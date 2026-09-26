@@ -202,6 +202,14 @@ async function createDist() {
 `;
     fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
 
+    const symlinkedDistPath = path.join(rootDir, "target", "dist");
+    await fs.promises.rm(symlinkedDistPath, { recursive: true, force: true });
+    await fs.promises.symlink(
+        distPath,
+        symlinkedDistPath,
+        process.platform === "win32" ? "junction" : "dir",
+    );
+
     const elapsedMs = Date.now() - start;
     if (elapsedMs > 500) {
         console.warn("created dist in", elapsedMs, "ms");
