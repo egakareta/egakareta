@@ -52,6 +52,7 @@ const proc = Bun.spawn(
         stderr: "pipe",
         env: {
             ...process.env,
+            CARGO_TERM_COLOR: "always",
             CARGO_UNSTABLE_BUILD_STD: "std,panic_abort",
         },
     },
@@ -197,7 +198,10 @@ async function createDist() {
 `;
     fs.writeFileSync(path.join(distPath, "_headers"), headersContent.trim());
 
-    console.log(`created dist in ${Date.now() - start}ms`);
+    const elapsedMs = Date.now() - start;
+    if (elapsedMs > 500) {
+        console.warn(`warning: created dist in ${elapsedMs}ms`);
+    }
 }
 
 function splitWasmForStaticHosting(wasmPath: string) {
