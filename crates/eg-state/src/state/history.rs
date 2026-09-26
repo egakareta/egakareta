@@ -82,10 +82,13 @@ mod tests {
         TimedTrigger, TriggerTarget,
     };
 
-    use crate::state::{
-        EditorClipboard, EditorHistoryObjectChange, EditorHistoryRes, EditorInputRes,
-        EditorTimelineRes, EditorTriggerRes, collect_editor_objects_from_world,
-        replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
+    use crate::{
+        events::AppMessageWorldExt,
+        state::{
+            EditorClipboard, EditorHistoryObjectChange, EditorHistoryRes, EditorInputRes,
+            EditorTimelineRes, EditorTriggerRes, collect_editor_objects_from_world,
+            replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
+        },
     };
 
     fn editor_app(objects: Vec<LevelObject>) -> TestApp {
@@ -137,7 +140,7 @@ mod tests {
                 editor.input.selected_block_indices = vec![0];
             });
             app.world_mut()
-                .write_message(crate::events::selection::SnapSelectionToGrid);
+                .write_app_message(crate::events::selection::SnapSelectionToGrid);
             app.tick_state();
         }
 
@@ -169,9 +172,10 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::RemoveBlock);
+            .write_app_message(crate::events::block::RemoveBlock);
         app.tick_state();
-        app.world_mut().write_message(crate::events::history::Undo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Undo);
         app.tick_state();
         assert_eq!(app.world().resource::<EditorHistoryRes>().0.redo.len(), 1);
 
@@ -182,7 +186,7 @@ mod tests {
             editor.input.selected_block_indices = vec![0];
         });
         app.world_mut()
-            .write_message(crate::events::selection::SnapSelectionToGrid);
+            .write_app_message(crate::events::selection::SnapSelectionToGrid);
         app.tick_state();
 
         assert!(app.world().resource::<EditorHistoryRes>().0.redo.is_empty());
@@ -206,11 +210,13 @@ mod tests {
                 .is_some_and(|snapshot| snapshot.object_change.is_some())
         );
 
-        app.world_mut().write_message(crate::events::history::Undo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Undo);
         app.tick_state();
         assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
 
-        app.world_mut().write_message(crate::events::history::Redo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Redo);
         app.tick_state();
         assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 2);
     }
@@ -229,7 +235,8 @@ mod tests {
             .undo
             .push(snapshot);
 
-        app.world_mut().write_message(crate::events::history::Undo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Undo);
         app.tick_state();
 
         let timeline = &app.world().resource::<EditorTimelineRes>().0;
@@ -250,13 +257,13 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::CopyBlock);
+            .write_app_message(crate::events::block::CopyBlock);
         app.tick_state();
         with_editor_interaction_context(app.world_mut(), |editor| {
             editor.input.cursor = [20.0, 5.0, 20.0];
         });
         app.world_mut()
-            .write_message(crate::events::block::PasteBlock);
+            .write_app_message(crate::events::block::PasteBlock);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -282,13 +289,13 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::CopyBlock);
+            .write_app_message(crate::events::block::CopyBlock);
         app.tick_state();
         with_editor_interaction_context(app.world_mut(), |editor| {
             editor.input.cursor = [30.0, 0.0, 30.0];
         });
         app.world_mut()
-            .write_message(crate::events::block::PasteBlock);
+            .write_app_message(crate::events::block::PasteBlock);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -308,7 +315,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::DuplicateBlock);
+            .write_app_message(crate::events::block::DuplicateBlock);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -331,7 +338,7 @@ mod tests {
             editor.runtime.interaction.clipboard = None;
         });
         app.world_mut()
-            .write_message(crate::events::block::PasteBlock);
+            .write_app_message(crate::events::block::PasteBlock);
         app.tick_state();
         assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
 
@@ -342,7 +349,7 @@ mod tests {
             });
         });
         app.world_mut()
-            .write_message(crate::events::block::PasteBlock);
+            .write_app_message(crate::events::block::PasteBlock);
         app.tick_state();
         assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
     }
@@ -350,8 +357,10 @@ mod tests {
     #[test]
     fn test_undo_redo_empty_stacks() {
         let mut app = editor_app(Vec::new());
-        app.world_mut().write_message(crate::events::history::Undo);
-        app.world_mut().write_message(crate::events::history::Redo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Undo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Redo);
         app.tick_state();
 
         let history = &app.world().resource::<EditorHistoryRes>().0;
@@ -367,7 +376,7 @@ mod tests {
             editor.input.selected_block_index = None;
         });
         app.world_mut()
-            .write_message(crate::events::block::DuplicateBlock);
+            .write_app_message(crate::events::block::DuplicateBlock);
         app.tick_state();
 
         assert_eq!(collect_editor_objects_from_world(app.world_mut()).len(), 1);
@@ -387,7 +396,8 @@ mod tests {
             .undo
             .push(snapshot);
 
-        app.world_mut().write_message(crate::events::history::Undo);
+        app.world_mut()
+            .write_app_message(crate::events::history::Undo);
         app.tick_state();
 
         let input = &app.world().resource::<EditorInputRes>().0;
@@ -416,7 +426,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::RemoveBlock);
+            .write_app_message(crate::events::block::RemoveBlock);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -448,7 +458,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::RemoveBlock);
+            .write_app_message(crate::events::block::RemoveBlock);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());

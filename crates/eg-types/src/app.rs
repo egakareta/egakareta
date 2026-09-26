@@ -53,8 +53,7 @@ pub const DEFAULT_MENU_PREVIEW_CAMERA_POSITION: [f32; 3] = [22.657694, 15.0, -10
 pub const DEFAULT_MENU_PREVIEW_CAMERA_TARGET: [f32; 3] = [0.0, 0.0, 0.0];
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, States)]
-/// The current phase of the application.
-/// Determines which UI and logic to run.
+/// Top-level application mode that selects the active UI and logic.
 pub enum AppPhase {
     #[default]
     Menu,
@@ -63,10 +62,7 @@ pub enum AppPhase {
     GameOver,
 }
 
-/// State for the main menu screen.
-/// Manages level selection and available levels list.
-/// State for the main menu.
-/// Tracks the currently selected level and the list of available levels.
+/// Main-menu selection, preview, and camera state.
 pub struct MenuState {
     pub selected_level: usize,
     pub levels: Vec<String>,
@@ -76,7 +72,7 @@ pub struct MenuState {
     pub preview_camera_target: [f32; 3],
 }
 
-/// Manages cursor position, mode, and other editor-specific settings.
+/// Editor pointer, selection, modifier, and pan state.
 #[derive(Clone, SmartDefault)]
 pub struct EditorInputState {
     /// The cursor position, represented as a 3D coordinate in the level world space.
@@ -115,8 +111,7 @@ pub struct EditorInputState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, SmartIsDefault)]
-/// The current mode of the level editor.
-/// Determines what actions are available and how interactions behave.
+/// Current level-editor mode.
 pub enum EditorMode {
     Select,
     Move,
@@ -169,8 +164,7 @@ impl EditorMode {
     }
 }
 
-/// A generic size structure with width and height components.
-/// Used for representing physical dimensions like window size or surface size.
+/// Width and height in a platform-defined unit.
 #[derive(Clone, Copy)]
 pub struct PhysicalSize<T> {
     pub width: T,
@@ -185,8 +179,7 @@ impl<T> PhysicalSize<T> {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-/// Uniform buffer for line rendering parameters.
-/// Contains offset and rotation for positioning lines in screen space.
+/// Shader parameters for line placement.
 pub struct LineUniform {
     pub offset: [f32; 2],
     pub rotation: f32,
@@ -195,8 +188,7 @@ pub struct LineUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-/// Uniform buffer for camera transformation matrix.
-/// Contains the view-projection matrix for 3D rendering.
+/// Shader parameters for the camera view-projection and position.
 pub struct CameraUniform {
     pub view_proj: [[f32; 4]; 4],
     pub camera_position: [f32; 4],
@@ -204,8 +196,7 @@ pub struct CameraUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-/// Uniform buffer for color space settings.
-/// Controls gamma correction application in the shader.
+/// Shader parameters for color correction, time, and viewport size.
 pub struct ColorSpaceUniform {
     pub apply_gamma_correction: f32,
     pub time_seconds: f32,
@@ -214,7 +205,7 @@ pub struct ColorSpaceUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-/// Uniform buffer for the analytic world grid.
+/// Shader parameters for the analytic world grid.
 pub struct GridUniform {
     pub center: [f32; 2],
     pub half_extent: f32,

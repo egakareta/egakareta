@@ -10,8 +10,11 @@ use bevy_state::prelude::State;
 use eg_editor_domain::derive_timeline_position;
 use eg_types::{AppPhase, Direction, EditorMode, LevelObject};
 
-use crate::state::{
-    EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
+use crate::{
+    events::AppMessageWorldExt,
+    state::{
+        EditorInputRes, EditorRuntimeRes, FrameTimeRes, MenuStateRes, PerfRes, SessionStateRes,
+    },
 };
 #[test]
 fn app_world_is_seeded_with_default_resources() {
@@ -117,7 +120,7 @@ fn tick_state_runs_phase_transition_system() {
     );
 }
 
-// ── Phase 3 - command / event fragmentation tests ───────────────
+// ── Command and message handling tests ──────────────────────────
 #[test]
 fn test_app_tick_state_writes_command_messages_to_app_resources() {
     // SetEditorMode is handled through App-world resources.
@@ -130,7 +133,7 @@ fn test_app_tick_state_writes_command_messages_to_app_resources() {
     // Write a SetEditorMode(Place) message. The handler mutates
     // `EditorInputRes.0.mode` directly.
     app.world_mut()
-        .write_message(SetEditorMode(EditorMode::Place));
+        .write_app_message(SetEditorMode(EditorMode::Place));
 
     // Tick: per-event systems fire and mutate App-world resources.
     app.tick_state();
@@ -152,9 +155,9 @@ fn test_app_tick_state_writes_input_state_directly() {
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
-    app.world_mut().write_message(SetShiftHeld(true));
-    app.world_mut().write_message(SetCtrlHeld(true));
-    app.world_mut().write_message(SetPanRightHeld(true));
+    app.world_mut().write_app_message(SetShiftHeld(true));
+    app.world_mut().write_app_message(SetCtrlHeld(true));
+    app.world_mut().write_app_message(SetPanRightHeld(true));
 
     app.tick_state();
 
@@ -202,15 +205,15 @@ fn test_app_tick_state_writes_pointer_state_directly() {
         .insert_resource(State::new(AppPhase::Editor));
 
     app.world_mut()
-        .write_message(PointerMoved { x: 10.0, y: 20.0 });
-    app.world_mut().write_message(MouseButton {
+        .write_app_message(PointerMoved { x: 10.0, y: 20.0 });
+    app.world_mut().write_app_message(MouseButton {
         button: 2,
         pressed: true,
     });
     app.world_mut()
-        .write_message(CameraDrag { dx: 5.0, dy: -3.0 });
+        .write_app_message(CameraDrag { dx: 5.0, dy: -3.0 });
     app.world_mut()
-        .write_message(PrimaryClick { x: 30.0, y: 40.0 });
+        .write_app_message(PrimaryClick { x: 30.0, y: 40.0 });
 
     app.tick_state();
 
@@ -261,7 +264,7 @@ fn test_app_tick_state_applies_undo_to_app_resources() {
             selected_trigger_index: None,
         });
 
-    app.world_mut().write_message(Undo);
+    app.world_mut().write_app_message(Undo);
     app.tick_state();
 
     let object = {
@@ -293,7 +296,7 @@ fn test_app_tick_state_practice_mode_mutates_session_resource() {
     );
 
     app.world_mut()
-        .write_message(GameSetPracticeMode { enabled: true });
+        .write_app_message(GameSetPracticeMode { enabled: true });
     app.tick_state();
 
     assert!(
@@ -347,9 +350,7 @@ fn tick_state_registers_render_pod_resources_on_construction() {
 fn tick_state_poll_channels_emits_audio_import_result_event() {
     use bevy_ecs::message::Messages;
 
-    use crate::{
-        events::async_results::AudioImportResultEvent, state::async_bridge::AudioImportChannelRes,
-    };
+    use crate::{events::AppMessage, state::async_bridge::AudioImportChannelRes};
     let mut app = crate::state::test_support::TestApp::minimal();
 
     // Create a fresh channel whose receiver sits in the Bevy
@@ -370,11 +371,16 @@ fn tick_state_poll_channels_emits_audio_import_result_event() {
 
     app.tick_state();
 
-    // The event should be in the Messages<AudioImportResultEvent>
-    // buffer. We read it via the resource API.
-    let messages = app.world().resource::<Messages<AudioImportResultEvent>>();
+    // The event should be in the shared App message buffer.
+    let messages = app.world().resource::<Messages<AppMessage>>();
     let mut reader = messages.get_cursor();
-    let events: Vec<_> = reader.read(messages).collect();
+    let events: Vec<_> = reader
+        .read(messages)
+        .filter_map(|message| match message {
+            AppMessage::AudioImportResultEvent(event) => Some(event),
+            _ => None,
+        })
+        .collect();
     assert_eq!(events.len(), 1, "expected one audio import event");
     assert_eq!(events[0].filename, "level1.ogg");
     assert_eq!(events[0].bytes, Some(vec![1, 2, 3, 4]));
@@ -384,9 +390,7 @@ fn tick_state_poll_channels_emits_audio_import_result_event() {
 fn tick_state_poll_channels_emits_level_import_result_event() {
     use bevy_ecs::message::Messages;
 
-    use crate::{
-        events::async_results::LevelImportResultEvent, state::async_bridge::LevelImportChannelRes,
-    };
+    use crate::{events::AppMessage, state::async_bridge::LevelImportChannelRes};
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
@@ -402,9 +406,15 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
     poll_schedule.add_systems(crate::state::async_bridge::poll_channels_system);
     poll_schedule.run(app.world_mut());
 
-    let messages = app.world().resource::<Messages<LevelImportResultEvent>>();
+    let messages = app.world().resource::<Messages<AppMessage>>();
     let mut cursor = messages.get_cursor();
-    let events: Vec<_> = cursor.read(messages).collect();
+    let events: Vec<_> = cursor
+        .read(messages)
+        .filter_map(|message| match message {
+            AppMessage::LevelImportResultEvent(event) => Some(event),
+            _ => None,
+        })
+        .collect();
     assert_eq!(events.len(), 1, "expected one level import event");
     assert_eq!(events[0].bytes, vec![0xDE, 0xAD, 0xBE, 0xEF]);
 }
@@ -413,9 +423,7 @@ fn tick_state_poll_channels_emits_level_import_result_event() {
 fn tick_state_poll_channels_emits_auth_service_result_event() {
     use bevy_ecs::message::Messages;
 
-    use crate::{
-        events::async_results::AuthServiceResultEvent, state::async_bridge::AuthChannelRes,
-    };
+    use crate::{events::AppMessage, state::async_bridge::AuthChannelRes};
 
     let mut app = crate::state::test_support::TestApp::minimal();
 
@@ -432,9 +440,15 @@ fn tick_state_poll_channels_emits_auth_service_result_event() {
 
     app.tick_state();
 
-    let messages = app.world().resource::<Messages<AuthServiceResultEvent>>();
+    let messages = app.world().resource::<Messages<AppMessage>>();
     let mut cursor = messages.get_cursor();
-    let events: Vec<_> = cursor.read(messages).collect();
+    let events: Vec<_> = cursor
+        .read(messages)
+        .filter_map(|message| match message {
+            AppMessage::AuthServiceResultEvent(event) => Some(event),
+            _ => None,
+        })
+        .collect();
     assert_eq!(events.len(), 1, "expected one auth event");
     assert!(matches!(
         events[0].message,

@@ -7,9 +7,6 @@
 */
 //! Bevy UI plugin and direct message ingress.
 //!
-//! REFACTOR POINT(full-bevy): the custom egui presentation and semantic
-//! command adapter are replaced by `bevy_egui` systems writing Bevy input/events directly.
-
 use bevy_app::{App, Plugin};
 use bevy_ecs::prelude::*;
 use eg_state::{commands::AppCommand, events};
@@ -42,10 +39,7 @@ pub fn write_ui_command(world: &mut World, command: AppCommand) {
 mod tests {
     use bevy_app::App;
     use bevy_ecs::message::Messages;
-    use eg_state::{
-        events::{navigation, session},
-        state::editor_command::EditorCommand,
-    };
+    use eg_state::{events::AppMessage, state::editor_command::EditorCommand};
 
     use super::*;
 
@@ -62,16 +56,20 @@ mod tests {
             ],
         );
 
-        let settings_messages = app.world().resource::<Messages<session::ToggleSettings>>();
-        let mut settings_reader = settings_messages.get_cursor();
-        assert_eq!(settings_reader.read(settings_messages).count(), 1);
-
-        let practice_messages = app
-            .world()
-            .resource::<Messages<navigation::GameSetPracticeMode>>();
-        let mut practice_reader = practice_messages.get_cursor();
-        let events = practice_reader.read(practice_messages).collect::<Vec<_>>();
-        assert_eq!(events.len(), 1);
-        assert!(events[0].enabled);
+        let messages = app.world().resource::<Messages<AppMessage>>();
+        let mut reader = messages.get_cursor();
+        let messages = reader.read(messages).collect::<Vec<_>>();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| matches!(message, AppMessage::ToggleSettings(_)))
+                .count(),
+            1
+        );
+        let practice = messages.iter().find_map(|message| match message {
+            AppMessage::GameSetPracticeMode(message) => Some(message),
+            _ => None,
+        });
+        assert_eq!(practice.map(|message| message.enabled), Some(true));
     }
 }

@@ -783,12 +783,15 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use bevy_state::prelude::State;
-    use eg_state::state::{
-        AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
-        EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
-        MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
-        SessionStateRes,
+    use eg_state::{
+        events::AppMessageWorldExt,
+        state::{
+            AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes, AuthSubmitSignInRequest,
+            EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorRuntimeRes,
+            EditorTimelineRes, EditorTimingRes, EditorTriggerRes, FrameTimeRes, GameplayResetRes,
+            MenuStateRes, PerfFrameCopyRequest, PerfRes, PlatformInputQueue, RenderResizeRequest,
+            SessionStateRes,
+        },
     };
 
     use super::*;
@@ -1062,7 +1065,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(eg_state::events::navigation::ToggleEditor);
+            .write_app_message(eg_state::events::navigation::ToggleEditor);
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -1083,7 +1086,7 @@ mod tests {
             initial_size.height.saturating_add(11).max(1),
         );
 
-        runtime.app.world_mut().write_message(ResizeSurface {
+        runtime.app.world_mut().write_app_message(ResizeSurface {
             width: new_size.width,
             height: new_size.height,
         });
@@ -1111,7 +1114,10 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(CopyLatestPerfFrame);
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(CopyLatestPerfFrame);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let request = runtime.app.world().resource::<PerfFrameCopyRequest>();
@@ -1130,7 +1136,7 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(AuthSubmitSignIn);
+        runtime.app.world_mut().write_app_message(AuthSubmitSignIn);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let request = runtime.app.world().resource::<AuthSubmitSignInRequest>();
@@ -1148,7 +1154,7 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(AuthSignOut);
+        runtime.app.world_mut().write_app_message(AuthSignOut);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let request = runtime.app.world().resource::<AuthSignOutRequest>();
@@ -1168,7 +1174,7 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(AuthOpenSignup);
+        runtime.app.world_mut().write_app_message(AuthOpenSignup);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let request = runtime.app.world().resource::<AuthOpenSignupRequest>();
@@ -1206,7 +1212,7 @@ mod tests {
     fn runtime_direct_game_quit_to_menu_updates_app_phase() {
         let mut runtime = runtime_in_playing(false, false);
 
-        runtime.app.world_mut().write_message(GameQuitToMenu);
+        runtime.app.world_mut().write_app_message(GameQuitToMenu);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
@@ -1225,7 +1231,7 @@ mod tests {
 
         let mut runtime = runtime_in_editor("ToggleEditorMenu");
 
-        runtime.app.world_mut().write_message(ToggleEditor);
+        runtime.app.world_mut().write_app_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
@@ -1244,7 +1250,7 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(ToggleEditor);
+        runtime.app.world_mut().write_app_message(ToggleEditor);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Editor);
@@ -1276,7 +1282,7 @@ mod tests {
     fn runtime_turn_right_from_menu_starts_app_owned_gameplay() {
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(GameTurnRight);
+        runtime.app.world_mut().write_app_message(GameTurnRight);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
@@ -1305,7 +1311,7 @@ mod tests {
             .world_mut()
             .resource_mut::<SessionStateRes>()
             .playing_level_name = Some("RuntimeTurnRight".to_string());
-        runtime.app.world_mut().write_message(GameTurnRight);
+        runtime.app.world_mut().write_app_message(GameTurnRight);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(runtime.app.world().resource::<eg_game::GameClock>().started);
@@ -1324,7 +1330,7 @@ mod tests {
             .clock
             .duration_seconds = 5.0;
 
-        runtime.app.world_mut().write_message(Playtest);
+        runtime.app.world_mut().write_app_message(Playtest);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Playing);
@@ -1372,7 +1378,7 @@ mod tests {
                 .resource_mut::<eg_game::LevelMeta>()
                 .level_duration_seconds = 9.0;
             world.resource_mut::<eg_game::GameClock>().started = true;
-            world.write_message(GameRestartLevel);
+            world.write_app_message(GameRestartLevel);
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -1412,7 +1418,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(GameRemovePracticeCheckpoint);
+            .write_app_message(GameRemovePracticeCheckpoint);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -1624,7 +1630,7 @@ mod tests {
             .clock
             .duration_seconds = 5.0;
 
-        runtime.app.world_mut().write_message(Playtest);
+        runtime.app.world_mut().write_app_message(Playtest);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         {
@@ -1673,7 +1679,7 @@ mod tests {
                 grounded.0 = true;
             }
         }
-        runtime.app.world_mut().write_message(GameTurnRight);
+        runtime.app.world_mut().write_app_message(GameTurnRight);
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -1701,12 +1707,18 @@ mod tests {
         let mut runtime = Runtime::new_test();
         let selected = BlockId::new("core/lava");
 
-        runtime.app.world_mut().write_message(SetSnapToGrid(false));
-        runtime.app.world_mut().write_message(SetSnapStep(0.001));
         runtime
             .app
             .world_mut()
-            .write_message(SetBlockId(selected.clone()));
+            .write_app_message(SetSnapToGrid(false));
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetSnapStep(0.001));
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetBlockId(selected.clone()));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let config = &runtime.app.world().resource::<EditorConfigRes>().0;
@@ -1778,7 +1790,7 @@ mod tests {
             input.0.hovered_block_index = Some(0);
         }
 
-        runtime.app.world_mut().write_message(CopyBlock);
+        runtime.app.world_mut().write_app_message(CopyBlock);
         let _ = runtime.run_app_frame(egui::RawInput::default());
         assert!(
             runtime
@@ -1792,7 +1804,7 @@ mod tests {
             "copy must persist in the authoritative App-world clipboard"
         );
 
-        runtime.app.world_mut().write_message(RemoveBlock);
+        runtime.app.world_mut().write_app_message(RemoveBlock);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let objects = authored_objects(&mut runtime);
@@ -1832,7 +1844,10 @@ mod tests {
             .resource_mut::<SessionStateRes>()
             .editor_show_place_window = true;
 
-        runtime.app.world_mut().write_message(AddTransformTrigger);
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(AddTransformTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let objects = authored_objects(&mut runtime);
@@ -1883,7 +1898,7 @@ mod tests {
             camera.0.editor_pitch = 0.3;
         }
 
-        runtime.app.world_mut().write_message(AddCameraTrigger);
+        runtime.app.world_mut().write_app_message(AddCameraTrigger);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let objects = authored_objects(&mut runtime);
@@ -1933,7 +1948,10 @@ mod tests {
             input.0.hovered_block_index = Some(0);
         }
 
-        runtime.app.world_mut().write_message(SnapSelectionToGrid);
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SnapSelectionToGrid);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let objects = authored_objects(&mut runtime);
@@ -1967,7 +1985,10 @@ mod tests {
             timeline.0.taps.selected_index = Some(1);
         }
 
-        runtime.app.world_mut().write_message(SnapSelectionToGrid);
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SnapSelectionToGrid);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let selected_index = runtime
@@ -2016,7 +2037,7 @@ mod tests {
             input.0.hovered_block_index = Some(0);
         }
 
-        runtime.app.world_mut().write_message(FocusCameraTarget);
+        runtime.app.world_mut().write_app_message(FocusCameraTarget);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
@@ -2049,7 +2070,7 @@ mod tests {
 
         // Write the message; the next frame's schedule will run the
         // handler and write wall-clock time into the resource.
-        runtime.app.world_mut().write_message(BpmTap);
+        runtime.app.world_mut().write_app_message(BpmTap);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         // App world is the source of truth: one tap recorded.
@@ -2091,7 +2112,7 @@ mod tests {
             res.0.bpm_tap_result = Some(120.0);
         }
 
-        runtime.app.world_mut().write_message(BpmTapReset);
+        runtime.app.world_mut().write_app_message(BpmTapReset);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -2269,12 +2290,15 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(RenameLevel("AppSession".to_string()));
-        runtime.app.world_mut().write_message(SetShowMetadata(true));
+            .write_app_message(RenameLevel("AppSession".to_string()));
         runtime
             .app
             .world_mut()
-            .write_message(UpdateSkyColor([2.0, -1.0, 0.5]));
+            .write_app_message(SetShowMetadata(true));
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(UpdateSkyColor([2.0, -1.0, 0.5]));
 
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -2347,7 +2371,7 @@ mod tests {
                 .is_empty()
         );
 
-        runtime.app.world_mut().write_message(AddTimingPoint {
+        runtime.app.world_mut().write_app_message(AddTimingPoint {
             time_seconds: 1.0,
             bpm: 120.0,
         });
@@ -2415,7 +2439,10 @@ mod tests {
             .0
             .timing_points = vec![initial.clone()];
 
-        runtime.app.world_mut().write_message(RemoveTimingPoint(0));
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(RemoveTimingPoint(0));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -2458,10 +2485,13 @@ mod tests {
             .0
             .timing_points = vec![initial.clone()];
 
-        runtime.app.world_mut().write_message(SetTimingPointTime {
-            index: 0,
-            time: 2.5,
-        });
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetTimingPointTime {
+                index: 0,
+                time: 2.5,
+            });
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         approx::assert_abs_diff_eq!(
@@ -2508,10 +2538,13 @@ mod tests {
             .0
             .timing_points = vec![initial.clone()];
 
-        runtime.app.world_mut().write_message(SetTimingPointBpm {
-            index: 0,
-            bpm: 0.25,
-        });
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetTimingPointBpm {
+                index: 0,
+                bpm: 0.25,
+            });
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         approx::assert_abs_diff_eq!(
@@ -2550,7 +2583,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(SetTimingPointTimeSignature {
+            .write_app_message(SetTimingPointTimeSignature {
                 index: 0,
                 numerator: 3,
                 denominator: 8,
@@ -2610,7 +2643,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(SetTimingSelected(Some(2)));
+            .write_app_message(SetTimingSelected(Some(2)));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
@@ -2759,7 +2792,10 @@ mod tests {
             timeline.0.taps.selected_index = Some(1);
         }
 
-        runtime.app.world_mut().write_message(SetTimelineTime(1.5));
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetTimelineTime(1.5));
         let _ = runtime.run_app_frame(egui::RawInput::default());
         approx::assert_abs_diff_eq!(
             runtime
@@ -2773,7 +2809,7 @@ mod tests {
             epsilon = 1e-6
         );
 
-        runtime.app.world_mut().write_message(ClearTaps);
+        runtime.app.world_mut().write_app_message(ClearTaps);
         let _ = runtime.run_app_frame(egui::RawInput::default());
         let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
         assert!(timeline.taps.tap_times.is_empty());
@@ -2830,7 +2866,7 @@ mod tests {
             .resource_mut::<EditorInputRes>()
             .0
             .cursor = [3.0, 6.0, 9.0];
-        runtime.app.world_mut().write_message(SetSpawnHere);
+        runtime.app.world_mut().write_app_message(SetSpawnHere);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
@@ -2844,7 +2880,10 @@ mod tests {
     fn runtime_rotate_spawn_direction_mutates_app_resource() {
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(RotateSpawnDirection);
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(RotateSpawnDirection);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
@@ -2868,7 +2907,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(RotatePlacementPreview);
+            .write_app_message(RotatePlacementPreview);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         // Resource holds the new rotation.
@@ -2931,7 +2970,7 @@ mod tests {
             (camera.editor_pan, camera.editor_target_z)
         };
 
-        runtime.app.world_mut().write_message(AdjustZoom(1.0));
+        runtime.app.world_mut().write_app_message(AdjustZoom(1.0));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
@@ -2947,11 +2986,14 @@ mod tests {
         let new_yaw = 1.5_f32;
         let new_pitch = 0.4_f32;
 
-        runtime.app.world_mut().write_message(SetCameraOrientation {
-            rotation: new_yaw,
-            pitch: new_pitch,
-            transition_seconds: None,
-        });
+        runtime
+            .app
+            .world_mut()
+            .write_app_message(SetCameraOrientation {
+                rotation: new_yaw,
+                pitch: new_pitch,
+                transition_seconds: None,
+            });
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let camera = &runtime.app.world().resource::<EditorCameraRes>().0;
@@ -2966,7 +3008,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(SetTriggerSelected(Some(1)));
+            .write_app_message(SetTriggerSelected(Some(1)));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(
@@ -3119,7 +3161,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(ToggleHitboxVisualization);
+            .write_app_message(ToggleHitboxVisualization);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3171,7 +3213,7 @@ mod tests {
             "SessionStateRes.game_paused must retain App fixture initialization"
         );
 
-        runtime.app.world_mut().write_message(GameResume);
+        runtime.app.world_mut().write_app_message(GameResume);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3303,7 +3345,7 @@ mod tests {
             let world = runtime.app.world_mut();
             world.resource_mut::<eg_game::GameClock>().started = true;
             world.resource_mut::<eg_game::GameClock>().game_over = true;
-            world.write_message(GameTurnRight);
+            world.write_app_message(GameTurnRight);
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -3347,7 +3389,7 @@ mod tests {
                     gameplay: checkpoint,
                     trigger_base_objects: None,
                 });
-            world.write_message(GameTurnRight);
+            world.write_app_message(GameTurnRight);
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -3386,7 +3428,7 @@ mod tests {
             world
                 .resource_mut::<SessionStateRes>()
                 .practice_mode_enabled = true;
-            world.write_message(GameTurnRight);
+            world.write_app_message(GameTurnRight);
         }
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
@@ -3503,7 +3545,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(GameSetPracticeMode { enabled: true });
+            .write_app_message(GameSetPracticeMode { enabled: true });
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         // App world is the source of truth.
@@ -3584,7 +3626,7 @@ mod tests {
             .resource_mut::<SessionStateRes>()
             .editor_show_place_window = false;
 
-        runtime.app.world_mut().write_message(TogglePlaceWindow);
+        runtime.app.world_mut().write_app_message(TogglePlaceWindow);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3627,7 +3669,7 @@ mod tests {
 
         let mut runtime = Runtime::new_test();
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
@@ -3639,7 +3681,7 @@ mod tests {
 
         let mut runtime = runtime_in_playing(false, false);
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3651,7 +3693,7 @@ mod tests {
             "real-gameplay Escape must pause through SessionStateRes"
         );
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3679,7 +3721,7 @@ mod tests {
             "SessionStateRes must be seeded with the playtest flag"
         );
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert!(
@@ -3713,7 +3755,7 @@ mod tests {
             input.0.hovered_block_index = Some(0);
         }
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let input = &runtime.app.world().resource::<EditorInputRes>().0;
@@ -3748,7 +3790,7 @@ mod tests {
             .playback
             .playing = true;
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         let timeline = &runtime.app.world().resource::<EditorTimelineRes>().0;
@@ -3771,7 +3813,7 @@ mod tests {
             timeline.0.clock.time_seconds = 2.5;
         }
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         approx::assert_abs_diff_eq!(
@@ -3793,7 +3835,7 @@ mod tests {
 
         let mut runtime = runtime_in_editor("EscapeEditorMenu");
 
-        runtime.app.world_mut().write_message(Escape);
+        runtime.app.world_mut().write_app_message(Escape);
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(current_phase(&runtime), eg_types::AppPhase::Menu);
@@ -3829,7 +3871,7 @@ mod tests {
         runtime
             .app
             .world_mut()
-            .write_message(SetEditorMode(eg_types::EditorMode::Tapping));
+            .write_app_message(SetEditorMode(eg_types::EditorMode::Tapping));
         let _ = runtime.run_app_frame(egui::RawInput::default());
 
         assert_eq!(

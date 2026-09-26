@@ -7,8 +7,8 @@
 */
 //! Bevy `Message` taxonomy for the eg-state `App`.
 //!
-//! One semantic Bevy `Message` type per domain. Handlers mutate App-world
-//! resources directly or write typed request resources for external services.
+//! App-owned semantic messages. Handlers mutate App-world resources directly
+//! or write typed request resources for external services.
 //!
 //! Bevy 0.19 uses `Message` (not `Event`) for buffered per-frame
 //! payloads; observer-based `Event`s fire immediately. We use `Message`
@@ -16,20 +16,20 @@
 //! handler systems in the [`CommandHandlerSet`] system set.
 //!
 //! The per-message systems are wired into the `StateSchedule` so each message
-//! type has one explicit handler. Runtime drives the schedule on the App world;
+//! kind has one explicit handler. Runtime drives the schedule on the App world;
 //! input-state and direct command messages update App-world resources directly.
 //!
 //! ## Why messages?
 //!
-//! - **One reader per message type** - distinct `Message<T>` types give
-//!   each handler its own `MessageReader<T>`, so multiple readers of
-//!   the same message can be added in any order without cross-reader
-//!   nondeterminism.
+//! - **One shared message resource** - all App-owned messages use one
+//!   `Messages<AppMessage>` resource. Filtered readers retain independent
+//!   cursors, so handlers remain order-independent without monomorphizing one
+//!   ECS resource initialization path for every command type.
 //! - **ECS change detection** - authored object components are the source of
 //!   truth for render extraction; no manual renderer dirty bitfield is needed.
 //! - **UI / winit decoupling** - UI / winit code can write
-//!   `Messages<T>::write(event)` from anywhere; no need to thread a
-//!   `&mut State` through every UI closure.
+//!   the shared message bus from anywhere; no need to thread a `&mut State`
+//!   through every UI closure.
 //!
 //! ## Input-state messages
 //!
@@ -43,12 +43,15 @@
 //! - `MouseButton` / `PrimaryClick` / `PointerMoved` /
 //!   `UpdateCursorFromScreen` / `CameraDrag` (direct resource writes)
 //!
-//! REFACTOR POINT(full-bevy): the messages defined here migrate to
-//! `bevy_input` `Input<KeyCode>` / `ButtonInput<MouseButton>` in the
-//! full-Bevy migration. The Bevy `Message` types themselves stay.
+use std::marker::PhantomData;
 
 use bevy_app::App;
-use bevy_ecs::{prelude::*, schedule::SystemSet};
+use bevy_ecs::{
+    message::{MessageCursor, Messages},
+    prelude::*,
+    schedule::SystemSet,
+    system::SystemParam,
+};
 
 use crate::{commands::AppCommand, state::editor_command::EditorCommand};
 
@@ -70,14 +73,346 @@ pub mod spawn;
 pub mod timeline;
 pub mod timing;
 
-// Note: we intentionally do NOT re-export submodule items here. Each
-// submodule defines its own `register_events` (and `handle_*`) function
-// with the same name; glob re-exports would create an ambiguous-glob
-// lint and the names would shadow. The top-level helpers below
-// (`register_command_events` / `add_command_systems`) call each
-// submodule's `register_events` / `handle_*` directly through explicit
-// module paths. Public message *types* remain accessible via their
-// submodule path (e.g. `events::navigation::TurnRight`).
+/// The single message resource used by the App-owned state and async bridges.
+/// Gameplay messages remain owned by `eg-game` so that the headless gameplay
+/// crate does not depend on this application-state crate.
+#[derive(Message, Debug, Clone)]
+pub enum AppMessage {
+    TurnRight(navigation::TurnRight),
+    NextLevel(navigation::NextLevel),
+    PrevLevel(navigation::PrevLevel),
+    ToggleEditor(navigation::ToggleEditor),
+    GameResume(navigation::GameResume),
+    GameRestartLevel(navigation::GameRestartLevel),
+    GameSetPracticeMode(navigation::GameSetPracticeMode),
+    GameSetPracticeCheckpoint(navigation::GameSetPracticeCheckpoint),
+    GameRemovePracticeCheckpoint(navigation::GameRemovePracticeCheckpoint),
+    GameQuitToMenu(navigation::GameQuitToMenu),
+    AuthSubmitSignIn(auth::AuthSubmitSignIn),
+    AuthSignOut(auth::AuthSignOut),
+    AuthOpenSignup(auth::AuthOpenSignup),
+    CopyLatestPerfFrame(auth::CopyLatestPerfFrame),
+    ResizeSurface(auth::ResizeSurface),
+    SetEditorMode(editor_mode::SetEditorMode),
+    SetBlockId(editor_mode::SetBlockId),
+    SelectRecentBlock(editor_mode::SelectRecentBlock),
+    PickSelectedBlock(editor_mode::PickSelectedBlock),
+    PickBlockAt(editor_mode::PickBlockAt),
+    SetSnapToGrid(snap::SetSnapToGrid),
+    SetSnapStep(snap::SetSnapStep),
+    SetSnapRotation(snap::SetSnapRotation),
+    SetSnapRotationStep(snap::SetSnapRotationStep),
+    RemoveBlock(block::RemoveBlock),
+    DuplicateBlock(block::DuplicateBlock),
+    CopyBlock(block::CopyBlock),
+    PasteBlock(block::PasteBlock),
+    UpdateSelectedBlock(block::UpdateSelectedBlock),
+    SnapSelectionToGrid(selection::SnapSelectionToGrid),
+    FocusCameraTarget(selection::FocusCameraTarget),
+    AddTransformTrigger(selection::AddTransformTrigger),
+    ToggleTimelinePlayback(timeline::ToggleTimelinePlayback),
+    ShiftTimeline(timeline::ShiftTimeline),
+    SetTimelineTime(timeline::SetTimelineTime),
+    SetTimelineDuration(timeline::SetTimelineDuration),
+    AddTap(timeline::AddTap),
+    RemoveTap(timeline::RemoveTap),
+    RemoveTapAt(timeline::RemoveTapAt),
+    SetSelectedTap(timeline::SetSelectedTap),
+    SetSelectedTapTime(timeline::SetSelectedTapTime),
+    ClearTaps(timeline::ClearTaps),
+    SetPlaybackSpeed(timeline::SetPlaybackSpeed),
+    SetWaveformZoom(timeline::SetWaveformZoom),
+    SetWaveformScroll(timeline::SetWaveformScroll),
+    Playtest(timeline::Playtest),
+    AddTimingPoint(timing::AddTimingPoint),
+    RemoveTimingPoint(timing::RemoveTimingPoint),
+    SetTimingPointTime(timing::SetTimingPointTime),
+    SetTimingPointBpm(timing::SetTimingPointBpm),
+    SetTimingPointTimeSignature(timing::SetTimingPointTimeSignature),
+    SetTimingSelected(timing::SetTimingSelected),
+    BpmTap(bpm::BpmTap),
+    BpmTapReset(bpm::BpmTapReset),
+    SetSpawnHere(spawn::SetSpawnHere),
+    RotateSpawnDirection(spawn::RotateSpawnDirection),
+    RotatePlacementPreview(spawn::RotatePlacementPreview),
+    Undo(history::Undo),
+    Redo(history::Redo),
+    HistorySnapshot(history::HistorySnapshot),
+    AdjustZoom(camera::AdjustZoom),
+    SetCameraOrientation(camera::SetCameraOrientation),
+    AddCameraTrigger(camera::AddCameraTrigger),
+    AddCameraFollowTrigger(camera::AddCameraFollowTrigger),
+    SetTriggerSelected(camera::SetTriggerSelected),
+    ToggleHitboxVisualization(misc::ToggleHitboxVisualization),
+    TogglePerfOverlay(misc::TogglePerfOverlay),
+    TogglePlaceWindow(misc::TogglePlaceWindow),
+    Escape(misc::Escape),
+    LoadLevel(session::LoadLevel),
+    RenameLevel(session::RenameLevel),
+    ExportLevel(session::ExportLevel),
+    SetShowMetadata(session::SetShowMetadata),
+    ToggleSettings(session::ToggleSettings),
+    SetShowSettings(session::SetShowSettings),
+    SetSettingsSection(session::SetSettingsSection),
+    SetGraphicsBackend(session::SetGraphicsBackend),
+    SetAudioBackend(session::SetAudioBackend),
+    SetUiScaleMultiplier(session::SetUiScaleMultiplier),
+    SetKeybindCapture(session::SetKeybindCapture),
+    SetKeybind(session::SetKeybind),
+    ClearKeybindSlot(session::ClearKeybindSlot),
+    ResetKeybind(session::ResetKeybind),
+    ResetKeybinds(session::ResetKeybinds),
+    CompleteImport(session::CompleteImport),
+    UpdateMusic(session::UpdateMusic),
+    UpdateCreatorMetadata(session::UpdateCreatorMetadata),
+    UpdateSkyColor(session::UpdateSkyColor),
+    TriggerAudioImport(session::TriggerAudioImport),
+    CaptureMenuPreviewCamera(session::CaptureMenuPreviewCamera),
+    UseAutoMenuPreviewCamera(session::UseAutoMenuPreviewCamera),
+    SetShiftHeld(input_state::SetShiftHeld),
+    SetCtrlHeld(input_state::SetCtrlHeld),
+    SetAltHeld(input_state::SetAltHeld),
+    SetPanUpHeld(input_state::SetPanUpHeld),
+    SetPanDownHeld(input_state::SetPanDownHeld),
+    SetPanLeftHeld(input_state::SetPanLeftHeld),
+    SetPanRightHeld(input_state::SetPanRightHeld),
+    MouseButton(pointer::MouseButton),
+    PrimaryClick(pointer::PrimaryClick),
+    PointerMoved(pointer::PointerMoved),
+    UpdateCursorFromScreen(pointer::UpdateCursorFromScreen),
+    CameraDrag(pointer::CameraDrag),
+    AuthServiceResultEvent(async_results::AuthServiceResultEvent),
+    AudioImportResultEvent(async_results::AudioImportResultEvent),
+    LevelImportResultEvent(async_results::LevelImportResultEvent),
+}
+
+/// Associates one domain payload with its variant in [`AppMessage`].
+pub trait AppMessageKind: Sized + Send + Sync + 'static {
+    fn from_app_message(message: &AppMessage) -> Option<&Self>;
+}
+
+macro_rules! impl_app_message_kind {
+    ($($module:ident::$message:ident),+ $(,)?) => {
+        $(
+            impl From<$module::$message> for AppMessage {
+                fn from(message: $module::$message) -> Self {
+                    Self::$message(message)
+                }
+            }
+
+            impl AppMessageKind for $module::$message {
+                fn from_app_message(message: &AppMessage) -> Option<&Self> {
+                    match message {
+                        AppMessage::$message(message) => Some(message),
+                        _ => None,
+                    }
+                }
+            }
+        )+
+    };
+}
+
+impl_app_message_kind! {
+    navigation::TurnRight,
+    navigation::NextLevel,
+    navigation::PrevLevel,
+    navigation::ToggleEditor,
+    navigation::GameResume,
+    navigation::GameRestartLevel,
+    navigation::GameSetPracticeMode,
+    navigation::GameSetPracticeCheckpoint,
+    navigation::GameRemovePracticeCheckpoint,
+    navigation::GameQuitToMenu,
+    auth::AuthSubmitSignIn,
+    auth::AuthSignOut,
+    auth::AuthOpenSignup,
+    auth::CopyLatestPerfFrame,
+    auth::ResizeSurface,
+    editor_mode::SetEditorMode,
+    editor_mode::SetBlockId,
+    editor_mode::SelectRecentBlock,
+    editor_mode::PickSelectedBlock,
+    editor_mode::PickBlockAt,
+    snap::SetSnapToGrid,
+    snap::SetSnapStep,
+    snap::SetSnapRotation,
+    snap::SetSnapRotationStep,
+    block::RemoveBlock,
+    block::DuplicateBlock,
+    block::CopyBlock,
+    block::PasteBlock,
+    block::UpdateSelectedBlock,
+    selection::SnapSelectionToGrid,
+    selection::FocusCameraTarget,
+    selection::AddTransformTrigger,
+    timeline::ToggleTimelinePlayback,
+    timeline::ShiftTimeline,
+    timeline::SetTimelineTime,
+    timeline::SetTimelineDuration,
+    timeline::AddTap,
+    timeline::RemoveTap,
+    timeline::RemoveTapAt,
+    timeline::SetSelectedTap,
+    timeline::SetSelectedTapTime,
+    timeline::ClearTaps,
+    timeline::SetPlaybackSpeed,
+    timeline::SetWaveformZoom,
+    timeline::SetWaveformScroll,
+    timeline::Playtest,
+    timing::AddTimingPoint,
+    timing::RemoveTimingPoint,
+    timing::SetTimingPointTime,
+    timing::SetTimingPointBpm,
+    timing::SetTimingPointTimeSignature,
+    timing::SetTimingSelected,
+    bpm::BpmTap,
+    bpm::BpmTapReset,
+    spawn::SetSpawnHere,
+    spawn::RotateSpawnDirection,
+    spawn::RotatePlacementPreview,
+    history::Undo,
+    history::Redo,
+    history::HistorySnapshot,
+    camera::AdjustZoom,
+    camera::SetCameraOrientation,
+    camera::AddCameraTrigger,
+    camera::AddCameraFollowTrigger,
+    camera::SetTriggerSelected,
+    misc::ToggleHitboxVisualization,
+    misc::TogglePerfOverlay,
+    misc::TogglePlaceWindow,
+    misc::Escape,
+    session::LoadLevel,
+    session::RenameLevel,
+    session::ExportLevel,
+    session::SetShowMetadata,
+    session::ToggleSettings,
+    session::SetShowSettings,
+    session::SetSettingsSection,
+    session::SetGraphicsBackend,
+    session::SetAudioBackend,
+    session::SetUiScaleMultiplier,
+    session::SetKeybindCapture,
+    session::SetKeybind,
+    session::ClearKeybindSlot,
+    session::ResetKeybind,
+    session::ResetKeybinds,
+    session::CompleteImport,
+    session::UpdateMusic,
+    session::UpdateCreatorMetadata,
+    session::UpdateSkyColor,
+    session::TriggerAudioImport,
+    session::CaptureMenuPreviewCamera,
+    session::UseAutoMenuPreviewCamera,
+    input_state::SetShiftHeld,
+    input_state::SetCtrlHeld,
+    input_state::SetAltHeld,
+    input_state::SetPanUpHeld,
+    input_state::SetPanDownHeld,
+    input_state::SetPanLeftHeld,
+    input_state::SetPanRightHeld,
+    pointer::MouseButton,
+    pointer::PrimaryClick,
+    pointer::PointerMoved,
+    pointer::UpdateCursorFromScreen,
+    pointer::CameraDrag,
+    async_results::AuthServiceResultEvent,
+    async_results::AudioImportResultEvent,
+    async_results::LevelImportResultEvent,
+}
+
+/// A filtered reader over the one App message buffer.
+#[derive(SystemParam)]
+pub struct AppMessageReader<'w, 's, T: AppMessageKind> {
+    reader: bevy_ecs::message::MessageReader<'w, 's, AppMessage>,
+    _marker: Local<'s, PhantomData<T>>,
+}
+
+impl<'w, 's, T: AppMessageKind> AppMessageReader<'w, 's, T> {
+    pub fn read(&mut self) -> impl Iterator<Item = &T> {
+        self.reader.read().filter_map(T::from_app_message)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.reader.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.reader.clear();
+    }
+}
+
+/// Combined reader/writer for systems that need to consume one app message
+/// kind and emit another. A single shared resource parameter avoids Bevy's
+/// duplicate-access validation when several logical message kinds are used in
+/// the same system.
+#[derive(SystemParam)]
+pub struct AppMessageBus<'w, 's> {
+    messages: ResMut<'w, Messages<AppMessage>>,
+    cursor: Local<'s, MessageCursor<AppMessage>>,
+}
+
+impl<'w, 's> AppMessageBus<'w, 's> {
+    pub fn read<T: AppMessageKind>(&mut self) -> impl Iterator<Item = &T> {
+        self.cursor
+            .read(&self.messages)
+            .filter_map(T::from_app_message)
+    }
+
+    pub fn write<T: Into<AppMessage>>(&mut self, message: T) {
+        self.messages.write(message.into());
+    }
+
+    pub fn clear(&mut self) {
+        self.cursor.clear(&self.messages);
+    }
+}
+
+pub type MessageReader<'w, 's, T> = AppMessageReader<'w, 's, T>;
+
+#[derive(Resource, Default)]
+pub struct AppMessageExclusiveCursors {
+    pub(crate) toggle_editor: MessageCursor<AppMessage>,
+    pub(crate) escape: MessageCursor<AppMessage>,
+    pub(crate) load_level: MessageCursor<AppMessage>,
+    pub(crate) level_import: MessageCursor<AppMessage>,
+}
+
+pub(crate) fn read_app_messages<T: AppMessageKind + Clone>(
+    cursor: &mut MessageCursor<AppMessage>,
+    messages: &Messages<AppMessage>,
+) -> Vec<T> {
+    cursor
+        .read(messages)
+        .filter_map(T::from_app_message)
+        .cloned()
+        .collect()
+}
+
+/// Extension method for writing an App-owned payload into the shared message
+/// resource without exposing the enum conversion at every callsite.
+pub trait AppMessageWorldExt {
+    fn write_app_message<T: Into<AppMessage>>(&mut self, message: T);
+}
+
+impl AppMessageWorldExt for World {
+    fn write_app_message<T: Into<AppMessage>>(&mut self, message: T) {
+        self.write_message(message.into());
+    }
+}
+
+struct AppMessageWorld<'a>(&'a mut World);
+
+impl AppMessageWorld<'_> {
+    fn write_message<T: Into<AppMessage>>(&mut self, message: T) {
+        self.0.write_message(message.into());
+    }
+}
+
+// Note: we intentionally do NOT re-export submodule items here. Public
+// message types remain accessible through their submodule path (for example,
+// `events::navigation::TurnRight`) while the top-level helpers add handlers
+// through explicit module paths.
 
 /// System set that contains the per-message command handlers.
 ///
@@ -88,152 +423,17 @@ pub mod timing;
 pub struct CommandHandlerSet;
 
 pub fn register_command_events(app: &mut App) {
-    // Add the message resources so `Messages<T>` is available.
-    navigation::register_events(app);
-    auth::register_events(app);
-    editor_mode::register_events(app);
-    snap::register_events(app);
-    block::register_events(app);
-    selection::register_events(app);
-    timeline::register_events(app);
-    timing::register_events(app);
-    bpm::register_events(app);
-    spawn::register_events(app);
-    history::register_events(app);
-    camera::register_events(app);
-    misc::register_events(app);
-    session::register_events(app);
-    input_state::register_events(app);
-    pointer::register_events(app);
+    app.add_message::<AppMessage>()
+        .init_resource::<AppMessageExclusiveCursors>();
 }
 
 /// World-flavoured variant of [`register_command_events`] for callers
 /// that work with a bare `World` (e.g. `State` constructs its `World`
-/// directly without going through an `App`). Initializes the
-/// `Messages<T>` resource for every event type; does **not** add a
-/// schedule - see `register_state_schedule` for the full
-/// `World` setup.
+/// directly without going through an `App`). Initializes the shared message
+/// resource and its exclusive-handler cursors; does **not** add a schedule.
 pub fn register_command_events_world(world: &mut World) {
-    use bevy_ecs::message::Messages;
-    // Navigation
-    world.init_resource::<Messages<navigation::TurnRight>>();
-    world.init_resource::<Messages<navigation::NextLevel>>();
-    world.init_resource::<Messages<navigation::PrevLevel>>();
-    world.init_resource::<Messages<navigation::ToggleEditor>>();
-    world.init_resource::<Messages<navigation::GameResume>>();
-    world.init_resource::<Messages<navigation::GameRestartLevel>>();
-    world.init_resource::<Messages<navigation::GameSetPracticeMode>>();
-    world.init_resource::<Messages<navigation::GameSetPracticeCheckpoint>>();
-    world.init_resource::<Messages<navigation::GameRemovePracticeCheckpoint>>();
-    world.init_resource::<Messages<navigation::GameQuitToMenu>>();
-    // Auth
-    world.init_resource::<Messages<auth::AuthSubmitSignIn>>();
-    world.init_resource::<Messages<auth::AuthSignOut>>();
-    world.init_resource::<Messages<auth::AuthOpenSignup>>();
-    world.init_resource::<Messages<auth::CopyLatestPerfFrame>>();
-    world.init_resource::<Messages<auth::ResizeSurface>>();
-    // Editor mode
-    world.init_resource::<Messages<editor_mode::SetEditorMode>>();
-    world.init_resource::<Messages<editor_mode::SetBlockId>>();
-    world.init_resource::<Messages<editor_mode::SelectRecentBlock>>();
-    world.init_resource::<Messages<editor_mode::PickSelectedBlock>>();
-    world.init_resource::<Messages<editor_mode::PickBlockAt>>();
-    // Snap
-    world.init_resource::<Messages<snap::SetSnapToGrid>>();
-    world.init_resource::<Messages<snap::SetSnapStep>>();
-    world.init_resource::<Messages<snap::SetSnapRotation>>();
-    world.init_resource::<Messages<snap::SetSnapRotationStep>>();
-    // Block
-    world.init_resource::<Messages<block::RemoveBlock>>();
-    world.init_resource::<Messages<block::DuplicateBlock>>();
-    world.init_resource::<Messages<block::CopyBlock>>();
-    world.init_resource::<Messages<block::PasteBlock>>();
-    world.init_resource::<Messages<block::UpdateSelectedBlock>>();
-    // Selection
-    world.init_resource::<Messages<selection::SnapSelectionToGrid>>();
-    world.init_resource::<Messages<selection::FocusCameraTarget>>();
-    world.init_resource::<Messages<selection::AddTransformTrigger>>();
-    // Timeline
-    world.init_resource::<Messages<timeline::ToggleTimelinePlayback>>();
-    world.init_resource::<Messages<timeline::ShiftTimeline>>();
-    world.init_resource::<Messages<timeline::SetTimelineTime>>();
-    world.init_resource::<Messages<timeline::SetTimelineDuration>>();
-    world.init_resource::<Messages<timeline::AddTap>>();
-    world.init_resource::<Messages<timeline::RemoveTap>>();
-    world.init_resource::<Messages<timeline::RemoveTapAt>>();
-    world.init_resource::<Messages<timeline::SetSelectedTap>>();
-    world.init_resource::<Messages<timeline::SetSelectedTapTime>>();
-    world.init_resource::<Messages<timeline::ClearTaps>>();
-    world.init_resource::<Messages<timeline::SetPlaybackSpeed>>();
-    world.init_resource::<Messages<timeline::SetWaveformZoom>>();
-    world.init_resource::<Messages<timeline::SetWaveformScroll>>();
-    world.init_resource::<Messages<timeline::Playtest>>();
-    // Timing
-    world.init_resource::<Messages<timing::AddTimingPoint>>();
-    world.init_resource::<Messages<timing::RemoveTimingPoint>>();
-    world.init_resource::<Messages<timing::SetTimingPointTime>>();
-    world.init_resource::<Messages<timing::SetTimingPointBpm>>();
-    world.init_resource::<Messages<timing::SetTimingPointTimeSignature>>();
-    world.init_resource::<Messages<timing::SetTimingSelected>>();
-    // BPM
-    world.init_resource::<Messages<bpm::BpmTap>>();
-    world.init_resource::<Messages<bpm::BpmTapReset>>();
-    // Spawn
-    world.init_resource::<Messages<spawn::SetSpawnHere>>();
-    world.init_resource::<Messages<spawn::RotateSpawnDirection>>();
-    world.init_resource::<Messages<spawn::RotatePlacementPreview>>();
-    // History
-    world.init_resource::<Messages<history::Undo>>();
-    world.init_resource::<Messages<history::Redo>>();
-    world.init_resource::<Messages<history::HistorySnapshot>>();
-    // Camera
-    world.init_resource::<Messages<camera::AdjustZoom>>();
-    world.init_resource::<Messages<camera::SetCameraOrientation>>();
-    world.init_resource::<Messages<camera::AddCameraTrigger>>();
-    world.init_resource::<Messages<camera::AddCameraFollowTrigger>>();
-    world.init_resource::<Messages<camera::SetTriggerSelected>>();
-    // Misc
-    world.init_resource::<Messages<misc::ToggleHitboxVisualization>>();
-    world.init_resource::<Messages<misc::TogglePerfOverlay>>();
-    world.init_resource::<Messages<misc::TogglePlaceWindow>>();
-    world.init_resource::<Messages<misc::Escape>>();
-    // Session
-    world.init_resource::<Messages<session::LoadLevel>>();
-    world.init_resource::<Messages<session::RenameLevel>>();
-    world.init_resource::<Messages<session::ExportLevel>>();
-    world.init_resource::<Messages<session::SetShowMetadata>>();
-    world.init_resource::<Messages<session::ToggleSettings>>();
-    world.init_resource::<Messages<session::SetShowSettings>>();
-    world.init_resource::<Messages<session::SetSettingsSection>>();
-    world.init_resource::<Messages<session::SetGraphicsBackend>>();
-    world.init_resource::<Messages<session::SetAudioBackend>>();
-    world.init_resource::<Messages<session::SetUiScaleMultiplier>>();
-    world.init_resource::<Messages<session::SetKeybindCapture>>();
-    world.init_resource::<Messages<session::SetKeybind>>();
-    world.init_resource::<Messages<session::ClearKeybindSlot>>();
-    world.init_resource::<Messages<session::ResetKeybind>>();
-    world.init_resource::<Messages<session::ResetKeybinds>>();
-    world.init_resource::<Messages<session::CompleteImport>>();
-    world.init_resource::<Messages<session::UpdateMusic>>();
-    world.init_resource::<Messages<session::UpdateCreatorMetadata>>();
-    world.init_resource::<Messages<session::UpdateSkyColor>>();
-    world.init_resource::<Messages<session::TriggerAudioImport>>();
-    world.init_resource::<Messages<session::CaptureMenuPreviewCamera>>();
-    world.init_resource::<Messages<session::UseAutoMenuPreviewCamera>>();
-    // Input state (direct resource writes for held state; see module docs).
-    world.init_resource::<Messages<input_state::SetShiftHeld>>();
-    world.init_resource::<Messages<input_state::SetCtrlHeld>>();
-    world.init_resource::<Messages<input_state::SetAltHeld>>();
-    world.init_resource::<Messages<input_state::SetPanUpHeld>>();
-    world.init_resource::<Messages<input_state::SetPanDownHeld>>();
-    world.init_resource::<Messages<input_state::SetPanLeftHeld>>();
-    world.init_resource::<Messages<input_state::SetPanRightHeld>>();
-    // Pointer / drag.
-    world.init_resource::<Messages<pointer::MouseButton>>();
-    world.init_resource::<Messages<pointer::PrimaryClick>>();
-    world.init_resource::<Messages<pointer::PointerMoved>>();
-    world.init_resource::<Messages<pointer::UpdateCursorFromScreen>>();
-    world.init_resource::<Messages<pointer::CameraDrag>>();
+    world.init_resource::<Messages<AppMessage>>();
+    world.init_resource::<AppMessageExclusiveCursors>();
 }
 
 /// Write an app command into the Bevy message bus.
@@ -241,6 +441,7 @@ pub fn register_command_events_world(world: &mut World) {
 /// UI callers use this as the single command-ingress adapter while the public
 /// UI surface still returns `AppCommand` values.
 pub fn write_app_command_message(world: &mut World, command: AppCommand) {
+    let mut world = AppMessageWorld(world);
     match command {
         AppCommand::TurnRight => {
             world.write_message(navigation::TurnRight);
@@ -287,7 +488,7 @@ pub fn write_app_command_message(world: &mut World, command: AppCommand) {
         AppCommand::ResizeSurface { width, height } => {
             world.write_message(auth::ResizeSurface { width, height });
         }
-        AppCommand::Editor(command) => write_editor_command_message(world, command),
+        AppCommand::Editor(command) => write_editor_command_message(world.0, command),
     }
 }
 
@@ -303,6 +504,7 @@ pub fn write_app_command_messages(
 
 /// Write an editor command into the Bevy message bus.
 pub fn write_editor_command_message(world: &mut World, command: EditorCommand) {
+    let mut world = AppMessageWorld(world);
     match command {
         EditorCommand::SetMode(mode) => {
             world.write_message(editor_mode::SetEditorMode(mode));
@@ -805,6 +1007,8 @@ pub fn add_command_systems(schedule: &mut Schedule) {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::{Deref, DerefMut};
+
     use bevy_ecs::message::Messages;
     use bevy_state::prelude::State;
     use eg_types::{
@@ -860,9 +1064,31 @@ mod tests {
         }
     }
 
+    struct TestWorld(bevy_ecs::world::World);
+
+    impl TestWorld {
+        fn write_message<T: Into<AppMessage>>(&mut self, message: T) {
+            self.0.write_message(message.into());
+        }
+    }
+
+    impl Deref for TestWorld {
+        type Target = bevy_ecs::world::World;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl DerefMut for TestWorld {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.0
+        }
+    }
+
     /// Build a `World` that has the message resources + the per-message
     /// drain schedule.
-    fn build_event_world() -> bevy_ecs::world::World {
+    fn build_event_world() -> TestWorld {
         let mut world = bevy_ecs::world::World::new();
         // All per-message drain systems run in the same schedule, so the
         // helper must register every resource any of them reads. The
@@ -947,7 +1173,7 @@ mod tests {
         );
         world.add_schedule(schedule);
         world.clear_trackers();
-        world
+        TestWorld(world)
     }
 
     #[test]
@@ -2232,7 +2458,7 @@ mod tests {
         let mut world = build_event_world();
         register_command_events_world(&mut world);
         // No panic = pass.
-        assert!(world.contains_resource::<Messages<TurnRight>>());
+        assert!(world.contains_resource::<Messages<AppMessage>>());
     }
 
     // --- Direct-resource pattern: handlers that mutate App-world resources

@@ -8,10 +8,8 @@
 //! App-world gameplay ownership handoff.
 //!
 //! The Runtime-owned App world is authoritative for gameplay simulation.
-//! This module contains the narrow initial/transition seeding adapters
-//! needed while consumers are being migrated.
-//!
-//!
+//! This module seeds and replaces gameplay entity/resource state when the app
+//! enters, leaves, or resets gameplay.
 
 use bevy_ecs::{message::Messages, prelude::*};
 use bevy_state::prelude::State;
@@ -199,9 +197,9 @@ pub fn apply_completed_gameplay_transition_system(world: &mut World) {
     );
 }
 
-/// Apply the non-practice GameOver side effects after gameplay has marked the
-/// App-owned clock. Practice respawn remains a compatibility path until its
-/// checkpoint presentation is also world-owned.
+/// Apply GameOver side effects after gameplay marks the App-owned clock.
+/// Practice mode respawns from its latest checkpoint instead of leaving the
+/// playing phase.
 pub fn apply_game_over_transition_system(world: &mut World) {
     let (playtesting_editor, practice_mode_enabled, progress) = {
         let phase = world.resource::<State<eg_types::AppPhase>>();
@@ -541,22 +539,6 @@ fn replace_app_gameplay_world(world: &mut World, seed: GameplayWorldSeed) {
                 .insert_object_with_cached_hitboxes(entity, hitboxes);
         }
         world.insert_resource(spatial);
-    }
-}
-
-#[allow(dead_code)]
-fn rebuild_spatial_index(world: &mut World) {
-    let entries = {
-        let mut query = world.query::<(Entity, &ObjectData)>();
-        query
-            .iter(world)
-            .map(|(entity, object)| (entity, object.0.clone()))
-            .collect::<Vec<_>>()
-    };
-    let mut spatial = world.resource_mut::<SpatialIndex>();
-    spatial.grid.clear();
-    for (entity, object) in entries {
-        spatial.grid.insert_object(entity, &object);
     }
 }
 

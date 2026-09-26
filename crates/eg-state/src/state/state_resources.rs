@@ -13,12 +13,10 @@
 //! remain behind explicit resource boundaries where they require external
 //! channels or handles.
 //!
-//! Naming convention: `<Domain>Res` for top-level domain resources, and
-//! `<Domain><Noun>Res` for grouped sub-state.
-//!
-//! Only types with a usable `Default` impl are exposed in Phase 2a. Types
-//! that wrap non-`Default` channel pairs (audio, auth) are added in
-//! Phase 2b alongside their resource registration helpers.
+//! Naming convention: `<Domain>Res` for top-level domain resources and
+//! `<Domain><Noun>Res` for grouped sub-state. Default resources are registered
+//! by the plugin graph; resources that wrap external channels are installed
+//! when their platform service is available.
 
 use std::{collections::HashMap, sync::mpsc};
 
@@ -172,16 +170,13 @@ pub struct SessionStateRes {
     pub playtest_editor_objects: Option<Vec<LevelObject>>,
     pub practice_mode_enabled: bool,
     pub practice_checkpoints: Vec<PracticeCheckpoint>,
-    /// One-shot audio compatibility intent for an App-owned quit-to-menu
-    /// transition. The audio service remains external until its resource
-    /// migration, so Runtime consumes this marker once to stop playback.
+    /// One-shot request for stopping external audio during a quit-to-menu
+    /// transition. Runtime consumes this marker once.
     pub audio_stop_pending: bool,
 }
 
 impl SessionStateRes {
-    /// Clear App-owned gameplay/session fields for a transition to menu.
-    /// External audio remains a one-shot compatibility intent until the audio
-    /// backend itself is an App resource.
+    /// Clear gameplay/session fields and request external audio shutdown.
     pub fn transition_to_menu(&mut self) {
         self.game_paused = false;
         self.playtesting_editor = false;
@@ -272,8 +267,7 @@ pub struct BlockEffectsRes {
     pub effects: Vec<BlockVisualEffect>,
 }
 
-/// `EditorInputState` mirrored as a resource. UI + interaction systems
-/// (Phase 3+) read/write this resource instead of `state.editor.input`.
+/// App-owned editor input state used by UI and interaction systems.
 #[derive(Resource, Default)]
 pub struct EditorInputRes(pub eg_types::EditorInputState);
 
@@ -405,9 +399,8 @@ impl Default for AuthStateRes {
 
 /// App-world request to start the browser sign-in flow.
 ///
-/// The sign-in side effect touches network IO (it calls
-/// `trigger_auth_sign_in` which sends a message on the auth channel).
-/// Phase 6e consumes this request in `StateSchedule` via `AuthStateRes`.
+/// The sign-in side effect sends a request through the auth service channel.
+/// `StateSchedule` consumes this request through `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSubmitSignInRequest {
     pub pending: bool,
@@ -427,10 +420,8 @@ impl AuthSubmitSignInRequest {
 
 /// App-world request to sign out the current account.
 ///
-/// The sign-out side effect touches network IO (it calls
-/// `trigger_auth_sign_out` which sends a message on the auth
-/// channel). Phase 6e consumes this request in `StateSchedule` via
-/// `AuthStateRes`.
+/// The sign-out side effect sends a request through the auth service channel.
+/// `StateSchedule` consumes this request through `AuthStateRes`.
 #[derive(Resource, Default)]
 pub struct AuthSignOutRequest {
     pub pending: bool,
@@ -450,9 +441,8 @@ impl AuthSignOutRequest {
 
 /// App-world request to open the web signup page.
 ///
-/// The signup-page open side effect touches platform code
-/// (`eg_platform::auth::open_signup_page`). Phase 6e consumes this request in
-/// `StateSchedule` via `AuthStateRes`.
+/// `StateSchedule` consumes this request and calls
+/// `eg_platform::auth::open_signup_page`.
 #[derive(Resource, Default)]
 pub struct AuthOpenSignupRequest {
     pub pending: bool,

@@ -21,9 +21,6 @@ use bevy_ecs::world::World;
 use euphorium::{Output, SoundSource, Soundscape};
 use web_time::Duration;
 
-// REFACTOR POINT(full-bevy): custom audio backend and channel resources become
-// Bevy audio resources and messages; direct platform polling goes away.
-
 euphorium::sound_key! {
     /// Every sound owned by the application audio scene.
     ///

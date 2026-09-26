@@ -21,7 +21,6 @@
 //!   App-world object list. Render extraction observes the resulting entities.
 //!
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_blocks::BlockId;
@@ -31,21 +30,25 @@ use eg_types::{
     TimedTrigger, TriggerTarget,
 };
 
-use crate::state::{
-    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose, collect_editor_object_data,
-    spawn_editor_object_commands, sync_camera_follow_trigger_object_pose,
+use crate::{
+    events::MessageReader,
+    state::{
+        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose,
+        collect_editor_object_data, spawn_editor_object_commands,
+        sync_camera_follow_trigger_object_pose,
+    },
 };
 
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 
 /// Adjust zoom by moving the camera along its look vector.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct AdjustZoom(pub f32);
 
 /// Snap the editor camera to an absolute orientation in radians.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetCameraOrientation {
     pub rotation: f32,
     pub pitch: f32,
@@ -53,24 +56,16 @@ pub struct SetCameraOrientation {
 }
 
 /// Capture a new camera trigger from the current editor camera at the playhead.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AddCameraTrigger;
 
 /// Add a camera-follow trigger at the current playhead, returning to default tracking mode.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AddCameraFollowTrigger;
 
 /// Select or deselect a trigger in the UI.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTriggerSelected(pub Option<usize>);
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<AdjustZoom>()
-        .add_message::<SetCameraOrientation>()
-        .add_message::<AddCameraTrigger>()
-        .add_message::<AddCameraFollowTrigger>()
-        .add_message::<SetTriggerSelected>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems

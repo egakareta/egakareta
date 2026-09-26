@@ -10,14 +10,13 @@
 //! These represent editor input state, not commands. The handlers write
 //! directly to App-world input/camera resources.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_types::{AppPhase, EditorMode, EditorTapDivisionPick, LevelObject};
 use glam::Vec2;
 
 use crate::{
-    events::navigation::TurnRight,
+    events::{AppMessageBus, MessageReader, navigation::TurnRight},
     state::{
         EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
         EditorInteractionContext, EditorObjectOrder, EditorObjectRevision, EditorObjectsBorrow,
@@ -28,46 +27,38 @@ use crate::{
 };
 
 /// Mouse button state update for editor interaction routing.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct MouseButton {
     pub button: u32,
     pub pressed: bool,
 }
 
 /// Primary click action at screen coordinates.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PrimaryClick {
     pub x: f64,
     pub y: f64,
 }
 
 /// Pointer moved to screen coordinates.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PointerMoved {
     pub x: f64,
     pub y: f64,
 }
 
 /// Update the editor cursor from screen coordinates without triggering a click.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct UpdateCursorFromScreen {
     pub x: f64,
     pub y: f64,
 }
 
 /// Camera drag delta in screen pixels.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct CameraDrag {
     pub dx: f64,
     pub dy: f64,
-}
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<MouseButton>()
-        .add_message::<PrimaryClick>()
-        .add_message::<PointerMoved>()
-        .add_message::<UpdateCursorFromScreen>()
-        .add_message::<CameraDrag>();
 }
 
 #[derive(SystemParam)]
@@ -233,13 +224,8 @@ fn handle_tapping_click(
     true
 }
 
-pub fn handle_mouse_button(
-    mut events: MessageReader<MouseButton>,
-    mut resources: PointerResources,
-    mut turn_right: MessageWriter<TurnRight>,
-    mut primary_click: MessageWriter<PrimaryClick>,
-) {
-    let events = events.read().copied().collect::<Vec<_>>();
+pub fn handle_mouse_button(mut messages: AppMessageBus, mut resources: PointerResources) {
+    let events = messages.read::<MouseButton>().copied().collect::<Vec<_>>();
     if events.is_empty() {
         return;
     }
@@ -254,15 +240,15 @@ pub fn handle_mouse_button(
                 if event.pressed {
                     if *resources.phase.get() == AppPhase::Editor {
                         if let Some(pointer) = resources.input.0.pointer_screen {
-                            primary_click.write(PrimaryClick {
+                            messages.write(PrimaryClick {
                                 x: pointer[0],
                                 y: pointer[1],
                             });
                         } else {
-                            turn_right.write(TurnRight);
+                            messages.write(TurnRight);
                         }
                     } else if *resources.phase.get() != AppPhase::Menu {
-                        turn_right.write(TurnRight);
+                        messages.write(TurnRight);
                     }
                 }
                 if !event.pressed {
@@ -297,12 +283,8 @@ pub fn handle_mouse_button(
     }
 }
 
-pub fn handle_primary_click(
-    mut events: MessageReader<PrimaryClick>,
-    mut resources: PointerResources,
-    mut turn_right: MessageWriter<TurnRight>,
-) {
-    let events = events.read().copied().collect::<Vec<_>>();
+pub fn handle_primary_click(mut messages: AppMessageBus, mut resources: PointerResources) {
+    let events = messages.read::<PrimaryClick>().copied().collect::<Vec<_>>();
     if events.is_empty() {
         return;
     }
@@ -312,7 +294,7 @@ pub fn handle_primary_click(
         resources.input.0.left_mouse_down = true;
         if *resources.phase.get() != AppPhase::Editor {
             if *resources.phase.get() != AppPhase::Menu {
-                turn_right.write(TurnRight);
+                messages.write(TurnRight);
             }
             continue;
         }

@@ -24,13 +24,6 @@
 //! - [`StatePlugins`] - aggregator that registers all of the above in
 //!   dependency order.
 //!
-//! REFACTOR POINT(full-bevy): the full-Bevy migration promotes these
-//! plugin shells to the actual plugin graph (with `RenderPlugin` /
-//! `AudioPlugin` / `AuthPlugin` / `UiPlugin` added), the systems they
-//! register move into `bevy_render` / `bevy_egui` / `bevy_audio`, and
-//! the schedule labels here are replaced by Bevy's standard
-//! `Update` / `FixedUpdate` / `OnEnter` schedules.
-
 use bevy_app::{App, FixedUpdate, Plugin};
 use bevy_ecs::prelude::*;
 use bevy_state::{app::AppExtStates, prelude::State};
@@ -50,10 +43,8 @@ use super::{
     },
 };
 
-/// Registers the headless gameplay systems. Currently a thin shim around
-/// [`eg_game::GamePlugin`]; in later phases the gameplay plugin will
-/// also add `SessionStateRes`-style resources and domain-specific event
-/// handlers.
+/// Registers the gameplay plugin and feeds its fixed-step systems from the
+/// App-owned phase, pause, and timing resources.
 pub struct GameplayPlugin;
 
 impl Plugin for GameplayPlugin {
@@ -205,15 +196,10 @@ impl Plugin for StatePlugins {
     }
 }
 
-/// One-shot setup: add all eg-state plugins + register the system set
-/// ordering. Use this when constructing a `bevy_app::App` for eg-state
-/// (full-ECS harness) or for tests.
+/// Add every eg-state plugin to an App.
 ///
-/// In Bevy 0.19, per-schedule `configure_sets(...)` must be called on the
-/// `Schedule` itself, not on `App`. This entry point exists as the canonical
-/// "give me a fully wired eg-state `App`" helper and is where
-/// `app.add_schedule(StateUpdate::default())` + the schedule's
-/// `configure_sets` will be wired in Phase 2c.
+/// Use this helper for production bootstrap and headless tests so both use
+/// the same resource and plugin graph.
 pub fn setup_state_app(app: &mut App) {
     app.add_plugins(StatePlugins);
 }
@@ -252,8 +238,8 @@ pub fn run_state_schedule_system(world: &mut World) {
 /// only handles default-constructible resources.
 /// `MenuStateRes` (which needs level names) is not registered here and
 /// must be inserted by the caller with [`MenuStateRes::new`].
-#[allow(dead_code)]
-pub fn register_state_resources(world: &mut World) {
+#[cfg(test)]
+pub(crate) fn register_state_resources(world: &mut World) {
     world.insert_resource(State::new(eg_types::AppPhase::Menu));
     world.init_resource::<bevy_state::prelude::NextState<eg_types::AppPhase>>();
     world.init_resource::<MenuPreviewObjectsRes>();
@@ -296,9 +282,9 @@ pub fn register_state_resources(world: &mut World) {
 /// Register the App-owned state schedule resources + the
 /// [`StateSchedule`] on a `World`.
 ///
-/// Phase 3: alongside the eg-state resources, this also initializes
-/// the `Messages<T>` buffers for every event type, then adds the
-/// [`StateSchedule`] to the world. The schedule contains per-message
+/// Alongside the eg-state resources, this also initializes the
+/// shared App message buffer, then adds the [`StateSchedule`] to the world.
+/// The schedule contains per-message
 /// handlers that mutate App-world resources directly or write typed request
 /// resources for unavoidable platform side effects.
 ///
@@ -308,28 +294,26 @@ pub fn register_state_resources(world: &mut World) {
 /// level import) and emits the
 /// corresponding async-result events into the World. The channel
 /// wrappers themselves are inserted lazily by
-/// install_async_channel_resources (when external platform services are installed).
+/// `install_async_channel_resources_arc` when external platform services are installed.
 ///
 /// Runtime and tests call this for the App-owned world before running
 /// [`StateSchedule`].
 pub fn register_state_schedule(world: &mut World) {
-    // Message resources for every command event type. The
+    // Shared App message resource. The
     // `register_command_events` helper takes an `App`; we use the
     // `World`-flavoured helper to keep this function working on a
     // bare world (no `App`).
     crate::events::register_command_events_world(world);
 
-    // Phase 6a: register the async-bridge `Messages<T>` resources
+    // Register the async-bridge shared message resource
     // (the channel wrappers are inserted lazily by
-    // `install_async_channel_resources`).
+    // `install_async_channel_resources_arc`).
     crate::state::async_bridge::register_async_channel_resources_world(world);
 
-    // Build the per-frame schedule that handles the per-event
-    // message resources, updates App-world resources / typed
-    // request resources, then runs the render bookkeeping systems,
-    // Phase 6a channel poll systems, and Phase 6b result handler systems.
-    // The schedule is added to the world's
-    // scheduler so runtime and test harnesses can invoke it.
+    // Build the per-frame schedule that handles App messages, updates
+    // App-world resources and request resources, and applies async results.
+    // The schedule is added to the world's scheduler so runtime and test
+    // harnesses can invoke it.
     let mut schedule = bevy_ecs::schedule::Schedule::new(crate::state::StateSchedule);
     schedule.configure_sets(
         (

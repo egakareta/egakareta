@@ -2393,9 +2393,15 @@ mod tests {
 
         let messages = app
             .world()
-            .resource::<bevy_ecs::message::Messages<eg_state::events::navigation::TurnRight>>();
+            .resource::<bevy_ecs::message::Messages<eg_state::events::AppMessage>>();
         let mut reader = messages.get_cursor();
-        assert_eq!(reader.read(messages).count(), 1);
+        assert_eq!(
+            reader
+                .read(messages)
+                .filter(|message| matches!(message, eg_state::events::AppMessage::TurnRight(_)))
+                .count(),
+            1
+        );
     }
 
     #[test]

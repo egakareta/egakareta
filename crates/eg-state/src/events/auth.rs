@@ -9,44 +9,38 @@
 //! clipboard, and surface-resize intent (`AuthSubmitSignIn`, `AuthSignOut`,
 //! `AuthOpenSignup`, `CopyLatestPerfFrame`, `ResizeSurface`).
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_types::PhysicalSize;
 
-use crate::state::{
-    AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest, PerfFrameCopyRequest,
-    RenderResizeRequest,
+use crate::{
+    events::MessageReader,
+    state::{
+        AuthOpenSignupRequest, AuthSignOutRequest, AuthSubmitSignInRequest, PerfFrameCopyRequest,
+        RenderResizeRequest,
+    },
 };
 
 /// Start the browser sign-in flow.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AuthSubmitSignIn;
 
 /// Sign out of the current account.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AuthSignOut;
 
 /// Open the web signup page.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AuthOpenSignup;
 
 /// Copy the latest profiler frame to the system clipboard.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CopyLatestPerfFrame;
 
 /// Resize render surface to the specified dimensions.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct ResizeSurface {
     pub width: u32,
     pub height: u32,
-}
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<AuthSubmitSignIn>()
-        .add_message::<AuthSignOut>()
-        .add_message::<AuthOpenSignup>()
-        .add_message::<CopyLatestPerfFrame>()
-        .add_message::<ResizeSurface>();
 }
 
 // -----------------------------------------------------------------------

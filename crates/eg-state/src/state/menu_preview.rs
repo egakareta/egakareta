@@ -22,8 +22,8 @@ use super::{
 /// Refresh the selected built-in level used by the menu preview.
 ///
 /// The scheduled resource is authoritative for preview selection, camera,
-/// sky color, and objects. Render extraction consumes the objects and emits
-/// the cached preview mesh for the compatibility presenter.
+/// sky color, and objects. Render extraction turns the objects into the
+/// preview mesh used for presentation.
 pub(crate) fn refresh_menu_preview_system(
     phase: Res<State<AppPhase>>,
     catalog: Res<BuiltinLevelCatalogRes>,

@@ -7,49 +7,43 @@
 */
 //! Editor mode / block-id / pick events.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_blocks::BlockId;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
-use crate::state::{
-    EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-    EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorPickSpatialIndex,
-    EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-    RenderUniformsRes, collect_editor_object_data,
+use crate::{
+    events::MessageReader,
+    state::{
+        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
+        EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorPickSpatialIndex,
+        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        RenderUniformsRes, collect_editor_object_data,
+    },
 };
 
 /// Switch the editor mode.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetEditorMode(pub EditorMode);
 
 /// Set the current block ID for placement.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SetBlockId(pub BlockId);
 
 /// Select the Nth recent placeable block and switch to Place mode.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SelectRecentBlock(pub usize);
 
 /// Pick the selected block and enter place mode with that block type.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PickSelectedBlock;
 
 /// Pick the block under the pointer and enter place mode with that block type.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PickBlockAt {
     pub x: f64,
     pub y: f64,
-}
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<SetEditorMode>()
-        .add_message::<SetBlockId>()
-        .add_message::<SelectRecentBlock>()
-        .add_message::<PickSelectedBlock>()
-        .add_message::<PickBlockAt>();
 }
 
 // -----------------------------------------------------------------------

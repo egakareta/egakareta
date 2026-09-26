@@ -83,7 +83,7 @@ pub struct BlockAnimation {
     pub idle: BlockIdleAnimation,
     /// Effect spawned when gameplay consumes this block.
     pub on_consumed: Option<BlockEffect>,
-    /// Effect spawned by future break/destruction actions.
+    /// Effect metadata for block-break actions.
     pub on_break: Option<BlockEffect>,
 }
 

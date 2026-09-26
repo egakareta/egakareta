@@ -8,38 +8,33 @@
 //! Misc editor command events: hitbox / perf overlay / place window /
 //! escape.
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::{NextState, State};
 use eg_types::EditorMode;
 
-use crate::state::{
-    EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes, SessionStateRes,
-    replace_editor_objects,
+use crate::{
+    events::{AppMessage, AppMessageExclusiveCursors, MessageReader, read_app_messages},
+    state::{
+        EditorInputRes, EditorRuntimeRes, EditorTimelineRes, MenuStateRes, PerfRes,
+        SessionStateRes, replace_editor_objects,
+    },
 };
 
 /// Toggle editor hitbox visualization.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ToggleHitboxVisualization;
 
 /// Toggle the performance overlay.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TogglePerfOverlay;
 
 /// Toggle the floating place window with block catalog.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TogglePlaceWindow;
 
 /// Escape key context-sensitive (pause game → stop playback → reset timeline → back to menu).
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Escape;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<ToggleHitboxVisualization>()
-        .add_message::<TogglePerfOverlay>()
-        .add_message::<TogglePlaceWindow>()
-        .add_message::<Escape>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems
@@ -86,9 +81,11 @@ pub fn handle_toggle_place_window(
 // transition. Menu and game-over branches are also resolved directly in the
 // App world.
 pub fn handle_escape(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    let events: Vec<Escape> = world.resource_mut::<Messages<Escape>>().drain().collect();
+    let events: Vec<Escape> =
+        world.resource_scope(|world, mut cursors: Mut<AppMessageExclusiveCursors>| {
+            let messages = world.resource::<Messages<AppMessage>>();
+            read_app_messages(&mut cursors.escape, messages)
+        });
     for _ in events {
         let phase = *world.resource::<State<eg_types::AppPhase>>().get();
         match phase {

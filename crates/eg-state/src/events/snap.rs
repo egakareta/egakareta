@@ -10,14 +10,13 @@
 //! These handlers own snap normalization, settings persistence, and selected
 //! object resnapping directly in App resources.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_editor_domain::{snap_cell_to_step, snap_component_to_step};
 use eg_types::AppPhase;
 
 use crate::{
-    events::session::persist_app_settings,
+    events::{MessageReader, session::persist_app_settings},
     state::{
         EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
         EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
@@ -26,27 +25,20 @@ use crate::{
 };
 
 /// Set whether to snap to grid.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSnapToGrid(pub bool);
 
 /// Set the grid snap step.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSnapStep(pub f32);
 
 /// Set whether rotation uses snapping.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSnapRotation(pub bool);
 
 /// Set the rotation snap step in degrees.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSnapRotationStep(pub f32);
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<SetSnapToGrid>()
-        .add_message::<SetSnapStep>()
-        .add_message::<SetSnapRotation>()
-        .add_message::<SetSnapRotationStep>();
-}
 
 #[derive(SystemParam)]
 pub struct SnapResources<'w, 's> {

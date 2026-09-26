@@ -14,6 +14,7 @@ use super::{
     EditorConfigRes, EditorInputRes, EditorSpawnRes, collect_editor_objects_from_world,
     replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
 };
+use crate::events::AppMessageWorldExt;
 
 fn assert_vec3_approx_eq(actual: [f32; 3], expected: [f32; 3], eps: f32) {
     approx::assert_abs_diff_eq!(actual[0], expected[0], epsilon = eps);
@@ -41,7 +42,7 @@ fn snap_moves_blocks_to_nearest_grid_cell() {
     });
 
     app.world_mut()
-        .write_message(crate::events::selection::SnapSelectionToGrid);
+        .write_app_message(crate::events::selection::SnapSelectionToGrid);
     app.tick_state();
 
     let objects = collect_editor_objects_from_world(app.world_mut());
@@ -66,7 +67,7 @@ fn snap_respects_custom_step_size() {
     });
 
     app.world_mut()
-        .write_message(crate::events::selection::SnapSelectionToGrid);
+        .write_app_message(crate::events::selection::SnapSelectionToGrid);
     app.tick_state();
 
     let objects = collect_editor_objects_from_world(app.world_mut());
@@ -92,7 +93,7 @@ fn snap_returns_false_when_already_snapped() {
     let before = collect_editor_objects_from_world(app.world_mut());
 
     app.world_mut()
-        .write_message(crate::events::selection::SnapSelectionToGrid);
+        .write_app_message(crate::events::selection::SnapSelectionToGrid);
     app.tick_state();
 
     assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
@@ -125,7 +126,7 @@ fn remove_selected_deletes_marked_blocks() {
     });
 
     app.world_mut()
-        .write_message(crate::events::block::RemoveBlock);
+        .write_app_message(crate::events::block::RemoveBlock);
     app.tick_state();
 
     let objects = collect_editor_objects_from_world(app.world_mut());
@@ -145,7 +146,7 @@ fn remove_selected_clears_selection() {
     });
 
     app.world_mut()
-        .write_message(crate::events::block::RemoveBlock);
+        .write_app_message(crate::events::block::RemoveBlock);
     app.tick_state();
 
     let input = &app.world().resource::<EditorInputRes>().0;
@@ -163,7 +164,7 @@ fn set_spawn_here_copies_cursor_position() {
     });
 
     app.world_mut()
-        .write_message(crate::events::spawn::SetSpawnHere);
+        .write_app_message(crate::events::spawn::SetSpawnHere);
     app.tick_state();
 
     assert_vec3_approx_eq(
@@ -182,7 +183,7 @@ fn rotate_spawn_direction_toggles_between_forward_and_right() {
     );
 
     app.world_mut()
-        .write_message(crate::events::spawn::RotateSpawnDirection);
+        .write_app_message(crate::events::spawn::RotateSpawnDirection);
     app.tick_state();
     assert_eq!(
         app.world().resource::<EditorSpawnRes>().0.direction,
@@ -190,7 +191,7 @@ fn rotate_spawn_direction_toggles_between_forward_and_right() {
     );
 
     app.world_mut()
-        .write_message(crate::events::spawn::RotateSpawnDirection);
+        .write_app_message(crate::events::spawn::RotateSpawnDirection);
     app.tick_state();
     assert_eq!(
         app.world().resource::<EditorSpawnRes>().0.direction,
@@ -272,7 +273,7 @@ fn effective_snap_overridden_by_ctrl() {
 fn set_snap_step_clamps_minimum() {
     let mut app = TestApp::minimal();
     app.world_mut()
-        .write_message(crate::events::snap::SetSnapStep(0.001));
+        .write_app_message(crate::events::snap::SetSnapStep(0.001));
     app.tick_state();
 
     assert!(app.world().resource::<EditorConfigRes>().0.snap_step >= 0.05);
@@ -298,7 +299,7 @@ fn snap_returns_false_when_nothing_selected() {
     let before = collect_editor_objects_from_world(app.world_mut());
 
     app.world_mut()
-        .write_message(crate::events::selection::SnapSelectionToGrid);
+        .write_app_message(crate::events::selection::SnapSelectionToGrid);
     app.tick_state();
 
     assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
@@ -319,7 +320,7 @@ fn remove_selected_returns_false_when_nothing_selected_and_cursor_empty() {
     let before = collect_editor_objects_from_world(app.world_mut());
 
     app.world_mut()
-        .write_message(crate::events::block::RemoveBlock);
+        .write_app_message(crate::events::block::RemoveBlock);
     app.tick_state();
 
     assert_eq!(collect_editor_objects_from_world(app.world_mut()), before);
@@ -384,7 +385,7 @@ fn rotate_spawn_direction_full_cycle() {
 
     for _ in 0..4 {
         app.world_mut()
-            .write_message(crate::events::spawn::RotateSpawnDirection);
+            .write_app_message(crate::events::spawn::RotateSpawnDirection);
     }
     app.tick_state();
 
@@ -401,7 +402,7 @@ fn set_mode_updates_mode_field() {
     let mut app = TestApp::minimal();
 
     app.world_mut()
-        .write_message(crate::events::editor_mode::SetEditorMode(EditorMode::Move));
+        .write_app_message(crate::events::editor_mode::SetEditorMode(EditorMode::Move));
     app.tick_state();
     assert_eq!(
         app.world().resource::<EditorInputRes>().0.mode,
@@ -409,7 +410,7 @@ fn set_mode_updates_mode_field() {
     );
 
     app.world_mut()
-        .write_message(crate::events::editor_mode::SetEditorMode(EditorMode::Scale));
+        .write_app_message(crate::events::editor_mode::SetEditorMode(EditorMode::Scale));
     app.tick_state();
     assert_eq!(
         app.world().resource::<EditorInputRes>().0.mode,
@@ -417,7 +418,7 @@ fn set_mode_updates_mode_field() {
     );
 
     app.world_mut()
-        .write_message(crate::events::editor_mode::SetEditorMode(
+        .write_app_message(crate::events::editor_mode::SetEditorMode(
             EditorMode::Rotate,
         ));
     app.tick_state();

@@ -21,9 +21,12 @@ use eg_mesh::{
     build_block_instance_for_object, build_chunked_block_mesh, build_trail_vertices_with_alpha,
     build_transform_trigger_marker_vertices,
 };
-use eg_state::state::{
-    EditorInputRes, EditorSimulationInputsRes, EditorTimelineRes, SessionStateRes,
-    collect_editor_objects_from_world, enqueue_platform_input, replace_editor_objects,
+use eg_state::{
+    events::AppMessageWorldExt,
+    state::{
+        EditorInputRes, EditorSimulationInputsRes, EditorTimelineRes, SessionStateRes,
+        collect_editor_objects_from_world, enqueue_platform_input, replace_editor_objects,
+    },
 };
 
 static STATE_SCHEDULE_DIAGNOSTIC_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -290,7 +293,7 @@ impl TestingLevelState {
     pub fn hover_pick(&mut self, x: f64, y: f64) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::pointer::PointerMoved { x, y });
+            .write_app_message(eg_state::events::pointer::PointerMoved { x, y });
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -304,7 +307,7 @@ impl TestingLevelState {
             .shift_held = true;
         self.app
             .world_mut()
-            .write_message(eg_state::events::pointer::PrimaryClick { x, y });
+            .write_app_message(eg_state::events::pointer::PrimaryClick { x, y });
         self.app.tick_state();
         self.summary(self.base_count + 1)
     }
@@ -321,7 +324,7 @@ impl TestingLevelState {
             let y = 320.0 + f64::from(i / 5) * 20.0;
             self.app
                 .world_mut()
-                .write_message(eg_state::events::pointer::PrimaryClick { x, y });
+                .write_app_message(eg_state::events::pointer::PrimaryClick { x, y });
         }
         self.app.tick_state();
         self.summary(self.base_count + 10)
@@ -331,7 +334,7 @@ impl TestingLevelState {
     pub fn remove_selected(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::block::RemoveBlock);
+            .write_app_message(eg_state::events::block::RemoveBlock);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -340,7 +343,7 @@ impl TestingLevelState {
     pub fn update_selected(&mut self, updated: LevelObject) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::block::UpdateSelectedBlock(updated));
+            .write_app_message(eg_state::events::block::UpdateSelectedBlock(updated));
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -349,7 +352,7 @@ impl TestingLevelState {
     pub fn snap_selection(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::selection::SnapSelectionToGrid);
+            .write_app_message(eg_state::events::selection::SnapSelectionToGrid);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -358,7 +361,7 @@ impl TestingLevelState {
     pub fn duplicate_selected(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::block::DuplicateBlock);
+            .write_app_message(eg_state::events::block::DuplicateBlock);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -367,7 +370,7 @@ impl TestingLevelState {
     pub fn copy_selection(&mut self) {
         self.app
             .world_mut()
-            .write_message(eg_state::events::block::CopyBlock);
+            .write_app_message(eg_state::events::block::CopyBlock);
         self.app.tick_state();
     }
 
@@ -375,7 +378,7 @@ impl TestingLevelState {
     pub fn paste(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::block::PasteBlock);
+            .write_app_message(eg_state::events::block::PasteBlock);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -384,7 +387,7 @@ impl TestingLevelState {
     pub fn add_transform_trigger(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::selection::AddTransformTrigger);
+            .write_app_message(eg_state::events::selection::AddTransformTrigger);
         self.app.tick_state();
         self.summary(self.base_count + 1)
     }
@@ -393,7 +396,7 @@ impl TestingLevelState {
     pub fn add_camera_trigger(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::camera::AddCameraTrigger);
+            .write_app_message(eg_state::events::camera::AddCameraTrigger);
         self.app.tick_state();
         self.summary(self.base_count + 1)
     }
@@ -402,7 +405,7 @@ impl TestingLevelState {
     pub fn add_tap(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::timeline::AddTap);
+            .write_app_message(eg_state::events::timeline::AddTap);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -411,7 +414,7 @@ impl TestingLevelState {
     pub fn seek_timeline(&mut self, time_seconds: f32) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::timeline::SetTimelineTime(time_seconds));
+            .write_app_message(eg_state::events::timeline::SetTimelineTime(time_seconds));
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -420,7 +423,7 @@ impl TestingLevelState {
     pub fn toggle_playback(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::timeline::ToggleTimelinePlayback);
+            .write_app_message(eg_state::events::timeline::ToggleTimelinePlayback);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -429,7 +432,7 @@ impl TestingLevelState {
     pub fn enter_playtest(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::timeline::Playtest);
+            .write_app_message(eg_state::events::timeline::Playtest);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -438,7 +441,7 @@ impl TestingLevelState {
     pub fn exit_playtest(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::misc::Escape);
+            .write_app_message(eg_state::events::misc::Escape);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -447,7 +450,7 @@ impl TestingLevelState {
     pub fn switch_mode(&mut self, mode: EditorMode) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::editor_mode::SetEditorMode(mode));
+            .write_app_message(eg_state::events::editor_mode::SetEditorMode(mode));
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -456,7 +459,7 @@ impl TestingLevelState {
     pub fn undo(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::history::Undo);
+            .write_app_message(eg_state::events::history::Undo);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -465,7 +468,7 @@ impl TestingLevelState {
     pub fn redo(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::history::Redo);
+            .write_app_message(eg_state::events::history::Redo);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -474,7 +477,7 @@ impl TestingLevelState {
     pub fn escape(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::misc::Escape);
+            .write_app_message(eg_state::events::misc::Escape);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -483,7 +486,7 @@ impl TestingLevelState {
     pub fn toggle_hitbox(&mut self) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::misc::ToggleHitboxVisualization);
+            .write_app_message(eg_state::events::misc::ToggleHitboxVisualization);
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -492,7 +495,7 @@ impl TestingLevelState {
     pub fn camera_drag(&mut self, dx: f64, dy: f64) -> BenchmarkWorkSummary {
         self.app
             .world_mut()
-            .write_message(eg_state::events::pointer::CameraDrag { dx, dy });
+            .write_app_message(eg_state::events::pointer::CameraDrag { dx, dy });
         self.app.tick_state();
         self.summary(self.base_count)
     }
@@ -542,7 +545,7 @@ impl TestingLevelState {
         let x = if spin.is_multiple_of(2) { 620.0 } else { 660.0 };
         self.app
             .world_mut()
-            .write_message(eg_state::events::pointer::PointerMoved { x, y: 340.0 });
+            .write_app_message(eg_state::events::pointer::PointerMoved { x, y: 340.0 });
         self.app.tick_state();
         self.summary(self.base_count)
     }

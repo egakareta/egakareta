@@ -19,7 +19,6 @@
 //! directly. Atomic gameplay resets and the shared audio backend remain
 //! App-owned resources.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::{NextState, State};
 use eg_blocks::BlockDefinition;
@@ -31,13 +30,17 @@ use eg_game::{
 };
 use eg_types::{AppPhase, EditorMode, LevelMetadata, LevelObject};
 
-use crate::state::{
-    AudioSceneRes, BuiltinLevelCatalogRes, EditorAuthoredObject, EditorConfigRes, EditorHistoryRes,
-    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, GameplayResetRes, GameplayResetSeed,
-    MenuStateRes, PracticeCheckpoint, SessionStateRes, apply_imported_level_to_world,
-    collect_editor_object_data, replace_editor_objects_commands, start_music_builtin,
-    start_music_with_bytes, stop_music, warmup_music_builtin, with_audio_scene,
+use crate::{
+    events::{AppMessage, AppMessageExclusiveCursors, MessageReader, read_app_messages},
+    state::{
+        AudioSceneRes, BuiltinLevelCatalogRes, EditorAuthoredObject, EditorConfigRes,
+        EditorHistoryRes, EditorHistorySnapshot, EditorInputRes, EditorObjectOrder,
+        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
+        GameplayResetRes, GameplayResetSeed, MenuStateRes, PracticeCheckpoint, SessionStateRes,
+        apply_imported_level_to_world, collect_editor_object_data, replace_editor_objects_commands,
+        start_music_builtin, start_music_with_bytes, stop_music, warmup_music_builtin,
+        with_audio_scene,
+    },
 };
 
 fn object_order_key(id: &str) -> (u8, usize, &str) {
@@ -50,59 +53,46 @@ fn object_order_key(id: &str) -> (u8, usize, &str) {
 /// Primary action: in editor this places a block directly in App-world
 /// resources; in menu it starts the selected level through an atomic gameplay
 /// reset; in game-over it returns to menu; paused gameplay is a direct no-op.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TurnRight;
 
 /// Select the next level in the menu or move editor cursor +X.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct NextLevel;
 
 /// Select the previous level in the menu or move editor cursor −X.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PrevLevel;
 
 /// Toggle between editor and menu/playing.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ToggleEditor;
 
 /// Resume real gameplay from the pause menu.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GameResume;
 
 /// Restart the current real gameplay level from the pause menu.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GameRestartLevel;
 
 /// Enable or disable practice mode for the current real gameplay level.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct GameSetPracticeMode {
     pub enabled: bool,
 }
 
 /// Place a practice-mode checkpoint at the current gameplay position.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GameSetPracticeCheckpoint;
 
 /// Remove the latest practice-mode checkpoint.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GameRemovePracticeCheckpoint;
 
 /// Quit the current real gameplay level from the pause menu.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GameQuitToMenu;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<TurnRight>()
-        .add_message::<NextLevel>()
-        .add_message::<PrevLevel>()
-        .add_message::<ToggleEditor>()
-        .add_message::<GameResume>()
-        .add_message::<GameRestartLevel>()
-        .add_message::<GameSetPracticeMode>()
-        .add_message::<GameSetPracticeCheckpoint>()
-        .add_message::<GameRemovePracticeCheckpoint>()
-        .add_message::<GameQuitToMenu>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems. Navigation handlers mutate App-world resources directly;
@@ -453,12 +443,11 @@ fn move_editor_cursor_x(input: &mut EditorInputRes, config: &EditorConfigRes, di
 }
 
 pub fn handle_toggle_editor(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    let events: Vec<ToggleEditor> = world
-        .resource_mut::<Messages<ToggleEditor>>()
-        .drain()
-        .collect();
+    let events: Vec<ToggleEditor> =
+        world.resource_scope(|world, mut cursors: Mut<AppMessageExclusiveCursors>| {
+            let messages = world.resource::<Messages<AppMessage>>();
+            read_app_messages(&mut cursors.toggle_editor, messages)
+        });
     for _ in events {
         match *world.resource::<State<AppPhase>>().get() {
             AppPhase::Editor => {

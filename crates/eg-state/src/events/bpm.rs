@@ -13,22 +13,17 @@
 //! `EditorTimingRes.0.bpm_tap_result` directly, computing the running BPM
 //! from consecutive tap intervals.
 //!
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::state::EditorTimingRes;
+use crate::{events::MessageReader, state::EditorTimingRes};
 
 /// Record a BPM heart-beat tap.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BpmTap;
 
 /// Reset the BPM tapping state.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct BpmTapReset;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<BpmTap>().add_message::<BpmTapReset>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems: handlers mutate `EditorTimingRes` directly

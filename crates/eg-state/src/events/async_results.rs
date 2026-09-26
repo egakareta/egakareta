@@ -11,23 +11,18 @@
 //!
 //! ## Why messages and not direct resource writes?
 //!
-//! - One reader per message type - distinct `Message<T>` types
-//!   give each handler its own `MessageReader<T>`, so multiple
-//!   readers of the same channel can be added without
-//!   cross-reader nondeterminism.
+//! - Independent readers - each handler keeps a filtered cursor over the
+//!   shared app message buffer, so multiple consumers remain independent.
 //! - Testable in isolation - a test can write a synthetic
-//!   `AudioImportResult` into the `Messages<AudioImportResultEvent>`
-//!   buffer and assert the handler behavior without going through
+//!   `AudioImportResult` into the shared app message buffer and assert the
+//!   handler behavior without going through
 //!   the platform layer.
 //! - Unlocks async-result consumers - `bevy_tasks`-based
 //!   systems can read the events without holding the channel
 //!   receiver (which is `!Sync`).
 
-use bevy_ecs::prelude::*;
-
 /// Result of an async auth service call.
-#[allow(dead_code)]
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AuthServiceResultEvent {
     /// Original auth service message.
     pub message: eg_platform::services::AuthServiceMessage,
@@ -41,8 +36,7 @@ impl AuthServiceResultEvent {
 }
 
 /// Result of an async audio-import request.
-#[allow(dead_code)]
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AudioImportResultEvent {
     /// Original filename.
     pub filename: String,
@@ -58,8 +52,7 @@ impl AudioImportResultEvent {
 }
 
 /// Result of an async level-import request.
-#[allow(dead_code)]
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct LevelImportResultEvent {
     /// Imported level bytes.
     pub bytes: Vec<u8>,

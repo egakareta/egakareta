@@ -257,6 +257,7 @@ mod tests {
         EditorTimelineRes, collect_editor_objects_from_world, replace_editor_objects,
         test_support::TestApp, with_editor_interaction_context,
     };
+    use crate::events::AppMessageWorldExt;
 
     fn test_block(position: [f32; 3]) -> LevelObject {
         LevelObject {
@@ -305,14 +306,14 @@ mod tests {
             .len();
 
         app.world_mut()
-            .write_message(crate::events::timeline::SetTimelineTime(0.5));
+            .write_app_message(crate::events::timeline::SetTimelineTime(0.5));
         app.tick_state();
         let timeline = &app.world().resource::<EditorTimelineRes>().0;
         assert!(timeline.snapshot_cache_complete);
         assert_eq!(timeline.snapshot_cache.len(), cached_sample_count);
 
         app.world_mut()
-            .write_message(crate::events::timeline::AddTap);
+            .write_app_message(crate::events::timeline::AddTap);
         app.tick_state();
         let timeline = &app.world().resource::<EditorTimelineRes>().0;
         assert!(!timeline.snapshot_cache_complete);
@@ -374,14 +375,14 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::timeline::AddTap);
+            .write_app_message(crate::events::timeline::AddTap);
         app.tick_state();
         let timeline = &app.world().resource::<EditorTimelineRes>().0;
         assert_eq!(timeline.taps.tap_times.len(), 1);
         assert_eq!(timeline.taps.tap_indicator_positions.len(), 1);
 
         app.world_mut()
-            .write_message(crate::events::timeline::RemoveTap);
+            .write_app_message(crate::events::timeline::RemoveTap);
         app.tick_state();
         assert!(
             app.world()
@@ -451,7 +452,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::SnapSelectionToGrid);
+            .write_app_message(crate::events::selection::SnapSelectionToGrid);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());

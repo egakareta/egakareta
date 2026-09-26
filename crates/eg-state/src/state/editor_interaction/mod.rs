@@ -64,15 +64,13 @@ pub struct EditorHistorySnapshot {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)]
 pub(crate) enum EditorHistoryObjectChange {
     RemovePlaced {
         object_id: String,
         index: usize,
     },
     /// Undo removes the listed added IDs (duplicate/paste/add-trigger bulk).
-    /// `indices` are informational (base positions at record time); removal
-    /// is by ID with index fallback for robustness.
+    /// Removal is by ID with index fallback for robustness.
     RemoveAdded {
         object_ids: Vec<String>,
         indices: Vec<usize>,
@@ -96,7 +94,6 @@ pub(crate) enum EditorHistoryObjectChange {
     /// whose targets were replaced at record time.
     AddTriggers {
         added_ids: Vec<String>,
-        added_indices: Vec<usize>,
         modified_before: Vec<(usize, LevelObject)>,
     },
     /// Redo reinserts previously removed objects at their indices.

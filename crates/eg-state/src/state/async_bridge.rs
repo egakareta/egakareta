@@ -5,18 +5,15 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Async platform-result ingestion (Phase 6a).
+//! Ingest asynchronous platform results into the App world.
 //!
 //! Platform services and background tasks produce three `mpsc::Receiver`
 //! streams (auth service, audio service, level importer). The App-owned
 //! `StateSchedule` drains those streams once per frame.
 //!
-//! Phase 6a introduced **Bevy resources** that wrap each receiver
-//! (`AuthChannelRes`, `AudioImportChannelRes`, `LevelImportChannelRes`) plus a
-//! `PollChannelsSet` system set with a `poll_channels_system` that
-//! drains every receiver once per frame and emits the corresponding
-//! result event into the World using the [`async_results`](crate::events::async_results)
-//! message types.
+//! Each receiver is wrapped in an App resource. `poll_channels_system` drains
+//! every receiver once per frame and emits the corresponding result message
+//! from [`async_results`](crate::events::async_results).
 //!
 //! `StateSchedule` is the sole owner for these drains and the result
 //! handlers mutate App-world resources directly.
@@ -31,32 +28,18 @@
 //! practice - only the `poll_channels_system` ever locks it, and
 //! it runs at the top of the frame before any handler system.
 //!
-//! ## Phase 6b: result handler systems
-//!
-//! Phase 6a established the `poll_channels_system` that drains the
-//! 3 receivers into 3 distinct result events. Phase 6b added one
-//! handler system per channel. All three handlers mutate App-world
-//! resources directly.
-//!
-//! ## Schedule graph (post Phase 6b)
+//! ## Schedule order
 //!
 //! ```text
 //!   PollChannelsSet
 //!     poll_channels_system             // drain receivers → emit result events
 //!   CommandHandlerSet
-//!     events::handle_* (per-message)   // Phase 3 message drain
+//!     events::handle_* (per-message)   // App message handlers
 //!   ApplyAsyncResultsSet
 //!     auth_handler_system              // AuthServiceResultEvent
 //!     audio_import_handler_system      // AudioImportResultEvent
 //!     level_import_handler_system      // LevelImportResultEvent → editor/session resources
 //! ```
-//!
-//! REFACTOR POINT(full-bevy): the `mpsc` channels disappear in the
-//! full-Bevy migration; background tasks write directly into
-//! `Messages<T>` or `AssetEvent<T>`. The `poll_channels_system` is
-//! replaced by `bevy_tasks` async event streams. Handler systems already
-//! mutate Bevy resources directly.
-
 use std::sync::{
     Mutex,
     mpsc::{Receiver, TryRecvError},
@@ -66,8 +49,10 @@ use bevy_ecs::{prelude::*, schedule::SystemSet};
 use eg_platform::services::AuthServiceMessage;
 
 use crate::{
-    events::async_results::{
-        AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent,
+    events::{
+        AppMessage, AppMessageBus, AppMessageExclusiveCursors, MessageReader,
+        async_results::{AudioImportResultEvent, AuthServiceResultEvent, LevelImportResultEvent},
+        read_app_messages,
     },
     state::{
         AudioSceneParam, AuthStateRes, EditorCameraRes, EditorHistoryRes, EditorInputRes,
@@ -100,17 +85,14 @@ pub type SharedLevelImportReceiver = std::sync::Arc<Mutex<Receiver<Vec<u8>>>>;
 /// `poll_channels_system`. The `Arc<Mutex<>>` is created by App bootstrap;
 /// direct World fixtures can install an equivalent receiver for focused
 /// tests.
-#[allow(dead_code)]
 #[derive(Resource)]
 pub struct AuthChannelRes(pub SharedAuthReceiver);
 
 /// Bevy `Resource` wrapper around the audio-import `mpsc::Receiver`.
-#[allow(dead_code)]
 #[derive(Resource)]
 pub struct AudioImportChannelRes(pub SharedAudioImportReceiver);
 
 /// Bevy `Resource` wrapper around the level-import `mpsc::Receiver`.
-#[allow(dead_code)]
 #[derive(Resource)]
 pub struct LevelImportChannelRes(pub SharedLevelImportReceiver);
 
@@ -141,24 +123,22 @@ pub fn poll_channels_system(
     auth: Option<Res<AuthChannelRes>>,
     audio_import: Option<Res<AudioImportChannelRes>>,
     level_import: Option<Res<LevelImportChannelRes>>,
-    mut auth_writer: MessageWriter<AuthServiceResultEvent>,
-    mut audio_import_writer: MessageWriter<AudioImportResultEvent>,
-    mut level_import_writer: MessageWriter<LevelImportResultEvent>,
+    mut messages: AppMessageBus,
 ) {
     if let Some(res) = auth {
         drain_mutex(&res.0, |msg| {
-            auth_writer.write(AuthServiceResultEvent::new(msg));
+            messages.write(AuthServiceResultEvent::new(msg));
         });
     }
     if let Some(res) = audio_import {
         drain_mutex(&res.0, |msg| {
             let (filename, bytes) = msg;
-            audio_import_writer.write(AudioImportResultEvent::new(filename, Some(bytes)));
+            messages.write(AudioImportResultEvent::new(filename, Some(bytes)));
         });
     }
     if let Some(res) = level_import {
         drain_mutex(&res.0, |msg| {
-            level_import_writer.write(LevelImportResultEvent::new(msg));
+            messages.write(LevelImportResultEvent::new(msg));
         });
     }
 }
@@ -206,8 +186,8 @@ where
 ///
 /// This function is a no-op when a resource is already installed
 /// (e.g. by `register_async_channel_resources` during world construction).
-#[allow(dead_code)]
-pub fn install_async_channel_resources(
+#[cfg(test)]
+fn install_async_channel_resources(
     world: &mut World,
     auth_receiver: Receiver<AuthServiceMessage>,
     audio_import_receiver: Receiver<(String, Vec<u8>)>,
@@ -229,11 +209,10 @@ pub fn install_async_channel_resources(
     }
 }
 
-/// Same as [`install_async_channel_resources`] but the receivers are
-/// already wrapped in `Arc<Mutex<Receiver<T>>>`, which is the storage used
+/// The receivers are already wrapped in `Arc<Mutex<Receiver<T>>>`, which is
+/// the storage used
 /// by the platform bootstrap channel owners. The resource stores the same
 /// receiver so the App schedule drains the actual platform stream.
-#[allow(dead_code)]
 pub fn install_async_channel_resources_arc(
     world: &mut World,
     auth_receiver: SharedAuthReceiver,
@@ -254,13 +233,9 @@ pub fn install_async_channel_resources_arc(
 /// World-flavoured registration for callers that build a `World`
 /// directly. The App-owned schedule uses this registration path for both
 /// production bootstrap and headless fixtures.
-#[allow(dead_code)]
 pub fn register_async_channel_resources_world(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    world.init_resource::<Messages<AuthServiceResultEvent>>();
-    world.init_resource::<Messages<AudioImportResultEvent>>();
-    world.init_resource::<Messages<LevelImportResultEvent>>();
+    world.init_resource::<Messages<AppMessage>>();
+    world.init_resource::<AppMessageExclusiveCursors>();
 }
 
 /// Add the `poll_channels_system` to a `Schedule`.
@@ -269,7 +244,6 @@ pub fn register_async_channel_resources_world(world: &mut World) {
 /// the system in a `.add_systems((...))` tuple inside the schedule.
 /// The system is assigned to the [`PollChannelsSet`] so cross-set
 /// ordering can be expressed via `.in_set(PollChannelsSet)`.
-#[allow(dead_code)]
 pub fn add_poll_channels_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     schedule.add_systems(poll_channels_system.in_set(PollChannelsSet));
 }
@@ -283,7 +257,6 @@ pub struct ApplyAsyncResultsSet;
 
 /// Consume `AuthServiceResultEvent`s and apply them to App-world auth state.
 /// Auth results mutate the App-owned auth resource directly.
-#[allow(dead_code)]
 pub fn auth_handler_system(
     mut events: MessageReader<AuthServiceResultEvent>,
     mut auth: ResMut<AuthStateRes>,
@@ -300,7 +273,6 @@ pub fn auth_handler_system(
 
 /// Consume `AudioImportResultEvent`s and stage the bytes as the editor
 /// level's custom audio.
-#[allow(dead_code)]
 pub fn audio_import_handler_system(
     mut events: MessageReader<AudioImportResultEvent>,
     mut session: ResMut<SessionStateRes>,
@@ -318,14 +290,12 @@ pub fn audio_import_handler_system(
 /// Consume `LevelImportResultEvent`s and replace the App-owned editor session.
 /// Bundled `.egz` audio bytes become the level's custom audio and are staged
 /// into the music sound directly.
-#[allow(dead_code)]
 pub fn level_import_handler_system(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    let events: Vec<LevelImportResultEvent> = world
-        .resource_mut::<Messages<LevelImportResultEvent>>()
-        .drain()
-        .collect();
+    let events: Vec<LevelImportResultEvent> =
+        world.resource_scope(|world, mut cursors: Mut<AppMessageExclusiveCursors>| {
+            let messages = world.resource::<Messages<AppMessage>>();
+            read_app_messages(&mut cursors.level_import, messages)
+        });
     for event in events {
         let (metadata, audio_bytes) = match eg_level::read_metadata_from_egz(&event.bytes) {
             Ok(import) => import,
@@ -417,7 +387,6 @@ pub(crate) fn apply_imported_level_to_world(
 /// Add the 3 result handler systems to a `Schedule`. Each system
 /// is assigned to [`ApplyAsyncResultsSet`] so cross-set ordering
 /// can be expressed via `.in_set(ApplyAsyncResultsSet)` / `.before()`.
-#[allow(dead_code)]
 pub fn add_apply_async_results_systems(schedule: &mut bevy_ecs::schedule::Schedule) {
     schedule.add_systems(
         (
@@ -438,6 +407,7 @@ mod tests {
     use std::sync::mpsc;
 
     use super::*;
+    use crate::events::AppMessageWorldExt;
 
     fn build_world() -> World {
         let mut world = World::new();
@@ -475,9 +445,7 @@ mod tests {
     #[test]
     fn register_async_bridge_world_initializes_message_resources() {
         let world = build_world();
-        assert!(world.contains_resource::<Messages<AuthServiceResultEvent>>());
-        assert!(world.contains_resource::<Messages<AudioImportResultEvent>>());
-        assert!(world.contains_resource::<Messages<LevelImportResultEvent>>());
+        assert!(world.contains_resource::<Messages<AppMessage>>());
     }
 
     #[test]
@@ -605,7 +573,7 @@ mod tests {
             auth.pending = true;
             auth.session = Some(test_auth_session());
         }
-        world.write_message(AuthServiceResultEvent::new(AuthServiceMessage::SignedOut(
+        world.write_app_message(AuthServiceResultEvent::new(AuthServiceMessage::SignedOut(
             Ok(()),
         )));
 
@@ -624,7 +592,7 @@ mod tests {
         use crate::events::async_results::LevelImportResultEvent;
         let mut world = build_world();
         world.resource_mut::<SessionStateRes>().editor_level_name = Some("Original".to_string());
-        world.write_message(LevelImportResultEvent::new(vec![0xDE, 0xAD]));
+        world.write_app_message(LevelImportResultEvent::new(vec![0xDE, 0xAD]));
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(level_import_handler_system);
@@ -664,7 +632,7 @@ mod tests {
             ..LevelMetadata::default()
         };
         let bytes = eg_codec::encode_level_metadata_binary(&metadata).expect("encode level");
-        world.write_message(LevelImportResultEvent::new(bytes));
+        world.write_app_message(LevelImportResultEvent::new(bytes));
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(level_import_handler_system);
@@ -692,7 +660,7 @@ mod tests {
         // event's `bytes` is `None` (cancellation).
         use crate::events::async_results::AudioImportResultEvent;
         let mut world = build_world();
-        world.write_message(AudioImportResultEvent::new("level1.ogg".to_string(), None));
+        world.write_app_message(AudioImportResultEvent::new("level1.ogg".to_string(), None));
 
         let mut schedule = bevy_ecs::schedule::Schedule::default();
         schedule.add_systems(audio_import_handler_system);
@@ -710,7 +678,7 @@ mod tests {
     fn audio_import_handler_system_stages_custom_audio() {
         use crate::events::async_results::AudioImportResultEvent;
         let mut world = build_world();
-        world.write_message(AudioImportResultEvent::new(
+        world.write_app_message(AudioImportResultEvent::new(
             "imported.mp3".to_string(),
             Some(vec![1, 2, 3, 4]),
         ));

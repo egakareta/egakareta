@@ -9,7 +9,6 @@
 
 use std::collections::HashMap;
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_editor_domain::{
@@ -20,40 +19,35 @@ use eg_types::{
     AppPhase, EditorInputState, EditorMode, LevelObject, TriggerTarget, next_level_object_ids_batch,
 };
 
-use crate::state::{
-    EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,
-    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
-    replace_editor_objects_commands,
+use crate::{
+    events::MessageReader,
+    state::{
+        EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,
+        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
+        replace_editor_objects_commands,
+    },
 };
 
 /// Remove the block under cursor or selected blocks.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RemoveBlock;
 
 /// Duplicate selected blocks in place.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct DuplicateBlock;
 
 /// Copy selected blocks to clipboard.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CopyBlock;
 
 /// Paste clipboard blocks.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PasteBlock;
 
 /// Update the properties of the currently selected block.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UpdateSelectedBlock(pub LevelObject);
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<RemoveBlock>()
-        .add_message::<DuplicateBlock>()
-        .add_message::<CopyBlock>()
-        .add_message::<PasteBlock>()
-        .add_message::<UpdateSelectedBlock>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems
@@ -554,12 +548,6 @@ fn push_history_snapshot(resources: &mut BlockResources<'_, '_>, snapshot: Edito
     resources.history.0.redo.clear();
 }
 
-#[allow(dead_code)]
-fn record_history_state(resources: &mut BlockResources<'_, '_>, objects: &[LevelObject]) {
-    let snapshot = history_snapshot_from_resources(resources, objects);
-    push_history_snapshot(resources, snapshot);
-}
-
 /// Pre-mutation states of transform triggers whose targets intersect
 /// `removed_ids`. Clones only affected triggers (usually zero), not the scene.
 fn triggers_referencing_ids(
@@ -611,31 +599,6 @@ fn history_snapshot_with_change(
     EditorHistorySnapshot {
         objects,
         object_change,
-        selected_block_index: resources.input.0.selected_block_index,
-        selected_block_indices: resources.input.0.selected_block_indices.clone(),
-        cursor: resources.input.0.cursor,
-        selected_block_id: resources.config.0.selected_block_id.clone(),
-        selected_block_rotation_degrees: resources.config.0.selected_block_rotation_degrees,
-        recent_block_ids: resources.config.0.recent_block_ids.clone(),
-        spawn: resources.spawn.0.clone(),
-        timeline_time_seconds: resources.timeline.0.clock.time_seconds,
-        timeline_duration_seconds: resources.timeline.0.clock.duration_seconds,
-        tap_times: resources.timeline.0.taps.tap_times.clone(),
-        tap_indicator_positions: resources.timeline.0.taps.tap_indicator_positions.clone(),
-        selected_tap_index: resources.timeline.0.taps.selected_index,
-        timing_points: resources.timing.0.timing_points.clone(),
-        selected_trigger_index: resources.trigger.0.selected_index,
-    }
-}
-
-#[allow(dead_code)]
-fn history_snapshot_from_resources(
-    resources: &BlockResources<'_, '_>,
-    objects: &[LevelObject],
-) -> EditorHistorySnapshot {
-    EditorHistorySnapshot {
-        objects: objects.to_vec(),
-        object_change: None,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

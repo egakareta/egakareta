@@ -248,11 +248,8 @@ struct AppInitialization {
     render_resources: super::RenderBootstrapResources,
 }
 
-/// One-time production bootstrap that installs authoritative resources directly
-/// into the Bevy App world.
-///
-/// REFACTOR POINT(full-bevy): replace this custom wgpu/platform bootstrap with
-/// Bevy renderer, window, asset, task, and audio plugins.
+/// One-time production bootstrap that installs authoritative platform and
+/// application resources into the Bevy App world.
 pub struct AppBootstrap(AppInitialization);
 
 impl AppBootstrap {

@@ -30,8 +30,7 @@ use crate::platform::{
     runtime::Runtime,
 };
 
-// REFACTOR POINT(full-bevy): replace this custom winit `ApplicationHandler`
-// with `bevy_winit` + Bevy's app runner.
+// Winit owns the native/web event loop; Runtime owns App-world frame execution.
 
 struct App {
     runtime: Option<Runtime>,

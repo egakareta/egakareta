@@ -65,6 +65,7 @@ mod tests {
         EditorInputRes, EditorTimelineRes, EditorTimingRes, collect_editor_objects_from_world,
         replace_editor_objects, test_support::TestApp, with_editor_interaction_context,
     };
+    use crate::events::AppMessageWorldExt;
 
     fn editor_app(objects: Vec<LevelObject>) -> TestApp {
         let mut app = TestApp::minimal();
@@ -127,7 +128,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -156,7 +157,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -207,7 +208,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -255,7 +256,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -293,7 +294,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -360,7 +361,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -400,7 +401,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::selection::AddTransformTrigger);
+            .write_app_message(crate::events::selection::AddTransformTrigger);
         app.tick_state();
 
         let objects = collect_editor_objects_from_world(app.world_mut());
@@ -435,7 +436,7 @@ mod tests {
         });
 
         app.world_mut()
-            .write_message(crate::events::block::UpdateSelectedBlock(LevelObject {
+            .write_app_message(crate::events::block::UpdateSelectedBlock(LevelObject {
                 position: [1.24, -1.0, 2.26],
                 size: [0.1, 0.4, 0.62],
                 rotation: [7.0, 22.0, 44.0],
@@ -462,10 +463,10 @@ mod tests {
         let mut app = editor_app(Vec::new());
 
         app.world_mut()
-            .write_message(crate::events::timeline::SetTimelineDuration(2.0));
+            .write_app_message(crate::events::timeline::SetTimelineDuration(2.0));
         app.tick_state();
         app.world_mut()
-            .write_message(crate::events::timeline::SetTimelineTime(5.0));
+            .write_app_message(crate::events::timeline::SetTimelineTime(5.0));
         app.tick_state();
         assert_eq!(
             app.world()
@@ -477,7 +478,7 @@ mod tests {
         );
 
         app.world_mut()
-            .write_message(crate::events::timeline::SetTimelineDuration(0.01));
+            .write_app_message(crate::events::timeline::SetTimelineDuration(0.01));
         app.tick_state();
         let clock = &app.world().resource::<EditorTimelineRes>().0.clock;
         assert_eq!(clock.duration_seconds, 0.1);
@@ -488,13 +489,15 @@ mod tests {
     fn bpm_tap_messages_update_and_reset_timing_state() {
         let mut app = TestApp::minimal();
 
-        app.world_mut().write_message(crate::events::bpm::BpmTap);
+        app.world_mut()
+            .write_app_message(crate::events::bpm::BpmTap);
         app.tick_state();
         let timing = &app.world().resource::<EditorTimingRes>().0;
         assert_eq!(timing.bpm_tap_times.len(), 1);
         assert!(timing.bpm_tap_result.is_none());
 
-        app.world_mut().write_message(crate::events::bpm::BpmTap);
+        app.world_mut()
+            .write_app_message(crate::events::bpm::BpmTap);
         app.tick_state();
         assert_eq!(
             app.world()
@@ -513,7 +516,7 @@ mod tests {
         );
 
         app.world_mut()
-            .write_message(crate::events::bpm::BpmTapReset);
+            .write_app_message(crate::events::bpm::BpmTapReset);
         app.tick_state();
         let timing = &app.world().resource::<EditorTimingRes>().0;
         assert!(timing.bpm_tap_times.is_empty());

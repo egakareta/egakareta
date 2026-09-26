@@ -581,9 +581,18 @@ mod tests {
 
     use super::*;
     use crate::{
-        events::{auth, pointer},
+        events::{AppMessage, AppMessageKind, auth, pointer},
         state::plugins::register_state_resources,
     };
+
+    fn message_count<T: AppMessageKind>(world: &World) -> usize {
+        let messages = world.resource::<Messages<AppMessage>>();
+        let mut cursor = messages.get_cursor();
+        cursor
+            .read(messages)
+            .filter(|message| T::from_app_message(message).is_some())
+            .count()
+    }
 
     #[test]
     fn enqueue_platform_input_buffers_event() {
@@ -636,8 +645,7 @@ mod tests {
 
         drain_platform_input_system(&mut world);
 
-        let messages = world.resource::<Messages<auth::ResizeSurface>>();
-        assert_eq!(messages.len(), 1);
+        assert_eq!(message_count::<auth::ResizeSurface>(&world), 1);
     }
 
     #[test]
@@ -650,8 +658,7 @@ mod tests {
 
         drain_platform_input_system(&mut world);
 
-        let messages = world.resource::<Messages<pointer::PointerMoved>>();
-        assert_eq!(messages.len(), 1);
+        assert_eq!(message_count::<pointer::PointerMoved>(&world), 1);
     }
 
     #[test]
@@ -681,7 +688,6 @@ mod tests {
         drain_platform_input_system(&mut world);
 
         assert!(world.resource::<EditorInputRes>().0.ctrl_held);
-        let messages = world.resource::<Messages<crate::events::block::CopyBlock>>();
-        assert_eq!(messages.len(), 1);
+        assert_eq!(message_count::<crate::events::block::CopyBlock>(&world), 1);
     }
 }

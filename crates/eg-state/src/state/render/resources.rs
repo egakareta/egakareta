@@ -5,29 +5,15 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! ECS resources for the rendering extraction plugin (Phase 4a).
+//! App-world resources used by render extraction and presentation.
 //!
 //! This file defines the App-world resource boundary for GPU handles, scene
 //! meshes, surface ownership, and the POD values consumed by extraction and
 //! presentation.
 //!
-//! ## Why split POD vs heavy?
-//!
-//! - `wgpu::Device`, `wgpu::Queue`, `wgpu::Buffer`, `wgpu::Surface`,
-//!   `wgpu::BindGroup` and friends are render-thread-owned handles.
-//!   Some of their web backends contain non-`Send` DOM values, so Phase
-//!   4 stores these heavy values as Bevy non-send resources behind
-//!   App-owned non-send resources.
-//! - POD values are derived during extraction while heavy GPU handles remain
-//!   in App-owned non-send resources. This keeps simulation data independent
-//!   of platform-specific renderer handles.
-//!
-//! REFACTOR POINT(full-bevy): the full-Bevy migration replaces this
-//! entire module with `bevy_render` render-world resources
-//! (`bevy_render::render_resource::Buffer`) plus
-//! `bevy_camera::Camera` etc. The Bevy `Message`-driven
-//! `extract` system here is replaced by the `RenderApp` extract
-//! schedule in the `bevy_render` graph.
+//! Lightweight POD and mesh data are regular resources. GPU and surface
+//! handles are non-send resources because some platform backends contain
+//! thread-bound values.
 
 use bevy_ecs::prelude::*;
 use eg_platform::state_host::SurfaceHost;
@@ -62,7 +48,6 @@ impl RenderEguiRes {
 ///
 /// Inserted by `Runtime` construction with the authoritative wgpu
 /// context. Bare test worlds that do not initialize wgpu may omit it.
-#[allow(dead_code)]
 pub struct RenderGpuRes(pub eg_render::GpuContext);
 
 /// App-owned render configuration needed by extraction without borrowing the
@@ -120,14 +105,12 @@ impl RenderUniformUploadRes {
 /// Wrapper resource for the [`eg_render::SceneMeshes`] storage.
 ///
 /// App-owned scene mesh storage held by the Bevy world.
-#[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderMeshesRes(pub SceneMeshes);
 
 /// Wrapper resource for the optional platform [`SurfaceHost`].
 ///
 /// App-owned platform surface ownership held by the Bevy world.
-#[allow(dead_code)]
 #[derive(Default)]
 pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 
@@ -135,13 +118,8 @@ pub struct RenderSurfaceHostRes(pub Option<SurfaceHost>);
 /// shader constants (`CameraUniform`, `LineUniform`,
 /// `ColorSpaceUniform`).
 ///
-/// Computed during the [`RenderExtractSet`](super::plugin) phase. The values
-/// are tiny POD types
-/// (a `Mat4` and a handful of `f32`s), and the actual GPU buffers
-/// stay in `RenderGpuRes`. Bevy systems can use this
-/// resource to read the per-frame uniform values without reaching into
-/// platform or renderer internals.
-#[allow(dead_code)]
+/// Computed during `RenderSet::Extract`. The values are tiny POD types; GPU
+/// buffers remain in `RenderGpuRes`.
 #[derive(Resource, Clone, Copy)]
 pub struct RenderUniformsRes {
     /// Current camera (view-projection) uniform.
@@ -175,14 +153,8 @@ impl Default for RenderUniformsRes {
 
 /// Mirrored [`RenderFrameInput`] for the current frame.
 ///
-/// The frame input contains phase, editor mode, sky color, grid center, and
-/// gamma toggle. It
-/// drives the clear color, the grid uniform, and several `should_*`
-/// predicates that gate editor-only draw calls. Mirroring it into a
-/// resource lets Bevy systems (e.g. a future `RenderExtractSet`
-/// system that builds mesh batches for editor overlays) read these
-/// values without reaching into the custom presenter.
-#[allow(dead_code)]
+/// Contains the phase, editor mode, sky color, grid center, and gamma setting
+/// used by extraction and presentation.
 #[derive(Resource, Clone, Copy)]
 pub struct RenderFrameInputRes(pub RenderFrameInput);
 
@@ -313,13 +285,12 @@ pub struct RenderEditorGizmoVerticesRes(pub Vec<eg_mesh::Vertex>);
 ///
 /// The platform layer (winit / wasm canvas) pushes the latest surface
 /// size into this resource on `WindowEvent::Resized` / canvas resize.
-/// The [`RenderPlugin`](super::plugin) drains it during
-/// `RenderPresentSet` and applies the size to [`RenderGpuRes`] plus
+/// The [`RenderPlugin`](super::plugin) drains it during `RenderSet::Present`
+/// and applies the size to [`RenderGpuRes`] plus
 /// [`RenderSurfaceHostRes`] when they are present.
 ///
 /// The resource is inserted with an empty default so Bevy schedules can
 /// reach it even in bare test worlds.
-#[allow(dead_code)]
 #[derive(Resource, Clone, Copy)]
 pub struct RenderResizeRequest {
     /// Latest physical size reported by the platform layer.
@@ -342,7 +313,6 @@ impl Default for RenderResizeRequest {
 
 impl RenderResizeRequest {
     /// Queue a resize to the given physical size.
-    #[allow(dead_code)]
     pub fn request(&mut self, size: eg_types::PhysicalSize<u32>) {
         self.size = size;
         self.pending = true;
@@ -350,7 +320,6 @@ impl RenderResizeRequest {
 
     /// Pop the pending resize, if any. Returns `None` when no resize
     /// is pending.
-    #[allow(dead_code)]
     pub fn take(&mut self) -> Option<eg_types::PhysicalSize<u32>> {
         if self.pending {
             self.pending = false;
@@ -361,10 +330,7 @@ impl RenderResizeRequest {
     }
 }
 
-/// Returns `true` if the world has every resource the Phase 4a
-/// rendering extraction plugin owns. Used by tests to assert the
-/// resource plumbing without snapshotting the full world.
-#[allow(dead_code)]
+/// Returns whether the render plugin's lightweight resources are registered.
 pub fn render_pod_resources_present(world: &World) -> bool {
     world.contains_resource::<RenderUniformsRes>()
         && world.contains_resource::<RenderFrameInputRes>()

@@ -15,38 +15,37 @@
 //! The bpm-tap fields are carved out in `events::bpm` and share the same
 //! authoritative `EditorTimingRes` resource.
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::state::EditorTimingRes;
+use crate::{events::MessageReader, state::EditorTimingRes};
 
 /// Add a new timing point.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct AddTimingPoint {
     pub time_seconds: f32,
     pub bpm: f32,
 }
 
 /// Remove an existing timing point by index.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RemoveTimingPoint(pub usize);
 
 /// Update an existing timing point's timestamp.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimingPointTime {
     pub index: usize,
     pub time: f32,
 }
 
 /// Update an existing timing point's BPM.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimingPointBpm {
     pub index: usize,
     pub bpm: f32,
 }
 
 /// Update an existing timing point's time signature.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimingPointTimeSignature {
     pub index: usize,
     pub numerator: u32,
@@ -54,17 +53,8 @@ pub struct SetTimingPointTimeSignature {
 }
 
 /// Select or deselect a timing point in the UI.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimingSelected(pub Option<usize>);
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<AddTimingPoint>()
-        .add_message::<RemoveTimingPoint>()
-        .add_message::<SetTimingPointTime>()
-        .add_message::<SetTimingPointBpm>()
-        .add_message::<SetTimingPointTimeSignature>()
-        .add_message::<SetTimingSelected>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems (write directly to EditorTimingRes)

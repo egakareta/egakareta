@@ -30,7 +30,6 @@
 //! `Playtest` records an App-world gameplay transition seed; the exclusive
 //! gameplay reset system applies the world replacement atomically.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::{NextState, State};
 use eg_editor_domain::{
@@ -40,10 +39,14 @@ use eg_editor_domain::{
 use eg_game::{LevelMeta, TimelineSimulationRuntime};
 use eg_types::{AppPhase, Direction, EditorMode};
 
-use crate::state::{
-    AudioSceneParam, EditorCameraRes, EditorInputRes, EditorRuntimeRes, EditorSimulationInputsRes,
-    EditorSpawnRes, EditorTimelineRes, EditorTimingRes, GameplayResetRes, GameplayResetSeed,
-    SessionStateRes, start_audio_source_at_seconds_for_resources, stop_music,
+use crate::{
+    events::MessageReader,
+    state::{
+        AudioSceneParam, EditorCameraRes, EditorInputRes, EditorRuntimeRes,
+        EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
+        GameplayResetRes, GameplayResetSeed, SessionStateRes,
+        start_audio_source_at_seconds_for_resources, stop_music,
+    },
 };
 
 #[derive(SystemParam)]
@@ -67,77 +70,60 @@ pub struct TimelineSeekResources<'w, 's> {
 }
 
 /// Toggle timeline playback.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ToggleTimelinePlayback;
 
 /// Shift the timeline cursor by `delta_seconds`.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct ShiftTimeline(pub f32);
 
 /// Set the timeline cursor to an absolute time in seconds.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimelineTime(pub f32);
 
 /// Set the total duration of the timeline (seconds).
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetTimelineDuration(pub f32);
 
 /// Add a tap at the current timeline position.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AddTap;
 
 /// Remove a tap at the current timeline position.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RemoveTap;
 
 /// Remove a tap at a specific timeline position.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct RemoveTapAt(pub f32);
 
 /// Select or deselect a tap by index.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSelectedTap(pub Option<usize>);
 
 /// Update the selected tap's timestamp.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSelectedTapTime(pub f32);
 
 /// Remove all taps from the level.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ClearTaps;
 
 /// Update the playback speed multiplier.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetPlaybackSpeed(pub f32);
 
 /// Set waveform view zoom.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetWaveformZoom(pub f32);
 
 /// Set waveform view scroll offset.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetWaveformScroll(pub f32);
 
 /// Start playtesting from the current editor state.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Playtest;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<ToggleTimelinePlayback>()
-        .add_message::<ShiftTimeline>()
-        .add_message::<SetTimelineTime>()
-        .add_message::<SetTimelineDuration>()
-        .add_message::<AddTap>()
-        .add_message::<RemoveTap>()
-        .add_message::<RemoveTapAt>()
-        .add_message::<SetSelectedTap>()
-        .add_message::<SetSelectedTapTime>()
-        .add_message::<ClearTaps>()
-        .add_message::<SetPlaybackSpeed>()
-        .add_message::<SetWaveformZoom>()
-        .add_message::<SetWaveformScroll>()
-        .add_message::<Playtest>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems

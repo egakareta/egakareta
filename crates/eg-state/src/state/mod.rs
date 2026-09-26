@@ -239,9 +239,8 @@ pub(crate) fn with_editor_interaction_context<R>(
     result
 }
 
-/// Schedule label for the per-frame state update. Runtime runs this
-/// after App update and before the remaining compatibility update/render
-/// path.
+/// Schedule label for the per-frame state update. App PostUpdate runs this
+/// before gameplay and render extraction.
 #[derive(bevy_ecs::schedule::ScheduleLabel, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StateSchedule;
 

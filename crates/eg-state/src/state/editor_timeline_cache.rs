@@ -5,7 +5,7 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-//! Shared App-world/editor compatibility timeline snapshot-cache rebuild.
+//! Shared App-world/editor timeline snapshot-cache rebuild.
 
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::State;

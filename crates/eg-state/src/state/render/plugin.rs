@@ -13,12 +13,6 @@
 //! the per-frame schedule mirrors POD frame/uniform values, uploads extracted
 //! mesh buffers, and presents the scene plus egui from App-owned resources.
 //!
-//! REFACTOR POINT(full-bevy): this plugin + system set graph is the
-//! placeholder for `bevy_render`'s render-world + render graph. The
-//! `extract_render_state_system` here becomes a
-//! `RenderApp::extract` system in the full-Bevy migration; the
-//! `RenderPresentSet` is replaced by `bevy_render`'s `Render` set.
-
 use std::collections::{BTreeMap, HashMap};
 
 use bevy_app::{App, Plugin};
@@ -88,7 +82,6 @@ use crate::state::{
 ///
 /// The custom renderer remains the presentation backend; Bevy owns the
 /// scheduling and authoritative world data.
-#[allow(dead_code)]
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RenderSet {
     /// Snapshot the world into render resources.
@@ -145,8 +138,8 @@ impl Plugin for RenderPlugin {
 /// `World`-flavoured registration for callers that build a `World` directly.
 /// Mirrors
 /// [`RenderPlugin::build`] without going through an `App`.
-#[allow(dead_code)]
-pub fn register_render_pod_resources(world: &mut World) {
+#[cfg(test)]
+pub(crate) fn register_render_pod_resources(world: &mut World) {
     world.init_resource::<RenderUniformsRes>();
     world.init_resource::<RenderFrameInputRes>();
     world.init_resource::<RenderTrailVerticesRes>();
@@ -896,8 +889,6 @@ struct CachedEditorBlockObject {
 }
 
 struct CachedEditorBlockTemplate {
-    #[allow(dead_code)]
-    definition: BlockDefinition,
     geometry: eg_mesh::MeshGeometry,
 }
 
@@ -944,21 +935,6 @@ pub(crate) struct EditorBlockMeshCache {
 }
 
 impl EditorBlockMeshCache {
-    #[allow(dead_code)]
-    fn template_needs_invalidation(&self, _block_id: &str) -> bool {
-        // Block definitions are process-static (`OnceLock`); they never change
-        // at runtime, so per-object full-struct comparisons (19k per edit)
-        // always return false. Keep the hook for API compat but skip the
-        // expensive `BlockDefinition` equality walk.
-        false
-    }
-
-    #[allow(dead_code)]
-    fn invalidate_template(&mut self, block_id: &str) {
-        self.templates.remove(block_id);
-        self.objects.retain(|_, cached| cached.block_id != block_id);
-    }
-
     fn template_for(&mut self, block_id: &str) -> eg_mesh::MeshGeometry {
         // `build_block_template_geometry` resolves the definition internally;
         // cache the clone only on first use per block ID (distinct IDs are
@@ -966,12 +942,10 @@ impl EditorBlockMeshCache {
         if let Some(cached) = self.templates.get(block_id) {
             return cached.geometry.clone();
         }
-        let definition = BlockDefinition::get(block_id);
         let geometry = build_block_template_geometry(block_id);
         self.templates.insert(
             block_id.to_string(),
             CachedEditorBlockTemplate {
-                definition: definition.clone(),
                 geometry: geometry.clone(),
             },
         );
@@ -2624,10 +2598,9 @@ pub(crate) fn upload_extracted_render_meshes_system(params: RenderMeshUploadPara
 
 /// Add the App-world render bookkeeping systems to a [`Schedule`].
 ///
-/// The schedule itself is added by the
-/// [`super::super::plugins::register_state_schedule`] helper
-/// or by the Phase 7 `App` work; this function only adds the systems
-/// that populate the POD render resources.
+/// The schedule is added by
+/// [`super::super::plugins::register_state_schedule`]. This function adds the
+/// systems that populate the POD render resources.
 ///
 /// Callers are expected to add a `RenderSet::Present` system set
 /// afterwards (e.g. `add_command_systems` chains an `add_systems` for
@@ -2747,9 +2720,8 @@ mod tests {
         assert_eq!(frame_input.grid_center, [4.0, -2.0]);
     }
 
-    /// `RenderMeshesRes` + `RenderSurfaceHostRes` are inserted (with
-    /// default values) by `register_render_pod_resources`. `RenderGpuRes`
-    /// is inserted by `AppBootstrap` because it has no cheap default.
+    /// `RenderMeshesRes` and `RenderSurfaceHostRes` are available with default
+    /// values in a bare world; `RenderGpuRes` requires real GPU initialization.
     #[test]
     fn register_inserts_phase4c_heavy_resources() {
         let mut world = World::new();
@@ -2759,9 +2731,7 @@ mod tests {
         assert!(!world.contains_non_send::<RenderGpuRes>());
     }
 
-    /// Phase 4e: the present system reads the authoritative render
-    /// resources. Bare test worlds do not have a real GPU, so the GPU
-    /// resource is optional until constructed by `AppBootstrap`.
+    /// The present system tolerates bare test worlds without a GPU resource.
     #[test]
     fn present_render_frame_system_runs_with_render_resources() {
         let mut world = World::new();

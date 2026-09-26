@@ -7,7 +7,6 @@
 */
 //! Selection / transform events.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_blocks::BlockId;
@@ -20,32 +19,30 @@ use eg_types::{
 };
 use glam::Vec3;
 
-use crate::state::{
-    CameraViewSample, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-    EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
-    collect_editor_object_data, evaluate_camera_track_for_objects, replace_editor_objects_commands,
+use crate::{
+    events::MessageReader,
+    state::{
+        CameraViewSample, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
+        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
+        collect_editor_object_data, evaluate_camera_track_for_objects,
+        replace_editor_objects_commands,
+    },
 };
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 
 /// Snap selected blocks or tap to the nearest grid cell.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SnapSelectionToGrid;
 
 /// Focus the editor camera on the selected or preview target.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct FocusCameraTarget;
 
 /// Add transform-object triggers for the selected blocks.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct AddTransformTrigger;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<SnapSelectionToGrid>()
-        .add_message::<FocusCameraTarget>()
-        .add_message::<AddTransformTrigger>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems
@@ -505,13 +502,10 @@ fn add_transform_trigger(resources: &mut SelectionResources<'_, '_>) -> bool {
     // Batch-allocate fresh trigger IDs in one O(n) scan (not O(n*m)).
     let fresh_ids =
         eg_types::next_level_object_ids_batch(&resources.objects.objects, selected_objects.len());
-    let base_len = resources.objects.objects.len();
-    let added_indices: Vec<usize> = (base_len..base_len + selected_objects.len()).collect();
     record_history_delta(
         resources,
         crate::state::EditorHistoryObjectChange::AddTriggers {
             added_ids: fresh_ids.clone(),
-            added_indices: added_indices.clone(),
             modified_before,
         },
     );
@@ -645,35 +639,6 @@ fn history_snapshot_with_change(
     EditorHistorySnapshot {
         objects,
         object_change,
-        selected_block_index: resources.input.0.selected_block_index,
-        selected_block_indices: resources.input.0.selected_block_indices.clone(),
-        cursor: resources.input.0.cursor,
-        selected_block_id: resources.config.0.selected_block_id.clone(),
-        selected_block_rotation_degrees: resources.config.0.selected_block_rotation_degrees,
-        recent_block_ids: resources.config.0.recent_block_ids.clone(),
-        spawn: resources.spawn.0.clone(),
-        timeline_time_seconds: resources.timeline.0.clock.time_seconds,
-        timeline_duration_seconds: resources.timeline.0.clock.duration_seconds,
-        tap_times: resources.timeline.0.taps.tap_times.clone(),
-        tap_indicator_positions: resources.timeline.0.taps.tap_indicator_positions.clone(),
-        selected_tap_index: resources.timeline.0.taps.selected_index,
-        timing_points: resources.timing.0.timing_points.clone(),
-        selected_trigger_index: resources.trigger.0.selected_index,
-    }
-}
-
-#[allow(dead_code)]
-fn record_history_state(resources: &mut SelectionResources<'_, '_>) {
-    let snapshot = history_snapshot_from_resources(resources);
-    push_history_snapshot(resources, snapshot);
-}
-
-fn history_snapshot_from_resources(
-    resources: &SelectionResources<'_, '_>,
-) -> EditorHistorySnapshot {
-    EditorHistorySnapshot {
-        objects: resources.objects.objects.clone(),
-        object_change: None,
         selected_block_index: resources.input.0.selected_block_index,
         selected_block_indices: resources.input.0.selected_block_indices.clone(),
         cursor: resources.input.0.cursor,

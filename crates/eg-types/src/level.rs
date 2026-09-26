@@ -42,10 +42,7 @@ pub struct MusicMetadata {
     pub author: Option<String>,
 }
 
-/// Metadata that can be supplied by the level creator and should be:
-/// - easily changed
-/// - gameplay-irrelevant
-/// - performance-insensitive
+/// Creator-editable metadata that does not affect gameplay simulation.
 #[derive(Clone, Debug, PartialEq, Deserialize, SmartDefault, SmartIsDefault)]
 #[smart_is_default(serde)]
 #[serde(default)]
@@ -57,10 +54,9 @@ pub struct BasicLevelMetadata {
     pub creator: Option<String>,
     /// A description of the level, supplied by the creator.
     pub description: Option<String>,
-    /// Difficulty of the level, from 0.0 to 10.0, supplied by the creator.
-    /// TODO: subject to change.
+    /// Creator-supplied difficulty rating from 0.0 to 10.0.
     pub stars: f32,
-    /// Tags for the level, supplied by the creator. Can be used for categorization, search, or filtering.
+    /// Creator-supplied tags for categorization and filtering.
     pub tags: Vec<String>,
 }
 
@@ -101,21 +97,20 @@ pub struct EditorStateParams {
 #[smart_is_default(serde)]
 #[serde(default)]
 pub struct LevelMetadata {
-    /// Version number for the level format. This is used to ensure compatibility between different versions of the game. Older format versions are always loadable by newer game versions, but newer format versions may not be loadable by older game versions.
+    /// Codec version used when serializing and loading the level.
     #[default(CURRENT_LEVEL_FORMAT_VERSION)]
     pub format_version: u32,
     pub basic: BasicLevelMetadata,
-    /// Metadata about the music used in the level, including source, title, and author.
+    /// Music metadata used by playback and export.
     pub music: MusicMetadata,
-    /// Metadata about the spawn point of the level, including position and direction.
+    /// Initial player position and direction.
     pub spawn: SpawnMetadata,
-    /// Color of the sky in the level, as RGB values from 0.0 to 1.0.
-    /// TODO: will be controllable by triggers in the future.
+    /// Sky color as RGB values from 0.0 to 1.0.
     #[default([0.04, 0.07, 0.09])]
     pub sky_color: [f32; 3],
-    /// Times in seconds when the player is expected to tap, used for gameplay simulation. This is only used in the editor right now, but may be visualized in practice mode in the future.
+    /// Timeline timestamps in seconds for expected player taps.
     pub tap_times: Vec<f32>,
-    /// Timing points in the level that define the tempo and time signature of the music. This is only used in the editor to help time taps and triggers.
+    /// Tempo and time-signature changes used by editor timing tools.
     pub timing_points: Vec<TimingPoint>,
     /// The total duration of the level in seconds.
     #[default = 16.0]

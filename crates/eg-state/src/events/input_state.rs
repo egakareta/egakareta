@@ -10,48 +10,37 @@
 //! These represent `EditorInput` state, not commands. The handlers write
 //! directly to the `EditorInputRes` resource.
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use crate::state::EditorInputRes;
+use crate::{events::MessageReader, state::EditorInputRes};
 
 /// Track Shift held state for editor shortcuts.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetShiftHeld(pub bool);
 
 /// Track Ctrl held state for editor shortcuts.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetCtrlHeld(pub bool);
 
 /// Track Alt held state for editor shortcuts.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetAltHeld(pub bool);
 
 /// Track W-pan held state in editor.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetPanUpHeld(pub bool);
 
 /// Track S-pan held state in editor.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetPanDownHeld(pub bool);
 
 /// Track A-pan held state in editor.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetPanLeftHeld(pub bool);
 
 /// Track D-pan held state in editor.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetPanRightHeld(pub bool);
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<SetShiftHeld>()
-        .add_message::<SetCtrlHeld>()
-        .add_message::<SetAltHeld>()
-        .add_message::<SetPanUpHeld>()
-        .add_message::<SetPanDownHeld>()
-        .add_message::<SetPanLeftHeld>()
-        .add_message::<SetPanRightHeld>();
-}
 
 pub fn handle_set_shift_held(
     mut events: MessageReader<SetShiftHeld>,

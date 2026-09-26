@@ -5,13 +5,10 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-/// Application-level commands that represent user intent.
+/// User intent produced by platform and UI input adapters.
 ///
-/// Every meaningful user action (keyboard shortcut, mouse click, UI button)
-/// is captured as an `AppCommand` before being dispatched to `State`.
-/// This decouples input handling from action execution, gives both
-/// native and WASM targets a single code-path, and makes future
-/// replay / macro / test harness support trivial.
+/// The message bridge translates these values into typed App-world messages,
+/// keeping input handling separate from state mutation on native and WASM.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AppCommand {
     // ── Navigation / Phase ──────────────────────────────────────────

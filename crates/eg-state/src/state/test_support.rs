@@ -32,10 +32,6 @@
 //! assert_eq!(*app.world().resource::<State<AppPhase>>().get(), AppPhase::Editor);
 //! ```
 //!
-//! REFACTOR POINT(full-bevy): in the full-Bevy migration, the harness
-//! remains a thin wrapper around `bevy_app::App::new()` plus the eg-state
-//! plugin graph; App-owned resources are the only state authority.
-//!
 //! [StateSchedule]: crate::state::StateSchedule
 
 use bevy_app::App;
@@ -122,12 +118,9 @@ impl TestApp {
 
     /// Run a single frame of the `App` via `app.update()`.
     ///
-    /// In Phase 7-scaffold the App's default schedules are empty (no
-    /// systems have been registered into `Update` yet), so this call
-    /// is a no-op. The actual frame driver is the per-frame
-    /// [`StateSchedule`]; use [`TestApp::tick_state`] to invoke the
-    /// eg-state pipeline or [`TestApp::run_state_schedule`] to run
-    /// only the schedule.
+    /// This runs only the App's default schedules. Use
+    /// [`TestApp::tick_state`] to run the eg-state frame pipeline or
+    /// [`TestApp::run_state_schedule`] to run only [`StateSchedule`].
     pub fn tick(&mut self) {
         self.app.update();
     }

@@ -18,29 +18,25 @@
 //! - `RotatePlacementPreview` mutates the authoritative
 //!   `EditorConfigRes.0.selected_block_rotation_degrees[1]` placement yaw.
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 use eg_editor_domain::toggle_spawn_direction;
 
-use crate::state::{EditorConfigRes, EditorInputRes, EditorSpawnRes};
+use crate::{
+    events::MessageReader,
+    state::{EditorConfigRes, EditorInputRes, EditorSpawnRes},
+};
 
 /// Set spawn position to the current editor cursor.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SetSpawnHere;
 
 /// Rotate the spawn direction (cycles Forward / Right).
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RotateSpawnDirection;
 
 /// Rotate the block placement preview yaw by 90 degrees.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct RotatePlacementPreview;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<SetSpawnHere>()
-        .add_message::<RotateSpawnDirection>()
-        .add_message::<RotatePlacementPreview>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems (write directly to App-world resources)

@@ -34,7 +34,6 @@
 //!
 //! Settings handlers persist App-owned changes directly.
 
-use bevy_app::App;
 use bevy_ecs::prelude::*;
 use bevy_state::prelude::State;
 use eg_types::{
@@ -42,58 +41,62 @@ use eg_types::{
     MusicMetadata, SettingsSection,
 };
 
-use crate::state::{
-    AudioImportSenderRes, AudioSceneParam, BuiltinLevelCatalogRes, EditorCameraRes, EditorSpawnRes,
-    EditorTimelineRes, EditorTimingRes, LevelExportServiceRes, LevelImportSenderRes,
-    SessionStateRes, apply_imported_level_to_world, set_preferred_backend_name,
+use crate::{
+    events::{AppMessage, AppMessageExclusiveCursors, MessageReader, read_app_messages},
+    state::{
+        AudioImportSenderRes, AudioSceneParam, BuiltinLevelCatalogRes, EditorCameraRes,
+        EditorSpawnRes, EditorTimelineRes, EditorTimingRes, LevelExportServiceRes,
+        LevelImportSenderRes, SessionStateRes, apply_imported_level_to_world,
+        set_preferred_backend_name,
+    },
 };
 
 /// Load a level from a builtin resource name.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct LoadLevel(pub String);
 
 /// Rename the current level.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct RenameLevel(pub String);
 
 /// Start the level export process.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ExportLevel;
 
 /// Open or close the metadata editing window.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetShowMetadata(pub bool);
 
 /// Toggle the settings sidebar visibility.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ToggleSettings;
 
 /// Open or close the settings sidebar.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetShowSettings(pub bool);
 
 /// Select which settings section is displayed in the sidebar.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetSettingsSection(pub SettingsSection);
 
 /// Set preferred graphics backend for subsequent launches.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SetGraphicsBackend(pub String);
 
 /// Set preferred audio backend and apply immediately when possible.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SetAudioBackend(pub String);
 
 /// Set UI scale multiplier used with responsive UI scaling.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct SetUiScaleMultiplier(pub f32);
 
 /// Start or cancel keybind capture for an action slot.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SetKeybindCapture(pub Option<(String, usize)>);
 
 /// Set a keybind mapping for an action at a specific slot.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct SetKeybind {
     pub action: String,
     pub slot: usize,
@@ -101,84 +104,58 @@ pub struct SetKeybind {
 }
 
 /// Clear the keybind mapping for an action at a specific slot.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ClearKeybindSlot {
     pub action: String,
     pub slot: usize,
 }
 
 /// Reset a single keybind action to its default values.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ResetKeybind(pub String);
 
 /// Reset all keybinds to defaults.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct ResetKeybinds;
 
 /// Trigger level import via platform file picker.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CompleteImport;
 
 /// Update music information for the level.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UpdateMusic(pub MusicMetadata);
 
 /// Update creator-facing metadata for the level.
-#[derive(Message, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct UpdateCreatorMetadata(pub BasicLevelMetadata);
 
 /// Update the level sky clear color.
-#[derive(Message, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct UpdateSkyColor(pub [f32; 3]);
 
 /// Trigger the platform audio import dialog.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TriggerAudioImport;
 
 /// Store the current editor camera as menu preview camera metadata.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CaptureMenuPreviewCamera;
 
 /// Remove manual menu preview camera metadata and use automatic camera.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct UseAutoMenuPreviewCamera;
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<LoadLevel>()
-        .add_message::<RenameLevel>()
-        .add_message::<ExportLevel>()
-        .add_message::<SetShowMetadata>()
-        .add_message::<ToggleSettings>()
-        .add_message::<SetShowSettings>()
-        .add_message::<SetSettingsSection>()
-        .add_message::<SetGraphicsBackend>()
-        .add_message::<SetAudioBackend>()
-        .add_message::<SetUiScaleMultiplier>()
-        .add_message::<SetKeybindCapture>()
-        .add_message::<SetKeybind>()
-        .add_message::<ClearKeybindSlot>()
-        .add_message::<ResetKeybind>()
-        .add_message::<ResetKeybinds>()
-        .add_message::<CompleteImport>()
-        .add_message::<UpdateMusic>()
-        .add_message::<UpdateCreatorMetadata>()
-        .add_message::<UpdateSkyColor>()
-        .add_message::<TriggerAudioImport>()
-        .add_message::<CaptureMenuPreviewCamera>()
-        .add_message::<UseAutoMenuPreviewCamera>();
-}
 
 // -----------------------------------------------------------------------
 // Dispatch systems
 // -----------------------------------------------------------------------
 
 pub fn handle_load_level(world: &mut World) {
-    use bevy_ecs::message::Messages;
-
-    let events: Vec<LoadLevel> = world
-        .resource_mut::<Messages<LoadLevel>>()
-        .drain()
-        .collect();
+    let events: Vec<LoadLevel> =
+        world.resource_scope(|world, mut cursors: Mut<AppMessageExclusiveCursors>| {
+            let messages = world.resource::<Messages<AppMessage>>();
+            read_app_messages(&mut cursors.load_level, messages)
+        });
     for event in events {
         let Some(metadata) = world.resource::<BuiltinLevelCatalogRes>().get(&event.0) else {
             continue;

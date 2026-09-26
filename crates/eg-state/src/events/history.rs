@@ -8,24 +8,27 @@
 //! History (undo / redo) events + a `HistorySnapshot` marker Message used
 //! by direct-manipulation UI to mark a "before-mutation" snapshot.
 
-use bevy_app::App;
 use bevy_ecs::{prelude::*, system::SystemParam};
 use bevy_state::prelude::State;
 use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, EditorInputState, LevelObject};
 
-use crate::state::{
-    EditorAuthoredObject, EditorConfigRes, EditorHistoryObjectChange, EditorHistoryRes,
-    EditorHistorySnapshot, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-    EditorTimingRes, EditorTriggerRes, collect_editor_object_data, replace_editor_objects_commands,
+use crate::{
+    events::MessageReader,
+    state::{
+        EditorAuthoredObject, EditorConfigRes, EditorHistoryObjectChange, EditorHistoryRes,
+        EditorHistorySnapshot, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
+        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
+        replace_editor_objects_commands,
+    },
 };
 
 /// Undo the last editor action.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Undo;
 
 /// Redo the last undone editor action.
-#[derive(Message, Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Redo;
 
 /// Marker Message emitted by direct-manipulation UI (gizmo drag, marquee,
@@ -33,16 +36,10 @@ pub struct Redo;
 ///
 /// History stacks live in `EditorHistoryRes`. This message records an undo
 /// snapshot of `ObjectBundle` data before a mutating handler runs.
-#[derive(Message, Debug, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HistorySnapshot {
     /// Free-form label for the snapshot (e.g. "gizmo_drag_release").
     pub label: String,
-}
-
-pub fn register_events(app: &mut App) {
-    app.add_message::<Undo>()
-        .add_message::<Redo>()
-        .add_message::<HistorySnapshot>();
 }
 
 #[derive(SystemParam)]
@@ -252,7 +249,6 @@ fn invert_change(
                     .iter()
                     .map(|(_, object)| object.id.clone())
                     .collect(),
-                added_indices: objects.iter().map(|(index, _)| *index).collect(),
                 modified_before,
             })
         }
@@ -536,7 +532,6 @@ fn apply_history_snapshot_to_resources(
         }
         Some(EditorHistoryObjectChange::AddTriggers {
             added_ids,
-            added_indices: _,
             modified_before,
         }) => {
             let mut objects = live(resources);
@@ -684,12 +679,9 @@ fn normalize_taps(
         .min(timeline.clock.duration_seconds);
 }
 
-/// No-op handler for [`HistorySnapshot`]. Reserves the system slot in the
-/// `CommandHandlerSet` so a follow-up phase can wire a real pre-mutation
-/// snapshot system without re-orchestrating the schedule.
+/// Drain [`HistorySnapshot`] messages. History snapshots are written by the
+/// command handlers that know which mutation is about to run.
 pub fn handle_history_snapshot(mut events: MessageReader<HistorySnapshot>) {
-    // Drain the events so they don't accumulate frame-over-frame. No
-    // command is generated - snapshots are written by a dedicated
-    // pre-mutation system in a later phase.
+    // Drain the messages so they do not accumulate frame over frame.
     for _ in events.read() {}
 }
