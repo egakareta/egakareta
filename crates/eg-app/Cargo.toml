@@ -35,6 +35,7 @@ eg-platform = { workspace = true }
 eg-render = { workspace = true }
 eg-state = { workspace = true }
 eg-ui = { workspace = true }
+egui-winit = { workspace = true }
 pollster = { workspace = true }
 log = { workspace = true }
 egui = { workspace = true }
@@ -46,14 +47,12 @@ puffin = { workspace = true }
 winit = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = { workspace = true }
 env_logger = { workspace = true }
 image = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
-egui-winit = { workspace = true, default-features = false } # default features include arboard, which doesnt have wasm support yet https://github.com/1Password/arboard/pull/160
 gloo-console = { workspace = true }
 js-sys = { workspace = true }
 parking_lot_core = { workspace = true, features = [
