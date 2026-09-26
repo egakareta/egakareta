@@ -34,10 +34,13 @@ if (!fs.existsSync(distPath)) {
 fs.cpSync(path.join(rootDir, "web"), path.join(distPath), { recursive: true });
 
 // Build the WASM package using wasm-pack
+const startTime = Date.now();
 const proc = Bun.spawn(
     [
         "bunx",
         "wasm-pack",
+        "--log-level",
+        "warn",
         "build",
         "crates/eg-app",
         "-t",
@@ -77,6 +80,7 @@ process.on("SIGTERM", shutdown);
         console.error(`wasm-pack exited with code ${exitCode}`);
         process.exit(exitCode || 1);
     } else {
+        console.log("wasm-pack completed in", Date.now() - startTime, "ms");
         await createDist();
     }
 })();
@@ -200,7 +204,7 @@ async function createDist() {
 
     const elapsedMs = Date.now() - start;
     if (elapsedMs > 500) {
-        console.warn(`warning: created dist in ${elapsedMs}ms`);
+        console.warn("created dist in", elapsedMs, "ms");
     }
 }
 
