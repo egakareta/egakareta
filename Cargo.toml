@@ -17,6 +17,7 @@ members = [
     "crates/eg-state",
     "crates/eg-ui",
     "crates/egb",
+    "crates/terrarium/",
     ".",
 ]
 resolver = "2"
@@ -108,6 +109,7 @@ sha2 = "0.11.0"
 smart-default = "0.7.1"
 smart-is-default = "0.2.0"
 tempfile = "3.27.0"
+terrarium = { path = "crates/terrarium/" }
 tokio = { version = "1.53.1", features = ["rt", "macros"] }
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.77"
@@ -140,6 +142,12 @@ license.workspace = true
 publish = false
 
 [dependencies]
+bevy_app = { workspace = true }
+bevy_clipboard = { workspace = true }
+bevy_ecs = { workspace = true }
+bevy_state = { workspace = true }
+bevy_tasks = { workspace = true }
+bevy_time = { workspace = true }
 eg-block-geometry = { workspace = true }
 eg-blocks = { workspace = true }
 eg-codec = { workspace = true }
@@ -152,3 +160,4 @@ eg-render = { workspace = true }
 eg-state = { workspace = true }
 eg-types = { workspace = true }
 eg-ui = { workspace = true }
+terrarium = { workspace = true }
