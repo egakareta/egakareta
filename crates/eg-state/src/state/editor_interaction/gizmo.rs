@@ -544,21 +544,21 @@ super::super::editor_context_methods! {
         let mut best: Option<(GizmoDragKind, GizmoAxis, f32, f32)> = None;
         for (kind, axis, world, pick_radius) in candidates {
             if let Some(screen) = self.world_to_screen_v(world, viewport_size) {
-                let dist = screen.distance(pointer);
-                if dist <= pick_radius {
+                let distance = screen.distance(pointer);
+                if distance <= pick_radius {
                     let depth = world.distance_squared(eye);
                     match best {
                         Some((.., best_dist, best_depth)) => {
-                            let is_better = if (dist - best_dist).abs() > 10.0 {
-                                dist < best_dist
+                            let is_better = if (distance - best_dist).abs() > 10.0 {
+                                distance < best_dist
                             } else {
                                 depth < best_depth
                             };
                             if is_better {
-                                best = Some((kind, axis, dist, depth));
+                                best = Some((kind, axis, distance, depth));
                             }
                         }
-                        None => best = Some((kind, axis, dist, depth)),
+                        None => best = Some((kind, axis, distance, depth)),
                     }
                 }
             }

@@ -686,18 +686,18 @@ pub fn build_camera_arrow_vertices(
     const FADE_START_DISTANCE: f32 = 3.0;
     const FADE_END_DISTANCE: f32 = 1.0;
 
-    let dist = {
+    let distance = {
         let dx = editor_camera_eye[0] - eye[0];
         let dy = editor_camera_eye[1] - eye[1];
         let dz = editor_camera_eye[2] - eye[2];
         (dx * dx + dy * dy + dz * dz).sqrt()
     };
-    let alpha = if dist >= FADE_START_DISTANCE {
+    let alpha = if distance >= FADE_START_DISTANCE {
         BASE_ALPHA
-    } else if dist <= FADE_END_DISTANCE {
+    } else if distance <= FADE_END_DISTANCE {
         0.0
     } else {
-        BASE_ALPHA * (dist - FADE_END_DISTANCE) / (FADE_START_DISTANCE - FADE_END_DISTANCE)
+        BASE_ALPHA * (distance - FADE_END_DISTANCE) / (FADE_START_DISTANCE - FADE_END_DISTANCE)
     };
     let arrow_color: [f32; 4] = [0.8, 0.25, 0.35, alpha];
 
