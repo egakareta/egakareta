@@ -160,8 +160,8 @@ See LICENSE and COMMERCIAL.md for details.
 
         <script type="module">
             console.log("modulescript loaded");
-            window.__EGAKARETA_LAUNCH_READY = false;
-            window.__EGAKARETA_LAUNCH_ERROR = null;
+            window.__LAUNCH_READY = false;
+            window.__LAUNCH_ERROR = null;
 
             const loading = document.getElementById("loading");
             const loadingText = document.getElementById("loading-text");
@@ -347,7 +347,7 @@ See LICENSE and COMMERCIAL.md for details.
                     console.log("isolated:", self.crossOriginIsolated);
 
                     let rayonInitPromise = null;
-                    window.__EGAKARETA_INIT_RAYON = async () => {
+                    window.__INIT_RAYON = async () => {
                         if (rayonInitPromise) {
                             return rayonInitPromise;
                         }
@@ -392,15 +392,15 @@ See LICENSE and COMMERCIAL.md for details.
                             }
                         } catch (error) {
                             console.error("Failed to run game:", error);
-                            window.__EGAKARETA_LAUNCH_ERROR =
+                            window.__LAUNCH_ERROR =
                                 error?.message ?? String(error);
                             errorDiv.style.display = "block";
-                            errorDiv.textContent = `error: ${window.__EGAKARETA_LAUNCH_ERROR}`;
+                            errorDiv.textContent = `error: ${window.__LAUNCH_ERROR}`;
                         }
                     }
                 } catch (error) {
                     console.error("Failed to load:", error);
-                    window.__EGAKARETA_LAUNCH_ERROR =
+                    window.__LAUNCH_ERROR =
                         error?.message ?? String(error);
                     loading.style.display = "none";
                     errorDiv.style.display = "block";
