@@ -3,14 +3,15 @@
 # See LICENSE and COMMERCIAL.md for details.
 [package]
 name = "eg-blocks"
-version = "0.1.0"
-edition = "2024"
-description = "Block catalog and texture atlas loading for egakareta."
-repository = "https://github.com/egakareta/egakareta"
-license = "AGPL-3.0-only"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
 
 [dependencies]
-image = { workspace = true, features = ["ico", "png"] }
+image = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 smart-default = { workspace = true }

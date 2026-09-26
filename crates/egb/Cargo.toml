@@ -3,11 +3,12 @@
 # See LICENSE and COMMERCIAL.md for details.
 [package]
 name = "egb"
-version = "0.1.0"
-edition = "2024"
-description = "Level metadata conversion helper for egakareta."
-repository = "https://github.com/egakareta/egakareta"
-license = "AGPL-3.0-only"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "egb"

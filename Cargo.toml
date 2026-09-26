@@ -17,15 +17,17 @@ members = [
     "crates/eg-state",
     "crates/eg-ui",
     "crates/egb",
+    ".",
 ]
 resolver = "2"
-default-members = ["crates/eg-app"]
+default-members = [".", "crates/eg-app"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 description = "Feel the beat, follow the line."
 repository = "https://github.com/egakareta/egakareta"
+documentation = "https://docs.rs/egakareta"
 license = "AGPL-3.0-only"
 
 [workspace.dependencies]
@@ -60,7 +62,7 @@ eg-ui = { path = "crates/eg-ui" }
 egui = "0.35.0"
 egui-phosphor = "0.13.0"
 egui-wgpu = "0.35.0"
-egui-winit = { version = "0.35.0", default-features = false }
+egui-winit = { version = "0.35.0" }
 env_logger = "0.11.11"
 glam = { version = "0.33.5", features = ["bytemuck"] }
 gloo-console = "0.4.0"
@@ -68,7 +70,10 @@ gloo-file = "0.4.0"
 gloo-net = "0.7.0"
 gloo-utils = "0.3.0"
 futures = "0.3.34"
-image = { version = "0.25.10", default-features = false }
+image = { version = "0.25.10", default-features = false, features = [
+    "ico",
+    "png",
+] }
 include_dir = "0.7.4"
 js-sys = "0.3.104"
 log = "0.4.33"
@@ -119,3 +124,27 @@ winit = "0.30.13"
 winres = "0.1.12"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 zstd = "0.13.3"
+
+[package]
+name = "monorepo"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+eg-block-geometry = { workspace = true }
+eg-blocks = { workspace = true }
+eg-codec = { workspace = true }
+eg-editor-domain = { workspace = true }
+eg-game = { workspace = true }
+eg-level = { workspace = true }
+eg-mesh = { workspace = true }
+eg-platform = { workspace = true }
+eg-render = { workspace = true }
+eg-state = { workspace = true }
+eg-types = { workspace = true }
+eg-ui = { workspace = true }

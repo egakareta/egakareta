@@ -3,11 +3,12 @@
 # See LICENSE and COMMERCIAL.md for details.
 [package]
 name = "eg-app"
-version = "0.1.0"
-edition = "2024"
-description = "Feel the beat, follow the line."
-repository = "https://github.com/egakareta/egakareta"
-license-file = "LICENSE"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
 default-run = "egakareta"
 
 [lib]
@@ -45,9 +46,9 @@ puffin = { workspace = true }
 winit = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-egui-winit = { workspace = true, features = ["default"] }
+egui-winit = { workspace = true }
 env_logger = { workspace = true }
-image = { workspace = true, features = ["ico"] }
+image = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { workspace = true }

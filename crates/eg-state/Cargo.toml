@@ -3,9 +3,12 @@
 # See LICENSE and COMMERCIAL.md for details.
 [package]
 name = "eg-state"
-version = "0.1.0"
-edition = "2024"
-license = "AGPL-3.0-only"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+repository.workspace = true
+documentation.workspace = true
+license.workspace = true
 
 [features]
 test-support = []
