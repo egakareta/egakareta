@@ -2214,9 +2214,9 @@ dependencies = [
 
 [[package]]
 name = "euphorium"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b053a952fa70ae3d3f12e808d3ab20c61b620794b020cf7a190c0be3be54ec0"
+checksum = "b2650e88f89cc1b5dfcee2821ae589f6933c0d4d0edcd0bc055c6bccbc6943ef"
 dependencies = [
  "cpal",
  "dasp_sample",
