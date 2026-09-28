@@ -127,7 +127,7 @@ web-sys = { version = "0.3.104", features = [
 web-time = "1.1.0"
 wgpu = { version = "29.0.4", features = ["webgpu", "webgl"] }
 winit = "0.30.13"
-winres = "0.1.12"
+winresource = "0.1.31"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 zstd = "0.13.3"
 

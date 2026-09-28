@@ -106,6 +106,46 @@ fn strip_jsonc_comments(input: &str) -> String {
 // Whitelist of keys to bake into the binary
 const BAKE_KEYS: &[&str] = &["API_URL", "PUBLISHABLE_KEY", "AUTH_BASE_URL"];
 
+/// Locate `llvm-rc`, the resource compiler used when cross-compiling Windows
+/// targets from a non-Windows host (Microsoft's `rc.exe` is unavailable there).
+fn find_llvm_rc() -> Option<PathBuf> {
+    let exe = if cfg!(windows) {
+        "llvm-rc.exe"
+    } else {
+        "llvm-rc"
+    };
+
+    if let Some(paths) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(exe);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Debian/Ubuntu keep versioned LLVM toolchains out of PATH.
+    let mut versioned: Vec<(u32, PathBuf)> = std::fs::read_dir("/usr/lib")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let dir = entry.path();
+            let version: u32 = dir
+                .file_name()?
+                .to_str()?
+                .strip_prefix("llvm-")?
+                .parse()
+                .ok()?;
+            let candidate = dir.join("bin").join(exe);
+            candidate.is_file().then_some((version, candidate))
+        })
+        .collect();
+
+    versioned.sort_unstable_by_key(|(version, _)| *version);
+    versioned.pop().map(|(_, candidate)| candidate)
+}
+
 fn main() {
     let workspace_root = workspace_root();
     let local_env_path = workspace_root.join(".env.local");
@@ -182,7 +222,21 @@ fn main() {
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
 
     if target_os == "windows" && target_arch != "wasm32" {
-        let mut res = winres::WindowsResource::new();
+        let cross_compiling = std::env::var("HOST").ok() != std::env::var("TARGET").ok();
+        if cross_compiling && std::env::var_os("RC_PATH").is_none() {
+            match find_llvm_rc() {
+                Some(llvm_rc) => unsafe { std::env::set_var("RC_PATH", &llvm_rc) },
+                None => {
+                    println!(
+                        "cargo:warning=llvm-rc not found; skipping Windows icon/metadata resource. \
+                         Install LLVM or set RC_PATH to enable it."
+                    );
+                    return;
+                }
+            }
+        }
+
+        let mut res = winresource::WindowsResource::new();
         let favicon_path = workspace_root.join("assets/favicon.ico");
         res.set_icon(
             favicon_path
