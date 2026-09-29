@@ -28,8 +28,8 @@ run = "bun scripts/build.ts"
 run = "renfs web/zenfs.js"
 
 # Benchmark
-[tasks."bench:hot-paths"]
-run = "cargo bench -p eg-app --features benchmarks --bench perf_hot_paths"
+[tasks."bench"]
+run = "cargo bench --workspace --benches --features benchmarks"
 
 # Check
 [tasks.check]
