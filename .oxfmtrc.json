@@ -11,6 +11,7 @@
         "*.lock",
         "**/assets/levels",
         "*.d.ts",
+        "**/zenfs.js",
         "supabase/.temp",
         "_supabase_types.ts"
     ],

@@ -83,13 +83,13 @@ include_dir = "0.7.4"
 js-sys = "0.3.104"
 log = "0.4.33"
 naga = { version = "29.0.4", features = ["wgsl-in"] }
-opfs = "0.2.0"
 parking_lot_core = { version = "0.9.12", features = ["nightly"] }
 paste = "1.0.15"
 pollster = "1.0.1"
 puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
 puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
 rayon = "1.12.0"
+renfs = { version = "0.1.0", default-features = false }
 reqwest = { version = "0.13.4", default-features = false, features = [
     "blocking",
     "json",

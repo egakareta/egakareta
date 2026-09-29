@@ -24,7 +24,7 @@ pub enum AuthServiceMessage {
 pub fn trigger_audio_import(sender: Sender<(String, Vec<u8>)>) {
     spawn_background(async move {
         if let Some((filename, bytes)) = pick_audio_file().await {
-            let _ = save_audio_to_storage(&filename, &bytes).await;
+            let _ = save_audio_to_storage(&filename, &bytes);
             let _ = sender.send((filename, bytes));
         }
     });
@@ -46,7 +46,7 @@ pub fn trigger_auth_sign_in(sender: Sender<AuthServiceMessage>) {
             return;
         }
 
-        let result = persist_auth_session_result(crate::auth::sign_in().await).await;
+        let result = persist_auth_session_result(crate::auth::sign_in().await);
         let _ = sender.send(AuthServiceMessage::SignedIn(result));
     });
 }
@@ -60,17 +60,14 @@ pub fn trigger_auth_refresh(refresh_token: String, sender: Sender<AuthServiceMes
         }
 
         let result =
-            persist_auth_session_result(crate::auth::refresh_session(&refresh_token).await).await;
+            persist_auth_session_result(crate::auth::refresh_session(&refresh_token).await);
         let _ = sender.send(AuthServiceMessage::Refreshed(result));
     });
 }
 
-async fn persist_auth_session_result(
-    result: Result<AuthSession, String>,
-) -> Result<AuthSession, String> {
+fn persist_auth_session_result(result: Result<AuthSession, String>) -> Result<AuthSession, String> {
     let session = result?;
     crate::storage::save_auth_session(&session)
-        .await
         .map_err(|error| format!("Session could not be saved: {error}"))?;
     Ok(session)
 }
@@ -84,7 +81,7 @@ pub fn trigger_auth_sign_out(access_token: Option<String>, sender: Sender<AuthSe
         }
 
         let result = crate::auth::sign_out(access_token.as_deref()).await;
-        let _ = crate::storage::clear_auth_session().await;
+        let _ = crate::storage::clear_auth_session();
         let _ = sender.send(AuthServiceMessage::SignedOut(result));
     });
 }

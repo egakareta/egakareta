@@ -393,12 +393,9 @@ pub fn handle_reset_keybinds(
 }
 
 pub(crate) fn persist_app_settings(settings: &AppSettings) {
-    let settings = settings.clone();
-    eg_platform::task::spawn_background(async move {
-        if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
-            log::error!("Failed to persist app settings: {error}");
-        }
-    });
+    if let Err(error) = eg_platform::io::save_app_settings_to_storage(settings) {
+        log::error!("Failed to persist app settings: {error}");
+    }
 }
 
 pub fn handle_complete_import(

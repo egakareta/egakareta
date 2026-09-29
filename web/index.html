@@ -10,6 +10,14 @@ See LICENSE and COMMERCIAL.md for details.
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>egakareta</title>
         <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+        <script type="importmap">
+            {
+                "imports": {
+                    "@zenfs/core": "./zenfs.js",
+                    "@zenfs/dom": "./zenfs.js"
+                }
+            }
+        </script>
         <style>
             html,
             body {
@@ -159,6 +167,9 @@ See LICENSE and COMMERCIAL.md for details.
         <canvas id="gameCanvas"></canvas>
 
         <script type="module">
+            import { configure } from "@zenfs/core";
+            import { WebAccess } from "@zenfs/dom";
+
             console.log("modulescript loaded");
             window.__LAUNCH_READY = false;
             window.__LAUNCH_ERROR = null;
@@ -327,6 +338,16 @@ See LICENSE and COMMERCIAL.md for details.
 
             const init_wasm = async () => {
                 try {
+                    console.log("configuring ZenFS with OPFS");
+                    await configure({
+                        mounts: {
+                            "/": {
+                                backend: WebAccess,
+                                handle: await navigator.storage.getDirectory(),
+                            },
+                        },
+                    });
+
                     console.log("importing js");
                     const {
                         default: init,

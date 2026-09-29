@@ -3,6 +3,7 @@
 # See LICENSE and COMMERCIAL.md for details.
 [tools]
 "github:taiki-e/cargo-llvm-cov" = "latest"
+"github:egakareta/renfs" = "latest"
 "github:Unreal-Works/license-check-and-add" = "0.4.0"
 oxfmt = "latest"
 bun = "latest"
@@ -22,6 +23,9 @@ postinstall = ["bun install", "lefthook install"]
 # Build
 [tasks.build]
 run = "bun scripts/build.ts"
+
+[tasks.vendor]
+run = "renfs web/zenfs.js"
 
 # Benchmark
 [tasks."bench:hot-paths"]

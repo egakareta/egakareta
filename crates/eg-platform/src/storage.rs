@@ -5,29 +5,32 @@
 * See LICENSE and COMMERCIAL.md for details.
 
 */
-use eg_types::{AppSettings, AuthSession};
-use opfs::{DirectoryHandle as _, FileHandle as _};
+use std::path::PathBuf;
 
+use eg_types::{AppSettings, AuthSession};
+use renfs::Directory;
+
+const APP_DIR_NAME: &str = "egakareta";
 const AUDIO_DIR_NAME: &str = "audio";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const AUTH_SESSION_FILE_NAME: &str = "auth_session.json";
 
 /// Save the given audio data to persistent storage with the specified filename.
-pub async fn save_audio(filename: &str, data: &[u8]) -> Result<(), String> {
-    let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
-    opfs_write_file(&audio_dir, filename, data).await
+pub fn save_audio(filename: &str, data: &[u8]) -> Result<(), String> {
+    let audio_dir = app_subdir(AUDIO_DIR_NAME)?;
+    write_file(&audio_dir, filename, data)
 }
 
 /// Read the specified music file from persistent storage, returning None if it doesn't exist.
-pub async fn read_editor_music_bytes(music_source: &str) -> Result<Option<Vec<u8>>, String> {
-    let audio_dir = opfs_subdir(AUDIO_DIR_NAME).await?;
-    opfs_read_file(&audio_dir, music_source).await
+pub fn read_editor_music_bytes(music_source: &str) -> Result<Option<Vec<u8>>, String> {
+    let audio_dir = app_subdir(AUDIO_DIR_NAME)?;
+    read_file(&audio_dir, music_source)
 }
 
 /// Load the app settings from persistent storage, returning default settings if not found.
-pub async fn load_app_settings() -> Result<AppSettings, String> {
-    let root = app_specific_dir().await?;
-    let Some(settings_bytes) = opfs_read_file(&root, SETTINGS_FILE_NAME).await? else {
+pub fn load_app_settings() -> Result<AppSettings, String> {
+    let root = app_specific_dir()?;
+    let Some(settings_bytes) = read_file(&root, SETTINGS_FILE_NAME)? else {
         return Ok(AppSettings::default());
     };
     let settings_json = String::from_utf8(settings_bytes)
@@ -37,17 +40,17 @@ pub async fn load_app_settings() -> Result<AppSettings, String> {
 }
 
 /// Save the app settings to persistent storage.
-pub async fn save_app_settings(settings: &AppSettings) -> Result<(), String> {
+pub fn save_app_settings(settings: &AppSettings) -> Result<(), String> {
     let settings_json = serde_json::to_string_pretty(settings)
         .map_err(|err| format!("Settings JSON encode failed: {err}"))?;
-    let root = app_specific_dir().await?;
-    opfs_write_file(&root, SETTINGS_FILE_NAME, settings_json.as_bytes()).await
+    let root = app_specific_dir()?;
+    write_file(&root, SETTINGS_FILE_NAME, settings_json.as_bytes())
 }
 
 /// Load the auth session from persistent storage, returning None if not found.
-pub async fn load_auth_session() -> Result<Option<AuthSession>, String> {
-    let root = app_specific_dir().await?;
-    let Some(session_bytes) = opfs_read_file(&root, AUTH_SESSION_FILE_NAME).await? else {
+pub fn load_auth_session() -> Result<Option<AuthSession>, String> {
+    let root = app_specific_dir()?;
+    let Some(session_bytes) = read_file(&root, AUTH_SESSION_FILE_NAME)? else {
         return Ok(None);
     };
     let session_json = String::from_utf8(session_bytes)
@@ -59,95 +62,66 @@ pub async fn load_auth_session() -> Result<Option<AuthSession>, String> {
 }
 
 /// Save the auth session to persistent storage.
-pub async fn save_auth_session(session: &AuthSession) -> Result<(), String> {
+pub fn save_auth_session(session: &AuthSession) -> Result<(), String> {
     let session_json = serde_json::to_string_pretty(session)
         .map_err(|err| format!("Auth session JSON encode failed: {err}"))?;
-    opfs_write_file(
-        &app_specific_dir().await?,
+    write_file(
+        &app_specific_dir()?,
         AUTH_SESSION_FILE_NAME,
         session_json.as_bytes(),
     )
-    .await
 }
 
 /// Clear the auth session from persistent storage.
-pub async fn clear_auth_session() -> Result<(), String> {
-    let _ = app_specific_dir()
-        .await?
-        .remove_entry(AUTH_SESSION_FILE_NAME)
-        .await
-        .map_err(|err| format!("Failed to clear auth session: {:?}", err));
+pub fn clear_auth_session() -> Result<(), String> {
+    let _ = app_specific_dir()?
+        .remove_file(AUTH_SESSION_FILE_NAME)
+        .map_err(|err| format!("Failed to clear auth session: {err}"));
     Ok(())
 }
 
-/// The DirectoryHandle for the app-specific data storage.
+/// The directory for the app-specific data storage.
 /// Uses the `EGAKARETA_STORAGE_ROOT` environment variable in tests.
-async fn app_specific_dir() -> Result<opfs::persistent::DirectoryHandle, String> {
+fn app_specific_dir() -> Result<Directory, String> {
     #[cfg(test)]
     if let Ok(root) = std::env::var("EGAKARETA_STORAGE_ROOT") {
         let path = std::path::PathBuf::from(root);
         std::fs::create_dir_all(&path)
             .map_err(|err| format!("Failed to create storage root: {err}"))?;
-        return Ok(opfs::persistent::DirectoryHandle::from(path));
+        return Directory::new(path).map_err(|err| format!("Failed to open storage root: {err}"));
     }
 
-    opfs::persistent::app_specific_dir()
-        .await
-        .map_err(|err| format!("Failed to get app specific dir: {:?}", err))
+    renfs::app_dir(APP_DIR_NAME).map_err(|err| format!("Failed to get app-specific dir: {err}"))
 }
 
-/// The DirectoryHandle for the specified subdirectory of the `app_specific_dir`, creating it if it doesn't exist.
-async fn opfs_subdir(name: &str) -> Result<opfs::persistent::DirectoryHandle, String> {
-    app_specific_dir()
-        .await?
-        .get_directory_handle_with_options(name, &opfs::GetDirectoryHandleOptions { create: true })
-        .await
-        .map_err(|err| format!("Failed to get subdirectory '{name}': {:?}", err))
+/// Returns the specified subdirectory of the app-specific directory, creating it if needed.
+fn app_subdir(name: &str) -> Result<Directory, String> {
+    let root = app_specific_dir()?;
+    root.create_dir_all(name)
+        .map_err(|err| format!("Failed to create subdirectory '{name}': {err}"))?;
+
+    Directory::new(PathBuf::from(root.as_path()).join(name))
+        .map_err(|err| format!("Failed to open subdirectory '{name}': {err}"))
 }
 
 /// Read the specified file from the given directory, returning None if it doesn't exist.
-async fn opfs_read_file(
-    dir: &opfs::persistent::DirectoryHandle,
-    filename: &str,
-) -> Result<Option<Vec<u8>>, String> {
-    let file = dir
-        .get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: false })
-        .await;
-    let file = match file {
-        Ok(file) => file,
-        Err(_) => return Ok(None),
-    };
+fn read_file(dir: &Directory, filename: &str) -> Result<Option<Vec<u8>>, String> {
+    let exists = dir
+        .exists_sync(filename)
+        .map_err(|err| format!("Failed to check file '{filename}': {err}"))?;
+    if !exists {
+        return Ok(None);
+    }
 
-    file.read()
-        .await
+    dir.read_file_sync(filename)
         .map(Some)
-        .map_err(|err| format!("File read failed: {:?}", err))
+        .map_err(|err| format!("File read failed for '{filename}': {err}"))
 }
 
 /// Write the specified data to the given file in the directory, creating it if it doesn't exist.
-async fn opfs_write_file(
-    dir: &opfs::persistent::DirectoryHandle,
-    filename: &str,
-    data: &[u8],
-) -> Result<(), String> {
-    use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
-
-    let mut file = dir
-        .get_file_handle_with_options(filename, &opfs::GetFileHandleOptions { create: true })
-        .await
-        .map_err(|err| format!("Failed to get file handle '{filename}': {:?}", err))?;
-    let mut writer = file
-        .create_writable_with_options(&opfs::CreateWritableOptions {
-            keep_existing_data: false,
-        })
-        .await
-        .map_err(|err| format!("Failed to create writable for file '{filename}': {:?}", err))?;
-
-    let _ = writer.write_at_cursor_pos(data).await;
-    writer
-        .close()
-        .await
-        .map_err(|err| format!("Failed to close writable for file '{filename}': {:?}", err))
+fn write_file(dir: &Directory, filename: &str, data: &[u8]) -> Result<(), String> {
+    dir.write_file_sync(filename, data)
+        .map_err(|err| format!("File write failed for '{filename}': {err}"))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -184,58 +158,50 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn opfs_root_uses_storage_override() {
+    #[test]
+    fn storage_root_uses_storage_override() {
         let _env = TestEnv::new();
-        let root = app_specific_dir()
-            .await
-            .expect("failed to get app specific dir");
+        let root = app_specific_dir().expect("failed to get app-specific dir");
 
-        opfs_write_file(&root, "probe.txt", b"probe")
-            .await
-            .expect("failed to write probe");
-        let loaded = opfs_read_file(&root, "probe.txt")
-            .await
+        write_file(&root, "probe.txt", b"probe").expect("failed to write probe");
+        let loaded = read_file(&root, "probe.txt")
             .expect("failed to read probe")
             .expect("probe should exist");
 
         assert_eq!(loaded, b"probe");
     }
 
-    #[tokio::test]
-    async fn opfs_subdirectories_are_created() {
+    #[test]
+    fn app_subdirectories_are_created() {
         let _env = TestEnv::new();
-        opfs_subdir(AUDIO_DIR_NAME)
-            .await
-            .expect("audio directory should resolve");
+        let audio_dir = app_subdir(AUDIO_DIR_NAME).expect("audio directory should resolve");
+        assert!(std::path::Path::new(audio_dir.as_path()).is_dir());
     }
 
-    #[tokio::test]
-    async fn test_settings_roundtrip() {
+    #[test]
+    fn test_settings_roundtrip() {
         let _env = TestEnv::new();
 
         let mut settings = AppSettings::default();
         settings.editor_snap_to_grid = !settings.editor_snap_to_grid;
         settings.editor_snap_step = 1.23;
 
-        save_app_settings(&settings)
-            .await
-            .expect("failed to save settings");
-        let loaded = load_app_settings().await.expect("failed to load settings");
+        save_app_settings(&settings).expect("failed to save settings");
+        let loaded = load_app_settings().expect("failed to load settings");
 
         assert_eq!(loaded.editor_snap_to_grid, settings.editor_snap_to_grid);
         assert_eq!(loaded.editor_snap_step, settings.editor_snap_step);
     }
 
-    #[tokio::test]
-    async fn test_load_settings_default_when_missing() {
+    #[test]
+    fn test_load_settings_default_when_missing() {
         let _env = TestEnv::new();
-        let loaded = load_app_settings().await.expect("failed to load settings");
+        let loaded = load_app_settings().expect("failed to load settings");
         assert_eq!(loaded, AppSettings::default());
     }
 
-    #[tokio::test]
-    async fn test_auth_session_roundtrip() {
+    #[test]
+    fn test_auth_session_roundtrip() {
         let _env = TestEnv::new();
         let session = eg_types::AuthSession {
             session: eg_types::AuthSessionTokens {
@@ -256,55 +222,41 @@ mod tests {
             }),
         };
 
-        save_auth_session(&session)
-            .await
-            .expect("failed to save auth session");
-        let loaded = load_auth_session()
-            .await
-            .expect("failed to load auth session");
+        save_auth_session(&session).expect("failed to save auth session");
+        let loaded = load_auth_session().expect("failed to load auth session");
         assert_eq!(loaded, Some(session));
 
-        clear_auth_session()
-            .await
-            .expect("failed to clear auth session");
-        let cleared = load_auth_session()
-            .await
-            .expect("failed to load cleared auth session");
+        clear_auth_session().expect("failed to clear auth session");
+        let cleared = load_auth_session().expect("failed to load cleared auth session");
         assert_eq!(cleared, None);
     }
 
-    #[tokio::test]
-    async fn test_audio_roundtrip() {
+    #[test]
+    fn test_audio_roundtrip() {
         let _env = TestEnv::new();
 
         let data1 = b"audio1-content";
 
-        save_audio("test1.ogg", data1)
-            .await
-            .expect("failed to save audio 1");
+        save_audio("test1.ogg", data1).expect("failed to save audio 1");
 
-        let read = read_editor_music_bytes("test1.ogg")
-            .await
-            .expect("failed to read audio");
+        let read = read_editor_music_bytes("test1.ogg").expect("failed to read audio");
 
         assert_eq!(read, Some(data1.to_vec()));
     }
 
-    #[tokio::test]
-    async fn test_read_music_bytes_builtin_fallback() {
+    #[test]
+    fn test_read_music_bytes_builtin_fallback() {
         let _env = TestEnv::new();
 
         // Should return None for unknown builtin and unknown user audio
-        let read = read_editor_music_bytes("missing.ogg")
-            .await
-            .expect("unexpected error");
+        let read = read_editor_music_bytes("missing.ogg").expect("unexpected error");
 
         assert!(read.is_none());
 
         // Save to user audio and check fallback
         let data = b"user-audio";
-        save_audio("user.ogg", data).await.unwrap();
-        let read = read_editor_music_bytes("user.ogg").await.unwrap();
+        save_audio("user.ogg", data).unwrap();
+        let read = read_editor_music_bytes("user.ogg").unwrap();
         assert_eq!(read, Some(data.to_vec()));
     }
 }

@@ -325,12 +325,10 @@ fn persist_level_progress(world: &mut World, progress: PlayerLevelProgress) {
     };
 
     #[cfg(not(test))]
-    if let Some(settings) = settings_to_persist {
-        eg_platform::task::spawn_background(async move {
-            if let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings).await {
-                log::warn!("Failed to persist gameplay progress: {error}");
-            }
-        });
+    if let Some(settings) = settings_to_persist
+        && let Err(error) = eg_platform::io::save_app_settings_to_storage(&settings)
+    {
+        log::warn!("Failed to persist gameplay progress: {error}");
     }
     #[cfg(test)]
     let _ = settings_to_persist;

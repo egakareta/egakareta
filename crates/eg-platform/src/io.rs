@@ -79,13 +79,13 @@ pub async fn pick_level_file() -> Option<Vec<u8>> {
     }
 }
 
-pub async fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
+pub fn save_audio_to_storage(filename: &str, data: &[u8]) -> Result<(), String> {
     #[cfg(test)]
     if let Some(result) = crate::test_hooks::save_audio_result() {
         return result;
     }
 
-    storage::save_audio(filename, data).await
+    storage::save_audio(filename, data)
 }
 
 pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
@@ -94,28 +94,27 @@ pub fn read_editor_music_bytes(music_source: &str) -> Option<Vec<u8>> {
         return result;
     }
 
-    // TODO: Avoid block_on here
-    pollster::block_on(storage::read_editor_music_bytes(music_source))
+    storage::read_editor_music_bytes(music_source)
         .ok()
         .flatten()
 }
 
-pub async fn load_app_settings_from_storage() -> Result<AppSettings, String> {
+pub fn load_app_settings_from_storage() -> Result<AppSettings, String> {
     #[cfg(test)]
     if let Some(result) = crate::test_hooks::load_settings_result() {
         return result;
     }
 
-    storage::load_app_settings().await
+    storage::load_app_settings()
 }
 
-pub async fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), String> {
+pub fn save_app_settings_to_storage(settings: &AppSettings) -> Result<(), String> {
     #[cfg(test)]
     if let Some(result) = crate::test_hooks::save_settings_result() {
         return result;
     }
 
-    storage::save_app_settings(settings).await
+    storage::save_app_settings(settings)
 }
 
 #[cfg(test)]
@@ -177,7 +176,7 @@ mod tests {
             hooks.save_audio_result = Some(Ok(()));
         });
 
-        let result = save_audio_to_storage("music.ogg", b"audio-bytes").await;
+        let result = save_audio_to_storage("music.ogg", b"audio-bytes");
         assert!(result.is_ok(), "save should return the delegated success");
     }
 
@@ -189,7 +188,7 @@ mod tests {
             hooks.save_audio_result = Some(Err("disk full".to_string()));
         });
 
-        let result = save_audio_to_storage("music.ogg", b"audio-bytes").await;
+        let result = save_audio_to_storage("music.ogg", b"audio-bytes");
         assert_eq!(result, Err("disk full".to_string()));
     }
 
@@ -207,10 +206,10 @@ mod tests {
             hooks.load_settings_result = Some(Ok(expected.clone()));
         });
 
-        let save_result = save_app_settings_to_storage(&settings).await;
+        let save_result = save_app_settings_to_storage(&settings);
         assert_eq!(save_result, Ok(()));
 
-        let loaded = load_app_settings_from_storage().await;
+        let loaded = load_app_settings_from_storage();
         assert_eq!(loaded, Ok(settings));
     }
 
@@ -223,7 +222,7 @@ mod tests {
                 Some(Err("Settings JSON parse failed: invalid JSON".into()));
         });
 
-        let result = load_app_settings_from_storage().await;
+        let result = load_app_settings_from_storage();
         assert!(
             matches!(&result, Err(error) if error.contains("Settings JSON parse failed")),
             "expected delegated parse error, got: {result:?}"

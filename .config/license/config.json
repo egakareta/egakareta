@@ -5,6 +5,7 @@
         ".agents/**",
         ".wrangler/**",
         "assets/**",
+        "web/zenfs.js",
         "supabase/**",
         "**/lcov.info",
         "**/*.md",

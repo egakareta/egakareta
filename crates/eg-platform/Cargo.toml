@@ -18,8 +18,8 @@ futures = { workspace = true }
 log = { workspace = true }
 pollster = { workspace = true }
 rayon = { workspace = true }
+renfs = { workspace = true }
 rfd = { workspace = true }
-opfs = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }

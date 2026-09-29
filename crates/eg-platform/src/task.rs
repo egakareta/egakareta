@@ -23,14 +23,10 @@ mod native_runtime {
 
     /// Shared current-thread Tokio runtime driven on a dedicated OS thread.
     ///
-    /// `spawn_background` futures transitively use `tokio::fs` (via the
-    /// `opfs` native backend), which requires an ambient Tokio reactor.
-    /// Running them with `pollster::block_on` on a bare `std::thread::spawn`
-    /// thread provides no reactor, so `tokio::fs` panics with "there is no
-    /// reactor running". To keep the workspace `tokio` feature set minimal
-    /// (`rt` + `macros`, no `rt-multi-thread`), we build a current-thread
-    /// runtime and drive it forever on a dedicated driver thread; tasks are
-    /// spawned onto it via the cloned [`Handle`] from any caller thread.
+    /// Background platform work runs on a shared current-thread runtime so it
+    /// can progress independently of the thread that requested it. The runtime
+    /// is driven on a dedicated OS thread and tasks are spawned through its
+    /// cloned [`Handle`] from any caller thread.
     fn handle() -> &'static Handle {
         static HANDLE: OnceLock<Handle> = OnceLock::new();
         HANDLE.get_or_init(|| {

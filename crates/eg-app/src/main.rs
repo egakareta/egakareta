@@ -11,7 +11,7 @@
 )]
 
 #[cfg(not(target_arch = "wasm32"))]
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     egakareta_lib::run_native_app();
 }
