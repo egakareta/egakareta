@@ -20,48 +20,57 @@ supabase = "latest"
 [hooks]
 postinstall = ["bun install", "lefthook install"]
 
-# Build
 [tasks.build]
+description = "Build game for the web (pass --dev for faster builds)"
 run = "bun scripts/build.ts"
 
 [tasks.vendor]
+description = "Re-download vendored dependencies"
 run = "renfs web/zenfs.js"
 
-# Benchmark
 [tasks."bench"]
+description = "Run .rs benchmarks"
 run = "cargo bench --workspace --benches --features benchmarks"
 
-# Check
 [tasks.check]
+description = "Run all linting and formatting checks"
 run = "mise lint && mise format:cargo --check && mise format:oxfmt --check"
 
 [tasks.format]
+description = "Format .rs/.toml/.yml"
 depends = ["format:cargo", "format:oxfmt"]
 
 [tasks."format:cargo"]
+description = "Format .rs"
 run = "cargo fmt --all -- --config-path .config/rustfmt.toml"
 
 [tasks."format:oxfmt"]
+description = "Format .toml/.yml"
 run = "oxfmt"
 
 [tasks.lint]
+description = "Lint .rs"
 run = "cargo clippy --all-targets --all-features --workspace -- -D warnings"
 
 # Typegen
 [tasks."cf-typegen"]
+description = "Regenerate Cloudflare type definitions"
 run = "bunx wrangler types --strict-vars=false --env-interface CloudflareEnv functions/cloudflare-env.d.ts"
 
 [tasks."sb-ts-typegen"]
+description = "Regenerate Supabase TypeScript definitions"
 run = "supabase gen types typescript --local > functions/_supabase_types.ts"
 
 [tasks.typegen]
+description = "Regenerate all type definitions"
 depends = ["cf-typegen", "sb-ts-typegen"]
 
-# Test
 [tasks.test]
+description = "Run .rs tests"
 run = "cargo test --workspace -- -Zunstable-options --format=terse"
 
 [tasks."test:coverage"]
+description = "Run .rs tests with coverage"
 run = """
 cargo llvm-cov --workspace --no-report -- -Zunstable-options --report-time
 cargo llvm-cov report --lcov --output-path lcov.info
@@ -69,23 +78,29 @@ cargo llvm-cov report
 """
 
 [tasks."test:functions"]
+description = "Run Cloudflare Pages tests"
 run = "bunx vitest run --config .config/vitest.config.mts"
 
 [tasks."test:db"]
+description = "Run Supabase tests"
 run = "supabase test db"
 
 # License
 [tasks."license:add"]
+description = "Add license headers to project files"
 run = "license-check-and-add add -f .config/license/config.json"
 
 [tasks."license:check"]
+description = "Check license headers existence in project files"
 run = "license-check-and-add check -f .config/license/config.json"
 
 # Development
 [tasks.dev]
+description = "Continuously watch for changes to build for the web"
 run = "bun scripts/dev.ts"
 
 [tasks."dev:setup"]
+description = "Set up the development environment for the first time"
 run = """
 supabase start
 until supabase status; do sleep 2; done
