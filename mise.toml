@@ -22,6 +22,7 @@ postinstall = ["bun install", "lefthook install"]
 
 [tasks.build]
 description = "Build game for the web (pass --dev for faster builds)"
+depends = ["test:build"]
 run = "bun scripts/build.ts"
 
 [tasks.vendor]
@@ -68,6 +69,10 @@ depends = ["cf-typegen", "sb-ts-typegen"]
 [tasks.test]
 description = "Run .rs tests"
 run = "cargo test --workspace -- -Zunstable-options --format=terse"
+
+[tasks."test:build"]
+description = "Run web build script tests"
+run = "bun test scripts/*.test.ts"
 
 [tasks."test:coverage"]
 description = "Run .rs tests with coverage"

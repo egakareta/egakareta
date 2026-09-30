@@ -167,8 +167,12 @@ See LICENSE and COMMERCIAL.md for details.
         <canvas id="gameCanvas"></canvas>
 
         <script type="module">
-            import { configure } from "@zenfs/core";
+            import * as zenfs from "@zenfs/core";
             import { WebAccess } from "@zenfs/dom";
+
+            // The generated WASM glue binds this namespace on the page only.
+            // Audio/compute realms must not import the browser-only FS loader.
+            globalThis.__ZENFS = zenfs;
 
             console.log("modulescript loaded");
             window.__LAUNCH_READY = false;
@@ -339,7 +343,7 @@ See LICENSE and COMMERCIAL.md for details.
             const init_wasm = async () => {
                 try {
                     console.log("configuring ZenFS with OPFS");
-                    await configure({
+                    await zenfs.configure({
                         mounts: {
                             "/": {
                                 backend: WebAccess,

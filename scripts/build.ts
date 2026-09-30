@@ -11,6 +11,8 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 
+import { resolveWasmGlueImports } from "./wasm-imports";
+
 const WASM_ATOMICS_WARNING_LINES = [
     "warning: unstable feature specified for `-Ctarget-feature`: `atomics`",
     "  |",
@@ -174,6 +176,14 @@ async function createDist() {
         console.error(`Failed to move pkg folder: ${err}`);
         return;
     }
+
+    // The glue is also imported in AudioWorklets and workers, which must not
+    // initialize the page's browser-only filesystem loader.
+    const gluePath = path.join(distPath, "pkg", "egakareta_lib.js");
+    fs.writeFileSync(
+        gluePath,
+        resolveWasmGlueImports(fs.readFileSync(gluePath, "utf8")),
+    );
 
     // Copy assets folder to dist
     const assetsSrcPath = path.join(rootDir, "assets");
