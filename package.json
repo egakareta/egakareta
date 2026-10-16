@@ -4,15 +4,15 @@
         "cloudflare": "curl -fsSL https://mise.run | sh && export PATH=\"$HOME/.local/bin:$PATH\" && mkdir -p /tmp/mise-system && : > /tmp/mise-global.toml && export MISE_GLOBAL_CONFIG_FILE=/tmp/mise-global.toml && export MISE_SYSTEM_CONFIG_DIR=/tmp/mise-system && export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=none && export MISE_CEILING_PATHS=\"$HOME\" && unset MISE_DART_SASS_EMBEDDED_VERSION && mise config ls && mise install && mise run build"
     },
     "dependencies": {
-        "@supabase/supabase-js": "^2.112.3"
+        "@supabase/supabase-js": "^2.117.3"
     },
     "devDependencies": {
-        "@cloudflare/vitest-pool-workers": "^0.22.0",
+        "@cloudflare/vitest-pool-workers": "^0.23.0",
         "@types/bun": "latest",
-        "@vitest/coverage-istanbul": "4.1.11",
+        "@vitest/coverage-istanbul": "5.0.4",
         "nodemon": "^3.1.14",
-        "vitest": "^4.1.11",
+        "vitest": "^5.0.4",
         "wasm-pack": "^0.15.0",
-        "wrangler": "^4.125.0"
+        "wrangler": "^4.149.0"
     }
 }
