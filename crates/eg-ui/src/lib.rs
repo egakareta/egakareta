@@ -18,6 +18,12 @@ pub(crate) mod menu;
 pub(crate) mod modes;
 pub mod plugin;
 
+#[cfg(test)]
+fn run_test_ui(ctx: &egui::Context, input: egui::RawInput, show: impl FnMut(&mut egui::Ui)) {
+    let mut output = ctx.run_ui(input, show);
+    output.textures_delta.clear();
+}
+
 use std::collections::{BTreeMap, HashMap};
 
 use bevy_ecs::world::World;
@@ -404,7 +410,7 @@ fn show_editor_context_menu(
         can_undo,
         can_redo,
     } = inputs;
-    let menu_id = egui::Id::new("editor_canvas_context_menu_position");
+    let menu_id = egui::Id::unique("editor_canvas_context_menu_position");
     let secondary_clicked = ctx.input(|input| input.pointer.secondary_clicked());
     let mut opened_this_frame = false;
     if secondary_clicked
@@ -437,7 +443,7 @@ fn show_editor_context_menu(
         if h.is_empty() { None } else { Some(h) }
     };
 
-    let response = egui::Area::new("editor_canvas_context_menu".into())
+    let response = egui::Area::new(egui::Id::unique("editor_canvas_context_menu"))
         .order(egui::Order::Foreground)
         .fixed_pos(menu_position)
         .show(ctx, |ui| {
@@ -700,7 +706,7 @@ fn show_settings_sidebar_area(
     let viewport_height = ctx.content_rect().height();
     let sidebar_width = settings_sidebar_default_width(viewport_width);
 
-    egui::Area::new("editor_settings_sidebar_overlay".into())
+    egui::Area::new(egui::Id::unique("editor_settings_sidebar_overlay"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -1114,7 +1120,7 @@ pub fn show_editor_ui(
         ui_input_blocking_rects.push(rect_to_input_bounds(settings_response.response.rect));
     }
 
-    let top_bar_response = egui::Area::new("editor_top_bar".into())
+    let top_bar_response = egui::Area::new(egui::Id::unique("editor_top_bar"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -1390,7 +1396,7 @@ pub fn show_editor_ui(
     // Floating place window with block catalog
     if show_place_window {
         let mut place_open = true;
-        let place_category_id = egui::Id::new("editor_place_block_catalog_category");
+        let place_category_id = egui::Id::unique("editor_place_block_catalog_category");
         let mut selected_place_category = ctx.data_mut(|data| {
             data.get_persisted::<Option<BlockCategory>>(place_category_id)
                 .unwrap_or_default()
@@ -1471,7 +1477,7 @@ pub fn show_editor_ui(
         }
     }
 
-    let bottom_bar_response = egui::Area::new("block_selection_bar".into())
+    let bottom_bar_response = egui::Area::new(egui::Id::unique("block_selection_bar"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::LEFT_BOTTOM, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -1530,7 +1536,7 @@ pub fn show_editor_ui(
     // Massive plus button in compose tab, bottom-right above the bottom bar
     if is_compose {
         let bottom_bar_height = bottom_bar_response.response.rect.height();
-        egui::Area::new("place_button_area".into())
+        egui::Area::new(egui::Id::unique("place_button_area"))
             .anchor(
                 egui::Align2::RIGHT_BOTTOM,
                 egui::Vec2::new(-12.0, -12.0 - bottom_bar_height),
@@ -1603,7 +1609,7 @@ pub fn show_editor_ui(
     // Waveform visualization central panel (Timing mode only)
     if is_timing {
         let viewport = ctx.content_rect();
-        egui::Area::new("timing_waveform_panel".into())
+        egui::Area::new(egui::Id::unique("timing_waveform_panel"))
             .order(egui::Order::Background)
             .fixed_pos(viewport.min)
             .show(ctx, |ui| {
@@ -1651,7 +1657,7 @@ pub fn show_editor_ui(
         let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(25, 153, 255));
         let layer = egui::LayerId::new(
             egui::Order::Foreground,
-            egui::Id::new("editor_marquee_overlay"),
+            egui::Id::unique("editor_marquee_overlay"),
         );
         ctx.layer_painter(layer).rect(
             rect,
@@ -2002,7 +2008,7 @@ fn show_view_selector_cube(
         rounded
     }
 
-    let response = egui::Area::new("editor_view_selector_cube".into())
+    let response = egui::Area::new(egui::Id::unique("editor_view_selector_cube"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-14.0, 52.0))
         .show(ctx, |ui| {
@@ -2285,7 +2291,7 @@ mod tests {
         let ctx = egui::Context::default();
         let block_icon_texture_ids = std::collections::HashMap::new();
         let editor_config = EditorConfigState::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
             let mut commands = Vec::new();
             let app_settings = AppSettings::default();
@@ -2589,7 +2595,7 @@ mod tests {
     #[test]
     fn show_perf_overlay_renders_outside_editor() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             let ctx = root_ui.ctx();
             let mut commands = Vec::new();
             show_perf_overlay(ctx, true, "", "", 60.0, false, &mut commands);

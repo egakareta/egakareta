@@ -647,7 +647,7 @@ mod tests {
         let mut clicked_without_texture = true;
         let mut clicked_with_texture = true;
 
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show(root_ui, |ui| {
                 clicked_without_texture = show_block_preview_button(ui, block, None);
                 clicked_with_texture =
@@ -664,7 +664,7 @@ mod tests {
         let config = EditorConfigState::default();
         let ctx = egui::Context::default();
 
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_place_block_properties_window(
                 &ctx,
                 EditorMode::Place,
@@ -708,7 +708,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_selected_block_properties_window(
                 &ctx,
                 EditorMode::Select,

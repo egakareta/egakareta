@@ -1056,7 +1056,7 @@ mod tests {
     ) {
         let target = match std::mem::take(&mut *next) {
             bevy_state::prelude::NextState::Pending(target)
-            | bevy_state::prelude::NextState::PendingIfNeq(target) => Some(target),
+            | bevy_state::prelude::NextState::PendingIfDifferent(target) => Some(target),
             bevy_state::prelude::NextState::Unchanged => None,
         };
         if let Some(target) = target {

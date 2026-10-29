@@ -561,10 +561,12 @@ fn run_egui_ui_system(world: &mut World) {
         let gpu = world.non_send::<RenderGpuRes>();
         (gpu.0.device.clone(), gpu.0.queue.clone())
     };
-    for (id, image_delta) in &full_output.textures_delta.set {
-        render
-            .renderer
-            .update_texture(&device, &queue, *id, image_delta);
+    for (id, image_deltas) in &full_output.textures_delta.set {
+        for image_delta in image_deltas {
+            render
+                .renderer
+                .update_texture(&device, &queue, *id, image_delta);
+        }
     }
     render.paint_jobs = paint_jobs;
     render.screen_descriptor = screen_descriptor;
@@ -612,7 +614,26 @@ impl Runtime {
                 .entry(egui::FontFamily::Monospace)
                 .or_default()
                 .insert(0, "sora".to_owned());
-            egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            let phosphor_name = "phosphor".to_owned();
+            fonts.font_data.insert(
+                phosphor_name.clone(),
+                std::sync::Arc::new(egui::FontData::from_static(
+                    egui_phosphor::Variant::Regular.font_bytes(),
+                )),
+            );
+            let mut phosphor_family = fonts
+                .families
+                .get(&egui::FontFamily::Proportional)
+                .cloned()
+                .unwrap_or_default();
+            phosphor_family.insert(phosphor_family.len().min(1), phosphor_name.clone());
+            fonts.families.insert(
+                egui::FontFamily::Name(phosphor_name.into()),
+                phosphor_family,
+            );
+            if let Some(font_keys) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                font_keys.insert(font_keys.len().min(1), "phosphor".to_owned());
+            }
             egui_ctx.set_fonts(fonts);
         }
 
@@ -736,13 +757,13 @@ impl Runtime {
             app.update();
         }
         #[cfg(test)]
-        let full_output = {
+        let mut full_output = {
             let output = egui_ctx.run_ui(raw_input, |_| {});
             app.update();
             output
         };
         #[cfg(not(test))]
-        let full_output = app
+        let mut full_output = app
             .world_mut()
             .remove_non_send::<EguiFrameOutputRes>()
             .expect("EguiFrameOutputRes must be produced during App update")
@@ -763,6 +784,7 @@ impl Runtime {
                 render.renderer.free_texture(id);
             }
         }
+        full_output.textures_delta.clear();
         full_output
     }
 

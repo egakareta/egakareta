@@ -42,13 +42,13 @@ license = "AGPL-3.0-only"
 [workspace.dependencies]
 approx = "0.5.1"
 async-trait = "0.1.92"
-bevy_app = "0.19.1"
-bevy_clipboard = "0.19.1"
-bevy_ecs = "0.19.1"
-bevy_egui = "0.42.0"
-bevy_state = "0.19.1"
-bevy_tasks = "0.19.1"
-bevy_time = "0.19.1"
+bevy_app = "0.20.1"
+bevy_clipboard = "0.20.1"
+bevy_ecs = "0.20.1"
+bevy_egui = "0.43.1"
+bevy_state = "0.20.1"
+bevy_tasks = "0.20.1"
+bevy_time = "0.20.1"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.1.0"
@@ -68,24 +68,24 @@ eg-render = { path = "crates/eg-render" }
 eg-state = { path = "crates/eg-state" }
 eg-types = { path = "crates/eg-types" }
 eg-ui = { path = "crates/eg-ui" }
-egui = "0.35.0"
-egui-phosphor = "0.13.0"
-egui-wgpu = "0.35.0"
-egui-winit = { version = "0.35.0", default-features = false, features = [
+egui = "0.37.0"
+egui-phosphor = "0.14.0"
+egui-wgpu = "0.37.0"
+egui-winit = { version = "0.37.0", default-features = false, features = [
     "links",
     "wayland",
     "x11",
 ] }
 env_logger = "0.11.11"
-euphorium = { version = "0.5.0", default-features = false, features = [
+euphorium = { version = "0.6.1", default-features = false, features = [
     "mp3",
     "nightly",
     "vorbis",
     "wav",
 ] }
 futures = "0.3.34"
-glam = { version = "0.33.5", features = ["bytemuck"] }
-gloo-console = "0.4.0"
+glam = { version = "0.34.1", features = ["bytemuck"] }
+gloo-console = "0.4.1"
 gloo-file = "0.4.0"
 gloo-net = "0.7.0"
 gloo-utils = "0.3.0"
@@ -94,17 +94,17 @@ image = { version = "0.25.10", default-features = false, features = [
     "png",
 ] }
 include_dir = "0.7.4"
-js-sys = "0.3.104"
-log = "0.4.33"
-naga = { version = "29.0.4", features = ["wgsl-in"] }
-parking_lot_core = { version = "0.9.12", features = ["nightly"] }
+js-sys = "0.3.106"
+log = "0.4.34"
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+parking_lot_core = { version = "0.10.0", features = ["nightly"] }
 paste = "1.0.15"
 pollster = "1.0.1"
-puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
-puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b" }
+puffin = { git = "https://github.com/EmbarkStudios/puffin", rev = "39c8970abd6a95871bcaf0d3581c494885f2edd5" }
+puffin_egui = { git = "https://github.com/EmbarkStudios/puffin", rev = "39c8970abd6a95871bcaf0d3581c494885f2edd5" }
 rayon = "1.12.0"
-renfs = { version = "0.1.0", default-features = false }
-reqwest = { version = "0.13.4", default-features = false, features = [
+renfs = { version = "0.3.1", default-features = false }
+reqwest = { version = "0.13.5", default-features = false, features = [
     "blocking",
     "json",
     "rustls",
@@ -112,16 +112,16 @@ reqwest = { version = "0.13.4", default-features = false, features = [
 rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_cbor = "0.11.2"
-serde_json = "1.0.151"
-sha2 = "0.11.0"
+serde_json = "1.0.154"
+sha2 = "0.11.1"
 smart-default = "0.7.1"
 smart-is-default = "0.2.0"
 tempfile = "3.27.0"
-tokio = { version = "1.53.1", features = ["macros", "rt"] }
-wasm-bindgen = "0.2.128"
-wasm-bindgen-futures = "0.4.77"
+tokio = { version = "1.54.1", features = ["macros", "rt"] }
+wasm-bindgen = "0.2.129"
+wasm-bindgen-futures = "0.4.79"
 wasm-bindgen-rayon = "1.3.0"
-web-sys = { version = "0.3.104", features = [
+web-sys = { version = "0.3.106", features = [
     "Clipboard",
     "Document",
     "Element",
@@ -132,11 +132,11 @@ web-sys = { version = "0.3.104", features = [
     "Window",
 ] }
 web-time = "1.1.0"
-wgpu = { version = "29.0.4", features = ["webgl", "webgpu"] }
+wgpu = { version = "30.0.1", features = ["webgl", "webgpu"] }
 winit = "0.30.13"
-winresource = "0.1.31"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-zstd = "0.13.3"
+winresource = "0.1.34"
+zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
+zstd = "0.14.3"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

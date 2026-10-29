@@ -272,7 +272,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show(root_ui, |ui| {
                 show_timing_mode_bottom_panel(
                     ui,
@@ -300,7 +300,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show(root_ui, |ui| {
                 show_timing_mode_bottom_panel(
                     ui,

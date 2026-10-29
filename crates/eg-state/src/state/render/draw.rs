@@ -277,7 +277,7 @@ impl RenderContext<'_> {
         }
         {
             puffin::profile_scope!("SurfacePresent");
-            output.present();
+            self.render_gpu().queue.present(output);
         }
         Ok(())
     }

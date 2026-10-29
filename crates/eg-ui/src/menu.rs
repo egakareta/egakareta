@@ -150,7 +150,7 @@ pub fn show_menu_favicon_ui(
     let level_name = menu_level_name.unwrap_or("No Level Selected");
     let max_width = (ctx.content_rect().width() - MENU_LEVEL_TITLE_MAX_WIDTH_PADDING).max(1.0);
 
-    egui::Area::new("menu_favicon_area".into())
+    egui::Area::new(egui::Id::unique("menu_favicon_area"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 44.0))
         .interactable(false)
@@ -199,7 +199,7 @@ pub fn show_menu_play_ui(
     let padding = egui::vec2(24.0, 16.0);
     let offset_y = 40.0;
 
-    egui::Area::new("menu_play_area".into())
+    egui::Area::new(egui::Id::unique("menu_play_area"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, offset_y))
         .show(ctx, |ui| {
@@ -331,7 +331,7 @@ pub fn show_pause_menu_ui(
     let screen_rect = ctx.content_rect();
     let painter = ctx.layer_painter(egui::LayerId::new(
         egui::Order::Middle,
-        "pause_menu_scrim".into(),
+        egui::Id::unique("pause_menu_scrim"),
     ));
     painter.rect_filled(
         screen_rect,
@@ -342,7 +342,7 @@ pub fn show_pause_menu_ui(
         + PAUSE_MENU_PLAY_BUTTON_SIZE
         + PAUSE_MENU_BUTTON_SPACING * 2.0;
 
-    egui::Area::new("pause_menu_controls".into())
+    egui::Area::new(egui::Id::unique("pause_menu_controls"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
@@ -438,7 +438,7 @@ pub fn show_practice_checkpoint_ui(
     let mut place_checkpoint = false;
     let mut remove_checkpoint = false;
 
-    egui::Area::new("practice_checkpoint_area".into())
+    egui::Area::new(egui::Id::unique("practice_checkpoint_area"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -24.0))
         .show(ctx, |ui| {
@@ -669,7 +669,7 @@ pub fn show_menu_topbar_ui(
 
     let ctx = root_ui.ctx().clone();
 
-    egui::Area::new("menu_top_bar".into())
+    egui::Area::new(egui::Id::unique("menu_top_bar"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
         .show(&ctx, |ui| {
@@ -741,7 +741,7 @@ pub fn show_menu_topbar_ui(
         });
 
     if let Some(message) = auth_message {
-        egui::Area::new("menu_auth_message_area".into())
+        egui::Area::new(egui::Id::unique("menu_auth_message_area"))
             .order(egui::Order::Foreground)
             .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-10.0, 42.0))
             .show(&ctx, |ui| {
@@ -786,7 +786,7 @@ mod tests {
         let app_settings = AppSettings::default();
         let ctx = egui::Context::default();
         let mut commands = Vec::new();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             show_menu_topbar_ui(
                 root_ui,
                 true,

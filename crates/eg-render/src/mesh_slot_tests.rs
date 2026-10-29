@@ -28,6 +28,7 @@ fn test_device_queue() -> (&'static wgpu::Device, &'static wgpu::Queue) {
                     power_preference: wgpu::PowerPreference::default(),
                     compatible_surface: None,
                     force_fallback_adapter: false,
+                    ..Default::default()
                 })
                 .await
                 .expect("expected a test GPU adapter");

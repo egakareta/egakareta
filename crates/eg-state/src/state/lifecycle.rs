@@ -411,6 +411,7 @@ impl AppInitialization {
                 power_preference: wgpu::PowerPreference::default(),
                 compatible_surface: surface.as_ref(),
                 force_fallback_adapter: false,
+                ..Default::default()
             })
             .await
             .ok()
@@ -421,6 +422,7 @@ impl AppInitialization {
                     power_preference: wgpu::PowerPreference::default(),
                     compatible_surface: surface.as_ref(),
                     force_fallback_adapter: true,
+                    ..Default::default()
                 })
                 .await
                 .ok(),
@@ -463,6 +465,7 @@ impl AppInitialization {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
+            color_space: wgpu::SurfaceColorSpace::Auto,
             width: size.width,
             height: size.height,
             present_mode: surface_capabilities
@@ -787,7 +790,7 @@ impl AppInitialization {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
+                buffers: &[Some(Vertex::desc())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -820,7 +823,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_instanced"),
-                    buffers: &[Vertex::desc(), BlockInstance::desc()],
+                    buffers: &[Some(Vertex::desc()), Some(BlockInstance::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -852,7 +855,7 @@ impl AppInitialization {
             vertex: wgpu::VertexState {
                 module: &grid_shader,
                 entry_point: Some("vs_grid"),
-                buffers: &[Vertex::desc()],
+                buffers: &[Some(Vertex::desc())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -878,7 +881,7 @@ impl AppInitialization {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
+                buffers: &[Some(Vertex::desc())],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -915,7 +918,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -942,7 +945,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -975,7 +978,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1002,7 +1005,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1029,7 +1032,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -1056,7 +1059,7 @@ impl AppInitialization {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Vertex::desc()],
+                    buffers: &[Some(Vertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
                 fragment: Some(wgpu::FragmentState {

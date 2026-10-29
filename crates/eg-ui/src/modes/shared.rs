@@ -31,7 +31,7 @@ impl EditorPropertyPopup {
         bottom_bar_height: f32,
     ) -> Self {
         Self {
-            id: egui::Id::new(id_source),
+            id: egui::Id::unique(id_source),
             anchor: egui::Align2::LEFT_BOTTOM,
             offset: egui::Vec2::new(
                 PROPERTY_POPUP_MARGIN,
@@ -47,7 +47,7 @@ impl EditorPropertyPopup {
         top_bar_height: f32,
     ) -> Self {
         Self {
-            id: egui::Id::new(id_source),
+            id: egui::Id::unique(id_source),
             anchor: egui::Align2::LEFT_TOP,
             offset: egui::Vec2::new(
                 PROPERTY_POPUP_MARGIN,
@@ -63,7 +63,7 @@ impl EditorPropertyPopup {
         top_bar_height: f32,
     ) -> Self {
         Self {
-            id: egui::Id::new(id_source),
+            id: egui::Id::unique(id_source),
             anchor: egui::Align2::LEFT_TOP,
             offset: egui::Vec2::new(
                 PROPERTY_POPUP_MARGIN + MODE_SELECTOR_WIDTH + PROPERTY_POPUP_MARGIN,
@@ -293,7 +293,7 @@ mod tests {
 
         let ctx = egui::Context::default();
         let mut rendered = false;
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_editor_property_popup(&ctx, popup, |ui| {
                 rendered = true;
                 ui.label("Property popup");
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn show_player_camera_status_row_renders_for_forward_and_right_directions() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |root_ui| {
             egui::CentralPanel::default().show(root_ui, |ui| {
                 show_player_camera_status_row(
                     ui,
@@ -332,7 +332,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_mode_selector_popup(
                 &ctx,
                 &app_settings,
@@ -352,7 +352,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_mode_selector_popup(
                 &ctx,
                 &app_settings,
@@ -370,7 +370,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_mode_selector_popup(
                 &ctx,
                 &app_settings,
@@ -388,7 +388,7 @@ mod tests {
         let mut commands = Vec::<AppCommand>::new();
 
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |_root_ui| {
+        crate::run_test_ui(&ctx, egui::RawInput::default(), |_root_ui| {
             show_mode_selector_popup(
                 &ctx,
                 &app_settings,
