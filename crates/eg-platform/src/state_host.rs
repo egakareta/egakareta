@@ -76,7 +76,14 @@ impl SurfaceHost {
     ) {
         let size = PhysicalSize::new(window.inner_size().width, window.inner_size().height);
 
-        let instance = wgpu::Instance::default();
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            flags: wgpu::InstanceFlags::default()
+                | wgpu::InstanceFlags::ALLOW_UNDERLYING_NONCOMPLIANT_ADAPTER,
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
+        });
         let surface = instance
             .create_surface(window.clone())
             .expect("Failed to create surface");
