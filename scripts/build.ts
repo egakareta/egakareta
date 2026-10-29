@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import url from "url";
 
+import { createCustomBindgenPatchOutputFilter } from "./custom-bindgen-output";
 import { resolveWasmGlueImports } from "./wasm-imports";
 
 const WASM_ATOMICS_WARNING_LINES = [
@@ -35,20 +36,37 @@ if (!fs.existsSync(distPath)) {
 
 fs.cpSync(path.join(rootDir, "web"), path.join(distPath), { recursive: true });
 
+// Use an optimized version of wasm-bindgen that can process ~4x faster.
+// This is generally not worth it in release builds.
+if (process.env.CUSTOM_BINDGEN) {
+    const { binary, checkout } = await (
+        await import("./wasm-bindgen.ts")
+    ).getBinary();
+    process.argv.push(
+        "--mode",
+        "no-install",
+        "--",
+        "--config",
+        `patch.crates-io.js-sys.path="${path.resolve(checkout, "crates", "js-sys")}"`,
+        "--config",
+        `patch.crates-io.wasm-bindgen.path="${path.resolve(checkout)}"`,
+    );
+    process.env.PATH = [path.dirname(binary), process.env.PATH]
+        .filter(Boolean)
+        .join(path.delimiter);
+}
+
 // Build the WASM package using wasm-pack
-const startTime = Date.now();
 const proc = Bun.spawn(
     [
         "bunx",
         "wasm-pack",
-        "--log-level",
-        "warn",
         "build",
         ".",
         "-t",
         "web",
         "-d",
-        "../../target/pkg",
+        "target/pkg",
         ...process.argv.slice(2),
     ],
     {
@@ -82,7 +100,6 @@ process.on("SIGTERM", shutdown);
         console.error(`wasm-pack exited with code ${exitCode}`);
         process.exit(exitCode || 1);
     } else {
-        console.log("wasm-pack completed in", Date.now() - startTime, "ms");
         await createDist();
     }
 })();
@@ -96,6 +113,10 @@ async function forwardFilteredWasmPackStderr(
 
     const decoder = new TextDecoder();
     const reader = stderr.getReader();
+    const shouldSuppressCustomBindgenPatchOutput =
+        createCustomBindgenPatchOutputFilter(
+            Boolean(process.env.CUSTOM_BINDGEN),
+        );
     let bufferedText = "";
     let candidateLines: string[] = [];
     let skippingAtomicsWarningSpacing = false;
@@ -123,6 +144,10 @@ async function forwardFilteredWasmPackStderr(
     };
 
     const handleLine = (line: string) => {
+        if (shouldSuppressCustomBindgenPatchOutput(line)) {
+            return;
+        }
+
         if (skippingAtomicsWarningSpacing) {
             if (line.trim() === "") {
                 return;
