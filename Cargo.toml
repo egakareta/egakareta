@@ -1,10 +1,20 @@
+[package]
+name = "egakareta"
+version.workspace = true
+edition.workspace = true
+description.workspace = true
+documentation.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
 # Copyright (c) egakareta <team@egakareta.com>.
 # Licensed under the GNU AGPLv3 or a proprietary Commercial License.
 # See LICENSE and COMMERCIAL.md for details.
 [workspace]
+resolver = "2"
 members = [
-    "crates/eg-app",
-    "crates/eg-types",
+    ".",
     "crates/eg-block-geometry",
     "crates/eg-blocks",
     "crates/eg-codec",
@@ -15,38 +25,36 @@ members = [
     "crates/eg-platform",
     "crates/eg-render",
     "crates/eg-state",
+    "crates/eg-types",
     "crates/eg-ui",
     "crates/egb",
-    "crates/terrarium/",
-    ".",
 ]
-resolver = "2"
-default-members = [".", "crates/eg-app"]
+default-members = ["."]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 description = "Feel the beat, follow the line."
-repository = "https://github.com/egakareta/egakareta"
 documentation = "https://docs.rs/egakareta"
+repository = "https://github.com/egakareta/egakareta"
 license = "AGPL-3.0-only"
 
 [workspace.dependencies]
-async-trait = "0.1.92"
 approx = "0.5.1"
+async-trait = "0.1.92"
 bevy_app = "0.19.1"
 bevy_clipboard = "0.19.1"
 bevy_ecs = "0.19.1"
+bevy_egui = "0.42.0"
 bevy_state = "0.19.1"
 bevy_tasks = "0.19.1"
 bevy_time = "0.19.1"
-bevy_egui = "0.42.0"
 bytemuck = { version = "1.25.2", features = ["derive"] }
 console_error_panic_hook = "0.1.7"
 console_log = "1.1.0"
 criterion = { version = "0.8.2", default-features = false, features = [
-    "plotters",
     "cargo_bench_support",
+    "plotters",
 ] }
 eg-block-geometry = { path = "crates/eg-block-geometry" }
 eg-blocks = { path = "crates/eg-blocks" }
@@ -69,12 +77,18 @@ egui-winit = { version = "0.35.0", default-features = false, features = [
     "x11",
 ] }
 env_logger = "0.11.11"
+euphorium = { version = "0.5.0", default-features = false, features = [
+    "mp3",
+    "nightly",
+    "vorbis",
+    "wav",
+] }
+futures = "0.3.34"
 glam = { version = "0.33.5", features = ["bytemuck"] }
 gloo-console = "0.4.0"
 gloo-file = "0.4.0"
 gloo-net = "0.7.0"
 gloo-utils = "0.3.0"
-futures = "0.3.34"
 image = { version = "0.25.10", default-features = false, features = [
     "ico",
     "png",
@@ -96,12 +110,6 @@ reqwest = { version = "0.13.4", default-features = false, features = [
     "rustls",
 ] }
 rfd = "0.17.2"
-euphorium = { version = "0.5.0", default-features = false, features = [
-    "mp3",
-    "nightly",
-    "vorbis",
-    "wav",
-] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_cbor = "0.11.2"
 serde_json = "1.0.151"
@@ -109,8 +117,7 @@ sha2 = "0.11.0"
 smart-default = "0.7.1"
 smart-is-default = "0.2.0"
 tempfile = "3.27.0"
-terrarium = { path = "crates/terrarium/" }
-tokio = { version = "1.53.1", features = ["rt", "macros"] }
+tokio = { version = "1.53.1", features = ["macros", "rt"] }
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.77"
 wasm-bindgen-rayon = "1.3.0"
@@ -125,39 +132,82 @@ web-sys = { version = "0.3.104", features = [
     "Window",
 ] }
 web-time = "1.1.0"
-wgpu = { version = "29.0.4", features = ["webgpu", "webgl"] }
+wgpu = { version = "29.0.4", features = ["webgl", "webgpu"] }
 winit = "0.30.13"
 winresource = "0.1.31"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 zstd = "0.13.3"
 
-[package]
-name = "monorepo"
-version.workspace = true
-edition.workspace = true
-description.workspace = true
-repository.workspace = true
-documentation.workspace = true
-license.workspace = true
-publish = false
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "egakareta_lib"
+
+[[bin]]
+name = "egakareta"
+path = "src/main.rs"
+
+[[bench]]
+harness = false
+name = "perf_hot_paths"
+required-features = ["benchmarks"]
 
 [dependencies]
 bevy_app = { workspace = true }
-bevy_clipboard = { workspace = true }
 bevy_ecs = { workspace = true }
 bevy_state = { workspace = true }
-bevy_tasks = { workspace = true }
-bevy_time = { workspace = true }
-eg-block-geometry = { workspace = true }
 eg-blocks = { workspace = true }
-eg-codec = { workspace = true }
-eg-editor-domain = { workspace = true }
+eg-types = { workspace = true }
 eg-game = { workspace = true }
 eg-level = { workspace = true }
 eg-mesh = { workspace = true }
 eg-platform = { workspace = true }
 eg-render = { workspace = true }
 eg-state = { workspace = true }
-eg-types = { workspace = true }
 eg-ui = { workspace = true }
-terrarium = { workspace = true }
+egui-winit = { workspace = true }
+pollster = { workspace = true }
+log = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+egui-phosphor = { workspace = true }
+euphorium = { workspace = true }
+tokio = { workspace = true }
+puffin = { workspace = true }
+winit = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+eg-state = { workspace = true, features = ["test-support"] }
+naga = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+[build-dependencies]
+serde = { workspace = true }
+serde_cbor = { workspace = true }
+serde_json = { workspace = true }
+winresource = { workspace = true }
+zstd = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = { workspace = true }
+image = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+gloo-console = { workspace = true }
+js-sys = { workspace = true }
+parking_lot_core = { workspace = true, features = [
+    "nightly",
+] } # for wasm parallelism
+puffin = { workspace = true, features = ["web"] }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+wasm-bindgen-rayon = { workspace = true }
+web-sys = { workspace = true }
+
+[features]
+benchmarks = []

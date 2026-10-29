@@ -44,7 +44,7 @@ const proc = Bun.spawn(
         "--log-level",
         "warn",
         "build",
-        "crates/eg-app",
+        ".",
         "-t",
         "web",
         "-d",

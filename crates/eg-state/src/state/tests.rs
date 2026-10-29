@@ -285,7 +285,7 @@ fn test_app_tick_state_practice_mode_mutates_session_resource() {
     // `GameSetPracticeMode` handler writes
     // `SessionStateRes.practice_mode_enabled` directly. The change-guarded
     // runtime sync (clear checkpoints, restart level, resume game) is
-    // exercised in `eg-app` runtime tests because it requires a real `Runtime`.
+    // exercised in runtime tests because it requires a real `Runtime`.
     use crate::events::navigation::GameSetPracticeMode;
 
     let mut app = crate::state::test_support::TestApp::minimal();

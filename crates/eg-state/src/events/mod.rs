@@ -2509,7 +2509,7 @@ mod tests {
     /// `SetBlockId` handler writes the selected block id directly to
     /// `EditorConfigRes.0.selected_block_id`. Asserts the resource is
     /// updated. The recent-blocks side effect is exercised end-to-end in
-    /// `eg-app` runtime tests.
+    /// runtime tests.
     #[test]
     fn carve_out_set_block_id_mutates_editor_config_resource() {
         use crate::events::editor_mode::SetBlockId;

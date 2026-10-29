@@ -1,3 +1,0 @@
-[submodule "terrarium"]
-	path = crates/terrarium
-	url = https://github.com/egakareta/terrarium.git

@@ -46,7 +46,7 @@ All primary scripts are managed via `mise` in the `mise.toml` file. Use these st
 
 ## 3. Code Architecture & Layout
 
-- `crates/eg-app/src/platform/runtime.rs`: `Runtime` is the current frame owner and owns only a `bevy_app::App`. `Runtime::run_app_frame(raw_input)` queues platform input, runs App Update for the frame-local egui view, then lets App PostUpdate drive `StateSchedule` and the post-gameplay `RenderExtractSchedule`; presentation reads App-owned render resources, and no legacy State/update/render callback or persistent UI snapshot remains.
+- `src/platform/runtime.rs`: `Runtime` is the current frame owner and owns only a `bevy_app::App`. `Runtime::run_app_frame(raw_input)` queues platform input, runs App Update for the frame-local egui view, then lets App PostUpdate drive `StateSchedule` and the post-gameplay `RenderExtractSchedule`; presentation reads App-owned render resources, and no legacy State/update/render callback or persistent UI snapshot remains.
 - `crates/eg-state/src/events/`: Bevy `Message` taxonomy for user intents and async results. New Bevy-facing command work should add a semantic `Message` type whose handler mutates App-world resources directly or writes a typed request resource for a scheduled system to consume. Runtime should only handle platform ingress and presentation; typed requests are consumed inside `StateSchedule` unless they require an unavoidable external service boundary.
 - `crates/eg-state/src/commands.rs`: `AppCommand` is the legacy UI/input intent enum. It is translated at App-world ingress into typed Bevy messages by `eg-state::events` and `state::input_bridge`; do not add new top-level variants when an editor-specific `EditorCommand` + message bridge is enough.
 - `crates/eg-codec/src/lib.rs`: Binary level format (`EGB1` magic, versioned). Handles encoding/decoding `LevelMetadata` ↔ compressed binary (Zstd, CBOR). Supports `ObjectRun` run-length encoding for compact object streams.
@@ -70,7 +70,7 @@ All primary scripts are managed via `mise` in the `mise.toml` file. Use these st
 ### Other Files
 
 - `crates/eg-render/src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
-- `crates/eg-app/build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment and generates build-time mesh assets.
+- `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment and generates build-time mesh assets.
 - `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
 - `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 
