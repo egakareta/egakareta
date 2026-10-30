@@ -9,8 +9,8 @@ use bevy_ecs::message::Messages;
 use eg_block_geometry::hitbox_cuboids;
 use eg_types::{Direction, LevelObject};
 
-use super::components::*;
 use super::{
+    components::*,
     events::{ConsumedObjectEvent, PlayerDied},
     physics::{BASE_PLAYER_SPEED, aabb_overlaps_object_xz, object_xz_contains},
     resources::{

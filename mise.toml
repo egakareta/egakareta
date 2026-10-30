@@ -21,7 +21,7 @@ rust = { version = "nightly-2026-03-12", components = [
 supabase = "latest"
 
 [hooks]
-postinstall = ["bun install", "lefthook install"]
+postinstall = ["bun install", "lefthook install .config/lefthook.yml"]
 
 [tasks.build]
 description = "Build game for the web (pass --dev for faster builds)"
