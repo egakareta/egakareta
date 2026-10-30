@@ -204,7 +204,8 @@ fn endpoint_url(path: &str) -> String {
             .ok()
             .filter(|value| !value.trim().is_empty())
             .or_else(|| {
-                option_env!("AUTH_BASE_URL")
+                eg_build::BUILD
+                    .auth_base_url
                     .map(str::to_string)
                     .filter(|value| !value.trim().is_empty())
             })
@@ -509,7 +510,8 @@ mod tests {
         let _lock = env_lock().lock().unwrap_or_else(|error| error.into_inner());
         let _env = AuthBaseUrlEnv::set("   ");
 
-        let expected_base = option_env!("AUTH_BASE_URL")
+        let expected_base = eg_build::BUILD
+            .auth_base_url
             .filter(|value| !value.trim().is_empty())
             .unwrap_or({
                 #[cfg(debug_assertions)]

@@ -567,8 +567,11 @@ impl ApplicationHandler for App {
 }
 
 fn log_envs() {
-    log::info!("API_URL: {}", env!("API_URL"));
-    log::info!("PUBLISHABLE_KEY: {}", env!("PUBLISHABLE_KEY"));
+    log::info!("API_URL: {}", eg_build::BUILD.api_url.unwrap_or_default());
+    log::info!(
+        "PUBLISHABLE_KEY: {}",
+        eg_build::BUILD.publishable_key.unwrap_or_default()
+    );
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -15,11 +15,11 @@ use std::{
     sync::OnceLock,
 };
 
+use eg_build::LEVELS_DIR;
 use eg_codec::{decode_level_metadata_binary, encode_level_metadata_binary};
 use eg_types::LevelMetadata;
-use include_dir::{Dir, include_dir};
+use include_dir::Dir;
 
-static LEVELS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/levels");
 static BUILTIN_LEVELS: OnceLock<Vec<LevelMetadata>> = OnceLock::new();
 
 fn builtin_levels() -> &'static [LevelMetadata] {

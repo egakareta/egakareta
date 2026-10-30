@@ -17,6 +17,7 @@ members = [
     ".",
     "crates/eg-block-geometry",
     "crates/eg-blocks",
+    "crates/eg-build",
     "crates/eg-codec",
     "crates/eg-editor-domain",
     "crates/eg-game",
@@ -58,6 +59,7 @@ criterion = { version = "0.8.2", default-features = false, features = [
 ] }
 eg-block-geometry = { path = "crates/eg-block-geometry" }
 eg-blocks = { path = "crates/eg-blocks" }
+eg-build = { path = "crates/eg-build" }
 eg-codec = { path = "crates/eg-codec" }
 eg-editor-domain = { path = "crates/eg-editor-domain" }
 eg-game = { path = "crates/eg-game" }
@@ -156,6 +158,7 @@ bevy_app = { workspace = true }
 bevy_ecs = { workspace = true }
 bevy_state = { workspace = true }
 eg-blocks = { workspace = true }
+eg-build = { workspace = true }
 eg-game = { workspace = true }
 eg-level = { workspace = true }
 eg-mesh = { workspace = true }
@@ -185,11 +188,7 @@ tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [build-dependencies]
-serde = { workspace = true }
-serde_cbor = { workspace = true }
-serde_json = { workspace = true }
 winresource = { workspace = true }
-zstd = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 env_logger = { workspace = true }

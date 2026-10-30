@@ -70,7 +70,8 @@ All primary scripts are managed via `mise` in the `mise.toml` file. Use these st
 ### Other Files
 
 - `crates/eg-render/src/shader.wgsl` — The core WebGPU shader. Compiled at build time. Defines vertex/fragment shaders for block rendering with texture arrays, color spaces, and line uniforms.
-- `build.rs` — Build script that bakes `wrangler.jsonc` environment variables into the binary for the configured build environment and generates build-time mesh assets.
+- `crates/eg-build/` — Shared build metadata and opt-in embedded assets, consumed as a normal dependency. Its `build.rs` generates `BuildMetadata` and `BUILD` fields from one public-key allowlist (process environment > selected `.env.local`/`.env.preview`/`.env.production` > `wrangler.jsonc`), tracks their inputs, and generates `BLOCKS_DIR`/`LEVELS_DIR` behind the `blocks`/`levels` features. Add public environment keys to the allowlist rather than hand-writing fields. Never expose server-side secrets.
+- `build.rs` — Application-only Windows executable resources.
 - `wrangler.jsonc` — Cloudflare Pages configuration with environment-specific vars.
 - `functions/` — Cloudflare Pages Functions (TypeScript serverless backend, Supabase integration).
 

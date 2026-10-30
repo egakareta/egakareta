@@ -17,10 +17,10 @@ use std::{collections::HashMap, sync::OnceLock};
 
 pub use block_id::*;
 pub use block_schema::*;
+use eg_build::BLOCKS_DIR;
 use image::imageops::FilterType;
-use include_dir::{Dir, include_dir};
+use include_dir::Dir;
 
-static BLOCKS_DIR: Dir<'_> = include_dir!("$EGAKARETA_WORKSPACE_ROOT/assets/blocks");
 static BLOCK_DEFINITIONS: OnceLock<Vec<BlockDefinition>> = OnceLock::new();
 static BLOCK_DEFINITION_INDEX: OnceLock<HashMap<BlockId, usize>> = OnceLock::new();
 static BLOCK_TEXTURE_ATLAS: OnceLock<BlockTextureAtlas> = OnceLock::new();

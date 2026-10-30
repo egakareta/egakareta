@@ -11,6 +11,7 @@ documentation.workspace = true
 license.workspace = true
 
 [dependencies]
+eg-build = { workspace = true }
 eg-level = { workspace = true }
 eg-types = { workspace = true }
 async-trait = { workspace = true }
