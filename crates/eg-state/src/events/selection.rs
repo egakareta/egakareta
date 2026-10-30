@@ -19,16 +19,7 @@ use eg_types::{
 };
 use glam::Vec3;
 
-use crate::{
-    events::MessageReader,
-    state::{
-        CameraViewSample, EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, SessionStateRes,
-        collect_editor_object_data, evaluate_camera_track_for_objects,
-        replace_editor_objects_commands,
-    },
-};
+use crate::{events::MessageReader, state::*};
 
 const TRANSFORM_TRIGGER_REPLACE_EPSILON_SECONDS: f32 = 0.001;
 

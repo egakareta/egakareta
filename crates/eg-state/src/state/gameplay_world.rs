@@ -14,12 +14,7 @@
 use bevy_ecs::{message::Messages, prelude::*};
 use bevy_state::prelude::State;
 use bevy_time::{Fixed, Time};
-use eg_game::{
-    BASE_PLAYER_SPEED, BlockId, CachedBlockBehavior, ColorTint, FrameDelta, GameClock, LevelMeta,
-    Object, ObjectBundle, ObjectData, ObjectId, PendingTurnInputs, Player, PlayerBundle,
-    PlayerDied, PlayerDirection, PlayerPosition, PlayerProgress, PlayerSpeed, Position, Rotation,
-    Size, SpatialIndex, SpawnDirection, SpawnPosition, TimedTurnInput, Trail, VerticalVelocity,
-};
+use eg_game::*;
 use eg_types::{Direction, LevelObject, PlayerLevelProgress};
 
 use super::{

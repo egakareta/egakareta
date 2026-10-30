@@ -25,20 +25,7 @@ use bevy_state::prelude::State;
 use eg_blocks::{BlockDefinition, BlockRenderProfile};
 use eg_editor_domain::tap_time_is_timing_division;
 use eg_game::trigger_transformed_objects_at_time;
-use eg_mesh::{
-    BlockEffectInstance, ChunkAabb, GizmoParams, GizmoPart, PracticeCheckpointFlagInstance,
-    RenderChunkKey, TransformTriggerMarker, Vertex, build_block_effect_vertices,
-    build_block_geometry_for_object, build_block_instance_batches_from_refs_at_time,
-    build_block_instance_for_object, build_block_template_geometry, build_camera_arrow_vertices,
-    build_chunked_block_mesh_from_refs, build_colored_tap_indicator_vertices,
-    build_editor_cursor_vertices, build_editor_gizmo_vertices,
-    build_editor_hitbox_visualization_vertices, build_editor_hover_outline_vertices,
-    build_editor_selection_outline_vertices, build_editor_tap_cursor_vertices,
-    build_editor_transform_trigger_target_outline_vertices,
-    build_practice_checkpoint_flag_geometry, build_spawn_marker_vertices,
-    build_tap_division_preview_vertices, build_tap_division_tap_marker_vertices,
-    build_transform_trigger_marker_vertices,
-};
+use eg_mesh::*;
 use eg_render::{EditorOutlineInstance, InstanceBatchKey};
 use eg_types::{
     AppPhase, CameraUniform, ColorSpaceUniform, Direction, EditorMode, LevelMetadata, LevelObject,

@@ -8,13 +8,8 @@
 use bevy_ecs::{schedule::Schedule, world::World};
 use eg_types::{Direction, LevelObject, apply_timed_triggers_to_objects};
 
+use crate::components::*;
 use crate::{
-    components::{
-        BlockId, CachedBlockBehavior, CachedBlockHitboxes, ColorTint, Grounded, Object,
-        ObjectBundle, ObjectData, ObjectId, Player, PlayerBundle, PlayerDirection, PlayerPosition,
-        PlayerSpeed, Position, Rotation, Size, SpawnDirection, SpawnPosition, Trail,
-        VerticalVelocity,
-    },
     events::ConsumedObjectEvent,
     physics::BASE_PLAYER_SPEED,
     plugin::{build_fixed_update_schedule, initialize_gameplay_world},

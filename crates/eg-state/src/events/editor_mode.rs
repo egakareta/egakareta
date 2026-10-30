@@ -13,15 +13,7 @@ use eg_blocks::BlockId;
 use eg_types::{AppPhase, EditorInputState, EditorMode};
 use glam::Vec2;
 
-use crate::{
-    events::MessageReader,
-    state::{
-        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes, EditorInputRes,
-        EditorInteractionContext, EditorObjectOrder, EditorObjectsBorrow, EditorPickSpatialIndex,
-        EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes, EditorTriggerRes,
-        RenderUniformsRes, collect_editor_object_data,
-    },
-};
+use crate::{events::MessageReader, state::*};
 
 /// Switch the editor mode.
 #[derive(Debug, Clone, Copy)]

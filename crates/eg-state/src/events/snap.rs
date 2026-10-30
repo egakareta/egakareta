@@ -17,11 +17,7 @@ use eg_types::AppPhase;
 
 use crate::{
     events::{MessageReader, session::persist_app_settings},
-    state::{
-        EditorAuthoredObject, EditorConfigRes, EditorHistoryRes, EditorHistorySnapshot,
-        EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes, EditorTimelineRes,
-        EditorTimingRes, EditorTriggerRes, SessionStateRes,
-    },
+    state::*,
 };
 
 /// Set whether to snap to grid.

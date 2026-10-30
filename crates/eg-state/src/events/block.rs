@@ -19,15 +19,7 @@ use eg_types::{
     AppPhase, EditorInputState, EditorMode, LevelObject, TriggerTarget, next_level_object_ids_batch,
 };
 
-use crate::{
-    events::MessageReader,
-    state::{
-        EditorAuthoredObject, EditorClipboard, EditorConfigRes, EditorHistoryRes,
-        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
-        replace_editor_objects_commands,
-    },
-};
+use crate::{events::MessageReader, state::*};
 
 /// Remove the block under cursor or selected blocks.
 #[derive(Debug, Clone, Copy, Default)]

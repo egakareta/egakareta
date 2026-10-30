@@ -30,16 +30,7 @@ use eg_types::{
     TimedTrigger, TriggerTarget,
 };
 
-use crate::{
-    events::MessageReader,
-    state::{
-        EditorAuthoredObject, EditorCameraRes, EditorConfigRes, EditorHistoryRes,
-        EditorHistorySnapshot, EditorInputRes, EditorObjectOrder, EditorSpawnRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, camera_trigger_object_pose,
-        collect_editor_object_data, spawn_editor_object_commands,
-        sync_camera_follow_trigger_object_pose,
-    },
-};
+use crate::{events::MessageReader, state::*};
 
 const DEFAULT_CAMERA_TRIGGER_TRANSITION_INTERVAL_SECONDS: f32 = 1.0;
 

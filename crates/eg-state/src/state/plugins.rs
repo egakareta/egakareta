@@ -30,17 +30,7 @@ use bevy_state::{app::AppExtStates, prelude::State};
 use bevy_time::{Fixed, Time, TimePlugin};
 
 use super::{
-    AudioSceneParam, AudioSceneRes, StateSchedule,
-    render::plugin::RenderPlugin,
-    state_resources::{
-        AudioImportSenderRes, AuthOpenSignupRequest, AuthSignOutRequest, AuthStateRes,
-        AuthSubmitSignInRequest, BlockEffectsRes, BuiltinLevelCatalogRes, EditorCameraRes,
-        EditorConfigRes, EditorHistoryRes, EditorInputRes, EditorPointerCache, EditorRuntimeRes,
-        EditorSimulationInputsRes, EditorSpawnRes, EditorTimelineRes, EditorTimingRes,
-        EditorTriggerRes, FrameTimeRes, GameplayResetRes, LevelExportServiceRes,
-        LevelImportSenderRes, MenuPreviewObjectsRes, PerfFrameCopyRequest, PerfRes,
-        SessionStateRes,
-    },
+    AudioSceneParam, AudioSceneRes, StateSchedule, render::plugin::RenderPlugin, state_resources::*,
 };
 
 /// Registers the gameplay plugin and feeds its fixed-step systems from the

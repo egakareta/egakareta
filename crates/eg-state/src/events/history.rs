@@ -13,15 +13,7 @@ use bevy_state::prelude::State;
 use eg_editor_domain::derive_tap_indicator_positions;
 use eg_types::{AppPhase, EditorInputState, LevelObject};
 
-use crate::{
-    events::MessageReader,
-    state::{
-        EditorAuthoredObject, EditorConfigRes, EditorHistoryObjectChange, EditorHistoryRes,
-        EditorHistorySnapshot, EditorObjectOrder, EditorRuntimeRes, EditorSpawnRes,
-        EditorTimelineRes, EditorTimingRes, EditorTriggerRes, collect_editor_object_data,
-        replace_editor_objects_commands,
-    },
-};
+use crate::{events::MessageReader, state::*};
 
 /// Undo the last editor action.
 #[derive(Debug, Clone, Copy, Default)]
