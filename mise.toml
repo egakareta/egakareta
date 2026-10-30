@@ -14,6 +14,8 @@ rust = { version = "nightly-2026-03-12", components = [
     "clippy",
     "rustfmt",
     "rust-src",
+], targets = [
+    "wasm32-unknown-unknown",
 ] }
 supabase = "latest"
 
