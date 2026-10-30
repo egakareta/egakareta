@@ -72,7 +72,7 @@ run = "cargo test --workspace -- -Zunstable-options --format=terse"
 
 [tasks."test:build"]
 description = "Run web build script tests"
-run = "bun test scripts/*.test.ts"
+run = "bun test scripts/*.test.ts --only-failures"
 
 [tasks."test:coverage"]
 description = "Run .rs tests with coverage"
@@ -103,7 +103,6 @@ run = "license-check-and-add check -f .config/license/config.json"
 [tasks.dev]
 description = "Continuously watch for changes to build for the web"
 run = "bun scripts/dev.ts"
-env = { CUSTOM_BINDGEN = "1" }
 
 [tasks."dev:setup"]
 description = "Set up the development environment for the first time"

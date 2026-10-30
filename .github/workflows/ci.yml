@@ -14,6 +14,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  VANILLA_BINDGEN: "1"
 
 permissions:
   contents: read
@@ -101,17 +102,13 @@ jobs:
 
       - name: Package WebAssembly
         if: github.event_name == 'push'
-        run: |
-          cp dist/egakareta_lib_bg.wasm egakareta_lib_bg.wasm
-          zip -r egakareta-web.zip dist
+        run: zip -r egakareta-web.zip dist
 
       - if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: egakareta-web
-          path: |
-            egakareta-web.zip
-            egakareta_lib_bg.wasm
+          path: egakareta-web.zip
           retention-days: 1
 
   build-native:

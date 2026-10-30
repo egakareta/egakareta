@@ -38,7 +38,8 @@ fs.cpSync(path.join(rootDir, "web"), path.join(distPath), { recursive: true });
 
 // Use an optimized version of wasm-bindgen that can process ~4x faster.
 // This is generally not worth it in release builds.
-if (process.env.CUSTOM_BINDGEN) {
+const isCustomBindgen = Boolean(!process.env.VANILLA_BINDGEN);
+if (isCustomBindgen) {
     const { binary, checkout } = await (
         await import("./wasm-bindgen.ts")
     ).getBinary();
@@ -114,9 +115,7 @@ async function forwardFilteredWasmPackStderr(
     const decoder = new TextDecoder();
     const reader = stderr.getReader();
     const shouldSuppressCustomBindgenPatchOutput =
-        createCustomBindgenPatchOutputFilter(
-            Boolean(process.env.CUSTOM_BINDGEN),
-        );
+        createCustomBindgenPatchOutputFilter(isCustomBindgen);
     let bufferedText = "";
     let candidateLines: string[] = [];
     let skippingAtomicsWarningSpacing = false;
