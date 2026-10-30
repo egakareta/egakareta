@@ -12,7 +12,6 @@
         "@vitest/coverage-istanbul": "^4",
         "nodemon": "^3.1.14",
         "vitest": "^4",
-        "wasm-pack": "^0.15.1",
         "wrangler": "^4.156.0"
     }
 }

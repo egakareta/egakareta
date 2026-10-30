@@ -60,7 +60,6 @@ if (isCustomBindgen) {
 // Build the WASM package using wasm-pack
 const proc = Bun.spawn(
     [
-        "bunx",
         "wasm-pack",
         "build",
         ".",
