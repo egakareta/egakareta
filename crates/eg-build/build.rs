@@ -23,7 +23,7 @@ fn workspace_root() -> PathBuf {
         env::var("EGAKARETA_WORKSPACE_ROOT")
             .expect("EGAKARETA_WORKSPACE_ROOT should be set by .cargo/config.toml"),
     );
-    root.canonicalize().unwrap_or(root)
+    dunce::canonicalize(&root).unwrap_or(root)
 }
 
 fn env_file(workspace_root: &Path, build_env: &str) -> PathBuf {
@@ -269,6 +269,14 @@ mod tests {
         )
         .unwrap();
         root
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn workspace_root_omits_windows_extended_length_prefix() {
+        let root = workspace_root();
+        assert!(root.is_absolute());
+        assert!(!root.to_string_lossy().starts_with(r"\\?\"));
     }
 
     #[test]

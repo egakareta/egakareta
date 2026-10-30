@@ -19,8 +19,10 @@ levels = ["dep:include_dir"]
 include_dir = { workspace = true, optional = true }
 
 [build-dependencies]
+dunce = { workspace = true }
 serde_json = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+dunce = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
